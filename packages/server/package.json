@@ -1,0 +1,8 @@
+{
+  "name": "@supreme/server",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": { "start": "node src/main.ts" },
+  "dependencies": { "ws": "^8.23.0" }
+}

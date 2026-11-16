@@ -213,5 +213,33 @@ pub extern "C" fn state_hash() -> u32 {
     with_world(|w| w.hash(), 0)
 }
 
+/// Épave la plus proche du point (sous-unités), à moins de 2 cases, ou 0.
+#[no_mangle]
+pub extern "C" fn wreck_at(x: i32, y: i32) -> u32 {
+    with_world(
+        |w| {
+            let mut best = 0u32;
+            let mut bd = (2 * fixed::TILE as i64).pow(2);
+            for (i, wk) in w.wrecks.iter().enumerate() {
+                if wk.alive {
+                    let d = fixed::dist2(wk.x, wk.y, x, y);
+                    if d < bd {
+                        bd = d;
+                        best = w.wreck_ref(i);
+                    }
+                }
+            }
+            best
+        },
+        0,
+    )
+}
+
+/// Équipe gagnante (-1 : partie en cours, -2 : aucune).
+#[no_mangle]
+pub extern "C" fn game_winner() -> i32 {
+    with_world(|w| w.winner, -1)
+}
+
 #[cfg(test)]
 mod tests;

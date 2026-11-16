@@ -1,0 +1,41 @@
+:root {
+  --bg: rgba(14, 20, 27, 0.88);
+  --bg2: rgba(26, 35, 46, 0.92);
+  --line: rgba(120, 160, 200, 0.25);
+  --text: #d8e2ee;
+  --dim: #8a9aae;
+  --accent: #4fb3ff;
+  --good: #5ee08a;
+  --bad: #ff6b6b;
+  --warn: #ffc857;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  font-size: 13px;
+}
+* { box-sizing: border-box; }
+button {
+  font: inherit; color: var(--text); background: #223040; border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px 9px; cursor: pointer;
+}
+button:hover:not(:disabled) { background: #2d4156; border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.on { background: #2a5a86; border-color: var(--accent); }
+input, select { font: inherit; color: var(--text); background: #16202b; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.panel { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; backdrop-filter: blur(4px); }
+.dim { color: var(--dim); }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+.item { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.4); }
+.bar { height: 5px; background: #0b1118; border-radius: 3px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--accent); }
+.modal { position: absolute; inset: 60px 40px 60px 40px; overflow: auto; padding: 14px 18px; z-index: 20; }
+.modal h2 { margin: 0 0 10px; font-size: 17px; }
+.close { position: absolute; right: 10px; top: 8px; }
+.tip { position: relative; }
+.tip .tt {
+  display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 50;
+  background: #0d141b; border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px; width: max-content; max-width: 280px; text-align: left; font-size: 12px; pointer-events: none;
+}
+.tip:hover .tt { display: block; }

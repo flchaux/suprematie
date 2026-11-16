@@ -21,6 +21,8 @@ export interface SimExports {
   tile_pass(x: number, y: number): number;
   current_tick(): number;
   state_hash(): number;
+  game_winner(): number;
+  wreck_at(x: number, y: number): number;
 }
 
 const dec = new TextDecoder();
@@ -112,5 +114,11 @@ export class Sim {
   }
   hash(): number {
     return this.ex.state_hash() >>> 0;
+  }
+  wreckAt(x: number, y: number): number {
+    return this.ex.wreck_at(x, y) >>> 0;
+  }
+  winner(): number {
+    return this.ex.game_winner();
   }
 }

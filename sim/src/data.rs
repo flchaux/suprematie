@@ -393,7 +393,7 @@ pub const BUILDINGS: [BuildingDef; 35] = [
     BuildingDef { key: "belt3", name: "Tapis express", hp: 100, cost: &[(STEEL, 1), (GEAR, 1)], build: 1, tech: T_LOGISTICS3, class: BClass::Belt, speed: 72, passable: true, vision: 0, ..BD },
     BuildingDef { key: "inserter", name: "Bras", hp: 80, power_use: 15, cost: &[(IRON_PLATE, 2), (COPPER_PLATE, 1)], build: 1, class: BClass::Inserter, passable: true, vision: 0, ..BD },
     BuildingDef { key: "furnace", name: "Fonderie", size: (2, 2), hp: 350, power_use: 90, cost: &[(IRON_PLATE, 8), (COPPER_PLATE, 2)], build: 3, class: BClass::Crafter, crafter: Crafter::Furnace, ..BD },
-    BuildingDef { key: "assembler1", name: "Assembleur", size: (3, 3), hp: 400, power_use: 75, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 6)], build: 4, tech: 1, class: BClass::Crafter, speed: 75, ..BD },
+    BuildingDef { key: "assembler1", name: "Assembleur", size: (3, 3), hp: 400, power_use: 75, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 6)], build: 4, class: BClass::Crafter, speed: 75, ..BD },
     BuildingDef { key: "assembler2", name: "Assembleur rapide", size: (3, 3), hp: 600, power_use: 150, cost: &[(STEEL, 6), (GEAR, 5), (CIRCUIT, 3)], build: 6, tech: 8, class: BClass::Crafter, speed: 125, ..BD },
     BuildingDef { key: "assembler3", name: "Assembleur avancé", size: (3, 3), hp: 800, power_use: 250, cost: &[(STEEL, 8), (PROCESSOR, 3), (COMPOSITE, 2)], build: 8, tech: T_LOGISTICS3, class: BClass::Crafter, speed: 200, ..BD },
     BuildingDef { key: "refinery", name: "Raffinerie", size: (3, 3), hp: 600, power_use: 200, cost: &[(STEEL, 8), (GEAR, 5), (CIRCUIT, 4)], build: 8, tech: 5, class: BClass::Crafter, crafter: Crafter::Refinery, ..BD },
