@@ -11,8 +11,10 @@
     client.connect(name.trim().slice(0, 20));
     ui.screen = "lobby";
   }
-  // reconnexion automatique si le pseudo est connu
-  if (name && !new URLSearchParams(location.search).has("nouveau")) {
+  // mode démo local (?demo), sinon reconnexion automatique si le pseudo est connu
+  if (new URLSearchParams(location.search).has("demo")) {
+    client.startDemo();
+  } else if (name && !new URLSearchParams(location.search).has("nouveau")) {
     client.connect(name);
     ui.screen = "lobby";
   }

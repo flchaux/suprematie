@@ -9,7 +9,7 @@ import type { Bot, BotContext } from "./types.ts";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
 import { build, move, target, O, factoryQueue, rally, setRecipe, research, hasTech, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
 import { Ids, indexView, TILE, dist2, type ViewIndex } from "./util.ts";
-import { Planner, type Module, type Placement, type Slot } from "./layout.ts";
+import { Planner, CELLS, type Module, type Placement, type Slot, type CellSlot } from "./layout.ts";
 import { PERSONAS, type Persona } from "./personas.ts";
 import { Army } from "./army.ts";
 
@@ -29,6 +29,7 @@ interface Project {
   cost: number[];
   lastProgress: number;
   doneCount: number;
+  cell?: CellSlot;
 }
 
 interface SpotState {
@@ -79,7 +80,8 @@ export class SkirmishAI implements Bot {
   nextProject = 1;
   spots: SpotState[] = [];
   crafters: Crafter[] = [];
-  factoryInfo = new Map<number, { module: Module; slot: Slot; lastQ: number; rallied: boolean }>();
+  factoryInfo = new Map<number, { module: Module; slot: Slot; lastQ: number; rallied: boolean; front: number; lastStart: number }>();
+  starved = new Map<number, number>();
   busy = new Map<number, Project>();
   pendingPlan = new Map<Module, string[]>();
   modulePlansUsed = 0;
@@ -101,6 +103,7 @@ export class SkirmishAI implements Bot {
   ironSave = false;
   stockHist: number[][] = [];
   busMines = new Map<number, number>();
+  blockedSince = new Map<string, number>();
   thinkN = 0;
   stats = { projectsDone: 0, projectsFailed: 0 };
   debug = false;
@@ -400,10 +403,13 @@ export class SkirmishAI implements Bot {
     if (p.slot && p.st[0] === 2) {
       // emplacement perdu : remettre l'entrée dans le plan du module
       const pend = p.module ? this.pendingPlan.get(p.module) : null;
-      if (pend) pend.unshift(p.slot.type);
-      const k = p.module?.slots.indexOf(p.slot) ?? -1;
-      if (k >= 0) p.module?.slots.splice(k, 1);
-      this.crafters = this.crafters.filter((c) => c.slot !== p.slot);
+      const lost = p.cell ? p.cell.slots : [p.slot];
+      if (pend) pend.unshift(p.cell ? "cell:" + p.cell.cell.name : p.slot.type);
+      for (const sl of lost) {
+        const k = p.module?.slots.indexOf(sl) ?? -1;
+        if (k >= 0) p.module?.slots.splice(k, 1);
+      }
+      this.crafters = this.crafters.filter((c) => !lost.includes(c.slot));
     }
     if (p.name === "bus" && p.module) {
       (p.module as Module & { busDone?: boolean }).busDone = true;
@@ -598,7 +604,13 @@ export class SkirmishAI implements Bot {
       // emplacement suivant du plan du module
       const pend = this.pendingPlan.get(m);
       if (pend && pend.length && !m.full) {
-        const k = pend.findIndex((t) => this.slotAvailable(t));
+        // ordre strict du plan, sauf si l'entrée de tête attend une recherche depuis longtemps
+        let k = this.slotAvailable(pend[0]) ? 0 : -1;
+        if (k < 0) {
+          const key = m.id + ":" + pend[0];
+          if (!this.blockedSince.has(key)) this.blockedSince.set(key, this.tick);
+          if (this.tick - (this.blockedSince.get(key) as number) > 4800) k = pend.findIndex((t) => this.slotAvailable(t));
+        }
         if (k >= 0) {
           const type = pend[k];
           let prio = 800 - m.id * 50;
@@ -637,16 +649,18 @@ export class SkirmishAI implements Bot {
   }
 
   slotEst(type: string): number[] {
-    const kind = this.slotKind(type);
     const c = [0, 0, 0, 0, 0];
     const it = this.ids.item;
     const keys = [it.iron_plate, it.copper_plate, it.steel, it.gear, it.circuit];
-    for (const [i, n] of this.ctx.data.buildings[kind].cost) {
-      const k = keys.indexOf(i);
-      if (k >= 0) c[k] += n;
+    const kinds = type.startsWith("cell:") ? CELLS[type.slice(5)].comps.map((cc) => this.ids.b[cc.key]) : [this.slotKind(type)];
+    for (const kind of kinds) {
+      for (const [i, n] of this.ctx.data.buildings[kind].cost) {
+        const k = keys.indexOf(i);
+        if (k >= 0) c[k] += n;
+      }
+      c[0] += 6;
+      c[1] += 4;
     }
-    c[0] += 6;
-    c[1] += 4;
     return c;
   }
 
@@ -667,6 +681,13 @@ export class SkirmishAI implements Bot {
     return undefined;
   }
   slotAvailable(type: string): boolean {
+    if (type.startsWith("cell:")) {
+      for (const cc of CELLS[type.slice(5)].comps) {
+        if (!this.has(this.ctx.data.buildings[this.ids.b[cc.key]].tech)) return false;
+        if (cc.recipe && !this.has(this.ctx.data.recipes[this.ids.r[cc.recipe]].tech)) return false;
+      }
+      return true;
+    }
     const kind = this.slotKind(type);
     if (!this.has(this.ctx.data.buildings[kind].tech)) return false;
     const r = this.slotRecipe(type);
@@ -675,6 +696,7 @@ export class SkirmishAI implements Bot {
   }
 
   makeSlot(m: Module, type: string, k: number): Project | null {
+    if (type.startsWith("cell:")) return this.makeCell(m, type, k);
     const kind = this.slotKind(type);
     const d = this.ctx.data.buildings[kind];
     const recipe = this.slotRecipe(type);
@@ -695,6 +717,30 @@ export class SkirmishAI implements Bot {
     return this.newProject("slot" + m.id, slot.places, { module: m, slot, remote: m.id > 0, critical: true });
   }
 
+  makeCell(m: Module, type: string, k: number): Project | null {
+    const cs = this.planner.allocCell(m, CELLS[type.slice(5)]);
+    const pend = this.pendingPlan.get(m);
+    pend?.splice(k, 1);
+    if (!cs) return null;
+    for (const pl of cs.places) {
+      const bd = this.ctx.data.buildings[pl.kind];
+      m.use += bd.powerUse;
+      m.prod += bd.powerProd;
+    }
+    for (const sl of cs.slots) {
+      const recipe = this.slotRecipe(sl.type);
+      if (recipe !== undefined) this.crafters.push({ x: sl.x, y: sl.y, kind: sl.kind, recipe, type: sl.type, ref: 0, paused: false, lastCmd: -1e9, module: m, slot: sl });
+    }
+    // le premier placement (bâtiment principal) conditionne la cellule
+    const main = cs.places.findIndex((p) => p.tag?.startsWith("factory") || p.tag === "lab");
+    if (main > 0) {
+      const t = cs.places[0];
+      cs.places[0] = cs.places[main];
+      cs.places[main] = t;
+    }
+    return this.newProject("slot" + m.id, cs.places, { module: m, slot: cs.slots.find((s) => s.type.startsWith("factory") || s.type === "lab") ?? cs.slots[0], remote: m.id > 0, critical: true, cell: cs });
+  }
+
   moduleExt(m: Module, ore: number): number {
     return this.extCount.get(m.id * 100 + ore) ?? 0;
   }
@@ -710,7 +756,7 @@ export class SkirmishAI implements Bot {
       const smelt = ore === this.ids.item.iron_ore || ore === this.ids.item.copper_ore || ore === this.ids.item.silicon;
       // les premières mines alimentent le tapis principal, les suivantes directement le dépôt
       const busMines = this.busMines.get(m.id * 100 + ore) ?? 0;
-      const quota = ore === this.ids.item.iron_ore ? 7 : ore === this.ids.item.copper_ore ? 3 : 9;
+      const quota = ore === this.ids.item.iron_ore ? 6 : ore === this.ids.item.copper_ore ? 2 : 9;
       const toDepot = smelt && busMines >= quota;
       const places = smelt ? this.planner.planMine(m, s.x, s.y, toDepot) : this.planner.planExtractor(m, s.x, s.y);
       if (!places) {
@@ -908,9 +954,11 @@ export class SkirmishAI implements Bot {
       const r = data.recipes[c.recipe];
       if (b.build >= BUILD_FULL) this.produces.get(c.module)?.add(r.output[0]);
       const outIt = r.output[0];
-      let pause = !(demand.get(c.module) as Set<number>).has(outIt);
+      let pause = !c.slot.cell && !(demand.get(c.module) as Set<number>).has(outIt);
       // demandé mais déjà en excès au dépôt : arrêt temporaire (le surplus passe les consommateurs)
-      if (!pause && this.tick < (c.cooldown ?? 0)) pause = true;
+      if (c.slot.cell) {
+        // cellule : régulée par ses bras
+      } else if (!pause && this.tick < (c.cooldown ?? 0)) pause = true;
       else if (!pause && this.growth(outIt) > (outIt === it.gear || outIt === it.cable ? 10 : 5) && this.stock(outIt) > 30) {
         c.cooldown = this.tick + 400;
         pause = true;
@@ -949,7 +997,7 @@ export class SkirmishAI implements Bot {
         const m = this.planner.modules.find((mm) => mm.slots.some((s) => s.x === b.x && s.y === b.y));
         const slot = m?.slots.find((s) => s.x === b.x && s.y === b.y);
         if (!m || !slot) continue;
-        fi = { module: m, slot, lastQ: -1e9, rallied: false };
+        fi = { module: m, slot, lastQ: -1e9, rallied: false, front: -1, lastStart: this.tick };
         this.factoryInfo.set(b.ref, fi);
       }
       if (!fi.rallied) {
@@ -957,7 +1005,17 @@ export class SkirmishAI implements Bot {
         out.push(rally(b.ref, rx, ry));
         fi.rallied = true;
       }
-      if (b.queue >= 1 || this.tick - fi.lastQ < 40) continue;
+      if (b.queue >= 1) {
+        // unité en attente de composants trop longtemps : l'annuler et éviter ce type un moment
+        if (!b.working && fi.front >= 0 && this.tick - fi.lastQ > 1800 && this.tick - fi.lastStart > 1800) {
+          out.push(factoryQueue(b.ref, fi.front, -1));
+          this.starved.set(fi.module.id * 100 + fi.front, this.tick + 6000);
+          fi.lastQ = this.tick;
+        }
+        if (b.working) fi.lastStart = this.tick;
+        continue;
+      }
+      if (this.tick - fi.lastQ < 40) continue;
       if (this.me.unitCount >= 950) continue;
       const avail = this.availableAt(fi.module, fi.slot);
       const fk = data.buildings[b.kind].factory;
@@ -977,6 +1035,7 @@ export class SkirmishAI implements Bot {
         for (const [key, wgt] of Object.entries(P.army)) {
           const k = this.ids.u[key];
           if (k === undefined || data.units[k].factory !== fk || !this.canBuild(k, avail)) continue;
+          if ((this.starved.get(fi.module.id * 100 + k) ?? 0) > this.tick) continue;
           // les unités de palier supérieur sont préférées quand elles sont disponibles
           const tierBonus = 1 + data.units[k].tier * 0.3;
           const score = ((counts.get(k) ?? 0) + 1 + this.random() * 0.5) / (wgt * tierBonus);
@@ -989,6 +1048,7 @@ export class SkirmishAI implements Bot {
       if (pick >= 0) {
         out.push(factoryQueue(b.ref, pick, 1));
         fi.lastQ = this.tick;
+        fi.front = pick;
       }
     }
   }
@@ -1001,7 +1061,8 @@ export class SkirmishAI implements Bot {
     if (this.moduleExt(m, this.ids.item.copper_ore) > 0) s.add(this.ids.item.copper_plate);
     for (const c of this.crafters) {
       if (c.module !== m || !c.ref) continue;
-      if (c.slot.u0 + 1 >= slot.u0) continue;
+      const sameCell = slot.cell && c.slot.cell && c.slot.side === slot.side && Math.abs(c.slot.u0 - slot.u0) <= 10;
+      if (!sameCell && (c.slot.cell || c.slot.u0 + 1 >= slot.u0)) continue;
       const b = this.ix.bref.get(c.ref);
       if (!b || b.build < BUILD_FULL) continue;
       s.add(this.ctx.data.recipes[c.recipe].output[0]);

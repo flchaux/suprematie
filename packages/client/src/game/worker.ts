@@ -122,6 +122,19 @@ onmessage = async (e: MessageEvent<In>) => {
   }
 };
 
+// Mode démo : partie de référence synthétique jouée localement (test du rendu à grande échelle)
+addEventListener("message", async (e: MessageEvent) => {
+  const m = e.data as { type: string; wasmUrl?: string };
+  if (m.type !== "demo" || !m.wasmUrl) return;
+  sim = await loadSim(m.wasmUrl);
+  sim.init([1, 1024, 0, 8, 0, 0, 100, 100, 1, 0, 100, 100, 2, 0, 100, 100, 3, 0, 100, 100, 4, 0, 100, 100, 5, 0, 100, 100, 6, 0, 100, 100, 7, 0, 100, 100]);
+  sim.benchReference();
+  replayOrders = new Map();
+  replayEnd = 1 << 30;
+  sendStatic();
+  sendFrame(true);
+});
+
 // Mode replay : chargé par un message dédié
 addEventListener("message", async (e: MessageEvent) => {
   const m = e.data as { type: string; wasmUrl?: string; replay?: { params: number[]; ticks: number; orders: [number, number[]][] } };

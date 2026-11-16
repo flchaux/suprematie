@@ -34,18 +34,20 @@ const MIN = 1200;
 
 // Le fer et le cuivre sont fondus sur place (extracteur -> fonderie -> tapis) : le plan ne contient
 // que les fonderies d'acier et de plaquettes, les assembleurs, les laboratoires et les usines.
-const CORE = ["A:cable", "A:circuit", "A:gear", "A:pack1", "lab", "factory:land_factory", "A:pack1", "lab"];
-const OPENING = ["iron", "iron", "copper", "slot", "slot", "slot", "iron", "slot", "copper", "slot", "slot", "iron", "slot", "copper"];
+// Les cellules (science, robots) sont alimentées par bras sans repasser par le tapis principal.
+const CORE = ["cell:science", "cell:robot", "A:gear", "A:cable", "A:circuit"];
+const T23 = ["F:steel", "A:cable", "A:circuit", "A:gear", "A:arm_part", "A:pack2", "A:ammo", "F:steel", "A:pack3", "A:engine"];
+const OPENING = ["iron", "iron", "copper", "slot", "iron", "copper", "slot", "iron"];
 
-const ARMY_MODULE = ["A:cable", "A:circuit", "F:steel", "A:gear", "factory:land_factory", "F:steel", "A:cable", "A:circuit", "A:ammo", "A:engine", "factory:land_factory"];
+const ARMY_MODULE = ["cell:robot", "F:steel", "cell:robot", "F:steel"];
 
-const TECH_MODULE = ["A:cable", "A:circuit", "F:wafer", "F:steel", "F:steel", "R:fuel", "C:composite", "A:processor", "A:gear", "A:pack1", "A:arm_part", "A:pack2", "A:ammo", "A:pack3", "A:pack4", "lab", "lab"];
+const TECH_MODULE = ["cell:science", "A:cable", "A:circuit", "F:wafer", "F:steel", "F:steel", "R:fuel", "C:composite", "A:processor", "A:gear", "A:arm_part", "A:pack2", "A:ammo", "A:pack3", "A:pack4", "cell:science"];
 
 export const PERSONAS: Record<string, Persona> = {
   adaptive: {
     name: "adaptive",
     opening: OPENING,
-    plan0: [...CORE, "F:steel", "A:arm_part", "A:pack2", "lab", "A:ammo", "F:steel", "A:pack3", "A:engine", "A:gear", "factory:land_factory"],
+    plan0: [...CORE, "cell:robot"],
     planN: [ARMY_MODULE, TECH_MODULE],
     research: ["land_prod", "light_defense", "automation", "mobile_artillery", "assault", "heavy_turret", "electronics", "aa_turret", "engineer3", "hydrocarbons", "chemistry", "shields", "siege_walker", "cmd_shield"],
     army: { line_robot: 5, light_tank: 2, artillery: 1.5, assault_walker: 2, siege_walker: 1.5, ion_cannon: 0.5 },
@@ -63,8 +65,8 @@ export const PERSONAS: Record<string, Persona> = {
   },
   rush: {
     name: "rush",
-    opening: ["iron", "iron", "copper", "slot", "slot", "slot", "iron", "slot", "slot", "copper", "slot", "iron"],
-    plan0: ["A:cable", "A:circuit", "A:gear", "A:pack1", "lab", "factory:land_factory", "F:steel", "factory:land_factory", "A:pack1", "A:arm_part", "A:pack2", "lab", "A:ammo", "A:pack3", "A:engine"],
+    opening: OPENING,
+    plan0: [...CORE, "cell:robot"],
     planN: [ARMY_MODULE],
     research: ["land_prod", "automation", "light_defense", "mobile_artillery", "assault", "electronics", "heavy_turret"],
     army: { line_robot: 6, moto: 1, light_tank: 2, artillery: 1, assault_walker: 2 },
@@ -83,7 +85,7 @@ export const PERSONAS: Record<string, Persona> = {
   turtle: {
     name: "turtle",
     opening: OPENING,
-    plan0: [...CORE, "F:steel", "A:arm_part", "A:pack2", "lab", "A:ammo", "F:steel", "A:pack3", "A:engine", "A:gear", "factory:land_factory"],
+    plan0: [...CORE, "cell:robot"],
     planN: [ARMY_MODULE, TECH_MODULE],
     research: ["land_prod", "light_defense", "automation", "heavy_turret", "mobile_artillery", "aa_turret", "assault", "electronics", "engineer3", "hydrocarbons", "chemistry", "shields", "fixed_artillery", "siege_walker", "cmd_shield"],
     army: { line_robot: 4, light_tank: 2, artillery: 2, assault_walker: 2, siege_walker: 2 },
@@ -102,7 +104,7 @@ export const PERSONAS: Record<string, Persona> = {
   tech: {
     name: "tech",
     opening: OPENING,
-    plan0: ["A:cable", "A:circuit", "A:gear", "A:pack1", "lab", "A:pack1", "lab", "factory:land_factory", "F:steel", "A:arm_part", "A:pack2", "lab", "A:ammo", "F:steel", "A:pack3", "lab", "A:engine", "A:gear"],
+    plan0: ["cell:science", "cell:robot", ...T23, "cell:science"],
     planN: [TECH_MODULE, ARMY_MODULE],
     research: ["land_prod", "automation", "light_defense", "mobile_artillery", "electronics", "hydrocarbons", "assault", "chemistry", "engineer3", "heavy_turret", "crystal_refining", "shields", "siege_walker", "ions", "drones", "cmd_shield", "shock", "heavy_artillery", "cmd_cannon", "logistics2", "aa_turret", "strategic", "area_shield", "experimental", "colossus", "spider"],
     army: { line_robot: 3, light_tank: 2, artillery: 2, assault_walker: 2, siege_walker: 3, ion_cannon: 1, drone_launcher: 1, shock_robot: 3, heavy_artillery: 1 },

@@ -179,6 +179,18 @@ export class GameClient {
     this.worker.postMessage({ type: "loadReplay", wasmUrl: new URL("/sim.wasm", location.href).href, replay: rep });
   }
 
+  startDemo(): void {
+    ui.replay = true;
+    ui.me = -1;
+    ui.spectator = true;
+    ui.names = Array.from({ length: 8 }, (_, i) => `Armée ${i + 1}`);
+    ui.screen = "loading";
+    this.worker?.terminate();
+    this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    this.worker.onmessage = (e) => this.onWorker(e.data);
+    this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href });
+  }
+
   setReplaySpeed(s: number): void {
     ui.replaySpeed = s;
     this.worker?.postMessage({ type: "replay", speed: s });
@@ -194,6 +206,7 @@ export class GameClient {
           this.scene = new GameScene(this.canvasEl!);
           await this.scene.init(new URLSearchParams(location.search).has("webgl"));
           ui.backend = this.scene.backend;
+          this.scene.iconDistance = this.iconDistance();
         }
         this.scene.setWorld(this.map, this.data);
         const st = this.map.starts[Math.max(0, ui.me)] ?? [this.map.w / 2, this.map.h / 2];
@@ -1260,6 +1273,14 @@ export class GameClient {
     ctx.strokeStyle = "rgba(255,255,255,0.8)";
     ctx.lineWidth = 1;
     ctx.strokeRect(r[0] * k, r[1] * k, (r[2] - r[0]) * k, (r[3] - r[1]) * k);
+  }
+
+  iconDistance(): number {
+    return Number(localStorage.getItem("supreme.icons") ?? "260");
+  }
+  setIconDistance(d: number): void {
+    localStorage.setItem("supreme.icons", String(d));
+    if (this.scene) this.scene.iconDistance = d;
   }
 
   setVolume(v: number): void {

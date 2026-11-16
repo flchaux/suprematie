@@ -44,7 +44,67 @@ export interface Slot {
   type: string; // ex. "F:iron_plate", "A:gear", "lab", "factory"
   places: Placement[];
   ref?: number;
+  cell?: boolean; // élément d'une cellule (alimenté directement par bras)
 }
+
+export interface CellComp {
+  key: string; // clé du bâtiment
+  du: number;
+  busIn: boolean; // bras d'entrée depuis le tapis principal
+  recipe?: string;
+  faceOut?: boolean;
+  type: string;
+}
+export interface CellDef {
+  name: string;
+  comps: CellComp[];
+  links: { du: number; row: number; dir: number }[]; // bras entre bâtiments (sens ±u)
+  pylons: number[]; // positions des pylônes sur la rangée des bras
+  width: number;
+}
+export interface CellSlot {
+  side: number;
+  u0: number;
+  places: Placement[];
+  slots: Slot[];
+  cell: CellDef;
+}
+
+/** Cellule « robots » : câbles -> circuits -> usine <- engrenages. */
+export const CELL_ROBOT: CellDef = {
+  name: "robot",
+  comps: [
+    { key: "assembler1", du: 0, busIn: true, recipe: "cable", type: "A:cable" },
+    { key: "assembler1", du: 4, busIn: true, recipe: "circuit", type: "A:circuit" },
+    { key: "land_factory", du: 8, busIn: true, faceOut: true, type: "factory:land_factory" },
+    { key: "assembler1", du: 14, busIn: true, recipe: "gear", type: "A:gear" },
+  ],
+  links: [
+    { du: 3, row: 3, dir: 1 },
+    { du: 7, row: 3, dir: 1 },
+    { du: 13, row: 3, dir: -1 },
+  ],
+  pylons: [3, 7, 13, 17],
+  width: 18,
+};
+
+/** Cellule « science » : engrenages -> lots 1 -> laboratoire (qui prend aussi les lots du tapis). */
+export const CELL_SCIENCE: CellDef = {
+  name: "science",
+  comps: [
+    { key: "assembler1", du: 0, busIn: true, recipe: "gear", type: "A:gear" },
+    { key: "assembler1", du: 4, busIn: true, recipe: "pack1", type: "A:pack1" },
+    { key: "lab", du: 8, busIn: true, type: "lab" },
+  ],
+  links: [
+    { du: 3, row: 3, dir: 1 },
+    { du: 7, row: 3, dir: 1 },
+  ],
+  pylons: [3, 7, 11],
+  width: 11,
+};
+
+export const CELLS: Record<string, CellDef> = { robot: CELL_ROBOT, science: CELL_SCIENCE };
 
 export interface Module {
   id: number;
@@ -446,39 +506,144 @@ export class Planner {
     if (bestG) return [this.takePole(gen, bestG[0], bestG[1])];
     // pylône isolé + générateur hors de la bande
     if (lonely) {
-      const [px, py] = lonely;
-      const rg = Math.min(pd.connect, gd.connect) - 0.2;
-      const g = this.findGenNear(px, py, rg);
-      if (g) return [this.takePole(gen, g[0], g[1]), this.takePole(pyl, px, py)];
-      // pylône relais (dans la bande, derrière les bâtiments) vers le réseau ou un générateur
-      const relays: [number, number, number][] = [];
-      const R = pd.connect - 0.3;
-      for (let ry = py - 9; ry <= py + 9; ry++) {
-        for (let rx = px - 9; rx <= px + 9; rx++) {
-          const d2 = (rx - px) ** 2 + (ry - py) ** 2;
-          if (d2 > R * R || d2 < 4) continue;
-          if (!this.inside(rx, ry)) continue;
-          const pp = this.plan[this.idx(rx, ry)];
-          if (pp !== P_FREE && pp !== P_RES) continue;
-          relays.push([rx, ry, d2]);
-        }
-      }
-      relays.sort((a, b) => b[2] - a[2]);
-      for (const [rx, ry] of relays) {
-        if (!this.connected(rx, ry, 1, pd.connect)) continue;
-        if (!this.sim.canPlace(this.slot, pyl, rx, ry, 0)) continue;
-        return [this.takePole(pyl, rx, ry), this.takePole(pyl, px, py)];
-      }
-      let n = 0;
-      for (const [rx, ry] of relays) {
-        if (n++ > 40) break;
-        if (!this.sim.canPlace(this.slot, pyl, rx, ry, 0)) continue;
-        const g2 = this.findGenNear(rx, ry, rg);
-        if (g2) return [this.takePole(gen, g2[0], g2[1]), this.takePole(pyl, rx, ry), this.takePole(pyl, px, py)];
-      }
+      const link = this.linkPylon(lonely[0], lonely[1]);
+      if (link) return [...link, this.takePole(pyl, lonely[0], lonely[1])];
     }
     if (process.env.BOTDEBUG) console.log("pas d'énergie pour", x, y, w, h);
     return [];
+  }
+
+  /**
+   * Relie au réseau un pylône prévu en (px, py) (pas encore dans la liste) : générateur proche, ou
+   * pylône relais vers le réseau existant ou vers un générateur.
+   */
+  linkPylon(px: number, py: number): Placement[] | null {
+    const pyl = this.ids.b.pylon;
+    const gen = this.ids.b.generator;
+    const pd = this.ids.data.buildings[pyl];
+    const gd = this.ids.data.buildings[gen];
+    const rg = Math.min(pd.connect, gd.connect) - 0.2;
+    const g = this.findGenNear(px, py, rg);
+    if (g) return [this.takePole(gen, g[0], g[1])];
+    const relays: [number, number, number][] = [];
+    const R = pd.connect - 0.3;
+    for (let ry = py - 9; ry <= py + 9; ry++) {
+      for (let rx = px - 9; rx <= px + 9; rx++) {
+        const d2 = (rx - px) ** 2 + (ry - py) ** 2;
+        if (d2 > R * R || d2 < 4) continue;
+        if (!this.inside(rx, ry)) continue;
+        const pp = this.plan[this.idx(rx, ry)];
+        if (pp !== P_FREE && pp !== P_RES) continue;
+        relays.push([rx, ry, d2]);
+      }
+    }
+    relays.sort((a, b) => b[2] - a[2]);
+    for (const [rx, ry] of relays) {
+      if (!this.connected(rx, ry, 1, pd.connect)) continue;
+      if (!this.sim.canPlace(this.slot, pyl, rx, ry, 0)) continue;
+      return [this.takePole(pyl, rx, ry)];
+    }
+    let n = 0;
+    for (const [rx, ry] of relays) {
+      if (n++ > 40) break;
+      if (!this.sim.canPlace(this.slot, pyl, rx, ry, 0)) continue;
+      const g2 = this.findGenNear(rx, ry, rg);
+      if (g2) return [this.takePole(gen, g2[0], g2[1]), this.takePole(pyl, rx, ry)];
+    }
+    return null;
+  }
+
+  /**
+   * Réserve une cellule (bâtiments reliés par des bras, sans passer par le tapis principal) du côté
+   * consommateurs du module (depuis le dépôt).
+   */
+  allocCell(m: Module, cell: CellDef): CellSlot | null {
+    const ins = this.ids.b.inserter;
+    const pyl = this.ids.b.pylon;
+    const W = cell.width;
+    const tries: { side: number; u0: number }[] = [];
+    for (const side of [-1, 1]) {
+      const si = side < 0 ? 0 : 1;
+      for (let u0 = m.hi[si] - W + 1; u0 - 1 >= m.cursor[si] && u0 >= m.frontier; u0--) tries.push({ side, u0 });
+    }
+    tries.sort((a, b) => b.u0 - a.u0);
+    for (const { side, u0 } of tries) {
+      const si = side < 0 ? 0 : 1;
+      const comps: { kind: number; x: number; y: number; dir: number; w: number; c: CellComp }[] = [];
+      let ok = true;
+      for (const c of cell.comps) {
+        const kind = this.ids.b[c.key];
+        const w = this.ids.data.buildings[kind].w;
+        const v0 = side > 0 ? 2 : -(1 + w);
+        const [bx, by] = this.sq(m, u0 + c.du, v0, w);
+        const dir = c.faceOut ? this.ldir(m, 0, side) : 0;
+        if (!this.rectFree(kind, bx, by, dir, w, true)) {
+          ok = false;
+          break;
+        }
+        comps.push({ kind, x: bx, y: by, dir, w, c });
+      }
+      if (!ok) continue;
+      const inserters: Placement[] = [];
+      for (const c of comps) {
+        if (!c.c.busIn) continue;
+        const x = this.wx(m, u0 + c.c.du, side);
+        const y = this.wy(m, u0 + c.c.du, side);
+        inserters.push({ kind: ins, x, y, dir: this.ldir(m, 0, side), tag: "in" });
+      }
+      for (const l of cell.links) {
+        const x = this.wx(m, u0 + l.du, side * l.row);
+        const y = this.wy(m, u0 + l.du, side * l.row);
+        inserters.push({ kind: ins, x, y, dir: this.ldir(m, l.dir, 0), tag: "link" });
+      }
+      const pylons: [number, number][] = cell.pylons.map((du) => [this.wx(m, u0 + du, side), this.wy(m, u0 + du, side)]);
+      for (const p of inserters) if (!this.rectFree(ins, p.x, p.y, 0, 1, true)) ok = false;
+      for (const [x, y] of pylons) if (!this.rectFree(pyl, x, y, 0, 1, true)) ok = false;
+      if (!ok) continue;
+      const places: Placement[] = [];
+      const slots: Slot[] = [];
+      for (const c of comps) {
+        const recipe = c.c.recipe !== undefined ? this.ids.r[c.c.recipe] : undefined;
+        places.push({ kind: c.kind, x: c.x, y: c.y, dir: c.dir, recipe, tag: c.c.type });
+        this.mark(c.x, c.y, c.w, P_BLD);
+        slots.push({ side, u0: u0 + c.c.du, w: c.w, kind: c.kind, x: c.x, y: c.y, dir: c.dir, type: c.c.type, places: [places[places.length - 1]], cell: true });
+      }
+      for (const p of inserters) {
+        places.push(p);
+        this.mark(p.x, p.y, 1, P_BLD);
+      }
+      // énergie : pylônes de la cellule, reliés au réseau si besoin
+      let linked = false;
+      for (const [x, y] of pylons) if (this.connected(x, y, 1, this.ids.data.buildings[pyl].connect)) linked = true;
+      const pps: Placement[] = [];
+      for (const [x, y] of pylons) pps.push(this.takePole(pyl, x, y));
+      if (!linked) {
+        // retirer temporairement les pylônes de la cellule pour chercher un lien extérieur
+        const mine = this.poles.splice(this.poles.length - pylons.length, pylons.length);
+        let link: Placement[] | null = null;
+        for (const [x, y] of pylons) {
+          link = this.linkPylon(x, y);
+          if (link) break;
+        }
+        this.poles.push(...mine);
+        if (link) places.push(...link);
+        else if (process.env.BOTDEBUG) console.log("cellule sans énergie", cell.name);
+      }
+      places.push(...pps);
+      // sorties d'usine : couloir libre
+      for (const c of comps) {
+        if (!c.c.faceOut) continue;
+        for (let k = 1; k <= 4; k++) {
+          const ex = this.wx(m, u0 + c.c.du + (c.w >> 1), side * (1 + c.w + k));
+          const ey = this.wy(m, u0 + c.c.du + (c.w >> 1), side * (1 + c.w + k));
+          if (this.inside(ex, ey) && (this.plan[this.idx(ex, ey)] === P_FREE || this.plan[this.idx(ex, ey)] === P_RES)) this.plan[this.idx(ex, ey)] = P_LANE;
+        }
+      }
+      m.hi[si] = u0 - 2;
+      for (const sl of slots) m.slots.push(sl);
+      return { side, u0, places, slots, cell };
+    }
+    return null;
   }
 
   takePole(kind: number, x: number, y: number): Placement {

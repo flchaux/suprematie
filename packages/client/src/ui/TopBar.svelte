@@ -41,6 +41,7 @@
   <button onclick={() => (ui.showStats = !ui.showStats)} title="Statistiques (Tab)">Stats</button>
   <button onclick={() => (ui.showHelp = !ui.showHelp)} title="Aide (F1)">?</button>
   <label class="vol" title="Volume">🔊<input type="range" min="0" max="1" step="0.05" value={ui.volume} oninput={(e) => client.setVolume(Number((e.target as HTMLInputElement).value))} /></label>
+  <label class="vol" title="Distance de passage aux icônes stratégiques">◇<input type="range" min="80" max="600" step="10" value={client.iconDistance()} oninput={(e) => client.setIconDistance(Number((e.target as HTMLInputElement).value))} /></label>
   <span class="dim small">{ui.fps} i/s · {ui.backend} · {ui.ping} ms</span>
 </div>
 

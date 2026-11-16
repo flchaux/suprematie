@@ -220,7 +220,7 @@ export class GameScene {
   render(frame: Frame | null, alpha: number, me: number, myTeam: number, selected: Set<number>, dt: number, spectator: boolean): void {
     this.updateCamera();
     if (frame && this.entities) {
-      const iconScale = Math.max(1.2, this.distance / 70);
+      const iconScale = Math.max(1, this.distance / 160);
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, this.viewRect());
     }
     // repères de clic

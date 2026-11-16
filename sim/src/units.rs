@@ -300,10 +300,12 @@ fn prof_now() -> std::time::Instant {
 }
 #[cfg(not(test))]
 #[inline(always)]
-fn prof_now() {}
+fn prof_now() -> u8 {
+    0
+}
 #[cfg(not(test))]
 #[inline(always)]
-fn prof_add(_i: usize, _t: ()) {}
+fn prof_add(_i: usize, _t: u8) {}
 
 pub fn update_units(w: &mut World) {
     let t_sep = prof_now();
