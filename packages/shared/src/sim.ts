@@ -1,0 +1,116 @@
+// Enveloppe du module de simulation sim.wasm, identique dans le navigateur, le Worker et Node.js.
+
+export interface SimExports {
+  memory: WebAssembly.Memory;
+  in_buf(n: number): number;
+  out_len(): number;
+  init(nWords: number): number;
+  step(nWords: number): number;
+  render_buffer(x0: number, y0: number, x1: number, y1: number, detail: number, player: number, withVis: number): number;
+  snapshot(): number;
+  restore(nBytes: number): number;
+  data_json(): number;
+  map_info(): number;
+  map_heights(): number;
+  bot_dump(): number;
+  info_building(r: number): number;
+  info_unit(id: number): number;
+  can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
+  tile_info(x: number, y: number): number;
+  building_at(x: number, y: number): number;
+  tile_pass(x: number, y: number): number;
+  current_tick(): number;
+  state_hash(): number;
+}
+
+const dec = new TextDecoder();
+
+export class Sim {
+  readonly ex: SimExports;
+  constructor(instance: WebAssembly.Instance) {
+    this.ex = instance.exports as unknown as SimExports;
+  }
+
+  static async load(bytes: BufferSource): Promise<Sim> {
+    const { instance } = await WebAssembly.instantiate(bytes, {});
+    return new Sim(instance);
+  }
+
+  private writeI32(words: ArrayLike<number>): number {
+    const n = words.length;
+    const ptr = this.ex.in_buf(n * 4);
+    const view = new Int32Array(this.ex.memory.buffer, ptr, n);
+    for (let i = 0; i < n; i++) view[i] = words[i] | 0;
+    return n;
+  }
+  private writeBytes(bytes: Uint8Array): number {
+    const ptr = this.ex.in_buf(bytes.length);
+    new Uint8Array(this.ex.memory.buffer, ptr, bytes.length).set(bytes);
+    return bytes.length;
+  }
+  private outI32(ptr: number): Int32Array {
+    const n = this.ex.out_len() >> 2;
+    return new Int32Array(this.ex.memory.buffer.slice(ptr, ptr + n * 4));
+  }
+  private outBytes(ptr: number): Uint8Array {
+    const n = this.ex.out_len();
+    return new Uint8Array(this.ex.memory.buffer.slice(ptr, ptr + n));
+  }
+  private outString(ptr: number): string {
+    const n = this.ex.out_len();
+    return dec.decode(new Uint8Array(this.ex.memory.buffer, ptr, n));
+  }
+
+  init(params: number[]): number {
+    return this.ex.init(this.writeI32(params)) >>> 0;
+  }
+  /** Applique les ordres du tick (format plat i32) et renvoie le hash d'état. */
+  step(orders: ArrayLike<number>): number {
+    return this.ex.step(this.writeI32(orders)) >>> 0;
+  }
+  render(x0: number, y0: number, x1: number, y1: number, detail: number, player: number, withVis: boolean): Int32Array {
+    return this.outI32(this.ex.render_buffer(x0, y0, x1, y1, detail, player, withVis ? 1 : 0));
+  }
+  snapshot(): Uint8Array {
+    return this.outBytes(this.ex.snapshot());
+  }
+  restore(bytes: Uint8Array): number {
+    return this.ex.restore(this.writeBytes(bytes)) >>> 0;
+  }
+  dataJson(): string {
+    return this.outString(this.ex.data_json());
+  }
+  mapInfo(): Int32Array {
+    return this.outI32(this.ex.map_info());
+  }
+  mapHeights(): Uint8Array {
+    return this.outBytes(this.ex.map_heights());
+  }
+  botDump(): Int32Array {
+    return this.outI32(this.ex.bot_dump());
+  }
+  infoBuilding(ref: number): unknown {
+    return JSON.parse(this.outString(this.ex.info_building(ref >>> 0)));
+  }
+  infoUnit(id: number): unknown {
+    return JSON.parse(this.outString(this.ex.info_unit(id >>> 0)));
+  }
+  canPlace(owner: number, kind: number, x: number, y: number, dir: number): boolean {
+    return this.ex.can_place(owner, kind, x, y, dir) !== 0;
+  }
+  tileInfo(x: number, y: number): number {
+    return this.ex.tile_info(x, y);
+  }
+  buildingAt(x: number, y: number): number {
+    return this.ex.building_at(x, y) >>> 0;
+  }
+  tilePass(x: number, y: number): number {
+    return this.ex.tile_pass(x, y);
+  }
+  tick(): number {
+    return this.ex.current_tick() >>> 0;
+  }
+  hash(): number {
+    return this.ex.state_hash() >>> 0;
+  }
+}

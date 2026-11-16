@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./target/**)",
+      "Read(./**/dist/**)",
+      "Read(./**/node_modules/**)",
+      "Read(./**/*.wasm)",
+      "Read(./**/*.glb)",
+      "Read(./**/*.gltf)"
+    ]
+  }
+}

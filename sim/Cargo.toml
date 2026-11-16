@@ -1,0 +1,36 @@
+[package]
+name = "sim"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+overflow-checks = false
+
+[profile.test]
+opt-level = 2
+
+[lints.clippy]
+float_arithmetic = "deny"
+disallowed_types = "deny"
+too_many_arguments = "allow"
+type_complexity = "allow"
+needless_range_loop = "allow"
+new_without_default = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+manual_range_contains = "allow"
+missing_safety_doc = "allow"
+large_enum_variant = "allow"
+comparison_chain = "allow"
+len_without_is_empty = "allow"
+if_same_then_else = "allow"
+same_item_push = "allow"

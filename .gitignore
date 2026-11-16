@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+*.wasm
+!packages/client/public/.keep
+data/
+replays/
+desync/
+tools/viewer/captures/

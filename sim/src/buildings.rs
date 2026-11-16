@@ -1,0 +1,937 @@
+//! Bâtiments : pose, construction, production, bras, laboratoires, usines, réseau électrique.
+//! Un bâtiment qui attend un ingrédient ou de la place est mis en sommeil (champ `wake`)
+//! et réveillé par l'événement qu'il attend.
+
+use crate::belts::{self, DIRS};
+use crate::data::*;
+use crate::fixed::TILE;
+use crate::map::P_LAND;
+use crate::world::*;
+
+const SLEEP: u32 = 60;
+pub const RECIPE_SCALE: u32 = 100 * 1024;
+
+#[inline]
+fn needs_tick(c: BClass) -> bool {
+    matches!(
+        c,
+        BClass::Extractor | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon
+    )
+}
+
+#[inline]
+fn in_grid(c: BClass) -> bool {
+    !matches!(c, BClass::Belt | BClass::Inserter)
+}
+
+/// Dimensions d'un bâtiment selon l'orientation.
+pub fn dims(kind: u16, dir: u8) -> (i32, i32) {
+    let (w, h) = bdef(kind).size;
+    if dir & 1 == 1 {
+        (h as i32, w as i32)
+    } else {
+        (w as i32, h as i32)
+    }
+}
+
+/// Case juste devant le bâtiment (sortie).
+pub fn front_tile(x: i32, y: i32, w: i32, h: i32, dir: u8) -> (i32, i32) {
+    match dir & 3 {
+        0 => (x + w, y + (h - 1) / 2),
+        1 => (x + (w - 1) / 2, y + h),
+        2 => (x - 1, y + (h - 1) / 2),
+        _ => (x + (w - 1) / 2, y - 1),
+    }
+}
+
+pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bool {
+    if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
+        return false;
+    }
+    let def = bdef(kind);
+    if !w.players[owner as usize].has_tech(def.tech) {
+        return false;
+    }
+    let (bw, bh) = dims(kind, dir);
+    if x < 1 || y < 1 || x + bw > w.map.w - 1 || y + bh > w.map.h - 1 {
+        return false;
+    }
+    for ty in y..y + bh {
+        for tx in x..x + bw {
+            let i = w.map.idx(tx, ty);
+            if w.map.occ[i] != 0 || w.map.cliff[i] != 0 {
+                return false;
+            }
+            let water = w.map.height[i] < w.map.water_level;
+            if def.water != water {
+                return false;
+            }
+            if def.deposit == 0 && w.map.deposit[i] != 0 {
+                return false;
+            }
+        }
+    }
+    if def.deposit != 0 {
+        let ok = w.map.spots.iter().any(|s| (def.deposit == 255 || s.kind == def.deposit) && s.x >= x && s.y >= y && s.x + 2 <= x + bw && s.y + 2 <= y + bh);
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
+    if !can_place(w, owner, kind, x, y, dir) {
+        return None;
+    }
+    let def = bdef(kind);
+    let (bw, bh) = dims(kind, dir);
+    let slot = if let Some(s) = w.bfree.pop() {
+        s as usize
+    } else {
+        w.buildings.push(Building::default());
+        w.buildings.len() - 1
+    };
+    let gen = w.buildings[slot].gen.wrapping_add(1);
+    let mut recipe = RECIPE_NONE;
+    if def.class == BClass::Extractor {
+        recipe = w.map.deposit[w.map.idx(x, y)];
+        for ty in y..y + bh {
+            for tx in x..x + bw {
+                let d = w.map.deposit[w.map.idx(tx, ty)];
+                if d != 0 {
+                    recipe = d;
+                }
+            }
+        }
+    }
+    let (fx, fy) = front_tile(x, y, bw, bh, dir);
+    w.buildings[slot] = Building {
+        alive: true,
+        gen,
+        kind,
+        owner,
+        dir: dir & 3,
+        x,
+        y,
+        hp: (def.hp / 10).max(1),
+        build: 0,
+        recipe,
+        line: NONE,
+        target: NONE,
+        link: NONE,
+        rally: (fx * TILE + TILE / 2 + DIRS[(dir & 3) as usize].0 * TILE * 3, fy * TILE + TILE / 2 + DIRS[(dir & 3) as usize].1 * TILE * 3),
+        enabled: true,
+        ..Building::default()
+    };
+    for ty in y..y + bh {
+        for tx in x..x + bw {
+            let i = w.map.idx(tx, ty);
+            w.map.occ[i] = slot as u32 + 1;
+            if !def.passable {
+                w.map.update_pass_with(tx, ty, true);
+            }
+        }
+    }
+    if !def.passable {
+        crate::flow::mark_dirty(w, x, y, bw, bh);
+    }
+    if in_grid(def.class) {
+        w.grid.add_building(slot as u32, x, y, bw, bh);
+    }
+    if needs_tick(def.class) {
+        if let Err(p) = w.active.binary_search(&(slot as u32)) {
+            w.active.insert(p, slot as u32);
+        }
+    }
+    w.buildings_version = w.buildings_version.wrapping_add(1);
+    Some(slot)
+}
+
+pub fn complete_building(w: &mut World, b: usize) {
+    let bb = &mut w.buildings[b];
+    bb.build = BUILD_FULL;
+    bb.hp = bb.def().hp;
+    bb.wake = 0;
+    let def = bb.def();
+    if def.shield_hp > 0 {
+        bb.shield = def.shield_hp / 2;
+    }
+    let (x, y, owner, kind) = (bb.x, bb.y, bb.owner, bb.kind);
+    if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 {
+        w.power_dirty = true;
+    }
+    if def.class == BClass::Belt {
+        belts::rebuild_around(w, &[(x, y)]);
+    }
+    w.buildings_version = w.buildings_version.wrapping_add(1);
+    w.ev(EV_BUILT, owner as i32, kind as i32, x, y);
+}
+
+pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
+    let (x, y, kind) = (w.buildings[b].x, w.buildings[b].y, w.buildings[b].kind);
+    let (bw, bh) = w.buildings[b].size();
+    let def = bdef(kind);
+    w.buildings[b].alive = false;
+    for ty in y..y + bh {
+        for tx in x..x + bw {
+            let i = w.map.idx(tx, ty);
+            if w.map.occ[i] == b as u32 + 1 {
+                w.map.occ[i] = 0;
+                w.map.update_pass_with(tx, ty, false);
+            }
+        }
+    }
+    if !def.passable {
+        crate::flow::mark_dirty(w, x, y, bw, bh);
+    }
+    if in_grid(def.class) {
+        w.grid.remove_building(b as u32, x, y, bw, bh);
+    }
+    if let Ok(p) = w.active.binary_search(&(b as u32)) {
+        w.active.remove(p);
+    }
+    if def.class == BClass::Belt {
+        belts::rebuild_around(w, &[(x, y)]);
+    }
+    if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 {
+        w.power_dirty = true;
+    }
+    if with_wreck && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
+        let (cx, cy) = w.buildings[b].center();
+        w.spawn_wreck(cx, cy, def.cost, (bw.max(bh)) as u8);
+    }
+    w.buildings[b].watchers.clear();
+    w.buildings[b].queue.clear();
+    w.bfree.push(b as u32);
+    w.buildings_version = w.buildings_version.wrapping_add(1);
+}
+
+// ---------- Réseau électrique ----------
+pub fn rebuild_power(w: &mut World) {
+    w.power_dirty = false;
+    let np = w.players.len();
+    w.nets.clear();
+    w.nets.push(Net::default());
+    let mut stamp: Vec<u16> = vec![0; (w.map.w * w.map.h) as usize];
+    for owner in 0..np as u8 {
+        let poles: Vec<usize> = (0..w.buildings.len())
+            .filter(|&i| {
+                let b = &w.buildings[i];
+                b.alive && b.owner == owner && b.complete() && b.def().supply > 0
+            })
+            .collect();
+        // union-find
+        let mut parent: Vec<usize> = (0..poles.len()).collect();
+        fn find(p: &mut [usize], i: usize) -> usize {
+            let mut r = i;
+            while p[r] != r {
+                r = p[r];
+            }
+            let mut c = i;
+            while p[c] != r {
+                let n = p[c];
+                p[c] = r;
+                c = n;
+            }
+            r
+        }
+        for i in 0..poles.len() {
+            let (ax, ay) = w.buildings[poles[i]].center();
+            let ca = w.buildings[poles[i]].def().connect;
+            for j in (i + 1)..poles.len() {
+                let (bx, by) = w.buildings[poles[j]].center();
+                let r = ca.min(w.buildings[poles[j]].def().connect) * TILE;
+                if crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64) {
+                    let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
+                    if ra != rb {
+                        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                        parent[hi] = lo;
+                    }
+                }
+            }
+        }
+        let mut root_net: Vec<u16> = vec![0; poles.len()];
+        for i in 0..poles.len() {
+            let r = find(&mut parent, i);
+            if root_net[r] == 0 {
+                w.nets.push(Net { sat: 1024, owner, ..Net::default() });
+                root_net[r] = (w.nets.len() - 1) as u16;
+            }
+            root_net[i] = root_net[r];
+        }
+        // tamponner les zones d'alimentation
+        let mut stamped: Vec<usize> = Vec::new();
+        for i in 0..poles.len() {
+            let b = &w.buildings[poles[i]];
+            let (bw, bh) = b.size();
+            let s = b.def().supply;
+            for ty in (b.y - s).max(0)..(b.y + bh + s).min(w.map.h) {
+                for tx in (b.x - s).max(0)..(b.x + bw + s).min(w.map.w) {
+                    let k = (ty * w.map.w + tx) as usize;
+                    if stamp[k] == 0 {
+                        stamp[k] = root_net[i];
+                        stamped.push(k);
+                    }
+                }
+            }
+        }
+        for bi in 0..w.buildings.len() {
+            let b = &w.buildings[bi];
+            if !b.alive || b.owner != owner {
+                continue;
+            }
+            let def = b.def();
+            if def.power_use == 0 && def.power_prod == 0 && def.supply == 0 {
+                w.buildings[bi].net = 0;
+                continue;
+            }
+            let (bw, bh) = b.size();
+            let mut net = 0u16;
+            'outer: for ty in b.y..b.y + bh {
+                for tx in b.x..b.x + bw {
+                    let k = (ty * w.map.w + tx) as usize;
+                    if stamp[k] != 0 {
+                        net = stamp[k];
+                        break 'outer;
+                    }
+                }
+            }
+            if b.complete() && def.power_prod > 0 && net != 0 {
+                w.nets[net as usize].prod += def.power_prod;
+            }
+            w.buildings[bi].net = net;
+            if net != 0 {
+                w.buildings[bi].wake = 0;
+            }
+        }
+        for k in stamped {
+            stamp[k] = 0;
+        }
+    }
+}
+
+pub fn power_tick(w: &mut World) {
+    for p in w.players.iter_mut() {
+        p.power_prod = 0;
+        p.power_use = 0;
+    }
+    for n in w.nets.iter_mut().skip(1) {
+        n.demand = n.demand_next;
+        n.demand_next = 0;
+        n.sat = if n.demand <= 0 { 1024 } else { ((n.prod as i64 * 1024 / n.demand as i64) as i32).min(1024) };
+        if let Some(p) = w.players.get_mut(n.owner as usize) {
+            p.power_prod += n.prod;
+            p.power_use += n.demand;
+        }
+    }
+}
+
+/// Consomme l'énergie du bâtiment pour ce tick et renvoie la satisfaction (0..1024).
+#[inline]
+pub fn use_power(w: &mut World, b: usize, amount: i32) -> i32 {
+    let n = w.buildings[b].net as usize;
+    if n == 0 || n >= w.nets.len() {
+        return 0;
+    }
+    w.nets[n].demand_next += amount;
+    w.nets[n].sat
+}
+
+#[inline]
+fn wake_watchers(w: &mut World, b: usize) {
+    let ws = std::mem::take(&mut w.buildings[b].watchers);
+    for i in ws {
+        if let Some(x) = w.buildings.get_mut(i as usize) {
+            x.wake = 0;
+        }
+    }
+}
+
+fn watch(w: &mut World, target: usize, me: usize) {
+    let v = &mut w.buildings[target].watchers;
+    if !v.contains(&(me as u32)) && v.len() < 16 {
+        v.push(me as u32);
+    }
+}
+
+// ---------- Entrées / sorties d'objets ----------
+fn recipe_for(w: &World, b: &Building, item: u8) -> u8 {
+    let cr = b.def().crafter;
+    let p = &w.players[b.owner as usize];
+    for (i, r) in RECIPES.iter().enumerate() {
+        if r.crafter == cr && p.has_tech(r.tech) && r.inputs.iter().any(|x| x.0 == item) {
+            return i as u8;
+        }
+    }
+    RECIPE_NONE
+}
+
+fn cost_slot(cost: &[(u8, u16)], item: u8) -> Option<usize> {
+    cost.iter().position(|c| c.0 == item)
+}
+
+/// Le bâtiment accepte-t-il cet objet (par un bras ou un tapis) ?
+pub fn accepts(w: &World, b: usize, item: u8) -> bool {
+    let bb = &w.buildings[b];
+    if !bb.alive || !bb.complete() || item == 0 {
+        return false;
+    }
+    match bb.def().class {
+        BClass::Depot => true,
+        BClass::Crafter => {
+            if bb.recipe == RECIPE_NONE {
+                bb.def().crafter != Crafter::Assembler && recipe_for(w, bb, item) != RECIPE_NONE
+            } else {
+                let r = &RECIPES[bb.recipe as usize];
+                if let Some(j) = r.inputs.iter().position(|x| x.0 == item) {
+                    (bb.inv[j] as u32) < r.inputs[j].1 as u32 * 2 + 1
+                } else {
+                    // une fonderie vide peut changer de recette
+                    // (sauf si la recette a été fixée par le joueur : `repeat` sert de verrou pour les fabricants)
+                    !bb.repeat && bb.def().crafter != Crafter::Assembler && !bb.working && bb.out == 0 && bb.inv.iter().all(|&x| x == 0) && recipe_for(w, bb, item) != RECIPE_NONE
+                }
+            }
+        }
+        BClass::Lab => (PACK1..PACK1 + 6).contains(&item) && bb.inv[(item - PACK1) as usize] < 2,
+        BClass::Factory => {
+            if let Some(&(k, _)) = bb.queue.first() {
+                let cost = udef(k).cost;
+                if let Some(j) = cost_slot(cost, item) {
+                    return bb.inv[j] < cost[j].1;
+                }
+            }
+            false
+        }
+        BClass::Silo => cost_slot(MISSILE_COST, item).is_some_and(|j| bb.inv[j] < MISSILE_COST[j].1),
+        BClass::AntiMissile => cost_slot(INTERCEPTOR_COST, item).is_some_and(|j| bb.inv[j] < INTERCEPTOR_COST[j].1),
+        _ => false,
+    }
+}
+
+pub fn insert_item(w: &mut World, b: usize, item: u8) {
+    let class = w.buildings[b].def().class;
+    match class {
+        BClass::Depot => {
+            let o = w.buildings[b].owner as usize;
+            w.players[o].stock[item as usize] += 1;
+        }
+        BClass::Crafter => {
+            let need_switch = {
+                let bb = &w.buildings[b];
+                bb.recipe == RECIPE_NONE || !RECIPES[bb.recipe as usize].inputs.iter().any(|x| x.0 == item)
+            };
+            if need_switch {
+                let r = recipe_for(w, &w.buildings[b], item);
+                w.buildings[b].recipe = r;
+                w.buildings[b].inv = [0; 6];
+            }
+            let bb = &mut w.buildings[b];
+            if bb.recipe != RECIPE_NONE {
+                if let Some(j) = RECIPES[bb.recipe as usize].inputs.iter().position(|x| x.0 == item) {
+                    bb.inv[j] += 1;
+                }
+            }
+        }
+        BClass::Lab => {
+            w.buildings[b].inv[(item - PACK1) as usize] += 1;
+        }
+        BClass::Factory => {
+            if let Some(&(k, _)) = w.buildings[b].queue.first() {
+                if let Some(j) = cost_slot(udef(k).cost, item) {
+                    w.buildings[b].inv[j] += 1;
+                }
+            }
+        }
+        BClass::Silo => {
+            if let Some(j) = cost_slot(MISSILE_COST, item) {
+                w.buildings[b].inv[j] += 1;
+            }
+        }
+        BClass::AntiMissile => {
+            if let Some(j) = cost_slot(INTERCEPTOR_COST, item) {
+                w.buildings[b].inv[j] += 1;
+            }
+        }
+        _ => {}
+    }
+    w.buildings[b].wake = 0;
+}
+
+/// Objet produit disponible en sortie du bâtiment.
+fn output_of(b: &Building) -> u8 {
+    match b.def().class {
+        BClass::Crafter if b.recipe != RECIPE_NONE && b.out > 0 => RECIPES[b.recipe as usize].output.0,
+        BClass::Extractor if b.out > 0 => b.recipe,
+        _ => 0,
+    }
+}
+
+fn take_output(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
+    let it = output_of(&w.buildings[b]);
+    if it != 0 && want[it as usize] {
+        w.buildings[b].out -= 1;
+        w.buildings[b].wake = 0;
+        return it;
+    }
+    0
+}
+
+/// Pousse un objet vers la case (x, y) : tapis ou bâtiment qui l'accepte.
+fn push_to(w: &mut World, x: i32, y: i32, item: u8) -> bool {
+    if !w.map.inside(x, y) {
+        return false;
+    }
+    let o = w.map.occ[w.map.idx(x, y)];
+    if o == 0 {
+        return false;
+    }
+    let t = (o - 1) as usize;
+    if !w.buildings[t].complete() {
+        return false;
+    }
+    if w.buildings[t].def().class == BClass::Belt {
+        return belts::put_on_belt(w, t, item);
+    }
+    if accepts(w, t, item) {
+        insert_item(w, t, item);
+        wake_watchers(w, t);
+        return true;
+    }
+    false
+}
+
+// ---------- Mise à jour ----------
+pub fn update_buildings(w: &mut World) {
+    let mut i = 0;
+    while i < w.active.len() {
+        let b = w.active[i] as usize;
+        i += 1;
+        let bb = &w.buildings[b];
+        if !bb.alive || !bb.complete() || w.tick < bb.wake {
+            continue;
+        }
+        if bb.stun > 0 {
+            w.buildings[b].stun -= 1;
+            continue;
+        }
+        match bb.def().class {
+            BClass::Extractor => tick_extractor(w, b),
+            BClass::Inserter => tick_inserter(w, b),
+            BClass::Crafter => tick_crafter(w, b),
+            BClass::Lab => tick_lab(w, b),
+            BClass::Factory => tick_factory(w, b),
+            BClass::Turret => {
+                let need = bb.def().power_use;
+                let ok = need == 0 || use_power(w, b, need) > 512;
+                if ok {
+                    crate::combat::building_weapon(w, b);
+                }
+            }
+            BClass::Shield => tick_shield(w, b),
+            BClass::Silo => tick_ammo_builder(w, b, MISSILE_COST, 1, 1200),
+            BClass::AntiMissile => {
+                tick_ammo_builder(w, b, INTERCEPTOR_COST, 3, 400);
+                crate::combat::antimissile(w, b);
+            }
+            BClass::Orbital => {
+                let need = bdef(B_ORBITAL).power_use;
+                let s = use_power(w, b, need);
+                let bb = &mut w.buildings[b];
+                bb.charge = (bb.charge + s as u32).min(60 * 20 * 1024);
+                bb.working = s > 0;
+            }
+            BClass::Gate => tick_gate(w, b),
+            BClass::Transfer | BClass::Radar | BClass::Beacon => {
+                let need = bb.def().power_use;
+                let s = use_power(w, b, need);
+                let bb = &mut w.buildings[b];
+                bb.working = s >= 512;
+                if bb.cooldown > 0 {
+                    bb.cooldown -= 1;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn tick_extractor(w: &mut World, b: usize) {
+    let owner = w.buildings[b].owner as usize;
+    if w.buildings[b].out > 0 {
+        let (x, y, bw, bh, dir) = {
+            let bb = &w.buildings[b];
+            let (bw, bh) = bb.size();
+            (bb.x, bb.y, bw, bh, bb.dir)
+        };
+        let (fx, fy) = front_tile(x, y, bw, bh, dir);
+        let it = w.buildings[b].recipe;
+        if push_to(w, fx, fy, it) {
+            w.buildings[b].out -= 1;
+            wake_watchers(w, b);
+        } else {
+            if w.buildings[b].out >= 5 {
+                w.buildings[b].wake = w.tick + 5;
+                w.buildings[b].working = false;
+                return;
+            }
+        }
+    }
+    let s = use_power(w, b, bdef(B_EXTRACTOR).power_use);
+    let mult = w.players[owner].res_mult as u32;
+    let bb = &mut w.buildings[b];
+    bb.working = s > 0;
+    bb.progress += s as u32 * mult;
+    if bb.progress >= 30 * RECIPE_SCALE {
+        bb.progress -= 30 * RECIPE_SCALE;
+        bb.out += 1;
+        let it = bb.recipe as usize;
+        w.players[owner].produced[it] += 1;
+    }
+}
+
+fn tick_crafter(w: &mut World, b: usize) {
+    let r = w.buildings[b].recipe;
+    if r == RECIPE_NONE {
+        w.buildings[b].working = false;
+        w.buildings[b].wake = w.tick + SLEEP;
+        return;
+    }
+    let rec = &RECIPES[r as usize];
+    if !w.buildings[b].working {
+        let on = rec.output.1 as u16;
+        let cap = (on * 3).max(4);
+        let bb = &w.buildings[b];
+        let has = rec.inputs.iter().enumerate().all(|(j, x)| bb.inv[j] >= x.1 as u16);
+        if bb.out + on > cap || !has {
+            w.buildings[b].wake = w.tick + SLEEP;
+            return;
+        }
+        let owner = bb.owner as usize;
+        let bb = &mut w.buildings[b];
+        for (j, x) in rec.inputs.iter().enumerate() {
+            bb.inv[j] -= x.1 as u16;
+            w.players[owner].consumed[x.0 as usize] += x.1 as u32;
+        }
+        bb.working = true;
+        bb.progress = 0;
+        wake_watchers(w, b);
+    }
+    let speed = w.buildings[b].def().speed as u32;
+    let use_ = w.buildings[b].def().power_use;
+    let s = use_power(w, b, use_);
+    let bb = &mut w.buildings[b];
+    bb.progress += speed * s as u32;
+    if bb.progress >= rec.time as u32 * RECIPE_SCALE {
+        bb.working = false;
+        bb.out += rec.output.1 as u16;
+        let owner = bb.owner as usize;
+        w.players[owner].produced[rec.output.0 as usize] += rec.output.1 as u32;
+        wake_watchers(w, b);
+    }
+}
+
+fn tick_lab(w: &mut World, b: usize) {
+    let owner = w.buildings[b].owner as usize;
+    if !w.buildings[b].working {
+        let t = w.players[owner].research;
+        if t == 0 {
+            w.buildings[b].wake = w.tick + 20;
+            return;
+        }
+        let tier = TECHS[t as usize].tier as usize;
+        let has = (0..tier).all(|k| w.buildings[b].inv[k] > 0);
+        if !has {
+            w.buildings[b].wake = w.tick + SLEEP;
+            return;
+        }
+        for k in 0..tier {
+            w.buildings[b].inv[k] -= 1;
+            w.players[owner].consumed[PACK1 as usize + k] += 1;
+        }
+        let bb = &mut w.buildings[b];
+        bb.working = true;
+        bb.progress = 0;
+        bb.tech = t;
+        wake_watchers(w, b);
+    }
+    let s = use_power(w, b, bdef(B_LAB).power_use);
+    let bb = &mut w.buildings[b];
+    bb.progress += s as u32 * 100;
+    let t = bb.tech;
+    let need = TECHS[t as usize].time as u32 * 20 * RECIPE_SCALE;
+    if bb.progress >= need {
+        bb.working = false;
+        let p = &mut w.players[owner];
+        if p.research == t && !p.has_tech(t) {
+            p.tech_progress[t as usize] += 1;
+            if p.tech_progress[t as usize] >= TECHS[t as usize].count {
+                p.researched |= 1u64 << t;
+                p.research = 0;
+                w.ev(EV_RESEARCH, owner as i32, t as i32, 0, 0);
+                if t == T_CMD_SHIELD {
+                    let c = w.players[owner].commander;
+                    if let Some(s) = w.unit(c) {
+                        w.units.cold[s].shield = 4000;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn tick_factory(w: &mut World, b: usize) {
+    let owner = w.buildings[b].owner as usize;
+    let Some(&(kind, _)) = w.buildings[b].queue.first() else {
+        w.buildings[b].working = false;
+        w.buildings[b].wake = w.tick + SLEEP;
+        return;
+    };
+    let def = udef(kind);
+    if !w.buildings[b].working {
+        let has = def.cost.iter().enumerate().all(|(j, c)| w.buildings[b].inv[j] >= c.1);
+        if !has || w.players[owner].unit_count >= UNIT_CAP {
+            w.buildings[b].wake = w.tick + SLEEP;
+            return;
+        }
+        for (j, c) in def.cost.iter().enumerate() {
+            w.buildings[b].inv[j] -= c.1;
+            w.players[owner].consumed[c.0 as usize] += c.1 as u32;
+        }
+        w.buildings[b].working = true;
+        w.buildings[b].progress = 0;
+        wake_watchers(w, b);
+    }
+    let use_ = w.buildings[b].def().power_use;
+    let s = use_power(w, b, use_);
+    let mult = w.players[owner].build_mult as u32;
+    w.buildings[b].progress += s as u32 * mult;
+    if w.buildings[b].progress >= def.build as u32 * 20 * RECIPE_SCALE {
+        w.buildings[b].working = false;
+        // sortie de l'unité
+        let bb = &w.buildings[b];
+        let (bw, bh) = bb.size();
+        let (fx, fy) = front_tile(bb.x, bb.y, bw, bh, bb.dir);
+        let (mut sx, mut sy) = (fx * TILE + TILE / 2, fy * TILE + TILE / 2);
+        if def.layer == Layer::Air {
+            let c = bb.center();
+            sx = c.0;
+            sy = c.1;
+        }
+        let rally = bb.rally;
+        let id = w.spawn_unit(kind, owner as u8, sx, sy);
+        let s = slot_of(id);
+        w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
+        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false });
+        let bb = &mut w.buildings[b];
+        if let Some(q) = bb.queue.first_mut() {
+            q.1 = q.1.saturating_sub(1);
+            if q.1 == 0 {
+                let k = q.0;
+                bb.queue.remove(0);
+                if bb.repeat {
+                    bb.queue.push((k, 1));
+                }
+            }
+        }
+        bb.wake = 0;
+        wake_watchers(w, b);
+    }
+}
+
+#[inline]
+pub fn bb_dir_angle(dir: u8) -> i32 {
+    (dir as i32 & 3) * 16384
+}
+
+fn tick_shield(w: &mut World, b: usize) {
+    let use_ = w.buildings[b].def().power_use;
+    let s = use_power(w, b, use_);
+    let bb = &mut w.buildings[b];
+    let max = bb.def().shield_hp;
+    bb.working = s >= 512;
+    if bb.shield_down > 0 {
+        bb.shield_down -= 1;
+        if bb.shield_down == 0 {
+            bb.shield = max / 4;
+        }
+        return;
+    }
+    if bb.working && bb.enabled {
+        bb.shield = (bb.shield + max / 400).min(max);
+    }
+}
+
+fn tick_ammo_builder(w: &mut World, b: usize, cost: &[(u8, u16)], max: u16, ticks: u32) {
+    let use_ = w.buildings[b].def().power_use;
+    let bb = &w.buildings[b];
+    if bb.ammo >= max {
+        w.buildings[b].working = false;
+        w.buildings[b].wake = w.tick + 20;
+        return;
+    }
+    if !bb.working {
+        let has = cost.iter().enumerate().all(|(j, c)| bb.inv[j] >= c.1);
+        if !has {
+            w.buildings[b].wake = w.tick + 20;
+            return;
+        }
+        let bb = &mut w.buildings[b];
+        for (j, c) in cost.iter().enumerate() {
+            bb.inv[j] -= c.1;
+        }
+        bb.working = true;
+        bb.progress = 0;
+        wake_watchers(w, b);
+    }
+    let s = use_power(w, b, use_);
+    let bb = &mut w.buildings[b];
+    bb.progress += s as u32 * 100;
+    if bb.progress >= ticks * RECIPE_SCALE {
+        bb.working = false;
+        bb.ammo += 1;
+    }
+}
+
+fn tick_gate(w: &mut World, b: usize) {
+    let use_ = w.buildings[b].def().power_use;
+    let open = w.buildings[b].enabled && w.building(w.buildings[b].link).is_some();
+    if !open {
+        use_power(w, b, use_);
+        w.buildings[b].working = false;
+        w.buildings[b].charge = 0;
+        return;
+    }
+    // ouverture : forte consommation pendant 5 s, puis maintien
+    let charging = w.buildings[b].charge < 100;
+    let need = if charging { 4000 } else { 1500 };
+    let s = use_power(w, b, need);
+    let bb = &mut w.buildings[b];
+    if s >= 700 {
+        if charging {
+            bb.charge += 1;
+        }
+        bb.working = !charging;
+    } else {
+        bb.working = false;
+        if bb.charge > 0 {
+            bb.charge -= 1;
+        }
+    }
+}
+
+// ---------- Bras ----------
+const SWING: u16 = 6;
+
+fn tick_inserter(w: &mut World, b: usize) {
+    let (x, y, dir) = (w.buildings[b].x, w.buildings[b].y, w.buildings[b].dir);
+    let (dx, dy) = DIRS[dir as usize];
+    let (sx, sy, tx, ty) = (x - dx, y - dy, x + dx, y + dy);
+    if !w.map.inside(sx, sy) || !w.map.inside(tx, ty) {
+        w.buildings[b].wake = w.tick + SLEEP;
+        return;
+    }
+    let s = use_power(w, b, bdef(B_INSERTER).power_use);
+    if s < 256 {
+        w.buildings[b].wake = w.tick + 10;
+        return;
+    }
+    let to = w.map.occ[w.map.idx(tx, ty)];
+    let so = w.map.occ[w.map.idx(sx, sy)];
+    match w.buildings[b].phase {
+        0 => {
+            if to == 0 || so == 0 {
+                w.buildings[b].wake = w.tick + 20;
+                return;
+            }
+            let (t, sb) = ((to - 1) as usize, (so - 1) as usize);
+            if !w.buildings[t].complete() || !w.buildings[sb].complete() {
+                w.buildings[b].wake = w.tick + 20;
+                return;
+            }
+            let mut want = [false; NUM_ITEMS];
+            let tclass = w.buildings[t].def().class;
+            let mut any = false;
+            for (it, slot) in want.iter_mut().enumerate().skip(1) {
+                *slot = tclass == BClass::Belt || accepts(w, t, it as u8);
+                any |= *slot;
+            }
+            if !any {
+                watch(w, t, b);
+                w.buildings[b].wake = w.tick + SLEEP;
+                return;
+            }
+            let got = if w.buildings[sb].def().class == BClass::Belt {
+                belts::take_from_belt(w, sb, &|i| want[i as usize])
+            } else {
+                take_output(w, sb, &want)
+            };
+            if got == 0 {
+                if w.buildings[sb].def().class == BClass::Belt {
+                    w.buildings[b].wake = w.tick + 3;
+                } else {
+                    watch(w, sb, b);
+                    w.buildings[b].wake = w.tick + SLEEP;
+                }
+                return;
+            }
+            if w.buildings[sb].def().class != BClass::Belt {
+                wake_watchers(w, sb);
+            }
+            let bb = &mut w.buildings[b];
+            bb.hand = got;
+            bb.phase = 1;
+            bb.timer = SWING;
+            bb.working = true;
+        }
+        1 => {
+            let bb = &mut w.buildings[b];
+            bb.timer = bb.timer.saturating_sub(1);
+            if bb.timer == 0 {
+                bb.phase = 2;
+            }
+        }
+        2 => {
+            let item = w.buildings[b].hand;
+            if push_to(w, tx, ty, item) {
+                let bb = &mut w.buildings[b];
+                bb.hand = 0;
+                bb.phase = 3;
+                bb.timer = SWING;
+            } else if to != 0 && w.buildings[(to - 1) as usize].def().class != BClass::Belt {
+                watch(w, (to - 1) as usize, b);
+                w.buildings[b].wake = w.tick + SLEEP;
+            } else {
+                w.buildings[b].wake = w.tick + 3;
+            }
+        }
+        _ => {
+            let bb = &mut w.buildings[b];
+            bb.timer = bb.timer.saturating_sub(1);
+            if bb.timer == 0 {
+                bb.phase = 0;
+                bb.working = false;
+            }
+        }
+    }
+}
+
+/// Trouve une case libre (passable) près de (x, y) pour la couche donnée.
+pub fn free_spot_near(w: &World, x: i32, y: i32, mask: u8) -> (i32, i32) {
+    let tx = x / TILE;
+    let ty = y / TILE;
+    for r in 0..12i32 {
+        for dy in -r..=r {
+            for dx in -r..=r {
+                if dx.abs() != r && dy.abs() != r {
+                    continue;
+                }
+                if w.map.passable(tx + dx, ty + dy, mask) {
+                    return ((tx + dx) * TILE + TILE / 2, (ty + dy) * TILE + TILE / 2);
+                }
+            }
+        }
+    }
+    let _ = P_LAND;
+    (x, y)
+}

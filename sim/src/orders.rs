@@ -1,0 +1,458 @@
+//! Décodage et application des ordres des joueurs. Format : suite de [longueur, type, joueur, ...].
+//! Un ordre ne porte que sur les unités et bâtiments du joueur qui l'envoie.
+
+use crate::buildings;
+use crate::data::*;
+use crate::fixed::{dist2, TILE};
+use crate::units::{clear_orders, pop_order};
+use crate::world::*;
+
+pub const O_MOVE: i32 = 1;
+pub const O_ATTACK: i32 = 2;
+pub const O_BUILD: i32 = 3;
+pub const O_ASSIST: i32 = 4;
+pub const O_RECLAIM: i32 = 5;
+pub const O_STOP: i32 = 6;
+pub const O_FACTORY_QUEUE: i32 = 7;
+pub const O_FACTORY_REPEAT: i32 = 8;
+pub const O_SET_RECIPE: i32 = 9;
+pub const O_RESEARCH: i32 = 10;
+pub const O_RALLY: i32 = 11;
+pub const O_ATTACK_GROUND: i32 = 12;
+pub const O_DEPLOY: i32 = 13;
+pub const O_LOAD: i32 = 14;
+pub const O_UNLOAD: i32 = 15;
+pub const O_SPECIAL: i32 = 16;
+pub const O_PATROL: i32 = 17;
+pub const O_TOGGLE: i32 = 18;
+pub const O_CANCEL: i32 = 19;
+pub const O_SURRENDER: i32 = 20;
+
+struct Cur<'a> {
+    a: &'a [i32],
+    i: usize,
+}
+impl Cur<'_> {
+    fn next(&mut self) -> i32 {
+        let v = self.a.get(self.i).copied().unwrap_or(0);
+        self.i += 1;
+        v
+    }
+}
+
+fn own_unit(w: &World, p: u8, id: i32) -> Option<usize> {
+    let s = w.unit(id as u32)?;
+    if w.units.owner[s] == p {
+        Some(s)
+    } else {
+        None
+    }
+}
+fn own_building(w: &World, p: u8, r: i32) -> Option<usize> {
+    let b = w.building(r as u32)?;
+    if w.buildings[b].owner == p {
+        Some(b)
+    } else {
+        None
+    }
+}
+
+fn give(w: &mut World, s: usize, queue: bool, o: Order) {
+    if !queue {
+        clear_orders(w, s);
+    }
+    if w.units.cold[s].orders.is_empty() {
+        w.units.cold[s].best_dist = i32::MAX;
+        w.units.cold[s].stuck = 0;
+    }
+    if w.units.cold[s].orders.len() < 64 {
+        w.units.cold[s].orders.push(o);
+    }
+}
+
+pub fn apply_orders(w: &mut World, data: &[i32]) {
+    let mut i = 0;
+    while i < data.len() {
+        let len = data[i].max(0) as usize;
+        let end = (i + 1 + len).min(data.len());
+        let cmd = &data[i + 1..end];
+        i = end;
+        if cmd.len() < 2 {
+            continue;
+        }
+        let p = cmd[1];
+        if p < 0 || p as usize >= w.players.len() || !w.players[p as usize].alive {
+            continue;
+        }
+        apply_one(w, p as u8, cmd[0], Cur { a: cmd, i: 2 });
+    }
+}
+
+fn units_list(c: &mut Cur) -> Vec<i32> {
+    let n = c.next().clamp(0, 2000) as usize;
+    (0..n).map(|_| c.next()).collect()
+}
+
+fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
+    match t {
+        O_MOVE => {
+            let flags = c.next();
+            let (gx, gy) = (c.next(), c.next());
+            let n = c.next().clamp(0, 2000);
+            for _ in 0..n {
+                let (id, tx, ty) = (c.next(), c.next(), c.next());
+                if let Some(s) = own_unit(w, p, id) {
+                    let mx = w.map.w * TILE - 1;
+                    let my = w.map.h * TILE - 1;
+                    let o = Order::Move { x: tx.clamp(0, mx), y: ty.clamp(0, my), gx: gx.clamp(0, mx), gy: gy.clamp(0, my), attack: flags & 2 != 0 };
+                    give(w, s, flags & 1 != 0, o);
+                }
+            }
+        }
+        O_ATTACK | O_ASSIST | O_RECLAIM => {
+            let q = c.next() & 1 != 0;
+            let target = c.next() as u32;
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    let o = match t {
+                        O_ATTACK => Order::Attack { target },
+                        O_ASSIST => Order::Assist { target },
+                        _ => Order::Reclaim { target },
+                    };
+                    give(w, s, q, o);
+                }
+            }
+        }
+        O_BUILD => {
+            let q = c.next() & 1 != 0;
+            let (kind, x, y, dir) = (c.next(), c.next(), c.next(), c.next());
+            if kind < 0 || kind as usize >= BUILDINGS.len() || !w.players[p as usize].has_tech(bdef(kind as u16).tech) {
+                return;
+            }
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if udef(w.units.kind[s]).build_power > 0 {
+                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 3) as u8, bid: 0 });
+                    }
+                }
+            }
+        }
+        O_STOP => {
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    clear_orders(w, s);
+                    w.units.cold[s].wtarget = [NONE; 2];
+                }
+            }
+        }
+        O_FACTORY_QUEUE => {
+            let (b, kind, delta) = (c.next(), c.next(), c.next());
+            let Some(b) = own_building(w, p, b) else { return };
+            if kind < 0 || kind as usize >= UNITS.len() {
+                return;
+            }
+            let ud = udef(kind as u16);
+            let bb = &w.buildings[b];
+            if bb.def().class != BClass::Factory || ud.factory != bb.def().factory || !w.players[p as usize].has_tech(ud.tech) {
+                return;
+            }
+            let front_before = bb.queue.first().map(|q| q.0);
+            let bb = &mut w.buildings[b];
+            if delta > 0 {
+                if let Some(last) = bb.queue.last_mut() {
+                    if last.0 == kind as u16 {
+                        last.1 = last.1.saturating_add(delta.min(500) as u16);
+                    } else if bb.queue.len() < 16 {
+                        bb.queue.push((kind as u16, delta.min(500) as u16));
+                    }
+                } else {
+                    bb.queue.push((kind as u16, delta.min(500) as u16));
+                }
+            } else if delta < 0 {
+                let mut rem = (-delta) as u16;
+                for k in (0..bb.queue.len()).rev() {
+                    if bb.queue[k].0 == kind as u16 && rem > 0 {
+                        let r = rem.min(bb.queue[k].1);
+                        bb.queue[k].1 -= r;
+                        rem -= r;
+                    }
+                }
+                bb.queue.retain(|q| q.1 > 0);
+            }
+            let front_after = bb.queue.first().map(|q| q.0);
+            if front_before != front_after {
+                // rendre les composants déjà livrés au stock
+                if let Some(k) = front_before {
+                    let inv = bb.inv;
+                    for (j, &(it, _)) in udef(k).cost.iter().enumerate() {
+                        w.players[p as usize].stock[it as usize] += inv[j] as i32;
+                    }
+                }
+                let bb = &mut w.buildings[b];
+                bb.inv = [0; 6];
+                bb.working = false;
+                bb.progress = 0;
+            }
+            w.buildings[b].wake = 0;
+        }
+        O_FACTORY_REPEAT => {
+            let (b, f) = (c.next(), c.next());
+            if let Some(b) = own_building(w, p, b) {
+                w.buildings[b].repeat = f != 0;
+            }
+        }
+        O_SET_RECIPE => {
+            let (b, r) = (c.next(), c.next());
+            let Some(b) = own_building(w, p, b) else { return };
+            let bb = &w.buildings[b];
+            if bb.def().class != BClass::Crafter {
+                return;
+            }
+            let ok = r == RECIPE_NONE as i32 || (r >= 0 && (r as usize) < RECIPES.len() && RECIPES[r as usize].crafter == bb.def().crafter && w.players[p as usize].has_tech(RECIPES[r as usize].tech));
+            if !ok || bb.recipe as i32 == r {
+                return;
+            }
+            // rendre le contenu au stock
+            if bb.recipe != RECIPE_NONE {
+                let rec = &RECIPES[bb.recipe as usize];
+                let inv = bb.inv;
+                let out = bb.out;
+                for (j, &(it, _)) in rec.inputs.iter().enumerate() {
+                    w.players[p as usize].stock[it as usize] += inv[j] as i32;
+                }
+                w.players[p as usize].stock[rec.output.0 as usize] += out as i32;
+            }
+            let bb = &mut w.buildings[b];
+            bb.recipe = r as u8;
+            bb.repeat = r != RECIPE_NONE as i32; // verrou de recette
+            bb.inv = [0; 6];
+            bb.out = 0;
+            bb.working = false;
+            bb.progress = 0;
+            bb.wake = 0;
+            let ws = std::mem::take(&mut bb.watchers);
+            for x in ws {
+                w.buildings[x as usize].wake = 0;
+            }
+        }
+        O_RESEARCH => {
+            let t = c.next();
+            if t < 0 || t as usize >= TECHS.len() {
+                return;
+            }
+            let pl = &w.players[p as usize];
+            let td = &TECHS[t as usize];
+            if t == 0 {
+                w.players[p as usize].research = 0;
+                return;
+            }
+            if pl.has_tech(t as u8) || !td.prereq.iter().all(|&q| pl.has_tech(q)) {
+                return;
+            }
+            w.players[p as usize].research = t as u8;
+        }
+        O_RALLY => {
+            let (b, x, y) = (c.next(), c.next(), c.next());
+            if let Some(b) = own_building(w, p, b) {
+                w.buildings[b].rally = (x.clamp(0, w.map.w * TILE - 1), y.clamp(0, w.map.h * TILE - 1));
+            }
+        }
+        O_ATTACK_GROUND | O_PATROL => {
+            let q = c.next() & 1 != 0;
+            let (x, y) = (c.next(), c.next());
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    let o = if t == O_PATROL {
+                        let (ox, oy) = (w.units.x[s], w.units.y[s]);
+                        Order::Patrol { x, y, ox, oy }
+                    } else {
+                        Order::AttackGround { x, y }
+                    };
+                    give(w, s, q, o);
+                }
+            }
+        }
+        O_DEPLOY => {
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    let k = w.units.kind[s];
+                    if k == U_SONDE || k == U_HEAVY_ARTY {
+                        clear_orders(w, s);
+                        let cd = &mut w.units.cold[s];
+                        cd.deployed = !cd.deployed;
+                    }
+                }
+            }
+        }
+        O_LOAD => {
+            let carrier = c.next();
+            let Some(cs) = own_unit(w, p, carrier) else { return };
+            let air = udef(w.units.kind[cs]).layer == Layer::Air;
+            let cid = w.unit_id(cs);
+            let list = units_list(&mut c);
+            if air {
+                clear_orders(w, cs);
+            }
+            for id in list {
+                if let Some(s) = own_unit(w, p, id) {
+                    if s == cs {
+                        continue;
+                    }
+                    if air {
+                        give(w, cs, true, Order::Load { target: id as u32 });
+                        clear_orders(w, s);
+                    } else {
+                        give(w, s, false, Order::Enter { target: cid });
+                    }
+                }
+            }
+        }
+        O_UNLOAD => {
+            let q = c.next() & 1 != 0;
+            let (x, y) = (c.next(), c.next());
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if udef(w.units.kind[s]).carry > 0 {
+                        give(w, s, q, Order::Unload { x, y });
+                    }
+                }
+            }
+        }
+        O_SPECIAL => special(w, p, c.next() as u32, c.next(), c.next(), c.next() as u32),
+        O_TOGGLE => {
+            if let Some(b) = own_building(w, p, c.next()) {
+                let bb = &mut w.buildings[b];
+                bb.enabled = !bb.enabled;
+                bb.wake = 0;
+            }
+        }
+        O_CANCEL => {
+            if let Some(b) = own_building(w, p, c.next()) {
+                if !w.buildings[b].complete() {
+                    let def = w.buildings[b].def();
+                    let paid = w.buildings[b].paid;
+                    for (k, &(it, _)) in def.cost.iter().enumerate() {
+                        w.players[p as usize].stock[it as usize] += paid[k] as i32;
+                    }
+                    buildings::remove_building(w, b, false);
+                }
+            }
+        }
+        O_SURRENDER => {
+            let c = w.players[p as usize].commander;
+            if let Some(s) = w.unit(c) {
+                w.units.hp[s] = 0;
+                w.dead_units.push(s as u32);
+            } else {
+                crate::combat::eliminate(w, p);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
+    let mx = w.map.w * TILE - 1;
+    let my = w.map.h * TILE - 1;
+    let (x, y) = (x.clamp(0, mx), y.clamp(0, my));
+    if let Some(s) = w.unit(src) {
+        if w.units.owner[s] != p {
+            return;
+        }
+        let k = w.units.kind[s];
+        if k == U_HYPER {
+            if w.building(target).is_some() {
+                clear_orders(w, s);
+                w.units.cold[s].orders.push(Order::Jump { beacon: target });
+            }
+        } else if k == U_COMMANDER {
+            clear_orders(w, s);
+            w.units.cold[s].orders.push(Order::Teleport { x, y });
+        }
+        return;
+    }
+    let Some(b) = w.building(src) else { return };
+    if w.buildings[b].owner != p || !w.buildings[b].complete() {
+        return;
+    }
+    match w.buildings[b].def().class {
+        BClass::Silo => {
+            if w.buildings[b].ammo == 0 {
+                return;
+            }
+            w.buildings[b].ammo -= 1;
+            let (cx, cy) = w.buildings[b].center();
+            let d = crate::fixed::dist(cx, cy, x, y);
+            let total = (d / 102).clamp(200, 1200) as u16;
+            w.projectiles.push(Projectile { weapon: 0, owner: p, x0: cx, y0: cy, tx: x, ty: y, target: NONE, t: 0, total, dmg: 20000, aoe: 25 * TILE, special: 1 });
+            w.ev(EV_NUKE, p as i32, x, y, total as i32);
+        }
+        BClass::Orbital => {
+            if w.buildings[b].charge < 60 * 20 * 1024 {
+                return;
+            }
+            w.buildings[b].charge = 0;
+            w.projectiles.push(Projectile { weapon: 37, owner: p, x0: x, y0: y, tx: x, ty: y, target: NONE, t: 0, total: 40, dmg: 6000, aoe: 6 * TILE, special: 2 });
+            w.ev(EV_ORBITAL, p as i32, x, y, 40);
+        }
+        BClass::Transfer => {
+            let Some(t) = w.building(target) else { return };
+            let ok = w.buildings[t].owner == p && w.buildings[t].def().class == BClass::Transfer && w.buildings[t].complete() && t != b;
+            if !ok || w.buildings[b].cooldown > 0 || !w.buildings[b].working {
+                return;
+            }
+            let (cx, cy) = w.buildings[b].center();
+            let (tx, ty) = w.buildings[t].center();
+            if dist2(cx, cy, tx, ty) > (120 * TILE as i64).pow(2) {
+                return;
+            }
+            let mut moved = 0;
+            for s in 0..w.units.alive.len() {
+                if moved >= 12 {
+                    break;
+                }
+                if !w.units.alive[s] || w.units.owner[s] != p || w.units.cold[s].carried_by != NONE {
+                    continue;
+                }
+                let l = udef(w.units.kind[s]).layer;
+                if !matches!(l, Layer::Land | Layer::Hover) || udef(w.units.kind[s]).tier == 6 {
+                    continue;
+                }
+                if dist2(w.units.x[s], w.units.y[s], cx, cy) <= (4 * TILE as i64).pow(2) {
+                    let ox = w.units.x[s] - cx;
+                    let oy = w.units.y[s] - cy;
+                    let m = crate::units::pass_mask(l);
+                    let (fx, fy) = buildings::free_spot_near(w, tx + ox, ty + oy, m);
+                    w.ev(EV_TELEPORT, w.units.x[s], w.units.y[s], fx, fy);
+                    w.units.x[s] = fx;
+                    w.units.y[s] = fy;
+                    w.units.px[s] = fx;
+                    w.units.py[s] = fy;
+                    clear_orders(w, s);
+                    moved += 1;
+                }
+            }
+            w.buildings[b].cooldown = 400;
+        }
+        BClass::Gate => {
+            let Some(t) = w.building(target) else { return };
+            if t == b || w.buildings[t].owner != p || w.buildings[t].def().class != BClass::Gate {
+                return;
+            }
+            for g in [b, t] {
+                let old = w.buildings[g].link;
+                if let Some(o) = w.building(old) {
+                    w.buildings[o].link = NONE;
+                }
+            }
+            let rb = w.building_ref(b);
+            let rt = w.building_ref(t);
+            w.buildings[b].link = rt;
+            w.buildings[t].link = rb;
+            w.buildings[b].enabled = true;
+            w.buildings[t].enabled = true;
+        }
+        _ => {}
+    }
+    let _ = pop_order;
+}

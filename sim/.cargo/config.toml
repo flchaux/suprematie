@@ -1,0 +1,3 @@
+[target.wasm32-unknown-unknown]
+# Pas de relaxed SIMD (résultats qui varient selon la machine). On garde les fonctionnalités de base.
+rustflags = ["-C", "target-feature=-relaxed-simd,+bulk-memory,+sign-ext,+mutable-globals,+nontrapping-fptoint"]

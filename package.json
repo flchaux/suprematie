@@ -1,0 +1,36 @@
+{
+  "name": "supreme",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build:sim": "node tools/build-sim.mjs",
+    "build": "npm run build:sim && npm run build -w @supreme/client",
+    "dev": "npm run build:sim && npm run dev -w @supreme/client",
+    "server": "node packages/server/src/main.ts",
+    "test": "npm run build:sim && npm run test:rust && npm run lint && npm run test:js && npm run test:determinism",
+    "test:rust": "node tools/cargo.mjs test --release",
+    "test:js": "vitest run",
+    "test:determinism": "node tools/determinism.mjs",
+    "test:browser": "node tools/browser-determinism.mjs",
+    "test:bots": "node tools/bench/bench.ts --minutes 30 --check",
+    "lint": "node tools/cargo.mjs clippy --release -- -D warnings && eslint packages",
+    "bench": "node tools/bench/bench.ts",
+    "viewer": "vite tools/viewer",
+    "viewer:capture": "node tools/viewer/capture.mjs"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "eslint": "^10.15.0",
+    "playwright": "^1.65.1",
+    "svelte": "^5.57.3",
+    "three": "^0.187.0",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "*",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "ws": "^8.23.0",
+    "@types/ws": "*",
+    "@types/three": "*"
+  }
+}

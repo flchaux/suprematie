@@ -1,0 +1,6 @@
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "ordre de parcours non déterministe : utiliser un tableau indexé ou BTreeMap" },
+  { path = "std::collections::HashSet", reason = "ordre de parcours non déterministe : utiliser un tableau indexé ou BTreeSet" },
+  { path = "std::time::Instant", reason = "pas d'horloge dans la simulation" },
+  { path = "std::time::SystemTime", reason = "pas d'horloge dans la simulation" },
+]
