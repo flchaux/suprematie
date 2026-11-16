@@ -45,12 +45,14 @@ export interface Slot {
   places: Placement[];
   ref?: number;
   cell?: boolean; // élément d'une cellule (alimenté directement par bras)
+  busOut?: boolean; // élément de cellule qui pose son produit sur le tapis
 }
 
 export interface CellComp {
   key: string; // clé du bâtiment
   du: number;
   busIn: boolean; // bras d'entrée depuis le tapis principal
+  busOut?: boolean; // bras de sortie vers le tapis principal (case du + 1)
   recipe?: string;
   faceOut?: boolean;
   type: string;
@@ -61,6 +63,8 @@ export interface CellDef {
   links: { du: number; row: number; dir: number }[]; // bras entre bâtiments (sens ±u)
   pylons: number[]; // positions des pylônes sur la rangée des bras
   width: number;
+  /** Cellule productrice (pose sur le tapis) : placée depuis la tête, comme les producteurs. */
+  producer?: boolean;
 }
 export interface CellSlot {
   side: number;
@@ -104,7 +108,75 @@ export const CELL_SCIENCE: CellDef = {
   width: 11,
 };
 
-export const CELLS: Record<string, CellDef> = { robot: CELL_ROBOT, science: CELL_SCIENCE };
+/**
+ * Cellule « science 2 » : engrenages -> lots 1 -> laboratoire <- lots 2 <- pièces de bras.
+ * Les circuits et engrenages des lots 2 viennent du tapis principal.
+ */
+export const CELL_SCIENCE2: CellDef = {
+  name: "science2",
+  comps: [
+    { key: "assembler1", du: 0, busIn: true, recipe: "gear", type: "A:gear" },
+    { key: "assembler1", du: 4, busIn: true, recipe: "pack1", type: "A:pack1" },
+    { key: "lab", du: 8, busIn: true, type: "lab" },
+    { key: "assembler1", du: 12, busIn: true, recipe: "pack2", type: "A:pack2" },
+    { key: "assembler1", du: 16, busIn: true, recipe: "arm_part", type: "A:arm_part" },
+  ],
+  links: [
+    { du: 3, row: 3, dir: 1 },
+    { du: 7, row: 3, dir: 1 },
+    { du: 11, row: 3, dir: -1 },
+    { du: 15, row: 3, dir: -1 },
+  ],
+  pylons: [3, 7, 11, 15, 19],
+  width: 20,
+};
+
+/** Cellule « science sur tapis » : lots 1 (engrenages et cuivre pris sur le tapis) -> laboratoire. */
+export const CELL_SCIENCE_BUS: CellDef = {
+  name: "sciencebus",
+  comps: [
+    { key: "assembler1", du: 0, busIn: true, recipe: "pack1", type: "A:pack1" },
+    { key: "lab", du: 4, busIn: true, type: "lab" },
+  ],
+  links: [{ du: 3, row: 3, dir: 1 }],
+  pylons: [3, 7],
+  width: 8,
+};
+
+/** Cellule productrice de circuits : câbles -> circuits -> tapis. */
+export const CELL_CIRCUITS: CellDef = {
+  name: "circuits",
+  comps: [
+    { key: "assembler1", du: 0, busIn: true, recipe: "cable", type: "A:cable" },
+    { key: "assembler1", du: 4, busIn: true, busOut: true, recipe: "circuit", type: "A:circuit" },
+  ],
+  links: [{ du: 3, row: 3, dir: 1 }],
+  pylons: [3, 7],
+  width: 8,
+  producer: true,
+};
+
+/** Cellule productrice de lots 2 : pièces de bras (tapis) -> lots 2 -> tapis. */
+export const CELL_PACK2: CellDef = {
+  name: "pack2",
+  comps: [
+    { key: "assembler1", du: 0, busIn: true, recipe: "arm_part", type: "A:arm_part" },
+    { key: "assembler1", du: 4, busIn: true, busOut: true, recipe: "pack2", type: "A:pack2" },
+  ],
+  links: [{ du: 3, row: 3, dir: 1 }],
+  pylons: [3, 7],
+  width: 8,
+  producer: true,
+};
+
+export const CELLS: Record<string, CellDef> = {
+  robot: CELL_ROBOT,
+  science: CELL_SCIENCE,
+  science2: CELL_SCIENCE2,
+  sciencebus: CELL_SCIENCE_BUS,
+  circuits: CELL_CIRCUITS,
+  pack2: CELL_PACK2,
+};
 
 export interface Module {
   id: number;
@@ -122,6 +194,7 @@ export interface Module {
   cy: number;
   full: boolean;
   feeders: number;
+  noLand?: boolean; // module converti : ses cellules de robots ne produisent plus
   use: number; // consommation prévue (kW)
   prod: number; // production prévue (kW)
   role: string;
@@ -224,34 +297,47 @@ export class Planner {
     const x0 = cx - R;
     const y0 = cy - R;
     const S = 2 * R + 1;
-    // cache des cases libres (simulation + plan)
-    const free = new Int8Array(S * S);
-    const ok = (x: number, y: number): boolean => {
-      const lx = x - x0;
-      const ly = y - y0;
-      if (lx < 0 || ly < 0 || lx >= S || ly >= S) return false;
-      const k = ly * S + lx;
-      let f = free[k];
-      if (f === 0) {
-        f = this.inside(x, y) && this.plan[this.idx(x, y)] === P_FREE && this.sim.canPlace(this.slot, this.ids.b.belt1, x, y, 0) ? 1 : -1;
-        free[k] = f;
-      }
-      return f === 1;
-    };
-    const spotIn = (x: number, y: number): boolean => {
-      const lx = x - x0;
-      const ly = y - y0;
-      if (lx < 0 || ly < 0 || lx >= S || ly >= S) return false;
-      return free[ly * S + lx] === 2;
-    };
-    for (const s of spots) {
+    // tables de sommes (cases libres, cases de gisement) pour compter un rectangle en O(1)
+    const freeS = new Int32Array((S + 1) * (S + 1));
+    const spotS = new Int32Array((S + 1) * (S + 1));
+    const spotG = new Uint8Array(S * S);
+    for (const sp of spots) {
       for (let dy = 0; dy < 2; dy++)
         for (let dx = 0; dx < 2; dx++) {
-          const lx = s.x + dx - x0;
-          const ly = s.y + dy - y0;
-          if (lx >= 0 && ly >= 0 && lx < S && ly < S) free[ly * S + lx] = 2;
+          const lx = sp.x + dx - x0;
+          const ly = sp.y + dy - y0;
+          if (lx >= 0 && ly >= 0 && lx < S && ly < S) spotG[ly * S + lx] = 1;
         }
     }
+    const belt = this.ids.b.belt1;
+    for (let ly = 0; ly < S; ly++) {
+      let rf = 0;
+      let rs = 0;
+      for (let lx = 0; lx < S; lx++) {
+        const x = x0 + lx;
+        const y = y0 + ly;
+        const f = this.inside(x, y) && this.plan[this.idx(x, y)] === P_FREE && this.sim.canPlace(this.slot, belt, x, y, 0) ? 1 : 0;
+        rf += f;
+        rs += spotG[ly * S + lx];
+        freeS[(ly + 1) * (S + 1) + lx + 1] = freeS[ly * (S + 1) + lx + 1] + rf;
+        spotS[(ly + 1) * (S + 1) + lx + 1] = spotS[ly * (S + 1) + lx + 1] + rs;
+      }
+    }
+    const rect = (T: Int32Array, xa: number, ya: number, xb: number, yb: number): number => {
+      // rectangle inclusif en coordonnées monde, borné à la boîte
+      let ax = Math.min(xa, xb) - x0;
+      let bx = Math.max(xa, xb) - x0;
+      let ay = Math.min(ya, yb) - y0;
+      let by = Math.max(ya, yb) - y0;
+      if (ax < 0) ax = 0;
+      if (ay < 0) ay = 0;
+      if (bx > S - 1) bx = S - 1;
+      if (by > S - 1) by = S - 1;
+      if (ax > bx || ay > by) return 0;
+      const W1 = S + 1;
+      return T[(by + 1) * W1 + bx + 1] - T[ay * W1 + bx + 1] - T[(by + 1) * W1 + ax] + T[ay * W1 + ax];
+    };
+    const area = (xa: number, ya: number, xb: number, yb: number) => (Math.abs(xb - xa) + 1) * (Math.abs(yb - ya) + 1);
     let fallback: { m: Module; s: number } | null = null;
     for (const L of lengths) {
       let best: Module | null = null;
@@ -263,32 +349,36 @@ export class Planner {
             const ox = cx - uc * DX[d] + voff * DX[nd];
             const oy = cy - uc * DY[d] + voff * DY[nd];
             const m = { ox, oy, d } as Module;
-            // tapis principal + case arrière + dépôt
-            let good = true;
-            for (let u = -1; u <= L + 1 && good; u++) if (!ok(this.wx(m, u, 0), this.wy(m, u, 0))) good = false;
-            for (let u = L; u <= L + 1 && good; u++) if (!ok(this.wx(m, u, 1), this.wy(m, u, 1))) good = false;
-            if (!good) continue;
+            const P = (u: number, v: number): [number, number] => [this.wx(m, u, v), this.wy(m, u, v)];
+            // tapis principal + case arrière + dépôt : tout libre
+            const [ba, bb] = P(-1, 0);
+            const [bc, bd] = P(L + 1, 0);
+            if (rect(freeS, ba, bb, bc, bd) !== area(ba, bb, bc, bd)) continue;
+            const [da, db] = P(L, 1);
+            const [dc, dd] = P(L + 1, 1);
+            if (rect(freeS, da, db, dc, dd) !== 2) continue;
+            // bande : cases libres (côtés), gisements fortement pénalisés
             let score = 0;
-            for (let u = HEAD; u < L; u++) {
-              for (let v = -BAND; v <= BAND; v++) {
-                if (v === 0) continue;
-                const x = this.wx(m, u, v);
-                const y = this.wy(m, u, v);
-                if (ok(x, y)) score += Math.abs(v) <= 6 ? 1 : 0.3;
-                else if (spotIn(x, y)) score -= 60;
-                else score -= Math.abs(v) <= 2 ? 1.5 : 0.5;
-              }
+            for (const sgn of [-1, 1]) {
+              const [xa, ya] = P(HEAD, sgn);
+              const [xb, yb] = P(L - 1, sgn * (BAND - 1));
+              const fr = rect(freeS, xa, ya, xb, yb);
+              score += fr - (area(xa, ya, xb, yb) - fr) * 0.8;
+              const [la, lb] = P(HEAD, sgn * BAND);
+              const [lc, ld] = P(L - 1, sgn * BAND);
+              score += rect(freeS, la, lb, lc, ld) * 0.3;
+              const [na, nb] = P(HEAD, sgn);
+              const [nc, ndd] = P(L - 1, sgn * 2);
+              const fn = rect(freeS, na, nb, nc, ndd);
+              score -= (area(na, nb, nc, ndd) - fn) * 0.7;
             }
+            const [sa, sb] = P(HEAD, -BAND);
+            const [sc, sd] = P(L - 1, BAND);
+            score -= rect(spotS, sa, sb, sc, sd) * 60;
             // tête : place pour les tapis d'amenée
-            for (let u = -6; u < HEAD; u++) {
-              for (let v = -4; v <= 4; v++) {
-                if (v === 0) continue;
-                const x = this.wx(m, u, v);
-                const y = this.wy(m, u, v);
-                if (ok(x, y)) score += 0.3;
-                else if (spotIn(x, y)) score -= 10;
-              }
-            }
+            const [ha, hb] = P(-6, -4);
+            const [hc, hd] = P(HEAD - 1, 4);
+            score += rect(freeS, ha, hb, hc, hd) * 0.3 - rect(spotS, ha, hb, hc, hd) * 10;
             score -= Math.abs(voff) * 1.5;
             if (score > bestScore) {
               bestScore = score;
@@ -564,9 +654,13 @@ export class Planner {
     const tries: { side: number; u0: number }[] = [];
     for (const side of [-1, 1]) {
       const si = side < 0 ? 0 : 1;
-      for (let u0 = m.hi[si] - W + 1; u0 - 1 >= m.cursor[si] && u0 >= m.frontier; u0--) tries.push({ side, u0 });
+      if (cell.producer) {
+        for (let u0 = Math.max(m.cursor[si], m.frontier); u0 + W <= m.hi[si]; u0++) tries.push({ side, u0 });
+      } else {
+        for (let u0 = m.hi[si] - W + 1; u0 - 1 >= m.cursor[si] && u0 >= m.frontier; u0--) tries.push({ side, u0 });
+      }
     }
-    tries.sort((a, b) => b.u0 - a.u0);
+    tries.sort((a, b) => (cell.producer ? a.u0 - b.u0 : b.u0 - a.u0));
     for (const { side, u0 } of tries) {
       const si = side < 0 ? 0 : 1;
       const comps: { kind: number; x: number; y: number; dir: number; w: number; c: CellComp }[] = [];
@@ -585,11 +679,19 @@ export class Planner {
       }
       if (!ok) continue;
       const inserters: Placement[] = [];
+      let lastOut = -1;
       for (const c of comps) {
-        if (!c.c.busIn) continue;
-        const x = this.wx(m, u0 + c.c.du, side);
-        const y = this.wy(m, u0 + c.c.du, side);
-        inserters.push({ kind: ins, x, y, dir: this.ldir(m, 0, side), tag: "in" });
+        if (c.c.busIn) {
+          const x = this.wx(m, u0 + c.c.du, side);
+          const y = this.wy(m, u0 + c.c.du, side);
+          inserters.push({ kind: ins, x, y, dir: this.ldir(m, 0, side), tag: "in" });
+        }
+        if (c.c.busOut) {
+          const x = this.wx(m, u0 + c.c.du + 1, side);
+          const y = this.wy(m, u0 + c.c.du + 1, side);
+          inserters.push({ kind: ins, x, y, dir: this.ldir(m, 0, -side), tag: "out" });
+          lastOut = Math.max(lastOut, u0 + c.c.du + 1);
+        }
       }
       for (const l of cell.links) {
         const x = this.wx(m, u0 + l.du, side * l.row);
@@ -606,7 +708,7 @@ export class Planner {
         const recipe = c.c.recipe !== undefined ? this.ids.r[c.c.recipe] : undefined;
         places.push({ kind: c.kind, x: c.x, y: c.y, dir: c.dir, recipe, tag: c.c.type });
         this.mark(c.x, c.y, c.w, P_BLD);
-        slots.push({ side, u0: u0 + c.c.du, w: c.w, kind: c.kind, x: c.x, y: c.y, dir: c.dir, type: c.c.type, places: [places[places.length - 1]], cell: true });
+        slots.push({ side, u0: u0 + c.c.du, w: c.w, kind: c.kind, x: c.x, y: c.y, dir: c.dir, type: c.c.type, places: [places[places.length - 1]], cell: true, busOut: c.c.busOut === true });
       }
       for (const p of inserters) {
         places.push(p);
@@ -639,7 +741,10 @@ export class Planner {
           if (this.inside(ex, ey) && (this.plan[this.idx(ex, ey)] === P_FREE || this.plan[this.idx(ex, ey)] === P_RES)) this.plan[this.idx(ex, ey)] = P_LANE;
         }
       }
-      m.hi[si] = u0 - 2;
+      if (cell.producer) {
+        m.cursor[si] = u0 + W + 1;
+        m.frontier = Math.max(m.frontier, lastOut + 1);
+      } else m.hi[si] = u0 - 2;
       for (const sl of slots) m.slots.push(sl);
       return { side, u0, places, slots, cell };
     }
