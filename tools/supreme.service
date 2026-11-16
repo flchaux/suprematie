@@ -1,0 +1,18 @@
+# Service systemd du jeu (copié dans /etc/systemd/system/supreme.service).
+[Unit]
+Description=Suprematie, STR multijoueur (relais, lobby, bots)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/supreme
+Environment=PORT=3060
+Environment=NODE_ENV=production
+ExecStart=/home/ubuntu/.nvm/versions/node/v24.15.0/bin/node packages/server/src/main.ts
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

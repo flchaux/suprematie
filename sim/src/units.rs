@@ -284,7 +284,29 @@ fn deconstruct(w: &mut World, s: usize, b: usize) -> bool {
     true
 }
 
+#[cfg(test)]
+thread_local! {
+    pub static PROF: std::cell::RefCell<[f64; 4]> = const { std::cell::RefCell::new([0.0; 4]) };
+}
+#[cfg(test)]
+#[allow(clippy::disallowed_types, clippy::float_arithmetic)]
+fn prof_add(i: usize, t0: std::time::Instant) {
+    PROF.with(|p| p.borrow_mut()[i] += t0.elapsed().as_secs_f64() * 1000.0);
+}
+#[cfg(test)]
+#[allow(clippy::disallowed_types)]
+fn prof_now() -> std::time::Instant {
+    std::time::Instant::now()
+}
+#[cfg(not(test))]
+#[inline(always)]
+fn prof_now() {}
+#[cfg(not(test))]
+#[inline(always)]
+fn prof_add(_i: usize, _t: ()) {}
+
 pub fn update_units(w: &mut World) {
+    let t_sep = prof_now();
     let n = w.units.alive.len();
     // poussées de séparation (calculées puis appliquées)
     let mut push: Vec<(i32, i32)> = vec![(0, 0); n];
@@ -293,6 +315,10 @@ pub fn update_units(w: &mut World) {
             continue;
         }
         let k = w.units.kind[s];
+        // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe
+        if fixed_wing(k) || (w.tick + s as u32) & 1 == 1 {
+            continue;
+        }
         let def = udef(k);
         let air = def.layer == Layer::Air;
         let (x, y, r) = (w.units.x[s], w.units.y[s], def.radius);
@@ -301,7 +327,7 @@ pub fn update_units(w: &mut World) {
         let mut px = 0i64;
         let mut py = 0i64;
         let units = &w.units;
-        w.grid.fine.query(x, y, r + 320, |o| {
+        w.grid.fine.query(x, y, r + 200, |o| {
             if o == s {
                 return;
             }
@@ -322,7 +348,7 @@ pub fn update_units(w: &mut World) {
             let d = crate::fixed::isqrt(d2 as u64) as i64;
             let overlap = rr as i64 - d;
             let (ux, uy) = if d == 0 { (if s < o { -1 } else { 1 }, 0) } else { (dx * 64 / d, dy * 64 / d) };
-            let f = if moving { 3 } else { 4 };
+            let f = if moving { 6 } else { 8 };
             px += ux * overlap * f / (64 * 8);
             py += uy * overlap * f / (64 * 8);
         });
@@ -351,6 +377,7 @@ pub fn update_units(w: &mut World) {
             }
         }
     }
+    prof_add(0, t_sep);
     for s in 0..n {
         if !w.units.alive[s] {
             continue;
@@ -389,14 +416,18 @@ pub fn update_units(w: &mut World) {
                 }
             }
         }
+        let t_ord = prof_now();
         let forced = run_order(w, s);
+        prof_add(1, t_ord);
+        let t_w = prof_now();
         crate::combat::unit_weapons(w, s, forced);
+        prof_add(2, t_w);
         special(w, s);
         // séparation
         let (dx, dy) = push[s];
         if dx != 0 || dy != 0 {
-            let dx = dx.clamp(-40, 40);
-            let dy = dy.clamp(-40, 40);
+            let dx = dx.clamp(-60, 60);
+            let dy = dy.clamp(-60, 60);
             try_move(w, s, dx, dy);
         }
         // sortir d'une case bloquée (bâtiment posé dessus)

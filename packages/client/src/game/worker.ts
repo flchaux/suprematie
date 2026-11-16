@@ -57,15 +57,14 @@ function pump(): void {
     return;
   }
   let ran = 0;
-  const t0 = performance.now();
-  // rattrapage : plusieurs ticks d'un coup si on a du retard, sans bloquer plus de ~30 ms
+  // rattrapage : plusieurs ticks d'un coup si on a du retard (au plus 40 par passage)
   while (queue.length && queue[0].tick <= nextTick) {
     const q = queue.shift()!;
     if (q.tick < nextTick) continue;
     runTick(q.orders);
     nextTick++;
     ran++;
-    if (queue.length <= 2 || performance.now() - t0 > 30) break;
+    if (queue.length <= 2 || ran >= 40) break;
   }
   if (ran) sendFrame(sim.tick() % 10 === 0 || ran > 1);
 }

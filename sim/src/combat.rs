@@ -117,8 +117,9 @@ fn find_target(w: &World, team: u8, wi: usize, x: i32, y: i32) -> u32 {
     let r = wd.range * TILE;
     let mut best = NONE;
     let mut best_d = i64::MAX;
+    let enemies = !(1u8 << (team & 7));
     if !wd.prefer_buildings {
-        w.grid.coarse.query(x, y, r + 1024, |o| {
+        w.grid.coarse.query_teams(x, y, r + 1024, enemies, |o| {
             if unit_target_ok(w, team, wi, o, x, y) {
                 let d = dist2(x, y, w.units.x[o], w.units.y[o]);
                 if d < best_d {
@@ -134,7 +135,7 @@ fn find_target(w: &World, team: u8, wi: usize, x: i32, y: i32) -> u32 {
     if wd.mask & M_SURF != 0 {
         let mut bb = NONE;
         let mut bd = i64::MAX;
-        w.grid.query_buildings(x, y, r + 4 * TILE, |b| {
+        w.grid.query_buildings_teams(x, y, r + 4 * TILE, enemies, |b| {
             if building_target_ok(w, team, wi, b, x, y) {
                 let (cx, cy) = w.buildings[b].center();
                 let mut d = dist2(x, y, cx, cy);
@@ -152,7 +153,7 @@ fn find_target(w: &World, team: u8, wi: usize, x: i32, y: i32) -> u32 {
         }
     }
     if wd.prefer_buildings {
-        w.grid.coarse.query(x, y, r + 1024, |o| {
+        w.grid.coarse.query_teams(x, y, r + 1024, enemies, |o| {
             if unit_target_ok(w, team, wi, o, x, y) {
                 let d = dist2(x, y, w.units.x[o], w.units.y[o]);
                 if d < best_d {

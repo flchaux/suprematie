@@ -50,8 +50,8 @@ export class GameScene {
     await this.renderer.init();
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL2";
     this.scene.background = new THREE.Color(0x0b1016);
-    this.scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3b3426, 1.5));
-    const sun = new THREE.DirectionalLight(0xfff4e0, 2.3);
+    this.scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3b3426, 1.25));
+    const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
     sun.position.set(-0.5, 1, 0.35);
     this.scene.add(sun);
     this.scene.add(this.markers);

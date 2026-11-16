@@ -137,7 +137,8 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         crate::flow::mark_dirty(w, x, y, bw, bh);
     }
     if in_grid(def.class) {
-        w.grid.add_building(slot as u32, x, y, bw, bh);
+        let team = w.team_of(owner);
+        w.grid.add_building(slot as u32, x, y, bw, bh, team);
     }
     if needs_tick(def.class) {
         if let Err(p) = w.active.binary_search(&(slot as u32)) {

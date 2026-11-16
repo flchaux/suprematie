@@ -12,6 +12,8 @@ import { sfx, setVolume } from "../audio/sound.ts";
 
 const TILE = 256;
 const O = Ord.O;
+// mode test : pas de rendu 3D (tests automatisés dans Chrome sans GPU)
+const NORENDER = new URLSearchParams(location.search).has("norender");
 
 function wsUrl(): string {
   return (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
@@ -59,6 +61,7 @@ export class GameClient {
   alertPos: { x: number; z: number } | null = null;
   pingTimer = 0;
   lastGroupKey = { k: -1, t: 0 };
+  autoSelect = false;
 
   // ---------- réseau ----------
   connect(name: string): void {
@@ -153,6 +156,7 @@ export class GameClient {
     ui.gameOver = null;
     ui.screen = "loading";
     this.selected.clear();
+    this.autoSelect = !snap;
     this.worker?.terminate();
     this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (e) => this.onWorker(e.data);
@@ -210,11 +214,16 @@ export class GameClient {
           f.vis = prevVis;
           f.visW = this.frame!.visW;
         }
-        if (f.vis !== prevVis && f.vis && this.scene) this.scene.terrain.updateFog(f.vis);
+        if (f.vis !== prevVis && f.vis && this.scene?.terrain) this.scene.terrain.updateFog(f.vis);
         this.handleEvents(f);
         this.frame = f;
         this.frameTime = performance.now();
         this.lastTick = f.tick;
+        if (this.autoSelect && ui.me >= 0 && f.players[ui.me]) {
+          this.autoSelect = false;
+          this.selected = new Set([f.players[ui.me].commander]);
+          this.updateUi();
+        }
         break;
       }
       case "ack":
@@ -249,7 +258,7 @@ export class GameClient {
     this.panCamera(dt);
     const alpha = this.frame ? Math.min(1, (performance.now() - this.frameTime) / 50) : 0;
     const myTeam = this.frame?.players[ui.me]?.team ?? -1;
-    sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator);
+    if (!NORENDER) sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator);
     // zone vue envoyée au Worker
     const r = sc.viewRect();
     this.worker?.postMessage({ type: "view", x0: Math.floor(r[0]), y0: Math.floor(r[1]), x1: Math.ceil(r[2]), y1: Math.ceil(r[3]), detail: sc.strategic ? 0 : sc.distance > 150 ? 1 : 2, player: ui.me });

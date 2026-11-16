@@ -235,6 +235,16 @@ pub extern "C" fn wreck_at(x: i32, y: i32) -> u32 {
     )
 }
 
+/// Banc de performance : remplace la partie par la partie de référence synthétique
+/// (8 joueurs, 8 000 unités, ~40 000 bâtiments et tapis). Hors jeu en réseau.
+#[no_mangle]
+pub extern "C" fn bench_reference() -> u32 {
+    let w = stress::reference_world_quiet();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Équipe gagnante (-1 : partie en cours, -2 : aucune).
 #[no_mangle]
 pub extern "C" fn game_winner() -> i32 {
@@ -243,3 +253,4 @@ pub extern "C" fn game_winner() -> i32 {
 
 #[cfg(test)]
 mod tests;
+pub mod stress;

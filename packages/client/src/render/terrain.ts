@@ -50,10 +50,10 @@ function terrainColor(h: number, slope: number, water: number, out: THREE.Color)
   const rel = h - water;
   if (rel < 0) out.setRGB(0.42, 0.4, 0.3);
   else if (rel < 5) out.setRGB(0.66, 0.62, 0.45);
-  else if (h < 120) out.setRGB(0.3, 0.45, 0.24);
-  else if (h < 165) out.setRGB(0.36, 0.48, 0.27);
-  else if (h < 205) out.setRGB(0.47, 0.45, 0.36);
-  else out.setRGB(0.75, 0.76, 0.78);
+  else if (h < 140) out.setRGB(0.27, 0.41, 0.21);
+  else if (h < 190) out.setRGB(0.32, 0.43, 0.24);
+  else if (h < 220) out.setRGB(0.43, 0.41, 0.34);
+  else out.setRGB(0.72, 0.73, 0.75);
   if (slope > 7) out.lerp(new THREE.Color(0.32, 0.3, 0.3), 0.8);
   else if (slope > 3) out.lerp(new THREE.Color(0.4, 0.38, 0.33), 0.35);
 }

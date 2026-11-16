@@ -570,7 +570,8 @@ impl World {
             crate::buildings::rebuild_power(self);
         }
         crate::buildings::power_tick(self);
-        self.grid.rebuild_units(&self.units);
+        let teams: Vec<u8> = self.players.iter().map(|p| p.team).collect();
+        self.grid.rebuild_units(&self.units, &teams);
         crate::combat::collect_shields(self);
         crate::buildings::update_buildings(self);
         crate::belts::update_belts(self);

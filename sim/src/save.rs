@@ -84,7 +84,8 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
             }
         }
         if !matches!(cls, crate::data::BClass::Belt | crate::data::BClass::Inserter) {
-            w.grid.add_building(b as u32, x, y, bw, bh);
+            let team = w.team_of(w.buildings[b].owner);
+            w.grid.add_building(b as u32, x, y, bw, bh, team);
         }
     }
     w.nav = Nav::new(&w.map);

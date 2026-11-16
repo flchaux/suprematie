@@ -12,7 +12,9 @@ export const P_BLD = 2; // bâtiment prévu ou construit
 export const P_BELT = 3; // tapis d'amenée (peut recevoir un autre tapis)
 export const P_BUS = 4; // tapis principal (hors tête)
 export const P_HEAD = 5; // tête du tapis principal (reçoit les tapis d'amenée)
-export const P_KEEP = 6; // à garder libre de bâtiments (tête, sorties d'usine) ; tapis permis
+export const P_KEEP = 6; // à garder libre de bâtiments (tête) ; tapis permis
+export const P_LANE = 7; // couloir de circulation (bord de la bande, sorties d'usine) : rien
+export const P_DEPOT = 8; // dépôt (reçoit les tapis d'amenée directs)
 
 export interface Placement {
   kind: number;
@@ -51,7 +53,9 @@ export interface Module {
   d: number;
   L: number;
   H: number;
-  cursor: number[]; // [côté -1, côté +1]
+  cursor: number[]; // producteurs : prochaine case libre depuis la tête [côté -1, côté +1]
+  hi: number[]; // consommateurs (labos, usines) : dernière case libre depuis le dépôt
+  frontier: number; // un producteur doit prendre ses entrées après la sortie des précédents
   slots: Slot[];
   bus: Placement[];
   cx: number; // centre (cases)
@@ -74,6 +78,8 @@ export class Planner {
   h: number;
   plan: Uint8Array;
   bdir: Uint8Array;
+  /** Réseau d'un tapis : module * 2 + 1 (tapis principal) ou module * 2 + 2 (direct au dépôt). */
+  bnet: Uint8Array;
   poles: Pole[] = [];
   modules: Module[] = [];
   heap = new Heap();
@@ -91,6 +97,7 @@ export class Planner {
     this.h = h;
     this.plan = new Uint8Array(w * h);
     this.bdir = new Uint8Array(w * h);
+    this.bnet = new Uint8Array(w * h);
     this.gcost = new Int32Array(w * h);
     this.from = new Int32Array(w * h);
     this.stamp = new Int32Array(w * h);
@@ -185,6 +192,7 @@ export class Planner {
           if (lx >= 0 && ly >= 0 && lx < S && ly < S) free[ly * S + lx] = 2;
         }
     }
+    let fallback: { m: Module; s: number } | null = null;
     for (const L of lengths) {
       let best: Module | null = null;
       let bestScore = -1e9;
@@ -207,7 +215,7 @@ export class Planner {
                 const x = this.wx(m, u, v);
                 const y = this.wy(m, u, v);
                 if (ok(x, y)) score += Math.abs(v) <= 6 ? 1 : 0.3;
-                else if (spotIn(x, y)) score -= 8;
+                else if (spotIn(x, y)) score -= 60;
                 else score -= Math.abs(v) <= 2 ? 1.5 : 0.5;
               }
             }
@@ -218,19 +226,22 @@ export class Planner {
                 const x = this.wx(m, u, v);
                 const y = this.wy(m, u, v);
                 if (ok(x, y)) score += 0.3;
-                else if (spotIn(x, y)) score -= 1;
+                else if (spotIn(x, y)) score -= 10;
               }
             }
             score -= Math.abs(voff) * 1.5;
             if (score > bestScore) {
               bestScore = score;
-              best = { id: this.modules.length, ox, oy, d, L, H: HEAD, cursor: [HEAD, HEAD], slots: [], bus: [], cx: 0, cy: 0, full: false, feeders: 0, use: 0, prod: 0, role: "" };
+              best = { id: this.modules.length, ox, oy, d, L, H: HEAD, cursor: [HEAD, HEAD], hi: [L - 1, L - 1], frontier: HEAD, slots: [], bus: [], cx: 0, cy: 0, full: false, feeders: 0, use: 0, prod: 0, role: "" };
             }
           }
         }
       }
       if (best && bestScore > L * 2 * BAND * 0.55) return this.commitModule(best);
+      if (best && (!fallback || bestScore / L > fallback.s)) fallback = { m: best, s: bestScore / L };
     }
+    // aucun emplacement idéal : prendre le meilleur s'il reste correct
+    if (fallback && fallback.s > 2 * BAND * 0.25) return this.commitModule(fallback.m);
     return null;
   }
 
@@ -247,12 +258,20 @@ export class Planner {
         if (this.inside(x, y) && this.plan[this.idx(x, y)] === P_FREE) this.plan[this.idx(x, y)] = P_KEEP;
       }
     }
-    // bande réservée
-    for (let u = m.H; u <= L + 3; u++) {
+    // au-delà du dépôt : libre de bâtiments (tapis d'amenée directs)
+    for (let u = L; u <= L + 6; u++) {
       for (let v = -BAND; v <= BAND; v++) {
         const x = this.wx(m, u, v);
         const y = this.wy(m, u, v);
-        if (this.inside(x, y) && this.plan[this.idx(x, y)] !== P_BLD) this.plan[this.idx(x, y)] = P_RES;
+        if (this.inside(x, y) && this.plan[this.idx(x, y)] === P_FREE) this.plan[this.idx(x, y)] = P_KEEP;
+      }
+    }
+    // bande réservée, bordée d'un couloir de circulation
+    for (let u = m.H; u <= L - 1; u++) {
+      for (let v = -BAND; v <= BAND; v++) {
+        const x = this.wx(m, u, v);
+        const y = this.wy(m, u, v);
+        if (this.inside(x, y) && this.plan[this.idx(x, y)] !== P_BLD) this.plan[this.idx(x, y)] = Math.abs(v) === BAND ? P_LANE : P_RES;
       }
     }
     for (let u = 0; u < L; u++) {
@@ -261,77 +280,98 @@ export class Planner {
       const i = this.idx(x, y);
       this.plan[i] = u < m.H ? P_HEAD : P_BUS;
       this.bdir[i] = m.d;
+      this.bnet[i] = m.id * 2 + 1;
       m.bus.push({ kind: belt, x, y, dir: m.d, tag: "bus" });
     }
     const [dx, dy] = this.sq(m, L, 0, 2);
-    this.mark(dx, dy, 2, P_BLD);
+    this.mark(dx, dy, 2, P_DEPOT);
+    for (let ty = dy; ty < dy + 2; ty++) for (let tx = dx; tx < dx + 2; tx++) this.bnet[this.idx(tx, ty)] = m.id * 2 + 2;
     m.bus.push({ kind: this.ids.b.depot, x: dx, y: dy, dir: 0, tag: "depot" });
     this.modules.push(m);
     return m;
   }
 
-  /** Réserve l'emplacement suivant pour un bâtiment carré de côté w le long du module. */
+  /**
+   * Réserve l'emplacement suivant pour un bâtiment carré de côté w le long du module.
+   * Les producteurs (bras d'entrée et de sortie) se suivent depuis la tête : chacun prend ses
+   * entrées après la sortie du précédent. Les consommateurs (labos, usines) se placent depuis le
+   * dépôt, donc en aval de tous les producteurs.
+   */
   allocSlot(m: Module, kind: number, w: number, type: string, opts: { input: boolean; output: boolean; faceOut?: boolean; recipe?: number }): Slot | null {
-    const sides = m.cursor[0] <= m.cursor[1] ? [-1, 1] : [1, -1];
+    const consumer = !opts.output;
     const ins = this.ids.b.inserter;
-    for (const side of sides) {
+    const tries: { side: number; u0: number }[] = [];
+    for (const side of [-1, 1]) {
       const si = side < 0 ? 0 : 1;
-      for (let u0 = m.cursor[si]; u0 + w <= m.L - 1; u0++) {
-        const v0 = side > 0 ? 2 : -(1 + w);
-        const [bx, by] = this.sq(m, u0, v0, w);
-        const dirOut = this.ldir(m, 0, side); // vers l'extérieur
-        const dirIn = this.ldir(m, 0, -side); // vers le tapis
-        const bdir = opts.faceOut ? dirOut : 0;
-        if (!this.rectFree(kind, bx, by, bdir, w, true)) continue;
-        const ix = this.wx(m, u0, side);
-        const iy = this.wy(m, u0, side);
-        const ox = this.wx(m, u0 + 1, side);
-        const oy = this.wy(m, u0 + 1, side);
-        if (opts.input && !this.rectFree(ins, ix, iy, 0, 1, true)) continue;
-        if (opts.output && !this.rectFree(ins, ox, oy, 0, 1, true)) continue;
-        const places: Placement[] = [];
-        places.push({ kind, x: bx, y: by, dir: bdir, recipe: opts.recipe, tag: type });
-        this.mark(bx, by, w, P_BLD);
-        if (opts.input) {
-          places.push({ kind: ins, x: ix, y: iy, dir: dirOut, tag: "in" });
-          this.mark(ix, iy, 1, P_BLD);
-        }
-        if (opts.output) {
-          places.push({ kind: ins, x: ox, y: oy, dir: dirIn, tag: "out" });
-          this.mark(ox, oy, 1, P_BLD);
-        }
-        // énergie : pylônes dans les colonnes d'espacement
-        const spacers: [number, number][] = [
-          [this.wx(m, u0 + w, side), this.wy(m, u0 + w, side)],
-          [this.wx(m, u0 - 1, side), this.wy(m, u0 - 1, side)],
-        ];
-        for (const p of places.slice()) {
-          const s = this.ids.data.buildings[p.kind].w;
-          if (this.ids.data.buildings[p.kind].powerUse > 0) places.push(...this.ensurePower(p.x, p.y, s, s, spacers));
-        }
-        if (opts.faceOut) {
-          // sortie de l'usine : couloir libre
-          for (let k = 1; k <= 4; k++) {
-            const ex = this.wx(m, u0 + (w >> 1), side * (1 + w + k));
-            const ey = this.wy(m, u0 + (w >> 1), side * (1 + w + k));
-            if (this.inside(ex, ey) && this.plan[this.idx(ex, ey)] === P_FREE) this.plan[this.idx(ex, ey)] = P_KEEP;
-          }
-        }
-        m.cursor[si] = u0 + w + 1;
-        const slot: Slot = { side, u0, w, kind, x: bx, y: by, dir: bdir, type, places };
-        m.slots.push(slot);
-        return slot;
+      if (!consumer) {
+        for (let u0 = Math.max(m.cursor[si], m.frontier); u0 + w <= m.hi[si]; u0++) tries.push({ side, u0 });
+      } else {
+        for (let u0 = m.hi[si] - w + 1; u0 - 1 >= m.cursor[si] && u0 >= m.frontier; u0--) tries.push({ side, u0 });
       }
-      m.cursor[si] = m.L; // côté plein
     }
-    m.full = true;
+    // producteurs : le plus en amont possible ; consommateurs : le plus en aval possible
+    tries.sort((a, b) => (consumer ? b.u0 - a.u0 : a.u0 - b.u0));
+    for (const { side, u0 } of tries) {
+      const si = side < 0 ? 0 : 1;
+      const v0 = side > 0 ? 2 : -(1 + w);
+      const [bx, by] = this.sq(m, u0, v0, w);
+      const dirOut = this.ldir(m, 0, side); // vers l'extérieur
+      const dirIn = this.ldir(m, 0, -side); // vers le tapis
+      const bdir = opts.faceOut ? dirOut : 0;
+      if (!this.rectFree(kind, bx, by, bdir, w, true)) continue;
+      const ix = this.wx(m, u0, side);
+      const iy = this.wy(m, u0, side);
+      const ox = this.wx(m, u0 + 1, side);
+      const oy = this.wy(m, u0 + 1, side);
+      if (opts.input && !this.rectFree(ins, ix, iy, 0, 1, true)) continue;
+      if (opts.output && !this.rectFree(ins, ox, oy, 0, 1, true)) continue;
+      const places: Placement[] = [];
+      places.push({ kind, x: bx, y: by, dir: bdir, recipe: opts.recipe, tag: type });
+      this.mark(bx, by, w, P_BLD);
+      if (opts.input) {
+        places.push({ kind: ins, x: ix, y: iy, dir: dirOut, tag: "in" });
+        this.mark(ix, iy, 1, P_BLD);
+      }
+      if (opts.output) {
+        places.push({ kind: ins, x: ox, y: oy, dir: dirIn, tag: "out" });
+        this.mark(ox, oy, 1, P_BLD);
+      }
+      // énergie : pylônes dans les colonnes d'espacement
+      const spacers: [number, number][] = [
+        [this.wx(m, u0 + w, side), this.wy(m, u0 + w, side)],
+        [this.wx(m, u0 - 1, side), this.wy(m, u0 - 1, side)],
+      ];
+      for (const p of places.slice()) {
+        const s = this.ids.data.buildings[p.kind].w;
+        if (this.ids.data.buildings[p.kind].powerUse > 0) places.push(...this.ensurePower(p.x, p.y, s, s, spacers));
+      }
+      if (opts.faceOut) {
+        // sortie de l'usine : couloir libre
+        for (let k = 1; k <= 4; k++) {
+          const ex = this.wx(m, u0 + (w >> 1), side * (1 + w + k));
+          const ey = this.wy(m, u0 + (w >> 1), side * (1 + w + k));
+          if (this.inside(ex, ey) && (this.plan[this.idx(ex, ey)] === P_FREE || this.plan[this.idx(ex, ey)] === P_RES)) this.plan[this.idx(ex, ey)] = P_LANE;
+        }
+      }
+      if (consumer) m.hi[si] = u0 - 2;
+      else {
+        m.cursor[si] = u0 + w + 1;
+        m.frontier = Math.max(m.frontier, u0 + 2);
+      }
+      const slot: Slot = { side, u0, w, kind, x: bx, y: by, dir: bdir, type, places };
+      m.slots.push(slot);
+      return slot;
+    }
+    if (w <= 3) m.full = true;
     return null;
   }
 
   // ---------- Énergie ----------
   covered(x: number, y: number, w: number, h: number): boolean {
     for (const p of this.poles) {
-      if (x + w - 1 >= p.x - p.supply && x <= p.x + p.s - 1 + p.supply && y + h - 1 >= p.y - p.supply && y <= p.y + p.s - 1 + p.supply) return true;
+      if (x + w - 1 >= p.x - p.supply && x <= p.x + p.s - 1 + p.supply && y + h - 1 >= p.y - p.supply && y <= p.y + p.s - 1 + p.supply) {
+        return true;
+      }
     }
     return false;
   }
@@ -407,9 +447,37 @@ export class Planner {
     // pylône isolé + générateur hors de la bande
     if (lonely) {
       const [px, py] = lonely;
-      const g = this.findGenNear(px, py, Math.min(pd.connect, gd.connect) - 0.2);
+      const rg = Math.min(pd.connect, gd.connect) - 0.2;
+      const g = this.findGenNear(px, py, rg);
       if (g) return [this.takePole(gen, g[0], g[1]), this.takePole(pyl, px, py)];
+      // pylône relais (dans la bande, derrière les bâtiments) vers le réseau ou un générateur
+      const relays: [number, number, number][] = [];
+      const R = pd.connect - 0.3;
+      for (let ry = py - 9; ry <= py + 9; ry++) {
+        for (let rx = px - 9; rx <= px + 9; rx++) {
+          const d2 = (rx - px) ** 2 + (ry - py) ** 2;
+          if (d2 > R * R || d2 < 4) continue;
+          if (!this.inside(rx, ry)) continue;
+          const pp = this.plan[this.idx(rx, ry)];
+          if (pp !== P_FREE && pp !== P_RES) continue;
+          relays.push([rx, ry, d2]);
+        }
+      }
+      relays.sort((a, b) => b[2] - a[2]);
+      for (const [rx, ry] of relays) {
+        if (!this.connected(rx, ry, 1, pd.connect)) continue;
+        if (!this.sim.canPlace(this.slot, pyl, rx, ry, 0)) continue;
+        return [this.takePole(pyl, rx, ry), this.takePole(pyl, px, py)];
+      }
+      let n = 0;
+      for (const [rx, ry] of relays) {
+        if (n++ > 40) break;
+        if (!this.sim.canPlace(this.slot, pyl, rx, ry, 0)) continue;
+        const g2 = this.findGenNear(rx, ry, rg);
+        if (g2) return [this.takePole(gen, g2[0], g2[1]), this.takePole(pyl, rx, ry), this.takePole(pyl, px, py)];
+      }
     }
+    if (process.env.BOTDEBUG) console.log("pas d'énergie pour", x, y, w, h);
     return [];
   }
 
@@ -476,41 +544,142 @@ export class Planner {
     }
   }
 
-  /** Une case de tapis peut-elle se déverser dans (qx, qy) depuis (px, py) ? */
-  joinable(px: number, py: number, qx: number, qy: number): boolean {
+  /** Une case de tapis du réseau `net` peut-elle se déverser dans (qx, qy) depuis (px, py) ? */
+  joinable(px: number, py: number, qx: number, qy: number, net: number): boolean {
     if (!this.inside(qx, qy)) return false;
     const q = this.idx(qx, qy);
     const p = this.plan[q];
+    if (this.bnet[q] !== net) return false;
+    if (p === P_DEPOT) return true;
     if (p !== P_BELT && p !== P_HEAD) return false;
     const d = dirOf(qx - px, qy - py);
     return ((this.bdir[q] + 2) & 3) !== d;
   }
 
-  /** Planifie un extracteur sur le gisement et son tapis jusqu'au module. */
-  planExtractor(m: Module, sx: number, sy: number, maxNodes = 9000): Placement[] | null {
+  /** Cible d'un réseau : tête du tapis principal ou dépôt. */
+  netTarget(m: Module, net: number): [number, number] {
+    return net % 2 === 1 ? [this.wx(m, 0, 0), this.wy(m, 0, 0)] : [this.wx(m, m.L, 0), this.wy(m, m.L, 0)];
+  }
+
+  /**
+   * Planifie un extracteur qui verse directement dans une fonderie, dont un bras pose les plaques
+   * sur un tapis d'amenée jusqu'au module.
+   */
+  planMine(m: Module, sx: number, sy: number, toDepot: boolean, maxNodes = 9000): Placement[] | null {
+    const net = m.id * 2 + (toDepot ? 2 : 1);
     const ext = this.ids.b.extractor;
+    const fur = this.ids.b.furnace;
+    const ins = this.ids.b.inserter;
     if (!this.sim.canPlace(this.slot, ext, sx, sy, 0)) return null;
-    for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] === P_BLD) return null;
-    let best: { dir: number; path: number[] } | null = null;
-    for (let dir = 0; dir < 4; dir++) {
-      const [fx, fy] = this.frontOf(sx, sy, dir);
-      if (!this.inside(fx, fy)) continue;
-      const fp = this.plan[this.idx(fx, fy)];
-      if (fp === P_BUS || fp === P_HEAD || fp === P_BELT) {
-        // débouche directement sur un tapis existant
-        best = { dir, path: [] };
+    for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] !== P_FREE && this.plan[this.idx(tx, ty)] !== P_KEEP) return null;
+    const [hx, hy] = this.netTarget(m, net);
+    const inE = (x: number, y: number) => x >= sx && x < sx + 2 && y >= sy && y < sy + 2;
+    interface Cand {
+      d: number;
+      fx: number;
+      fy: number;
+      ix: number;
+      iy: number;
+      idir: number;
+      bx: number;
+      by: number;
+      h: number;
+    }
+    const cands: Cand[] = [];
+    const furnOpts: [number, number][][] = [
+      [
+        [sx + 2, sy - 1],
+        [sx + 2, sy],
+      ],
+      [
+        [sx - 1, sy + 2],
+        [sx, sy + 2],
+      ],
+      [
+        [sx - 2, sy - 1],
+        [sx - 2, sy],
+      ],
+      [
+        [sx - 1, sy - 2],
+        [sx, sy - 2],
+      ],
+    ];
+    for (let d = 0; d < 4; d++) {
+      for (const [fx, fy] of furnOpts[d]) {
+        if (!this.rectFree(fur, fx, fy, 0, 2, false)) continue;
+        const inF = (x: number, y: number) => x >= fx && x < fx + 2 && y >= fy && y < fy + 2;
+        // bras autour de la fonderie, tourné vers l'extérieur
+        const opts: [number, number, number][] = [
+          [fx, fy - 1, 3],
+          [fx + 1, fy - 1, 3],
+          [fx, fy + 2, 1],
+          [fx + 1, fy + 2, 1],
+          [fx - 1, fy, 2],
+          [fx - 1, fy + 1, 2],
+          [fx + 2, fy, 0],
+          [fx + 2, fy + 1, 0],
+        ];
+        for (const [ix, iy, idir] of opts) {
+          if (inE(ix, iy)) continue;
+          const bx = ix + DX[idir];
+          const by = iy + DY[idir];
+          if (inE(bx, by) || inF(bx, by)) continue;
+          if (!this.inside(ix, iy) || !this.inside(bx, by)) continue;
+          const pi = this.plan[this.idx(ix, iy)];
+          if (pi !== P_FREE && pi !== P_KEEP) continue;
+          if (!this.sim.canPlace(this.slot, ins, ix, iy, 0)) continue;
+          cands.push({ d, fx, fy, ix, iy, idir, bx, by, h: Math.abs(bx - hx) + Math.abs(by - hy) });
+        }
+      }
+    }
+    cands.sort((a, b) => a.h - b.h);
+    let best: { c: Cand; path: number[] } | null = null;
+    let tried = 0;
+    for (const c of cands) {
+      if (tried >= 5) break;
+      const bp = this.inside(c.bx, c.by) ? this.plan[this.idx(c.bx, c.by)] : P_RES;
+      if ((bp === P_BELT || bp === P_HEAD || bp === P_BUS) && this.bnet[this.idx(c.bx, c.by)] === net) {
+        best = { c, path: [] };
         break;
       }
-      if (!this.beltFree(fx, fy)) continue;
-      const path = this.astar(fx, fy, m, maxNodes, best ? best.path.length : 1e9);
-      if (path && (!best || path.length < best.path.length)) best = { dir, path };
+      if (!this.beltFree(c.bx, c.by)) continue;
+      tried++;
+      // bloquer temporairement extracteur, fonderie et bras
+      const saved: [number, number][] = [];
+      const block = (x: number, y: number) => {
+        const i = this.idx(x, y);
+        saved.push([i, this.plan[i]]);
+        this.plan[i] = P_BLD;
+      };
+      for (let k = 0; k < 4; k++) {
+        block(sx + (k & 1), sy + (k >> 1));
+        block(c.fx + (k & 1), c.fy + (k >> 1));
+      }
+      block(c.ix, c.iy);
+      const path = this.astar(c.bx, c.by, m, net, maxNodes, best ? best.path.length : 1e9);
+      for (let k = saved.length - 1; k >= 0; k--) this.plan[saved[k][0]] = saved[k][1];
+      if (path && (!best || path.length < best.path.length)) best = { c, path };
     }
     if (!best) return null;
+    const c = best.c;
     const places: Placement[] = [];
-    places.push({ kind: ext, x: sx, y: sy, dir: best.dir, tag: "extractor" });
+    places.push({ kind: ext, x: sx, y: sy, dir: c.d, tag: "extractor" });
     this.mark(sx, sy, 2, P_BLD);
+    places.push({ kind: fur, x: c.fx, y: c.fy, dir: 0, tag: "mine" });
+    this.mark(c.fx, c.fy, 2, P_BLD);
+    places.push({ kind: ins, x: c.ix, y: c.iy, dir: c.idir, tag: "out" });
+    this.mark(c.ix, c.iy, 1, P_BLD);
+    places.push(...this.pathPlaces(best.path, net));
+    places.push(...this.ensurePower(sx, sy, 2, 2));
+    places.push(...this.ensurePower(c.fx, c.fy, 2, 2));
+    places.push(...this.ensurePower(c.ix, c.iy, 1, 1));
+    m.feeders++;
+    return places;
+  }
+
+  pathPlaces(path: number[], net: number): Placement[] {
     const belt = this.ids.b.belt1;
-    const path = best.path;
+    const out: Placement[] = [];
     const n = path.length;
     for (let k = 0; k < n; k++) {
       const i = path[k];
@@ -521,30 +690,58 @@ export class Planner {
         const j = path[k + 1];
         d = dirOf((j % this.w) - x, ((j / this.w) | 0) - y);
       } else {
-        d = this.endDir(x, y);
+        d = this.endDir(x, y, net);
       }
       this.plan[i] = P_BELT;
       this.bdir[i] = d;
-      places.push({ kind: belt, x, y, dir: d, tag: "feeder" });
+      this.bnet[i] = net;
+      out.push({ kind: belt, x, y, dir: d, tag: "feeder" });
     }
+    return out;
+  }
+
+  /** Planifie un extracteur sur le gisement et son tapis jusqu'au module. */
+  planExtractor(m: Module, sx: number, sy: number, maxNodes = 9000): Placement[] | null {
+    const net = m.id * 2 + 1;
+    const ext = this.ids.b.extractor;
+    if (!this.sim.canPlace(this.slot, ext, sx, sy, 0)) return null;
+    for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] === P_BLD) return null;
+    let best: { dir: number; path: number[] } | null = null;
+    for (let dir = 0; dir < 4; dir++) {
+      const [fx, fy] = this.frontOf(sx, sy, dir);
+      if (!this.inside(fx, fy)) continue;
+      const fp = this.plan[this.idx(fx, fy)];
+      if ((fp === P_BUS || fp === P_HEAD || fp === P_BELT) && this.bnet[this.idx(fx, fy)] === net) {
+        // débouche directement sur un tapis existant
+        best = { dir, path: [] };
+        break;
+      }
+      if (!this.beltFree(fx, fy)) continue;
+      const path = this.astar(fx, fy, m, net, maxNodes, best ? best.path.length : 1e9);
+      if (path && (!best || path.length < best.path.length)) best = { dir, path };
+    }
+    if (!best) return null;
+    const places: Placement[] = [];
+    places.push({ kind: ext, x: sx, y: sy, dir: best.dir, tag: "extractor" });
+    this.mark(sx, sy, 2, P_BLD);
+    places.push(...this.pathPlaces(best.path, net));
     places.push(...this.ensurePower(sx, sy, 2, 2));
     m.feeders++;
     return places;
   }
 
-  endDir(x: number, y: number): number {
-    for (let d = 0; d < 4; d++) if (this.joinable(x, y, x + DX[d], y + DY[d])) return d;
+  endDir(x: number, y: number, net: number): number {
+    for (let d = 0; d < 4; d++) if (this.joinable(x, y, x + DX[d], y + DY[d], net)) return d;
     return 0;
   }
 
   /** A* d'une case libre jusqu'à une case qui peut se déverser dans un tapis d'amenée ou la tête du module. */
-  astar(sx: number, sy: number, m: Module, maxNodes: number, maxLen: number): number[] | null {
+  astar(sx: number, sy: number, m: Module, net: number, maxNodes: number, maxLen: number): number[] | null {
     const W = this.w;
     const st = ++this.stampN;
     const heap = this.heap;
     heap.clear();
-    const tx = this.wx(m, 0, 0);
-    const ty = this.wy(m, 0, 0);
+    const [tx, ty] = this.netTarget(m, net);
     const hfun = (x: number, y: number) => Math.abs(x - tx) + Math.abs(y - ty);
     const s = sy * W + sx;
     this.stamp[s] = st;
@@ -552,7 +749,7 @@ export class Planner {
     this.from[s] = -1;
     heap.push(hfun(sx, sy) * 2, s);
     let n = 0;
-    const box = m.L + 60;
+    const box = m.L / 2 + 70;
     while (heap.size > 0 && n < maxNodes) {
       const i = heap.pop();
       n++;
@@ -562,7 +759,7 @@ export class Planner {
       if (g >= maxLen) continue;
       // arrivée ?
       for (let d = 0; d < 4; d++) {
-        if (this.joinable(x, y, x + DX[d], y + DY[d])) {
+        if (this.joinable(x, y, x + DX[d], y + DY[d], net)) {
           const out: number[] = [];
           let c = i;
           while (c !== -1) {

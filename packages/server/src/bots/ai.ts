@@ -49,6 +49,7 @@ interface Crafter {
   ref: number;
   paused: boolean;
   lastCmd: number;
+  cooldown?: number;
   module: Module;
   slot: Slot;
 }
@@ -95,8 +96,14 @@ export class SkirmishAI implements Bot {
   engKinds: boolean[];
   produces = new Map<Module, Set<number>>();
   failures = 0;
+  openingIdx = 0;
+  waiting = new Set<Module>();
+  ironSave = false;
+  stockHist: number[][] = [];
+  busMines = new Map<number, number>();
   thinkN = 0;
   stats = { projectsDone: 0, projectsFailed: 0 };
+  debug = false;
 
   constructor(ctx: BotContext) {
     this.ctx = ctx;
@@ -122,6 +129,11 @@ export class SkirmishAI implements Bot {
     }
     const n = Math.hypot(ex, ey) || 1;
     this.enemyDir = [ex / n, ey / n];
+    this.debug = typeof process !== "undefined" && process.env?.BOTDEBUG === String(ctx.slot);
+  }
+
+  log(...a: unknown[]): void {
+    if (this.debug) console.log(`[J${this.ctx.slot} t${this.tick}]`, ...a);
   }
 
   random(): number {
@@ -364,13 +376,15 @@ export class SkirmishAI implements Bot {
 
   finishProject(p: Project): void {
     let failed = 0;
+    const aborted = p.critical && p.st[0] === 2;
     for (let i = 0; i < p.places.length; i++) {
-      if (p.st[i] === 2) {
+      if (p.st[i] === 2 || (aborted && p.st[i] === 0)) {
         failed++;
         const s = this.placementState(p.places[i]);
         if (s === 0 || s === 2) this.planner.release(p.places[i]);
       }
     }
+    this.log("fin", p.name, p.slot?.type ?? "", p.st.join(""), "durée", this.tick - p.started);
     if (failed) this.stats.projectsFailed++;
     else this.stats.projectsDone++;
     if (p.spot) {
@@ -468,6 +482,12 @@ export class SkirmishAI implements Bot {
     return true;
   }
 
+  reserveEst(est: number[], res: number[]): void {
+    const it = this.ids.item;
+    const keys = [it.iron_plate, it.copper_plate, it.steel, it.gear, it.circuit];
+    for (let k = 0; k < keys.length; k++) res[keys[k]] += est[k] ?? 0;
+  }
+
   newProject(name: string, places: Placement[], extra: Partial<Project> = {}): Project {
     return {
       id: this.nextProject++,
@@ -498,10 +518,16 @@ export class SkirmishAI implements Bot {
       if (b.prio <= 0) break;
       if (b.remote && isCmd && this.engineerCount() > 0) continue;
       if (this.projects.some((p) => p.name === b.name)) continue;
-      if (!this.estAffordable(b.est, res)) continue;
+      if (!this.estAffordable(b.est, res)) {
+        // épargner pour les tâches importantes
+        if (b.prio >= 780) this.reserveEst(b.est, res);
+        continue;
+      }
       const p = b.make();
       if (!p) continue;
       this.projects.push(p);
+      if (b.prio === 990) this.openingIdx++;
+      this.log("début", p.name, p.slot?.type ?? "", p.places.length, "placements");
       return p;
     }
     return null;
@@ -551,22 +577,22 @@ export class SkirmishAI implements Bot {
           },
         });
       }
-      // extracteurs : un par fonderie de minerai, plus deux de fer et un de cuivre au départ
-      const ores: [number, string][] = [
-        [it.iron_ore, "F:iron_plate"],
-        [it.copper_ore, "F:copper_plate"],
-        [it.silicon, "F:wafer"],
-      ];
-      for (const [ore, ftype] of ores) {
-        const furn = this.countSlots(m, ftype);
+      // extracteurs (avec fonderie sur place pour le fer, le cuivre et le silicium)
+      const ores = [it.iron_ore, it.copper_ore, it.hydrocarbon];
+      for (const ore of ores) {
         const ext = this.moduleExt(m, ore);
         let prio = 0;
-        if (m.id === 0 && ore === it.iron_ore && ext < 2) prio = 930;
-        else if (m.id === 0 && ore === it.copper_ore && ext < 1) prio = 920;
-        else if (ext < furn) prio = 860;
-        else if (ext < furn + 1 && ore !== it.silicon && this.tick > 6000) prio = 450;
-        if (prio > 0 && m.feeders < 10) {
-          L.push({ name: `ext${m.id}:${ore}`, prio, remote: m.id > 0, est: [35, 13], make: () => this.makeExtractor(m, ore) });
+        if (ore === it.hydrocarbon) {
+          // l'hydrocarbure ne sert qu'aux raffineries du module
+          if (ext < 1 && (this.pendingPlan.get(m)?.includes("R:fuel") === false) && m.slots.some((s) => s.type === "R:fuel")) prio = 780;
+        } else {
+          const plate = ore === it.iron_ore ? it.iron_plate : it.copper_plate;
+          const low = this.stock(plate) < (ore === it.iron_ore ? 90 : 50);
+          prio = (ore === it.iron_ore ? 720 : 715) - ext * 8 + (low ? 140 : 0);
+          if (m.id > 0 && ext < (ore === it.iron_ore ? 2 : 1)) prio = 905 - m.id;
+        }
+        if (prio > 0 && m.feeders < 12) {
+          L.push({ name: `ext${m.id}:${ore}`, prio, remote: m.id > 0, est: [45, 15], make: () => this.makeExtractor(m, ore) });
         }
       }
       // emplacement suivant du plan du module
@@ -581,6 +607,14 @@ export class SkirmishAI implements Bot {
           L.push({ name: "slot" + m.id, prio, remote: m.id > 0, est: this.slotEst(type), make: () => this.makeSlot(m, type, k) });
         }
       }
+    }
+    // ouverture : ordre de construction fixe au début de la partie
+    const op = this.persona.opening[this.openingIdx];
+    if (op !== undefined && busDone(m0)) {
+      const name = op === "slot" ? "slot0" : op === "iron" ? `ext0:${it.iron_ore}` : `ext0:${it.copper_ore}`;
+      const b = L.find((x) => x.name === name);
+      if (b) b.prio = 990;
+      else this.openingIdx++;
     }
     // défenses
     if (this.has(this.ids.t.light_defense)) {
@@ -647,9 +681,9 @@ export class SkirmishAI implements Bot {
     const isFactory = type.startsWith("factory");
     const isLab = type === "lab";
     const slot = this.planner.allocSlot(m, kind, d.w, type, { input: true, output: !isFactory && !isLab, faceOut: isFactory, recipe });
-    if (!slot) return null;
     const pend = this.pendingPlan.get(m);
     pend?.splice(k, 1);
+    if (!slot) return null;
     for (const pl of slot.places) {
       const bd = this.ctx.data.buildings[pl.kind];
       m.use += bd.powerUse;
@@ -669,12 +703,16 @@ export class SkirmishAI implements Bot {
     const hx = this.planner.wx(m, 0, 0);
     const hy = this.planner.wy(m, 0, 0);
     const cand = this.spots
-      .filter((s) => s.kind === ore && s.st === 0 && s.next <= this.tick)
+      .filter((s) => s.kind === ore && s.st === 0 && s.next <= this.tick && Math.hypot(s.x - m.cx, s.y - m.cy) < m.L / 2 + (m.id === 0 ? (this.tick > 7200 && ore === this.ids.item.iron_ore ? 60 : 34) : 26))
       .map((s) => ({ s, d: Math.hypot(s.x - hx, s.y - hy) }))
-      .filter((c) => c.d < (m.id === 0 ? 48 : 40))
       .sort((a, b) => a.d - b.d);
     for (const { s } of cand.slice(0, 3)) {
-      const places = this.planner.planExtractor(m, s.x, s.y);
+      const smelt = ore === this.ids.item.iron_ore || ore === this.ids.item.copper_ore || ore === this.ids.item.silicon;
+      // les premières mines alimentent le tapis principal, les suivantes directement le dépôt
+      const busMines = this.busMines.get(m.id * 100 + ore) ?? 0;
+      const quota = ore === this.ids.item.iron_ore ? 7 : ore === this.ids.item.copper_ore ? 3 : 9;
+      const toDepot = smelt && busMines >= quota;
+      const places = smelt ? this.planner.planMine(m, s.x, s.y, toDepot) : this.planner.planExtractor(m, s.x, s.y);
       if (!places) {
         s.tries++;
         s.next = this.tick + 2400;
@@ -682,6 +720,7 @@ export class SkirmishAI implements Bot {
         continue;
       }
       s.st = 1;
+      if (!toDepot) this.busMines.set(m.id * 100 + ore, busMines + 1);
       for (const pl of places) {
         const bd = this.ctx.data.buildings[pl.kind];
         m.use += bd.powerUse;
@@ -727,7 +766,8 @@ export class SkirmishAI implements Bot {
         const toward = ((s.x - hx) * this.enemyDir[0] + (s.y - hy) * this.enemyDir[1]) / (d || 1);
         // densité de gisements autour
         let dens = 0;
-        for (const o of this.spots) if (o !== s && o.st === 0 && Math.abs(o.x - s.x) < 30 && Math.abs(o.y - s.y) < 30 && o.kind !== this.ids.item.crystal) dens++;
+        for (const o of this.spots) if (o !== s && o.st === 0 && Math.abs(o.x - s.x) < 30 && Math.abs(o.y - s.y) < 30) dens += o.kind === this.ids.item.iron_ore ? 2 : o.kind === this.ids.item.copper_ore ? 1 : 0;
+        if (s.kind === this.ids.item.iron_ore) dens += 2;
         return { s, score: d + toward * 25 - dens * 8 };
       })
       .filter((c) => Math.hypot(c.s.x - hx, c.s.y - hy) < 110)
@@ -782,11 +822,78 @@ export class SkirmishAI implements Bot {
   }
 
   // ---------- Économie : recettes et régulation ----------
+  /**
+   * Régulation par la demande : chaque consommateur (usine, laboratoire) indique les objets qui lui
+   * manquent ; seuls les producteurs de ces objets (et de leurs ingrédients) tournent, pour que le
+   * premier assembleur du tapis ne prenne pas tout le fer. Le stock de construction compte aussi
+   * comme consommateur quand il manque d'engrenages, de circuits ou d'acier.
+   */
+  /** Variation du stock d'un objet sur les 30 dernières secondes. */
+  growth(item: number): number {
+    const h = this.stockHist;
+    if (h.length < 2) return 0;
+    return this.stock(item) - h[0][item];
+  }
+
   economy(out: Cmd[]): void {
     const it = this.ids.item;
-    const st = (k: string) => this.stock(it[k]);
+    this.stockHist.push(Array.from(this.me.stock));
+    if (this.stockHist.length > 30) this.stockHist.shift();
     const sim = this.ctx.sim;
-    for (const m of this.planner.modules) this.produces.get(m)?.clear();
+    const data = this.ctx.data;
+    const demand = new Map<Module, Set<number>>();
+    for (const m of this.planner.modules) {
+      this.produces.get(m)?.clear();
+      demand.set(m, new Set());
+    }
+    this.waiting.clear();
+    // besoins des consommateurs
+    for (const m of this.planner.modules) {
+      const D = demand.get(m) as Set<number>;
+      for (const s of m.slots) {
+        const isLab = s.type === "lab";
+        if (!isLab && !s.type.startsWith("factory")) continue;
+        const ref = sim.buildingAt(s.x, s.y);
+        const b = ref ? this.ix.bref.get(ref) : undefined;
+        if (!b || b.owner !== this.ctx.slot || b.build < BUILD_FULL) continue;
+        const inf = sim.infoBuilding(ref) as { inv: number[]; queue: [number, number][] } | null;
+        if (!inf) continue;
+        if (isLab) {
+          const t = this.me.research;
+          if (!t) continue;
+          const tier = data.techs[t].tier;
+          for (let k = 0; k < tier; k++) if (inf.inv[k] < 2) D.add(it.pack1 + k);
+          if (!b.working) this.waiting.add(m);
+        } else if (inf.queue.length) {
+          const cost = data.units[inf.queue[0][0]].cost;
+          for (let j = 0; j < cost.length; j++) if (inf.inv[j] < cost[j][1]) D.add(cost[j][0]);
+          if (!b.working) this.waiting.add(m);
+        }
+      }
+      // stock de construction
+      if (this.stock(it.gear) < 40) D.add(it.gear);
+      if (this.stock(it.circuit) < 30) D.add(it.circuit);
+      if (this.stock(it.steel) < 30 && this.tick > 12000) D.add(it.steel);
+    }
+    // fermeture : ingrédients des producteurs demandés
+    for (const m of this.planner.modules) {
+      const D = demand.get(m) as Set<number>;
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const c of this.crafters) {
+          if (c.module !== m) continue;
+          const r = data.recipes[c.recipe];
+          if (!D.has(r.output[0])) continue;
+          for (const [inp] of r.inputs) {
+            if (!D.has(inp)) {
+              D.add(inp);
+              grew = true;
+            }
+          }
+        }
+      }
+    }
     for (const c of this.crafters) {
       if (!c.ref) {
         const ti = sim.tileInfo(c.x, c.y);
@@ -798,25 +905,16 @@ export class SkirmishAI implements Bot {
         c.ref = 0;
         continue;
       }
-      const done = b.build >= BUILD_FULL;
-      const r = this.ctx.data.recipes[c.recipe];
-      if (done) this.produces.get(c.module)?.add(r.output[0]);
-      // régulation
-      let pause = false;
-      const out0 = r.output[0];
-      const key = this.ctx.data.items[out0].key;
-      if (key.startsWith("pack")) {
-        const tier = Number(key.slice(4));
-        pause = this.stock(out0) > 25 || !this.researchWants(tier);
-      } else if (key === "gear") pause = st("gear") > 220 || (st("iron_plate") < 30 && st("gear") > 30);
-      else if (key === "steel") pause = st("steel") > 250 || (st("iron_plate") < 40 && st("steel") > 30);
-      else if (key === "ammo") pause = st("ammo") > 150;
-      else if (key === "engine") pause = st("engine") > 80;
-      else if (key === "arm_part") pause = st("arm_part") > 60;
-      else if (key === "circuit") pause = st("circuit") > 400;
-      else if (key === "cable") pause = st("cable") > 400 && st("circuit") > 200;
-      else if (key === "processor") pause = st("processor") > 150;
-      else if (key === "composite") pause = st("composite") > 150;
+      const r = data.recipes[c.recipe];
+      if (b.build >= BUILD_FULL) this.produces.get(c.module)?.add(r.output[0]);
+      const outIt = r.output[0];
+      let pause = !(demand.get(c.module) as Set<number>).has(outIt);
+      // demandé mais déjà en excès au dépôt : arrêt temporaire (le surplus passe les consommateurs)
+      if (!pause && this.tick < (c.cooldown ?? 0)) pause = true;
+      else if (!pause && this.growth(outIt) > (outIt === it.gear || outIt === it.cable ? 10 : 5) && this.stock(outIt) > 30) {
+        c.cooldown = this.tick + 400;
+        pause = true;
+      }
       c.paused = pause;
       let want = c.recipe;
       if (pause) want = c.kind === this.ids.b.furnace ? this.ids.r.iron_plate : RECIPE_NONE;
@@ -868,6 +966,9 @@ export class SkirmishAI implements Bot {
       if (fk === 1 && engs < engTarget && this.canBuild(eng, avail)) {
         pick = eng;
         engs++;
+      } else if (this.stock(this.ids.item.iron_plate) < 40 && !this.underPressure && engs >= 1) {
+        // le stock de construction passe d'abord
+        continue;
       } else {
         // composition de l'armée : type disponible le moins représenté par rapport à son poids
         const counts = new Map<number, number>();
@@ -877,7 +978,7 @@ export class SkirmishAI implements Bot {
           const k = this.ids.u[key];
           if (k === undefined || data.units[k].factory !== fk || !this.canBuild(k, avail)) continue;
           // les unités de palier supérieur sont préférées quand elles sont disponibles
-          const tierBonus = 1 + data.units[k].tier * 0.6;
+          const tierBonus = 1 + data.units[k].tier * 0.3;
           const score = ((counts.get(k) ?? 0) + 1 + this.random() * 0.5) / (wgt * tierBonus);
           if (score < best) {
             best = score;
@@ -895,8 +996,11 @@ export class SkirmishAI implements Bot {
   /** Objets disponibles sur le tapis principal en amont d'un emplacement. */
   availableAt(m: Module, slot: Slot): Set<number> {
     const s = new Set<number>();
+    // plaques fondues aux mines du module (arrivent en tête du tapis)
+    if (this.moduleExt(m, this.ids.item.iron_ore) > 0) s.add(this.ids.item.iron_plate);
+    if (this.moduleExt(m, this.ids.item.copper_ore) > 0) s.add(this.ids.item.copper_plate);
     for (const c of this.crafters) {
-      if (c.module !== m || !c.ref || c.paused) continue;
+      if (c.module !== m || !c.ref) continue;
       if (c.slot.u0 + 1 >= slot.u0) continue;
       const b = this.ix.bref.get(c.ref);
       if (!b || b.build < BUILD_FULL) continue;

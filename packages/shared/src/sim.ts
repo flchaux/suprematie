@@ -23,6 +23,7 @@ export interface SimExports {
   state_hash(): number;
   game_winner(): number;
   wreck_at(x: number, y: number): number;
+  bench_reference(): number;
 }
 
 const dec = new TextDecoder();
@@ -117,6 +118,9 @@ export class Sim {
   }
   wreckAt(x: number, y: number): number {
     return this.ex.wreck_at(x, y) >>> 0;
+  }
+  benchReference(): number {
+    return this.ex.bench_reference() >>> 0;
   }
   winner(): number {
     return this.ex.game_winner();
