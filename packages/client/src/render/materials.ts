@@ -1,6 +1,6 @@
 // Matériaux : couleur de sommet, teinte du joueur par instance (pièces « faction »), pièces lumineuses.
 import * as THREE from "three/webgpu";
-import { attribute, mix, instancedBufferAttribute, float, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionWorld } from "three/tsl";
+import { attribute, mix, instancedBufferAttribute, float, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionGeometry } from "three/tsl";
 import { fogFactor, applyFog } from "./fog.ts";
 import { modelTexture } from "./textures.ts";
 
@@ -37,8 +37,8 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   let base = mix(mix(vcol, tcol, isFaction), acol, isOre);
   if (texScale > 0) {
     const t = modelTexture(texScale);
-    // détail : module la couleur autour de 1 ; une salissure à grande échelle varie d'une unité à l'autre
-    const grime = mx_noise_float(positionWorld.mul(0.35)).mul(0.08);
+    // détail : module la couleur autour de 1, avec une légère salissure (dans le repère du modèle : elle suit l'unité)
+    const grime = mx_noise_float(positionGeometry.mul(0.35)).mul(0.08);
     base = base.mul(mix(float(1), t.detail.mul(1.3).add(0.35).sub(grime), t.amount));
     mat.roughnessNode = mix(float(0.65), t.rough.sub(0.5).mul(0.5).add(0.62), t.amount);
     // relief : perturbation de la normale par les dérivées de la hauteur (sans coordonnées de texture)

@@ -19,7 +19,7 @@ const ANG = (Math.PI * 2) / 65536;
 
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number }[] = [];
   cap = 0;
   n = 0;
   /** hauteur du modèle à l'échelle (pour placer la fumée au sommet) */
@@ -36,7 +36,10 @@ class KindMesh {
     const size = new THREE.Vector3();
     built.box.getSize(size);
     this.height = size.y * scale;
+    this.legs = built.pivots.some((p) => /^jambe/.test(p.name));
   }
+  /** le modèle a des jambes articulées (pivots « jambe… ») */
+  legs = false;
   ensure(need: number): void {
     if (need <= this.cap) return;
     const cap = Math.max(16, this.cap * 2, need);
@@ -48,7 +51,9 @@ class KindMesh {
     this.pivots = this.built.pivots.map((p) => {
       const tm = teamInstancedMesh(p.geometry, cap, this.texPerTile * this.scale);
       this.scene.add(tm.mesh);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name) };
+      // jambe : 1 ou 2 selon la phase (gauche ou arrière décalée d'un demi-pas), 0 sinon
+      const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg };
     });
     this.cap = cap;
   }
@@ -139,6 +144,9 @@ export class Entities {
   beamList: { a: THREE.Vector3; b: THREE.Vector3; age: number; life: number; color: THREE.Color }[] = [];
   /** Positions monde interpolées des unités affichées (pour la sélection à la souris). */
   screen: UnitScreen[] = [];
+  /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
+  anim = new Map<number, { phase: number; torso: number; seen: number }>();
+  animFrame = 0;
   playerColor: number[] = [];
 
   constructor(
@@ -273,6 +281,8 @@ export class Entities {
    * alpha : interpolation entre le tick précédent et le tick courant (0..1).
    */
   update(f: Frame, alpha: number, me: number, myTeam: number, selected: Set<number>, strategic: boolean, iconScale: number, dt: number, spectator: boolean, viewRect: [number, number, number, number]): void {
+    // nettoyage de l'état d'animation des unités disparues ou longtemps hors de vue
+    if (++this.animFrame % 600 === 0) for (const [k, v] of this.anim) if (this.animFrame - v.seen > 600) this.anim.delete(k);
     const buf = f.buf;
     const vis = f.vis;
     const vw = f.visW;
@@ -342,17 +352,33 @@ export class Entities {
       const turret = ((buf[o + 6] >>> 16) & 0xffff) * ANG;
       let bob = 0;
       if (def.layer === Layer.Air || def.layer === Layer.Hover) bob = Math.sin(performance.now() / 400 + id) * 0.06;
+      // marche : la phase avance avec la distance parcourue, l'amplitude suit la vitesse
+      let st = this.anim.get(id);
+      if (!st) this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+      st.seen = this.animFrame;
+      const per = Math.hypot(buf[o + 2] - buf[o + 4], buf[o + 3] - buf[o + 5]) / TILE; // cases par tick
+      const vmax = Math.max(0.1, def.speed / 10); // cases par seconde
+      const walk = Math.min(1, (per * 20) / vmax);
+      const stride = Math.max(0.4, km.height * 0.7);
+      st.phase += ((per * 20 * dt) / stride) * Math.PI;
+      if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
       const sc = km.scale;
       tmpM.compose(tmpV.set(x, y + bob, z), tmpQ, tmpS.set(sc, sc, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       setTeamColor(km.body!, km.n, col);
+      // haut du corps : il tourne vers sa cible à vitesse limitée (au plus 6 radians par seconde)
+      const aim = flags & UF.IDLE && !(flags & UF.FIRING) && turret === 0 ? 0 : facing - turret;
+      let dA = Math.atan2(Math.sin(aim - st.torso), Math.cos(aim - st.torso));
+      dA = Math.max(-6 * dt, Math.min(6 * dt, dA));
+      st.torso += dA;
       for (const p of km.pivots) {
-        // la tourelle tourne vers sa cible ; les rotors tournent en continu
-        const isRotor = p.spin;
-        const rot = flags & UF.IDLE && !(flags & UF.FIRING) && turret === 0 ? 0 : facing - turret;
+        // la tourelle tourne vers sa cible ; les rotors tournent en continu ; les jambes se balancent
         tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z);
-        tmpM2.multiply(new THREE.Matrix4().makeRotationY(isRotor ? performance.now() / 80 : rot));
+        if (p.leg !== 0) {
+          // jambes opposées (gauche / droite, avant / arrière) : balancement autour de la hanche
+          tmpM2.multiply(new THREE.Matrix4().makeRotationX(Math.sin(st.phase + (p.leg > 1 ? Math.PI : 0)) * 0.55 * walk));
+        } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
         tmpM2.scale(tmpS.set(sc, sc, sc));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));

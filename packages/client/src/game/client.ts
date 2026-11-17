@@ -1068,16 +1068,30 @@ export class GameClient {
   private ownedUnitAt(x: number, y: number, anyOwner = false): { id: number; kind: number; owner: number } | null {
     const sc = this.scene;
     if (!sc) return null;
+    // le clic touche l'unité n'importe où sur sa silhouette : segment écran du pied au sommet du
+    // modèle, épaissi de sa demi-largeur (et de quelques pixels de tolérance) ; la plus proche gagne
     let best = null;
-    let bd = 22;
-    const p = { x: 0, y: 0 };
+    let bd = Infinity;
+    const foot = { x: 0, y: 0 };
+    const top = { x: 0, y: 0 };
+    const side = { x: 0, y: 0 };
+    const right = new THREE.Vector3().setFromMatrixColumn(sc.camera.matrixWorld, 0);
     for (const u of sc.entities.screen) {
       if (!u.visible) continue;
       if (!anyOwner && u.owner !== ui.me) continue;
-      if (!sc.project(u.x, u.y + 0.4, u.z, p)) continue;
-      const r = Math.max(10, (this.data!.units[u.kind].radius / TILE) * 900 / sc.distance);
-      const d = Math.hypot(p.x - x, p.y - y);
-      if (d < Math.max(bd, 0) && d < r + 12) {
+      const km = sc.entities.unitMeshes[u.kind];
+      const h = Math.max(0.4, km?.height ?? 0.8);
+      const half = Math.max(0.35, (this.data!.units[u.kind].radius * 2.3) / TILE / 2);
+      if (!sc.project(u.x, u.y, u.z, foot) || !sc.project(u.x, u.y + h, u.z, top)) continue;
+      sc.project(u.x + right.x * half, u.y + h / 2, u.z + right.z * half, side);
+      const mid = { x: (foot.x + top.x) / 2, y: (foot.y + top.y) / 2 };
+      const w = Math.max(6, Math.hypot(side.x - mid.x, side.y - mid.y));
+      // distance du clic au segment pied-sommet
+      const vx = top.x - foot.x;
+      const vy = top.y - foot.y;
+      const t = Math.max(0, Math.min(1, ((x - foot.x) * vx + (y - foot.y) * vy) / (vx * vx + vy * vy || 1)));
+      const d = Math.hypot(x - (foot.x + vx * t), y - (foot.y + vy * t));
+      if (d <= w + 5 && d < bd) {
         bd = d;
         best = u;
       }

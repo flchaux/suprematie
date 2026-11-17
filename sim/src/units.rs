@@ -31,11 +31,24 @@ pub fn fixed_wing(kind: u16) -> bool {
     let d = udef(kind);
     d.layer == Layer::Air && !matches!(kind, U_TRANSPORT | U_MOTHERSHIP | U_HYPER) && d.key != "gunship"
 }
+/// Unité à pattes (robots, marcheurs) : elle change de direction en marchant, sans pivoter sur place,
+/// et le haut de son corps vise sa prochaine cible pendant la marche.
+#[inline]
+pub fn legged(kind: u16) -> bool {
+    matches!(
+        udef(kind).key,
+        "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress"
+    )
+}
+
 #[inline]
 fn turn_rate(kind: u16) -> i32 {
     let d = udef(kind);
     if fixed_wing(kind) {
         700
+    } else if legged(kind) {
+        // des jambes tournent vite : un demi-tour en 8 ticks
+        4096
     } else if d.radius > 500 {
         500
     } else if d.radius > 280 {
@@ -98,6 +111,11 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
         w.units.cold[s].timer = 0;
     }
     let mut heading = w.trig.atan2((ty - y) as i64, (tx - x) as i64);
+    if legged(kind) && w.units.cold[s].wtarget[0] == NONE {
+        // le haut du corps se tourne vers la destination pendant que les jambes suivent le chemin
+        // (en combat, la visée de l'arme prend le relais : voir combat::unit_weapons)
+        w.units.cold[s].turret = w.trig.atan2((gy - y) as i64, (gx - x) as i64);
+    }
     if let Some(class) = move_class(def.layer) {
         if d > 5 * TILE {
             if w.units.cold[s].goal == 0 {
@@ -118,6 +136,13 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
     let diff = angle_diff(heading, nf).abs();
     let mut sp = if fixed_wing(kind) {
         speed
+    } else if legged(kind) {
+        // une unité à pattes ne s'arrête jamais pour tourner : elle ralentit dans les virages serrés
+        if diff < 6000 {
+            speed
+        } else {
+            speed / 2
+        }
     } else if diff < 6000 {
         speed
     } else if diff < 14000 {

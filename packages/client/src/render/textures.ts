@@ -4,7 +4,7 @@
 // triplanaire dans le repère du modèle. Canaux : rouge = détail (module la couleur), vert = relief,
 // bleu = rugosité relative.
 import * as THREE from "three/webgpu";
-import { texture, uniform, vec2, vec3, float, fract, floor, mod, dFdx, dFdy, abs, pow, positionLocal, normalLocal, attribute, min } from "three/tsl";
+import { texture, uniform, vec2, vec3, float, fract, floor, mod, dFdx, dFdy, abs, pow, positionGeometry, normalGeometry, attribute, min } from "three/tsl";
 
 type N = ReturnType<typeof float>;
 
@@ -84,13 +84,14 @@ export function modelTexture(scale: number): { detail: N; height: N; rough: N; a
   const cellUV = vec2(CELL / (COLS * CELL), CELL / (ROWS * CELL));
   const padUV = vec2(PAD / (COLS * CELL), PAD / (ROWS * CELL));
   const innerUV = vec2(TILE / (COLS * CELL), TILE / (ROWS * CELL));
-  const p = positionLocal.mul(scale);
+  // repère du modèle (et non de l'instance) : la texture suit l'unité quand elle bouge ou tourne
+  const p = positionGeometry.mul(scale);
   const sample = (t: ReturnType<typeof vec2>) => {
     const uv = cell.mul(cellUV).add(padUV).add(fract(t).mul(innerUV));
     // dérivées de la coordonnée continue : bon niveau de détail, pas de couture au raccord
     return atlasNode.sample(uv).grad(dFdx(t).mul(innerUV), dFdy(t).mul(innerUV));
   };
-  const n = abs(normalLocal);
+  const n = abs(normalGeometry);
   const w4 = pow(n, vec3(4, 4, 4));
   const w = w4.div(w4.x.add(w4.y).add(w4.z));
   const sx = sample(vec2(p.z, p.y));
