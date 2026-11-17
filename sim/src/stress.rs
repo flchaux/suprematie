@@ -271,9 +271,10 @@ pub fn logistics_demo() -> World {
         w.buildings[f].recipe = 0;
     }
     // base de robots : ils apportent du minerai (stock) à la fonderie voisine et évacuent ses plaques
-    put(&mut w, 0, B_GENERATOR, x0 + 27, y0 + 14, 0);
-    put(&mut w, 0, B_GENERATOR, x0 + 30, y0 + 14, 0);
-    put(&mut w, 0, B_ROBOPORT, x0 + 28, y0 + 17, 0);
+    // (hors du cadre de copie du test des plans : x0+10..38, y0+10..30)
+    put(&mut w, 0, B_GENERATOR, x0 + 10, y0 + 35, 0);
+    put(&mut w, 0, B_GENERATOR, x0 + 13, y0 + 35, 0);
+    put(&mut w, 0, B_ROBOPORT, x0 + 12, y0 + 38, 0);
     w.players[0].stock[IRON_ORE as usize] = 400;
     // portail de don de l'allié (joueur 1)
     put(&mut w, 1, B_PORTAL, x0 + 60, y0 + 20, 0);
