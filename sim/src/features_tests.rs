@@ -474,3 +474,34 @@ fn formation_move_ends_facing_the_drag_direction() {
     let sa = w.unit(a).unwrap();
     assert_eq!(w.units.cold[sa].orders.len(), 1);
 }
+
+/// Une tourelle tire sur une unité qui passe devant elle : la visée anticipée la touche presque à chaque tir.
+#[test]
+fn turrets_lead_moving_targets() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 80, 80, 150, 150);
+    put(&mut w, 0, B_GENERATOR, 96, 100, 0);
+    let tur = put(&mut w, 0, B_LIGHT_TURRET, 100, 100, 0);
+    // marcheur d'assaut ennemi qui traverse à 14 cases, perpendiculairement
+    let walker = w.spawn_unit(U_ASSAULT_WALKER, 1, 114 * TILE, 88 * TILE);
+    let s = w.unit(walker).unwrap();
+    w.units.cold[s].orders.push(Order::Move { x: 114 * TILE, y: 118 * TILE, gx: 114 * TILE, gy: 118 * TILE, attack: false });
+    let wi = bdef(B_LIGHT_TURRET).weapon as i32;
+    let dmg = WEAPONS[wi as usize].dmg;
+    let mut shots = 0;
+    let mut lost = 0;
+    let mut hp = w.units.hp[s];
+    for _ in 0..400 {
+        w.step(&[]);
+        shots += w.events.chunks(5).filter(|e| e[0] == EV_FIRE && e[1] == wi).count();
+        let Some(s) = w.unit(walker) else { break };
+        // le marcheur riposte peut-être, mais ne se répare pas : toute perte de PV vient de la tourelle
+        lost += (hp - w.units.hp[s]).max(0);
+        hp = w.units.hp[s];
+    }
+    let _ = tur;
+    let hits = lost / dmg;
+    println!("tirs {} touchés {}", shots, hits);
+    assert!(shots >= 10, "la tourelle tire : {}", shots);
+    assert!(hits * 10 >= shots as i32 * 8, "au moins 80 % de tirs au but : {} sur {}", hits, shots);
+}

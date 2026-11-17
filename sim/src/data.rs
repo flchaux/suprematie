@@ -567,6 +567,7 @@ pub const U_LINE_ROBOT: u16 = 4;
 pub const U_LIGHT_TANK: u16 = 6;
 pub const U_ARTILLERY: u16 = 7;
 pub const U_SONDE: u16 = 9;
+pub const U_ASSAULT_WALKER: u16 = 10;
 pub const U_SIEGE_WALKER: u16 = 16;
 pub const U_HEAVY_ARTY: u16 = 18;
 pub const U_GLIDER: u16 = 21;

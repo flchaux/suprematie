@@ -178,6 +178,33 @@ fn target_point(w: &World, t: u32) -> Option<(i32, i32)> {
     w.ref_pos(t)
 }
 
+/// Avance maximale de la visée anticipée (sous-unités) : au-delà, la prévision n'est plus fiable.
+const LEAD_MAX: i32 = 8 * TILE;
+
+/**
+ * Point visé pour toucher l'unité `t` en mouvement avec un projectile de `per_tick` sous-unités par
+ * tick tiré depuis (x, y) : sa position plus son déplacement du dernier tick multiplié par le temps
+ * de vol (deux itérations : le temps de vol jusqu'au point prévu). Bâtiments et tir au sol : (tx, ty).
+ */
+fn lead_point(w: &World, t: u32, x: i32, y: i32, tx: i32, ty: i32, per_tick: i32) -> (i32, i32) {
+    let Some(s) = w.unit(t) else { return (tx, ty) };
+    let (vx, vy) = (w.units.x[s] - w.units.px[s], w.units.y[s] - w.units.py[s]);
+    if vx == 0 && vy == 0 {
+        return (tx, ty);
+    }
+    let (mut ax, mut ay) = (tx, ty);
+    for _ in 0..2 {
+        let ticks = dist(x, y, ax, ay) / per_tick.max(1);
+        let lx = (vx * ticks).clamp(-LEAD_MAX, LEAD_MAX);
+        let ly = (vy * ticks).clamp(-LEAD_MAX, LEAD_MAX);
+        ax = tx + lx;
+        ay = ty + ly;
+    }
+    let mx = w.map.w * TILE - 1;
+    let my = w.map.h * TILE - 1;
+    (ax.clamp(0, mx), ay.clamp(0, my))
+}
+
 /// Tire avec l'arme `wi` depuis (x, y) sur la cible `t`.
 fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i32, src: u32) {
     let Some((tx, ty)) = target_point(w, t) else { return };
@@ -220,6 +247,9 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         return;
     }
     let per_tick = (wd.speed * TILE / 20).max(1);
+    let homing = wd.proj == crate::data::Proj::Missile || wd.proj == crate::data::Proj::Torpedo;
+    // visée anticipée : un projectile non guidé vise l'endroit où sera une unité en mouvement à son arrivée
+    let (tx, ty) = if homing { (tx, ty) } else { lead_point(w, t, x, y, tx, ty, per_tick) };
     for k in 0..wd.salvo.max(1) {
         let (mut ax, mut ay) = (tx, ty);
         if k > 0 {
@@ -228,7 +258,6 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         }
         let d = dist(x, y, ax, ay);
         let total = (d / per_tick).clamp(1, 600) as u16 + k as u16;
-        let homing = wd.proj == crate::data::Proj::Missile || wd.proj == crate::data::Proj::Torpedo;
         w.projectiles.push(Projectile {
             weapon: wi as u8,
             owner,
