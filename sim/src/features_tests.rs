@@ -339,3 +339,105 @@ fn attacked_event_is_throttled_and_flags_commander() {
     crate::combat::damage_unit(&mut w, cs, 5, 1);
     assert_eq!(count(&w, 1), 1, "commandant attaqué");
 }
+
+#[test]
+fn sustained_beam_hits_every_tick_and_stops_with_target() {
+    use crate::combat::SPECIAL_BEAM;
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 90, 90, 140, 140);
+    let spider = w.spawn_unit(U_SPIDER, 0, 100 * TILE, 110 * TILE);
+    let foe = w.spawn_unit(U_SIEGE_WALKER, 1, 120 * TILE, 110 * TILE);
+    let beams = |w: &World| w.projectiles.iter().filter(|p| p.special == SPECIAL_BEAM).count();
+    // attendre le premier tir
+    let mut n = 0;
+    while beams(&w) == 0 {
+        w.step(&[]);
+        n += 1;
+        assert!(n < 200, "l'araignée tire");
+    }
+    let f = w.unit(foe).unwrap();
+    let hp0 = w.units.hp[f];
+    let laser = &WEAPONS[udef(U_SPIDER).weapons[0] as usize];
+    // les dégâts arrivent tick après tick, pas d'un coup
+    w.step(&[]);
+    let hp1 = w.units.hp[f];
+    assert!(hp0 - hp1 > 0 && hp0 - hp1 <= laser.dmg * 2, "un tick de rayon : {} dégâts", hp0 - hp1);
+    run(&mut w, 20);
+    let hp2 = w.units.hp[f];
+    assert!(hp1 - hp2 >= laser.dmg * 15, "le rayon continue : {} dégâts en 20 ticks", hp1 - hp2);
+    assert_eq!(beams(&w), 1, "un seul rayon à la fois");
+    // la source le porte : le rayon part de la position de l'araignée
+    let p = *w.projectiles.iter().find(|p| p.special == SPECIAL_BEAM).unwrap();
+    let s = w.unit(spider).unwrap();
+    assert_eq!((p.x0, p.y0), (w.units.x[s], w.units.y[s]));
+    // cible détruite : le rayon s'éteint au tick suivant
+    crate::combat::damage_unit(&mut w, f, 1_000_000, 0);
+    run(&mut w, 2);
+    assert_eq!(beams(&w), 0, "le rayon s'arrête avec sa cible");
+}
+
+#[test]
+fn dragon_breath_burns_an_area() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 90, 90, 140, 140);
+    w.spawn_unit(U_DRAGON, 0, 100 * TILE, 110 * TILE);
+    let foes: Vec<u32> = (0..5).map(|k| w.spawn_unit(U_LINE_ROBOT, 1, 112 * TILE + k * 96, 110 * TILE + (k % 2) * 96)).collect();
+    run(&mut w, 200);
+    let alive = foes.iter().filter(|&&u| w.unit(u).is_some()).count();
+    assert!(alive <= 1, "le souffle touche le groupe entier ({} survivants)", alive);
+}
+
+#[test]
+fn sustained_beam_sweeps_to_next_target() {
+    use crate::combat::SPECIAL_BEAM;
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 90, 90, 140, 140);
+    w.spawn_unit(U_SPIDER, 0, 100 * TILE, 110 * TILE);
+    let a = w.spawn_unit(U_SIEGE_WALKER, 1, 118 * TILE, 110 * TILE);
+    let b = w.spawn_unit(U_SIEGE_WALKER, 1, 122 * TILE, 116 * TILE);
+    let mut n = 0;
+    while !w.projectiles.iter().any(|p| p.special == SPECIAL_BEAM) {
+        w.step(&[]);
+        n += 1;
+        assert!(n < 200, "l'araignée tire");
+    }
+    assert_eq!(w.projectiles.iter().find(|p| p.special == SPECIAL_BEAM).unwrap().target, a, "la plus proche d'abord");
+    let fa = w.unit(a).unwrap();
+    crate::combat::damage_unit(&mut w, fa, 1_000_000, 0);
+    run(&mut w, 2);
+    let p = *w.projectiles.iter().find(|p| p.special == SPECIAL_BEAM).expect("le rayon continue");
+    assert_eq!(p.target, b, "le rayon passe à la cible suivante");
+    let fb = w.unit(b).unwrap();
+    let hp = w.units.hp[fb];
+    run(&mut w, 5);
+    assert!(w.units.hp[fb] < hp, "et la touche");
+}
+
+#[test]
+fn weapons_demo_shows_every_weapon_family() {
+    use crate::combat::SPECIAL_BEAM;
+    let mut w = crate::stress::weapons_demo();
+    let (mut beams, mut kinetic, mut energy) = (0, 0, 0);
+    let mut beam_weapons = std::collections::BTreeSet::new();
+    for t in 0..600 {
+        w.step(&[]);
+        for p in &w.projectiles {
+            if p.special == SPECIAL_BEAM {
+                beams += 1;
+                beam_weapons.insert(p.weapon);
+            } else if p.special == 0 {
+                match WEAPONS[p.weapon as usize].proj {
+                    Proj::Bullet | Proj::Shell => kinetic += 1,
+                    Proj::Blaster | Proj::Plasma => energy += 1,
+                    _ => {}
+                }
+            }
+        }
+        if t % 100 == 99 {
+            let alive = |o: u8| (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == o).count();
+            println!("tick {} : rayons {} {:?}, cinétiques {}, énergie {}, unités {} contre {}", t + 1, beams, beam_weapons, kinetic, energy, alive(0), alive(1));
+        }
+    }
+    assert!(beams > 0 && kinetic > 0 && energy > 0);
+    assert!(beam_weapons.len() >= 2, "plusieurs armes à rayon tirent : {:?}", beam_weapons);
+}

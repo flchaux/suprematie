@@ -80,7 +80,7 @@ Les quantités, les coûts et les durées de recherche sont fixés pendant l'éq
 
 ## Unités
 
-La faction compte 34 unités, inspirées de Supreme Commander, Star Wars et Stargate. Les noms sont provisoires.
+La faction compte 37 unités, inspirées de Supreme Commander, Star Wars et Stargate. Les noms sont provisoires.
 
 ### Commandement
 
@@ -135,11 +135,20 @@ La faction compte 34 unités, inspirées de Supreme Commander, Star Wars et Star
 
 | Unité | Rôle | Inspiration |
 | --- | --- | --- |
-| Araignée de siège | Marcheur à six pattes, laser lourd continu | Supreme Commander (araignée expérimentale) |
+| Araignée de siège | Marcheur à huit pattes, rayon laser prolongé (3 s) tiré depuis le centre de son corps | Supreme Commander (araignée expérimentale) |
 | Colosse | Robot humanoïde géant, écrase les unités et tire au laser | Supreme Commander (colosse expérimental) |
 | Forteresse marchante | Marcheur géant qui produit des unités terrestres en avançant, protégé par un bouclier | Supreme Commander (usine mobile), Star Wars (marcheurs géants) |
 | Vaisseau-mère | Vaisseau volant géant qui lâche des escadrilles de planeurs d'attaque et bombarde le sol | Stargate (vaisseaux-mères), Supreme Commander (soucoupe expérimentale) |
 | Croiseur hyperespace | Vaisseau de ligne volant qui saute vers une balise du joueur après un temps de charge | Star Wars (sauts en hyperespace) |
+| Char Blatte | Char géant en forme de blatte, sur chenilles avec six pattes articulées ; canons-mandibules à balles et mitrailleuses antiaériennes | Création originale |
+| Gros Chinois | Dragon robot volant au corps qui ondule ; souffle de feu prolongé qui brûle une zone, perle d'énergie contre le sol et les avions | Dragons chinois |
+| Cuirassé stellaire | Vaisseau géant volant à coque en triangle, batteries de traits d'énergie et défense antiaérienne | Star Wars (vaisseaux de ligne en triangle) |
+
+Les armes se rangent en trois familles, qui se distinguent à l'écran :
+
+- **Cinétiques** (balles, obus) : projectiles métalliques avec un traceur discret (commandant, chars, défense antiaérienne, navires, tourelles légères, Char Blatte).
+- **Énergie** : traits lumineux (plasma, ions, traits rouges des unités inspirées de Star Wars, batteries du cuirassé stellaire).
+- **Rayons prolongés** : un rayon qui dure plusieurs secondes, suit sa cible et la touche à chaque tick (laser de l'araignée et du colosse, souffle de feu du Gros Chinois). Il s'éteint si la source est détruite ou paralysée, ou si la cible meurt ou sort de portée.
 
 ## Bâtiments
 

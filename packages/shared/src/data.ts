@@ -2,7 +2,7 @@
 
 export interface ItemDef { key: string; name: string; color: number }
 export interface RecipeDef { key: string; crafter: number; inputs: [number, number][]; output: [number, number]; time: number; tech: number }
-export interface WeaponDef { dmg: number; range: number; cooldown: number; proj: number; aoe: number; mask: number; salvo: number }
+export interface WeaponDef { dmg: number; range: number; cooldown: number; proj: number; aoe: number; mask: number; salvo: number; /** rayon prolongé : durée en ticks, dégâts infligés à chaque tick (0 : tir ordinaire) */ sustain: number }
 export interface TechDef { key: string; name: string; tier: number; count: number; time: number; prereq: number[]; desc: string }
 export interface BuildingDef {
   key: string; name: string; w: number; h: number; hp: number; powerUse: number; powerProd: number; cost: [number, number][];

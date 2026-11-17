@@ -124,6 +124,10 @@ pub enum Proj {
     Plasma = 6,
     Ion = 7,
     Laser = 8,
+    /// trait d'énergie rouge ou vert (armes inspirées des blasters)
+    Blaster = 9,
+    /// souffle de feu (rayon prolongé orange)
+    Fire = 10,
 }
 
 pub const M_LAND: u8 = 1;
@@ -144,36 +148,39 @@ pub struct WeaponDef {
     pub stun: u16,
     pub salvo: u8,
     pub prefer_buildings: bool,
+    /// rayon prolongé : durée en ticks (0 : tir ordinaire). Les dégâts `dmg` sont infligés à chaque tick
+    /// tant que la source et la cible restent à portée.
+    pub sustain: u16,
 }
 
 macro_rules! w {
     ($dmg:expr, $range:expr, $cd:expr, $proj:ident, $speed:expr, $aoe:expr, $mask:expr) => {
-        WeaponDef { dmg: $dmg, range: $range, min_range: 0, cooldown: $cd, proj: Proj::$proj, speed: $speed, aoe: $aoe, mask: $mask, stun: 0, salvo: 1, prefer_buildings: false }
+        WeaponDef { dmg: $dmg, range: $range, min_range: 0, cooldown: $cd, proj: Proj::$proj, speed: $speed, aoe: $aoe, mask: $mask, stun: 0, salvo: 1, prefer_buildings: false, sustain: 0 }
     };
     ($dmg:expr, $range:expr, $cd:expr, $proj:ident, $speed:expr, $aoe:expr, $mask:expr, $($f:ident : $v:expr),*) => {
         WeaponDef { $($f: $v,)* ..w!($dmg, $range, $cd, $proj, $speed, $aoe, $mask) }
     };
 }
 
-pub const WEAPONS: [WeaponDef; 39] = [
+pub const WEAPONS: [WeaponDef; 45] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
-    w!(14, 14, 20, Bullet, 35, 0, M_SURF),                              // 2 robot de ligne
-    w!(7, 11, 10, Bullet, 35, 0, M_SURF),                               // 3 moto
+    w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
+    w!(7, 11, 10, Blaster, 35, 0, M_SURF),                              // 3 moto
     w!(45, 18, 30, Bullet, 35, 0, M_SURF),                              // 4 char léger
     w!(70, 34, 80, Shell, 14, 384, M_SURF, min_range: 6),               // 5 artillerie
     w!(22, 28, 10, Bullet, 50, 200, M_AIR),                             // 6 flak
-    w!(28, 20, 16, Bullet, 40, 0, M_SURF, salvo: 2),                    // 7 marcheur d'assaut
+    w!(28, 20, 16, Blaster, 40, 0, M_SURF, salvo: 2),                   // 7 marcheur d'assaut
     w!(90, 22, 40, Plasma, 35, 128, M_SURF),                            // 8 char glisseur
     w!(260, 60, 200, Missile, 14, 384, M_SURF, prefer_buildings: true), // 9 missiles tactiques
     w!(10, 24, 120, Ion, 30, 640, M_SURF, stun: 60),                    // 10 canon à ions
     w!(22, 30, 100, Missile, 18, 64, M_SURF | M_AIR, salvo: 6),         // 11 essaim de drones
-    w!(130, 26, 50, Bullet, 35, 256, M_SURF, salvo: 2),                 // 12 marcheur de siège
+    w!(130, 26, 50, Blaster, 35, 256, M_SURF, salvo: 2),                // 12 marcheur de siège
     w!(170, 22, 30, Plasma, 35, 256, M_SURF),                           // 13 robot de choc
     w!(650, 90, 160, Shell, 18, 900, M_SURF, min_range: 12),            // 14 artillerie lourde
-    w!(26, 12, 8, Bullet, 60, 0, M_AIR),                                // 15 intercepteur
+    w!(26, 12, 8, Blaster, 60, 0, M_AIR),                               // 15 intercepteur
     w!(45, 10, 20, Plasma, 40, 0, M_SURF),                              // 16 planeur
-    w!(32, 14, 14, Bullet, 40, 0, M_SURF, salvo: 2),                    // 17 canonnière
+    w!(32, 14, 14, Blaster, 40, 0, M_SURF, salvo: 2),                   // 17 canonnière
     w!(420, 3, 100, Bomb, 8, 768, M_SURF),                              // 18 bombes
     w!(85, 16, 16, Missile, 40, 0, M_AIR),                              // 19 chasseur de supériorité
     w!(3200, 3, 200, Bomb, 8, 1280, M_SURF),                            // 20 bombe stratégique
@@ -183,8 +190,8 @@ pub const WEAPONS: [WeaponDef; 39] = [
     w!(160, 34, 50, Bullet, 35, 256, M_SURF, salvo: 2),                 // 24 destroyer
     w!(320, 90, 160, Missile, 16, 512, M_SURF, prefer_buildings: true), // 25 croiseur missiles
     w!(40, 34, 8, Missile, 40, 0, M_AIR),                               // 26 croiseur AA
-    w!(75, 32, 2, Laser, 0, 128, M_SURF),                               // 27 laser araignée
-    w!(70, 28, 2, Laser, 0, 128, M_SURF),                               // 28 laser colosse
+    w!(45, 32, 80, Laser, 0, 128, M_SURF, sustain: 60),                 // 27 laser araignée (3 s)
+    w!(45, 28, 66, Laser, 0, 128, M_SURF, sustain: 50),                 // 28 laser colosse (2,5 s)
     w!(180, 30, 40, Plasma, 35, 384, M_SURF, salvo: 2),                 // 29 forteresse
     w!(160, 4, 20, Bomb, 8, 640, M_SURF),                               // 30 vaisseau-mère
     w!(280, 40, 30, Laser, 60, 384, M_SURF, salvo: 2),                  // 31 croiseur hyperespace
@@ -195,6 +202,12 @@ pub const WEAPONS: [WeaponDef; 39] = [
     w!(450, 150, 140, Shell, 20, 768, M_SURF, min_range: 15),           // 36 artillerie fixe
     w!(6000, 0, 1200, Beam, 0, 1536, M_SURF),                           // 37 canon orbital
     w!(35, 26, 10, Bullet, 50, 0, M_AIR),                               // 38 araignée AA
+    w!(260, 26, 30, Bullet, 40, 256, M_SURF, salvo: 2),                 // 39 canons-mandibules de la blatte
+    w!(30, 24, 8, Bullet, 60, 0, M_AIR),                                // 40 mitrailleuses AA de la blatte
+    w!(40, 16, 70, Fire, 0, 512, M_SURF, sustain: 50),                  // 41 souffle de feu du dragon (2,5 s)
+    w!(120, 28, 30, Plasma, 30, 256, M_SURF | M_AIR),                   // 42 perle d'énergie du dragon
+    w!(140, 44, 24, Blaster, 50, 192, M_SURF, salvo: 4),                // 43 batteries du cuirassé stellaire
+    w!(40, 32, 6, Blaster, 70, 0, M_AIR, salvo: 2),                     // 44 défense AA du cuirassé stellaire
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -221,7 +234,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 43] = [
+pub const TECHS: [TechDef; 46] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Assembleurs"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -265,6 +278,9 @@ pub const TECHS: [TechDef; 43] = [
     t!("mothership", "Vaisseau-mère", 6, 70, 15, [36], "Vaisseau-mère"),
     t!("hyper_cruiser", "Croiseur hyperespace", 6, 70, 15, [36], "Croiseur hyperespace, balise d'hyperespace"),
     t!("orbital", "Canon orbital", 6, 90, 15, [36], "Canon orbital"),
+    t!("roach", "Char Blatte", 6, 60, 15, [36], "Char Blatte"),
+    t!("dragon", "Gros Chinois", 6, 70, 15, [36], "Gros Chinois, dragon robot volant"),
+    t!("star_cruiser", "Cuirassé stellaire", 6, 90, 15, [36], "Cuirassé stellaire"),
 ];
 
 // ---------- Bâtiments ----------
@@ -544,18 +560,23 @@ pub const U_COMMANDER: u16 = 0;
 pub const U_ENG1: u16 = 1;
 pub const U_LINE_ROBOT: u16 = 4;
 pub const U_LIGHT_TANK: u16 = 6;
+pub const U_ARTILLERY: u16 = 7;
 pub const U_SONDE: u16 = 9;
 pub const U_SIEGE_WALKER: u16 = 16;
 pub const U_HEAVY_ARTY: u16 = 18;
 pub const U_GLIDER: u16 = 21;
 pub const U_TRANSPORT: u16 = 22;
 pub const U_SUB: u16 = 28;
+pub const U_SPIDER: u16 = 31;
 pub const U_COLOSSUS: u16 = 32;
 pub const U_FORTRESS: u16 = 33;
 pub const U_MOTHERSHIP: u16 = 34;
 pub const U_HYPER: u16 = 35;
+pub const U_ROACH: u16 = 36;
+pub const U_DRAGON: u16 = 37;
+pub const U_STAR_CRUISER: u16 = 38;
 
-pub const UNITS: [UnitDef; 36] = [
+pub const UNITS: [UnitDef; 39] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 17, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, tier: 3, altitude: 170, ..UD },
@@ -592,6 +613,9 @@ pub const UNITS: [UnitDef; 36] = [
     UnitDef { key: "fortress", name: "Forteresse marchante", hp: 60000, speed: 16, radius: 900, weapons: &[29], vision: 36, cost: &[(STEEL, 300), (PROCESSOR, 100), (COMPOSITE, 150), (ENERGY_CELL, 50)], build: 150, tech: 39, factory: FactoryKind::Exp, shield_r: 14, shield_hp: 15000, tier: 6, ..UD },
     UnitDef { key: "mothership", name: "Vaisseau-mère", layer: Layer::Air, hp: 45000, speed: 40, radius: 1000, weapons: &[30], vision: 40, cost: &[(STEEL, 250), (PROCESSOR, 100), (COMPOSITE, 120), (ENERGY_CELL, 60)], build: 150, tech: 40, factory: FactoryKind::Exp, tier: 6, altitude: 4096, ..UD },
     UnitDef { key: "hyper_cruiser", name: "Croiseur hyperespace", layer: Layer::Air, hp: 35000, speed: 60, radius: 800, weapons: &[31, 32], vision: 40, radar: 50, cost: &[(STEEL, 250), (PROCESSOR, 90), (COMPOSITE, 100), (ENERGY_CELL, 50)], build: 140, tech: 41, factory: FactoryKind::Exp, tier: 6, altitude: 3584, ..UD },
+    UnitDef { key: "roach", name: "Char Blatte", hp: 55000, speed: 26, radius: 720, weapons: &[39, 40], vision: 34, cost: &[(STEEL, 260), (PROCESSOR, 70), (COMPOSITE, 130), (ENERGY_CELL, 40)], build: 120, tech: 43, factory: FactoryKind::Exp, tier: 6, ..UD },
+    UnitDef { key: "dragon", name: "Gros Chinois", layer: Layer::Air, hp: 42000, speed: 45, radius: 820, weapons: &[41, 42], vision: 38, cost: &[(STEEL, 220), (PROCESSOR, 90), (COMPOSITE, 110), (ENERGY_CELL, 60)], build: 140, tech: 44, factory: FactoryKind::Exp, tier: 6, altitude: 1536, ..UD },
+    UnitDef { key: "star_cruiser", name: "Cuirassé stellaire", layer: Layer::Air, hp: 80000, speed: 22, radius: 1300, weapons: &[43, 44], vision: 44, radar: 60, cost: &[(STEEL, 400), (PROCESSOR, 150), (COMPOSITE, 200), (ENERGY_CELL, 80)], build: 200, tech: 45, factory: FactoryKind::Exp, tier: 6, altitude: 4352, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.
@@ -667,8 +691,8 @@ pub fn data_json() -> String {
             s.push(',');
         }
         s.push_str(&format!(
-            "{{\"dmg\":{},\"range\":{},\"cooldown\":{},\"proj\":{},\"aoe\":{},\"mask\":{},\"salvo\":{}}}",
-            w.dmg, w.range, w.cooldown, w.proj as u8, w.aoe, w.mask, w.salvo
+            "{{\"dmg\":{},\"range\":{},\"cooldown\":{},\"proj\":{},\"aoe\":{},\"mask\":{},\"salvo\":{},\"sustain\":{}}}",
+            w.dmg, w.range, w.cooldown, w.proj as u8, w.aoe, w.mask, w.salvo, w.sustain
         ));
     }
     s.push_str("],\"techs\":[");

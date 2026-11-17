@@ -61,7 +61,7 @@ fn own_building(w: &World, p: u8, r: i32) -> Option<usize> {
     }
 }
 
-fn give(w: &mut World, s: usize, queue: bool, o: Order) {
+pub(crate) fn give(w: &mut World, s: usize, queue: bool, o: Order) {
     if !queue {
         clear_orders(w, s);
     }

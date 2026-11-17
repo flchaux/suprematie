@@ -7,6 +7,8 @@ use crate::fixed::{dist, dist2, TILE};
 use crate::world::*;
 
 pub const GROUND_TARGET: u32 = 0x8000_0000;
+/// Projectile spécial : rayon prolongé (laser, souffle de feu) qui suit sa source et sa cible.
+pub const SPECIAL_BEAM: u8 = 3;
 
 #[inline]
 fn layer_mask(w: &World, s: usize) -> u8 {
@@ -181,6 +183,26 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
     let Some((tx, ty)) = target_point(w, t) else { return };
     let wd = &WEAPONS[wi];
     let dmg = wd.dmg * dmg_mult / 100;
+    if wd.sustain > 0 {
+        // rayon prolongé : il dure `sustain` ticks et touche à chaque tick (voir beam_tick)
+        w.projectiles.push(Projectile {
+            weapon: wi as u8,
+            owner,
+            x0: x,
+            y0: y,
+            tx,
+            ty,
+            target: t,
+            t: 0,
+            total: wd.sustain,
+            dmg,
+            aoe: wd.aoe,
+            special: SPECIAL_BEAM,
+            src,
+        });
+        w.ev(EV_FIRE, wi as i32, x, y, owner as i32);
+        return;
+    }
     if wd.speed == 0 {
         // rayon instantané
         w.ev(EV_BEAM, x, y, tx, ty);
@@ -528,6 +550,15 @@ pub fn update_projectiles(w: &mut World) {
             continue;
         }
         let mut p = p;
+        if p.special == SPECIAL_BEAM {
+            if beam_tick(w, &mut p) {
+                w.projectiles[i] = p;
+                i += 1;
+            } else {
+                w.projectiles.swap_remove(i);
+            }
+            continue;
+        }
         p.t += 1;
         let homing = p.special == 0 && matches!(WEAPONS[p.weapon as usize].proj, Proj::Missile | Proj::Torpedo);
         if homing {
@@ -546,6 +577,54 @@ pub fn update_projectiles(w: &mut World) {
         impact(w, &p);
         w.shooter = NONE;
     }
+}
+
+/// Un tick de rayon prolongé : il suit sa source et sa cible et inflige ses dégâts. Quand la cible
+/// meurt ou sort de portée, le rayon balaie vers la cible la plus proche pour le reste de sa durée.
+/// Faux quand il s'éteint : durée écoulée, source détruite ou paralysée, plus aucune cible.
+fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
+    p.t += 1;
+    if p.t > p.total {
+        return false;
+    }
+    if p.src != NONE {
+        let Some(s) = w.unit(p.src) else { return false };
+        if w.units.cold[s].stun > 0 {
+            return false;
+        }
+        p.x0 = w.units.x[s];
+        p.y0 = w.units.y[s];
+    }
+    let wd = &WEAPONS[p.weapon as usize];
+    let team = w.team_of(p.owner);
+    let reach = ((wd.range + 2) * TILE) as i64;
+    let in_reach = |w: &World, t: u32| target_point(w, t).filter(|&(tx, ty)| dist2(p.x0, p.y0, tx, ty) <= reach * reach);
+    let pos = match in_reach(w, p.target) {
+        Some(q) => q,
+        None => {
+            // cible perdue : la suivante (pas pour un tir au sol ni pour un bâtiment sans unité porteuse)
+            if p.src == NONE || (p.target & GROUND_TARGET != 0 && p.target != NONE) {
+                return false;
+            }
+            let t = find_target(w, team, p.weapon as usize, p.x0, p.y0);
+            let Some(q) = in_reach(w, t) else { return false };
+            p.target = t;
+            q
+        }
+    };
+    p.tx = pos.0;
+    p.ty = pos.1;
+    if wd.mask & M_AIR == 0 && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg) {
+        return true;
+    }
+    w.shooter = p.src;
+    if p.aoe > 0 {
+        area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
+    } else {
+        hit_ref(w, p.target, p.dmg, p.owner, wd.stun);
+    }
+    w.shooter = NONE;
+    true
 }
 
 fn impact(w: &mut World, p: &Projectile) {

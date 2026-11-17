@@ -281,6 +281,15 @@ pub extern "C" fn logistics_demo() -> u32 {
     h
 }
 
+/// Scène de démonstration des armes (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn weapons_demo() -> u32 {
+    let w = stress::weapons_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Équipe gagnante (-1 : partie en cours, -2 : aucune).
 #[no_mangle]
 pub extern "C" fn game_winner() -> i32 {
