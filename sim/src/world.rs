@@ -244,10 +244,17 @@ pub struct Building {
     pub tech: u8,
     /// gare / héliport : objets à envoyer [0..NUM_ITEMS] puis objets reçus [NUM_ITEMS..2*NUM_ITEMS]
     pub stash: Vec<u16>,
+    /// bras : part de la sortie de sa source qu'il prend, en % (0 : automatique, partage du reste)
+    pub share: u8,
+    /// bras : compteur de tour de rôle (ordonnancement à pas pondérés)
+    pub pass: u64,
+    /// source servie par plusieurs bras : temps virtuel du dernier service
+    pub vpass: u64,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
-    queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash
+    queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
+    share, pass, vpass
 });
 
 impl Building {

@@ -183,6 +183,16 @@
         <span class="dim small">{info.link >= 0 ? (info.working ? "Ouverte" : "Ouverture… (forte consommation)") : "Non reliée"}</span>
       {:else if bdef.cls === BClass.Shield}
         <div class="row">Bouclier : <b class="num">{info.shield}</b> <button onclick={() => client.toggleBuilding()}>{info.enabled ? "Couper" : "Activer"}</button></div>
+      {:else if bdef.cls === BClass.Inserter}
+        <div class="share">
+          <div class="row">
+            <span class="kicker">Part de la sortie</span>
+            <b class="num">{info.share ? info.share + " %" : "Auto"}</b>
+            {#if info.takers > 1}<span class="dim small">effective : <span class="num">{(info.shareEff / 10).toFixed(1)} %</span> · {info.takers} bras sur cette source</span>{/if}
+          </div>
+          <input type="range" min="0" max="100" step="5" value={info.share} title="0 : automatique (part égale du reste)" onchange={(e) => client.setShare(Number((e.target as HTMLInputElement).value))} />
+          <span class="dim small">Les bras qui se servent au même bâtiment alternent. En automatique, ils se partagent à égalité ce que les parts réglées laissent.</span>
+        </div>
       {:else if bdef.cls === BClass.Extractor}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
       {:else if bdef.cls === BClass.Depot}
@@ -285,6 +295,8 @@
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .share { display: flex; flex-direction: column; gap: 6px; }
+  .share input[type="range"] { width: 100%; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
   .arrow { color: var(--accent); letter-spacing: -2px; }
   .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; max-height: 236px; overflow-y: auto; padding-right: 2px; }

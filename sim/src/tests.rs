@@ -273,3 +273,54 @@ fn flow_field_goes_around_wall() {
     println!("arrivée à {} cases, en {} ticks, position {},{}", d / TILE, w.tick, w.units.x[s] / TILE, w.units.y[s] / TILE);
     assert!(d < 3 * TILE, "l'unité n'a pas contourné le mur");
 }
+
+/// Plusieurs bras sur la même source : ils alternent, et la part réglée d'un bras est respectée.
+#[test]
+fn arms_share_output_of_same_source() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    spot(&mut w, IRON_ORE, 100, 100);
+    // extracteur tourné vers une case vide : sa sortie ne part que par les bras
+    let ext = put(&mut w, B_EXTRACTOR, 100, 100, 3);
+    let a1 = put(&mut w, B_INSERTER, 102, 100, 0);
+    let a2 = put(&mut w, B_INSERTER, 102, 101, 0);
+    let a3 = put(&mut w, B_INSERTER, 99, 100, 2);
+    put(&mut w, B_DEPOT, 103, 100, 0);
+    put(&mut w, B_DEPOT, 97, 100, 0);
+    put(&mut w, B_GENERATOR, 100, 104, 0);
+    assert_eq!(crate::buildings::takers_of(&w, ext), vec![a1, a2, a3]);
+    let arms = [a1, a2, a3];
+    let run = |w: &mut World, ticks: u32| -> [u32; 3] {
+        let mut n = [0u32; 3];
+        let mut prev = [0u8; 3];
+        for _ in 0..ticks {
+            w.step(&[]);
+            for k in 0..3 {
+                let ph = w.buildings[arms[k]].phase;
+                if prev[k] == 0 && ph == 1 {
+                    n[k] += 1;
+                }
+                prev[k] = ph;
+            }
+        }
+        n
+    };
+    run(&mut w, 400);
+    let n = run(&mut w, 6000);
+    let total: u32 = n.iter().sum();
+    assert!(total > 60, "trop peu d'objets pris : {:?}", n);
+    for &c in &n {
+        // parts égales (un tiers chacun), à 15 % près
+        assert!((c as f64 / total as f64 - 1.0 / 3.0).abs() < 0.05, "partage inégal : {:?}", n);
+    }
+    // le premier bras réglé à 80 % : les deux autres se partagent le reste
+    let rf = w.building_ref(a1) as i32;
+    w.step(&[4, crate::orders::O_SET_SHARE, 0, rf, 80]);
+    assert_eq!(w.buildings[a1].share, 80);
+    run(&mut w, 400);
+    let n = run(&mut w, 6000);
+    let total: u32 = n.iter().sum();
+    let f = n[0] as f64 / total as f64;
+    assert!((f - 0.8).abs() < 0.05, "part réglée non respectée : {:?} ({:.2})", n, f);
+}

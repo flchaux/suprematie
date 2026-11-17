@@ -346,6 +346,128 @@ pub fn wake_watchers(w: &mut World, b: usize) {
     }
 }
 
+/// Bras qui se servent au bâtiment `sb` (leur case de prise est dans son emprise), par indice croissant.
+pub fn takers_of(w: &World, sb: usize) -> Vec<usize> {
+    let bb = &w.buildings[sb];
+    let (bw, bh) = bb.size();
+    let inside = |x: i32, y: i32| x >= bb.x && x < bb.x + bw && y >= bb.y && y < bb.y + bh;
+    let mut v = Vec::new();
+    for ty in bb.y - 1..=bb.y + bh {
+        for tx in bb.x - 1..=bb.x + bw {
+            if inside(tx, ty) || !w.map.inside(tx, ty) {
+                continue;
+            }
+            let o = w.map.occ[w.map.idx(tx, ty)];
+            if o == 0 {
+                continue;
+            }
+            let c = (o - 1) as usize;
+            let cb = &w.buildings[c];
+            if !cb.alive || cb.def().class != BClass::Inserter || !cb.complete() {
+                continue;
+            }
+            let (dx, dy) = DIRS[cb.dir as usize];
+            if inside(cb.x - dx, cb.y - dy) {
+                v.push(c);
+            }
+        }
+    }
+    v.sort_unstable();
+    v
+}
+
+/// Poids des bras (millièmes de %) : les parts réglées, puis le reste à égalité entre les bras en automatique.
+pub fn share_weights(w: &World, takers: &[usize]) -> Vec<u64> {
+    let explicit: u64 = takers.iter().map(|&c| w.buildings[c].share as u64).sum();
+    let autos = takers.iter().filter(|&&c| w.buildings[c].share == 0).count() as u64;
+    let rest = 100_000u64.saturating_sub(explicit * 1000);
+    takers
+        .iter()
+        .map(|&c| {
+            let s = w.buildings[c].share as u64;
+            if s > 0 {
+                s * 1000
+            } else {
+                (rest / autos.max(1)).max(1)
+            }
+        })
+        .collect()
+}
+
+const SHARE_STRIDE: u64 = 1 << 32;
+
+/// Le bras `c` est-il prêt à prendre l'objet `it` (main vide, au repos, cible qui l'accepte) ?
+fn taker_ready(w: &World, c: usize, it: u8) -> bool {
+    let cb = &w.buildings[c];
+    if cb.phase != 0 || cb.hand != 0 {
+        return false;
+    }
+    let (dx, dy) = DIRS[cb.dir as usize];
+    let (tx, ty) = (cb.x + dx, cb.y + dy);
+    if !w.map.inside(tx, ty) {
+        return false;
+    }
+    let o = w.map.occ[w.map.idx(tx, ty)];
+    if o == 0 {
+        return false;
+    }
+    let t = (o - 1) as usize;
+    w.buildings[t].complete() && (it == 0 || w.buildings[t].def().class == BClass::Belt || accepts(w, t, it))
+}
+
+/**
+ * Tour de rôle (ordonnancement à pas pondérés) : parmi les bras prêts qui se servent à `sb`, celui
+ * dont le compteur est le plus bas prend l'objet ; son compteur avance de STRIDE / poids. Un bras
+ * resté inactif repart du temps virtuel de la source (pas de crédit accumulé). Renvoie le pas de
+ * `me` s'il peut prendre, sinon None (et réveille le bras prioritaire).
+ */
+fn share_turn(w: &mut World, me: usize, sb: usize) -> Option<u64> {
+    let takers = takers_of(w, sb);
+    let Some(mi) = takers.iter().position(|&c| c == me) else { return Some(0) };
+    if takers.len() <= 1 {
+        return Some(0);
+    }
+    let weights = share_weights(w, &takers);
+    let it = output_of(&w.buildings[sb]);
+    let v = w.buildings[sb].vpass;
+    let mut winner = me;
+    let mut wk = w.buildings[me].pass.max(v);
+    for &c in &takers {
+        if c == me || !taker_ready(w, c, it) {
+            continue;
+        }
+        let k = w.buildings[c].pass.max(v);
+        if k < wk || (k == wk && c < winner) {
+            winner = c;
+            wk = k;
+        }
+    }
+    if winner != me {
+        w.buildings[winner].wake = 0;
+        return None;
+    }
+    Some(SHARE_STRIDE / weights[mi])
+}
+
+/// Part effective d'un bras dans la sortie de sa source (millièmes) et nombre de bras sur cette source.
+pub fn share_info(w: &World, b: usize) -> (u64, usize) {
+    let bb = &w.buildings[b];
+    let (dx, dy) = DIRS[bb.dir as usize];
+    let (sx, sy) = (bb.x - dx, bb.y - dy);
+    if !w.map.inside(sx, sy) {
+        return (1000, 1);
+    }
+    let o = w.map.occ[w.map.idx(sx, sy)];
+    if o == 0 || w.buildings[(o - 1) as usize].def().class == BClass::Belt {
+        return (1000, 1);
+    }
+    let takers = takers_of(w, (o - 1) as usize);
+    let Some(mi) = takers.iter().position(|&c| c == b) else { return (1000, 1) };
+    let weights = share_weights(w, &takers);
+    let total: u64 = weights.iter().sum();
+    (weights[mi] * 1000 / total.max(1), takers.len())
+}
+
 fn watch(w: &mut World, target: usize, me: usize) {
     let v = &mut w.buildings[target].watchers;
     if !v.contains(&(me as u32)) && v.len() < 16 {
@@ -920,11 +1042,27 @@ fn tick_inserter(w: &mut World, b: usize) {
                 w.buildings[b].wake = w.tick + SLEEP;
                 return;
             }
+            let mut stride = 0;
             let got = if w.buildings[sb].def().class == BClass::Belt {
                 belts::take_from_belt(w, sb, &|i| want[i as usize])
             } else {
+                // plusieurs bras sur la même source : ils se servent à tour de rôle, selon leur part
+                match share_turn(w, b, sb) {
+                    Some(st) => stride = st,
+                    None => {
+                        watch(w, sb, b);
+                        w.buildings[b].wake = w.tick + 4;
+                        return;
+                    }
+                }
                 take_output(w, sb, &want)
             };
+            if got != 0 && stride > 0 {
+                let v = w.buildings[sb].vpass;
+                let start = w.buildings[b].pass.max(v);
+                w.buildings[b].pass = start + stride;
+                w.buildings[sb].vpass = start;
+            }
             if got == 0 {
                 if w.buildings[sb].def().class == BClass::Belt {
                     w.buildings[b].wake = w.tick + 3;

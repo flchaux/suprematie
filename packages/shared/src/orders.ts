@@ -22,6 +22,8 @@ export const O = {
   TOGGLE: 18,
   CANCEL: 19,
   SURRENDER: 20,
+  /** part de la sortie de sa source prise par un bras (%, 0 : automatique) */
+  SET_SHARE: 21,
 } as const;
 
 export type Cmd = number[];
@@ -96,6 +98,10 @@ export function load(carrier: number, ids: number[]): Cmd {
 }
 export function special(src: number, x: number, y: number, tgt: number): Cmd {
   return [O.SPECIAL, src | 0, x | 0, y | 0, tgt | 0];
+}
+/** Part de la sortie de sa source prise par un bras, en % (0 : automatique). */
+export function setShare(ref: number, pct: number): Cmd {
+  return [O.SET_SHARE, ref | 0, Math.max(0, Math.min(100, Math.round(pct)))];
 }
 export function toggle(ref: number): Cmd {
   return [O.TOGGLE, ref | 0];

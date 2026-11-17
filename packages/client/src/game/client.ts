@@ -1465,6 +1465,10 @@ export class GameClient {
   toggleBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.toggle(ui.selBuilding.ref));
   }
+  /** Part de la sortie de sa source prise par le bras sélectionné (%, 0 : automatique). */
+  setShare(pct: number): void {
+    if (ui.selBuilding) this.cmd(Ord.setShare(ui.selBuilding.ref, pct));
+  }
   cancelBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
   }
