@@ -1,11 +1,12 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
-// ?set=units|buildings  &only=clé1,clé2
+// ?set=units|buildings|items  &only=clé1,clé2
 import * as THREE from "three/webgpu";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../../packages/client/src/models/generator.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
 import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src/render/textures.ts";
 import { UNIT_MODELS } from "../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../assets/models/buildings.ts";
+import { ITEM_MODELS } from "../../assets/models/items.ts";
 import data from "./data.json";
 
 const params = new URLSearchParams(location.search);
@@ -14,9 +15,13 @@ const only = params.get("only")?.split(",");
 const defs: { key: string; name: string; size: number; w: number; h: number }[] =
   set === "units"
     ? data.units.map((u: { key: string; name: string; radius: number }) => ({ key: u.key, name: u.name, size: Math.max(0.6, (u.radius * 2.4) / 256), w: 0, h: 0 }))
-    : data.buildings.map((b: { key: string; name: string; w: number; h: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h), w: b.w, h: b.h }));
+    : set === "items"
+      ? data.items.slice(1).map((it: { key: string; name: string }) => ({ key: it.key, name: it.name, size: 1, w: 0, h: 0 }))
+      : data.buildings.map((b: { key: string; name: string; w: number; h: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h), w: b.w, h: b.h }));
 const list = only ? defs.filter((d) => only.includes(d.key)) : defs;
-const models = set === "units" ? UNIT_MODELS : BUILDING_MODELS;
+const models = set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
+// les objets sont teintés de leur propre couleur (et non de celle d'un joueur)
+const itemColor = (key: string) => (data.items as { key: string; color: number }[]).find((it) => it.key === key)?.color ?? 0xffffff;
 
 const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL: params.has("webgl") });
 renderer.setPixelRatio(1);
@@ -34,7 +39,7 @@ sun.position.set(-3, 6, 4);
 scene.add(sun);
 
 const cols = Math.ceil(Math.sqrt(list.length * 1.6));
-const cell = set === "units" ? 3.2 : 8;
+const cell = set === "units" ? 3.2 : set === "items" ? 1.6 : 8;
 const labels = document.getElementById("labels")!;
 let tris = 0;
 const placed: { pos: THREE.Vector3; name: string; tri: number }[] = [];
@@ -48,7 +53,7 @@ list.forEach((d, i) => {
   const x = (i % cols) * cell;
   const z = Math.floor(i / cols) * cell;
   const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.6, 0)), new THREE.Vector3(s, s, s));
-  const color = new THREE.Color(PLAYER_COLORS[i % 8]);
+  const color = new THREE.Color(set === "items" ? itemColor(d.key) : PLAYER_COLORS[i % 8]);
   const texScale = s * (set === "units" ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING);
   const body = teamInstancedMesh(built.body, 1, texScale);
   body.mesh.count = 1;
