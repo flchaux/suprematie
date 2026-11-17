@@ -875,7 +875,10 @@ export class GameClient {
         break;
       case "rotate":
         if (ui.mode === "build") {
-          ui.buildDir = (ui.buildDir + 1) % 4;
+          // tapis : la direction (donc la forme) est automatique jusqu'au premier R, qui la force
+          const cur = this.ghostCells.length === 1 ? this.ghostCells[0].dir : ui.buildDir;
+          ui.buildDir = ((this.isBeltKind() && !this.beltForced ? cur : ui.buildDir) + 1) % 4;
+          this.beltForced = true;
           this.updateGhost();
         } else if (ui.mode === "paste") this.plans.rotate();
         break;
@@ -1355,6 +1358,7 @@ export class GameClient {
     ui.buildKind = kind;
     ui.mode = "build";
     this.ghostStart = null;
+    this.beltForced = false;
     sfx.click();
     this.updateGhost();
   }
@@ -1405,6 +1409,66 @@ export class GameClient {
     return out.slice(0, 200);
   }
 
+  /** pose de tapis : direction forcée par R (sinon déduite des tapis voisins) */
+  beltForced = false;
+  isBeltKind(): boolean {
+    return this.data?.buildings[ui.buildKind]?.cls === BClass.Belt;
+  }
+  /** Pose logistique (tapis, tapis de contrôle, bras) : elle peut remplacer nos tapis existants. */
+  private replaceFlag(): number {
+    const c = this.data?.buildings[ui.buildKind]?.cls;
+    return c === BClass.Belt || c === BClass.Router || c === BClass.Inserter ? 4 : 0;
+  }
+  /** Tapis complets visibles (toutes équipes) : case -> { direction, propriétaire }. */
+  private beltTiles(): Map<number, { dir: number; owner: number }> {
+    const m = new Map<number, { dir: number; owner: number }>();
+    const f = this.frame;
+    if (!f || !this.data || !this.map) return m;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const kind = f.buf[o + 1] & 0xff;
+      if (this.data.buildings[kind]?.cls !== BClass.Belt || f.buf[o + 4] < 65536) continue;
+      const x = f.buf[o + 2] & 0xffff;
+      const y = (f.buf[o + 2] >>> 16) & 0xffff;
+      m.set(y * this.map.w + x, { dir: (f.buf[o + 1] >> 16) & 3, owner: (f.buf[o + 1] >> 8) & 0xff });
+    }
+    return m;
+  }
+  /**
+   * Direction automatique d'un tapis posé seul : il prolonge le tapis qui débouche sur sa case,
+   * sinon il alimente un tapis voisin (qui ne pointe pas vers lui) ; sinon la dernière direction choisie.
+   */
+  private autoBeltDir(x: number, y: number, belts: Map<number, { dir: number; owner: number }>): number {
+    const W = this.map!.w;
+    const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    for (let d = 0; d < 4; d++) {
+      // tapis à côté dont l'avant est notre case
+      const b = belts.get((y - D[d][1]) * W + (x - D[d][0]));
+      if (b && b.owner === ui.me && b.dir === d) return d;
+    }
+    for (let d = 0; d < 4; d++) {
+      const b = belts.get((y + D[d][1]) * W + (x + D[d][0]));
+      if (b && b.owner === ui.me && b.dir !== (d + 2) % 4) return d;
+    }
+    return ui.buildDir;
+  }
+  /** Forme d'un tapis (règle de la simulation, belts::belt_shape) : 0 droit, 1 et 2 virages. */
+  private beltShape(x: number, y: number, dir: number, belts: Map<number, { dir: number; owner: number }>): number {
+    const W = this.map!.w;
+    const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const back = belts.get((y + D[(dir + 2) % 4][1]) * W + (x + D[(dir + 2) % 4][0]));
+    if (back && back.dir === dir) return 0;
+    let shape = 0;
+    let n = 0;
+    for (const [k, sd] of [[1, (dir + 1) % 4], [2, (dir + 3) % 4]]) {
+      const b = belts.get((y + D[sd][1]) * W + (x + D[sd][0]));
+      if (b && (b.dir + 2) % 4 === sd) {
+        shape = k;
+        n++;
+      }
+    }
+    return n === 1 ? shape : 0;
+  }
+
   private ghostSeq = 0;
   private async updateGhost(): Promise<void> {
     if (ui.mode !== "build" || ui.buildKind < 0 || !this.scene || !this.data) return;
@@ -1413,14 +1477,21 @@ export class GameClient {
     const def = this.data.buildings[ui.buildKind];
     const cur = this.snapBuild(g);
     const lineable = def.cls === BClass.Belt || def.cls === BClass.Wall || def.cls === BClass.Pylon;
-    const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: ui.buildDir }];
+    const isBelt = def.cls === BClass.Belt;
+    const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
+    const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
     const seq = ++this.ghostSeq;
     const args = [ui.me, ui.buildKind];
-    for (const c of cells) args.push(c.x, c.y, c.dir);
+    const rf = this.replaceFlag();
+    for (const c of cells) args.push(c.x, c.y, c.dir | rf);
     const ok = await this.query<boolean[]>("canPlaceMany", args);
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!ok?.[i] }));
-    this.scene.setGhost(ui.buildKind, this.ghostCells);
+    // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
+    if (isBelt && this.map) {
+      for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
+      this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: this.beltShape(c.x, c.y, c.dir, belts) })));
+    } else this.scene.setGhost(ui.buildKind, this.ghostCells);
     const wpn = def.weapon >= 0 ? this.data.weapons[def.weapon] : null;
     this.scene.showRange(cur.x + def.w / 2, cur.y + def.h / 2, wpn ? wpn.range : def.radar || def.shieldR || 0);
   }
@@ -1437,7 +1508,8 @@ export class GameClient {
       sfx.error();
       return;
     }
-    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir, shift || i > 0)));
+    const rf = this.replaceFlag();
+    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf, shift || i > 0)));
     sfx.confirm();
     this.ghostStart = null;
     if (!shift) {

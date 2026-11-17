@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { BClass } from "@supreme/shared";
   import { ui } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
   import TopBar from "./TopBar.svelte";
@@ -69,7 +70,7 @@
     </div>
     {#if ui.mode}
       {@const m = MODE_LABEL[ui.mode]}
-      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
+      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt} (direction et virages automatiques d'après les tapis voisins ; {keyOf("rotate")} force la direction){/if}{/if}{#if ui.mode === "build" && ([BClass.Belt, BClass.Router, BClass.Inserter] as number[]).includes(ui.data?.buildings[ui.buildKind]?.cls ?? -1)}. Peut remplacer vos tapis{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
     {/if}
     <div class="messages">
       {#each ui.messages.filter((m) => now - m.time < 10000) as m (m.id)}

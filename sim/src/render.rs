@@ -160,6 +160,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
         BClass::Extractor => (bb.recipe as i32 | (bb.out as i32) << 8, (bb.progress / 1024) as i32),
+        BClass::Belt if bb.complete() => (crate::belts::belt_shape(w, b) as i32, 0),
         _ => (0, 0),
     };
     out.extend_from_slice(&[
@@ -226,8 +227,21 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
                     continue;
                 }
                 let (dx, dy) = DIRS[bb.dir as usize];
-                let cx = bb.x * TILE + TILE / 2 + dx * (TILE / 2 - off);
-                let cy = bb.y * TILE + TILE / 2 + dy * (TILE / 2 - off);
+                let shape = crate::belts::belt_shape(w, l.tiles[idx] as usize);
+                let (cx, cy) = if shape == 0 {
+                    (bb.x * TILE + TILE / 2 + dx * (TILE / 2 - off), bb.y * TILE + TILE / 2 + dy * (TILE / 2 - off))
+                } else {
+                    // virage : quart de cercle de rayon 1/2 case autour du coin entre l'entrée latérale
+                    // et la sortie ; angle de 0 (entrée) à 90° (sortie) selon l'avancement dans la case
+                    let sd = if shape == 1 { (bb.dir as usize + 1) % 4 } else { (bb.dir as usize + 3) % 4 };
+                    let (sx, sy) = DIRS[sd];
+                    let kx = bb.x * TILE + TILE / 2 + (sx + dx) * TILE / 2;
+                    let ky = bb.y * TILE + TILE / 2 + (sy + dy) * TILE / 2;
+                    let a = ((TILE - off.clamp(0, TILE)) * 16384 / TILE) as u16;
+                    let (c, s) = (w.trig.cos(a), w.trig.sin(a));
+                    let r = TILE / 2;
+                    (kx - (dx * c + sx * s) * r / 16384, ky - (dy * c + sy * s) * r / 16384)
+                };
                 out.extend_from_slice(&[cx, cy, it as i32]);
                 ni += 1;
             }
@@ -467,7 +481,7 @@ pub fn planned_builds(w: &World, player: i32) -> Vec<i32> {
         for o in &w.units.cold[s].orders {
             if let Order::Build { kind, x, y, dir, bid } = *o {
                 if w.building(bid).is_none() {
-                    list.push((kind, x, y, dir));
+                    list.push((kind, x, y, dir & 3));
                 }
             }
         }

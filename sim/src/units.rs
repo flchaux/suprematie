@@ -593,6 +593,12 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                     }
                 }
             }
+            // pose avec remplacement : tapis réorienté sur place, ou tapis démontés avant le chantier
+            if let Some(b) = buildings::clear_for_replace(w, owner, bk, x, y, dir) {
+                let r = w.building_ref(b);
+                w.units.cold[s].orders[0] = Order::Build { kind: bk, x, y, dir, bid: r };
+                return NONE;
+            }
             match buildings::place_building(w, owner, bk, x, y, dir) {
                 Some(b) => {
                     let r = w.building_ref(b);

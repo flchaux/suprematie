@@ -113,6 +113,8 @@ export class Entities {
   group = new THREE.Group();
   unitMeshes: KindMesh[] = [];
   buildingMeshes: KindMesh[] = [];
+  /** virages des tapis par type : [entrée à gauche, entrée à droite] (forme 1 et 2 de la simulation) */
+  beltCurves = new Map<number, [KindMesh, KindMesh]>();
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
@@ -175,6 +177,12 @@ export class Entities {
       built.box.getSize(size);
       const scale = (b.w * 0.98) / Math.max(size.x, size.z, 0.01);
       this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
+      // tapis : virages (objets entrant par la gauche, par la droite), à l'échelle du tapis droit
+      if (b.cls === BClass.Belt) {
+        const g = BUILDING_MODELS[b.key + "_virage_g"];
+        const d = BUILDING_MODELS[b.key + "_virage_d"];
+        if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
+      }
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
     this.itemColors = data.items.map((it) => new THREE.Color(it.color ?? 0xffffff));
@@ -314,6 +322,10 @@ export class Entities {
     const teamOf = (p: number) => f.players[p]?.team ?? p;
     for (const m of this.unitMeshes) m.begin();
     for (const m of this.buildingMeshes) m.begin();
+    for (const [g, d] of this.beltCurves.values()) {
+      g.begin();
+      d.begin();
+    }
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
@@ -472,7 +484,9 @@ export class Entities {
         continue;
       }
       if (strategic) continue;
-      const km = this.buildingMeshes[kind];
+      // tapis en virage : forme calculée par la simulation d'après les tapis voisins (mot auxiliaire)
+      const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
+      const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : this.buildingMeshes[kind];
       km.ensure(km.n + 1);
       const build = buf[o + 4] / 65536;
       const y = groundHeight(this.map, cx, cz);
@@ -597,6 +611,10 @@ export class Entities {
     for (const m of this.vehicleMeshes) m.end();
     for (const m of this.unitMeshes) m.end();
     for (const m of this.buildingMeshes) m.end();
+    for (const [g, d] of this.beltCurves.values()) {
+      g.end();
+      d.end();
+    }
     this.updateHatches(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
       ic.instanceMatrix.needsUpdate = true;

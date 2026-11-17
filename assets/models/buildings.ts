@@ -33,6 +33,36 @@ function tapis(surface: Part["color"], fleche: Part["color"], filet: Part["color
   };
 }
 
+/**
+ * Tapis en virage : quart de cercle de rayon 1/2 case centré sur le coin d'entrée, en 6 segments.
+ * Les objets entrent par le côté (côté gauche du modèle si `side` = -1, droit si +1) et sortent vers +z,
+ * comme sur un tapis droit. Rebord extérieur continu, petit poteau au coin intérieur.
+ */
+function tapisVirage(surface: Part["color"], fleche: Part["color"], filet: Part["color"], side: -1 | 1): Model {
+  const parts: Part[] = [];
+  const n = 6;
+  const cx = side * 0.5; // coin (centre du quart de cercle), côté entrée, bord de sortie
+  const cz = 0.5;
+  const r = (k: number) => Math.round(k * 1000) / 1000;
+  for (let i = 0; i < n; i++) {
+    // angle depuis le coin : de l'entrée (vers -z) à la sortie (vers le côté opposé à l'entrée)
+    const phi = (-90 + ((i + 0.5) * 90) / n) * (Math.PI / 180);
+    const ux = -side * Math.cos(phi);
+    const uz = Math.sin(phi);
+    // tangente (sens de marche) : rotation autour de y qui aligne +z sur la tangente
+    const yaw = Math.round((Math.atan2(-side * -Math.sin(phi), Math.cos(phi)) * 180) / Math.PI);
+    const at = (rad: number, y: number): [number, number, number] => [r(cx + ux * rad), y, r(cz + uz * rad)];
+    parts.push(
+      { shape: "box", size: [0.92, 0.07, 0.3], pos: at(0.5, 0.035), rot: [0, yaw, 0], color: "dark" },
+      { shape: "box", size: [0.78, 0.03, 0.27], pos: at(0.5, 0.085), rot: [0, yaw, 0], color: i === 2 || i === 3 ? fleche : surface },
+      { shape: "box", size: [0.08, 0.14, 0.27], pos: at(0.96, 0.07), rot: [0, yaw, 0], color: "light" },
+      { shape: "box", size: [0.035, 0.02, 0.2], pos: at(0.96, 0.15), rot: [0, yaw, 0], color: filet },
+    );
+  }
+  parts.push({ shape: "cylinder", sides: 8, radius: 0.06, height: 0.16, pos: [r(cx - side * 0.04), 0.08, r(cz - 0.04)], color: "light" });
+  return { parts };
+}
+
 /** Caisson commun des assembleurs (3 x 3) : coins blindés clairs, cadre supérieur aux couleurs de l'équipe. */
 function assembleur(): Part[] {
   return [
@@ -105,10 +135,19 @@ export const BUILDING_MODELS: Record<string, Model> = {
   },
   // belt1 : rebords clairs, flèche sombre, voyants ambre (96 triangles)
   belt1: tapis("metal", "dark", "amber", 0.3),
+  // belt1_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
+  belt1_virage_g: tapisVirage("metal", "dark", "amber", -1),
+  belt1_virage_d: tapisVirage("metal", "dark", "amber", 1),
   // belt2 : tapis sombre, flèche jaune, filets cyan (96 triangles)
   belt2: tapis("dark", "hazard", "glow", 0.4),
+  // belt2_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
+  belt2_virage_g: tapisVirage("dark", "hazard", "glow", -1),
+  belt2_virage_d: tapisVirage("dark", "hazard", "glow", 1),
   // belt3 : tapis sombre, flèche et longs filets cyan (96 triangles)
   belt3: tapis("dark", "glow", "glow", 0.8),
+  // belt3_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
+  belt3_virage_g: tapisVirage("dark", "glow", "glow", -1),
+  belt3_virage_d: tapisVirage("dark", "glow", "glow", 1),
   // inserter : socle rond à liseré cyan, colonne, bras et pince (84 triangles)
   inserter: {
     parts: [

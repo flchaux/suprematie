@@ -175,6 +175,36 @@ fn main_pred(w: &World, b: usize) -> Option<usize> {
     }
 }
 
+/// Forme d'un tapis, déduite des tapis voisins (même règle que la continuité des lignes) :
+/// 0 droit, 1 virage alimenté par le côté (dir + 1) % 4, 2 virage alimenté par le côté (dir + 3) % 4.
+/// Un virage : aucun tapis derrière ne pointe vers celui-ci, et un seul tapis latéral y débouche.
+pub fn belt_shape(w: &World, b: usize) -> u8 {
+    let bb = &w.buildings[b];
+    let d = bb.dir as usize;
+    let (bx, by) = DIRS[(d + 2) % 4];
+    if let Some((_, pd)) = belt_at(w, bb.x + bx, bb.y + by) {
+        if pd as usize == d {
+            return 0;
+        }
+    }
+    let mut shape = 0;
+    let mut count = 0;
+    for (k, sd) in [(1u8, (d + 1) % 4), (2u8, (d + 3) % 4)] {
+        let (sx, sy) = DIRS[sd];
+        if let Some((_, pd)) = belt_at(w, bb.x + sx, bb.y + sy) {
+            if (pd as usize + 2) % 4 == sd {
+                shape = k;
+                count += 1;
+            }
+        }
+    }
+    if count == 1 {
+        shape
+    } else {
+        0
+    }
+}
+
 /// Reconstruit les lignes autour des cases modifiées en conservant les objets.
 pub fn rebuild_around(w: &mut World, changed: &[(i32, i32)]) {
     let mut lines_hit: Vec<u32> = Vec::new();

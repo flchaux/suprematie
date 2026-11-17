@@ -18,8 +18,10 @@ const defs: { key: string; name: string; size: number; w: number; h: number }[] 
     : set === "items"
       ? data.items.slice(1).map((it: { key: string; name: string }) => ({ key: it.key, name: it.name, size: 1, w: 0, h: 0 }))
       : data.buildings.map((b: { key: string; name: string; w: number; h: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h), w: b.w, h: b.h }));
-const list = only ? defs.filter((d) => only.includes(d.key)) : defs;
 const models = set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
+// variantes de modèles sans définition propre (virages des tapis…) : affichées si demandées par leur clé
+const variants = (only ?? []).filter((k) => models[k] && !defs.some((d) => d.key === k)).map((k) => ({ key: k, name: k, size: 1, w: 1, h: 1 }));
+const list = only ? [...defs.filter((d) => only.includes(d.key)), ...variants] : defs;
 // les objets sont teintés de leur propre couleur (et non de celle d'un joueur)
 const itemColor = (key: string) => (data.items as { key: string; color: number }[]).find((it) => it.key === key)?.color ?? 0xffffff;
 
