@@ -4,35 +4,29 @@
   import Cost from "./Cost.svelte";
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
+  import { BUILD_CATS as CATS } from "../game/catalog.ts";
+  import { kb, keyOf } from "../game/keys.svelte.ts";
 
-  const CATS: [string, string, string[]][] = [
-    ["Production", "production", ["extractor", "furnace", "assembler1", "assembler2", "assembler3", "refinery", "chemical", "lab", "depot"]],
-    ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "pylon", "warehouse", "rail", "station", "cargo_pad"]],
-    ["Énergie", "energy", ["generator", "hydro_plant", "crystal_reactor"]],
-    ["Usines", "factory", ["land_factory", "air_factory", "naval_factory", "gantry"]],
-    ["Défense", "defense", ["radar", "wall", "light_turret", "aa_turret", "heavy_turret", "fixed_artillery", "shield_gen", "antimissile"]],
-    ["Spécial", "special", ["transfer", "gate", "area_shield", "missile_silo", "beacon", "orbital"]],
-  ];
-  let cat = $state(0);
+  // catégorie affichée : partagée avec le menu au clavier (B, puis chiffre, puis chiffre)
+  const cat = $derived(kb.buildCat);
   const idx = $derived(ui.data ? Object.fromEntries(ui.data.buildings.map((b, i) => [b.key, i])) : {});
   const short = (n: string) => n.replace("Tourelle ", "T. ").replace("Générateur de bouclier", "Bouclier").replace("Centrale à hydrocarbure", "Centrale").replace("Silo de missile stratégique", "Silo stratégique").replace("Plateforme de transfert", "Transfert").replace("Défense antimissile", "Antimissile").replace("Balise d'hyperespace", "Balise").replace("Portique expérimental", "Portique");
-  function keydown(e: KeyboardEvent) {
-    if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-    if (e.key === "b" || e.key === "B") cat = (cat + 1) % CATS.length;
-  }
+  const bKey = $derived(keyOf("buildMenu"));
 </script>
 
-<svelte:window onkeydown={keydown} />
-
 <div class="panel build">
-  <div class="tabs">
+  <div class="tabs" class:armed={kb.buildStep === "cat"}>
     {#each CATS as [name, icon], i}
-      <button class="tab" class:on={cat === i} onclick={() => (cat = i)} title={name}><Icon name={icon} size={15} /><span>{name}</span></button>
+      <button class="tab" class:on={cat === i} onclick={() => (kb.buildCat = i)} title={name}><span class="kn num">{i + 1}</span><Icon name={icon} size={15} /><span class="tn">{name}</span></button>
     {/each}
-    <span class="hint"><span class="key">B</span></span>
+    <span class="hint">
+      {#if kb.buildStep === "cat"}<span class="ask">Catégorie ? <span class="key">1–{CATS.length}</span> <span class="key">Échap</span></span>
+      {:else if kb.buildStep === "item"}<span class="ask">Bâtiment ? <span class="key">1–{CATS[cat][2].length}</span> <span class="key">Échap</span></span>
+      {:else if bKey}<span class="key" title="Menu de construction au clavier : {bKey}, puis le numéro de la catégorie, puis celui du bâtiment">{bKey}</span>{/if}
+    </span>
   </div>
-  <div class="grid">
-    {#each CATS[cat][2] as key}
+  <div class="grid" class:armed={kb.buildStep === "item"}>
+    {#each CATS[cat][2] as key, n}
       {@const i = idx[key]}
       {@const b = ui.data?.buildings[i]}
       {#if b}
@@ -41,6 +35,7 @@
         <div class="tip">
           <button class="card" class:on={ui.buildKind === i && ui.mode === "build"} class:locked={!ok} disabled={!ok} onclick={() => client.startBuild(i)}>
             {#if src}<img {src} alt="" />{:else}<span class="ph"><Icon name={CATS[cat][1]} size={26} /></span>{/if}
+            <span class="kn num">{n + 1}</span>
             <span class="name">{short(b.name)}</span>
             <span class="sz num">{b.w}×{b.h}</span>
             {#if !ok}<span class="lock"><Icon name="lock" size={14} /></span>{/if}
@@ -65,9 +60,14 @@
   .build { padding: 8px; display: flex; flex-direction: column; gap: 7px; max-width: 600px; }
   .tabs { display: flex; gap: 3px; align-items: center; }
   .tab { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; font-size: 11.5px; }
-  .tab:not(.on) span { display: none; }
-  .tab:hover span { display: inline; }
-  .hint { margin-left: auto; padding-right: 4px; }
+  .tab:not(.on) .tn { display: none; }
+  .tab:hover .tn { display: inline; }
+  .hint { margin-left: auto; padding-right: 4px; white-space: nowrap; }
+  .ask { color: var(--amber); font-size: 11.5px; letter-spacing: 0.06em; }
+  .kn { font-size: 9.5px; color: var(--dim); line-height: 1; }
+  .tab.on .kn { color: inherit; opacity: 0.8; }
+  .card .kn { position: absolute; top: 4px; left: 5px; }
+  .armed .kn, .armed .tab.on .kn { color: var(--accent-ink); opacity: 1; background: var(--amber); padding: 1px 3px; font-weight: 600; box-shadow: 0 0 6px rgba(255, 181, 71, 0.6); }
   .grid { display: grid; grid-template-columns: repeat(5, 106px); gap: 5px; }
   .card { position: relative; width: 106px; height: 86px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 1px; padding: 4px 4px 5px; overflow: hidden; }
   .card img { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); width: 58px; height: 58px; object-fit: contain; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6)); transition: transform 0.15s; }
@@ -75,7 +75,7 @@
   .ph { position: absolute; top: 14px; color: var(--accent); opacity: 0.6; }
   .name { position: relative; font-size: 11px; line-height: 1.1; text-align: center; letter-spacing: 0.02em; }
   .sz { position: absolute; top: 3px; right: 5px; font-size: 9.5px; color: var(--dim); }
-  .lock { position: absolute; top: 4px; left: 5px; color: var(--amber); }
+  .lock { position: absolute; top: 18px; left: 5px; color: var(--amber); }
   .card.locked img { filter: grayscale(1) brightness(0.55); }
   .card:disabled { opacity: 0.62; }
   @media (max-width: 1100px) {

@@ -7,6 +7,8 @@
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
   import { PLAYER_COLORS } from "../models/generator.ts";
+  import { factoryUnitKinds } from "../game/catalog.ts";
+  import { keyOf } from "../game/keys.svelte.ts";
 
   const d = $derived(ui.data);
   const sb = $derived(ui.selBuilding);
@@ -18,7 +20,8 @@
   const anyCarrier = $derived(!!d && kinds.some((k) => d.units[k].carry > 0));
   const anyEng = $derived(!!d && kinds.some((k) => d.units[k].buildPower > 0));
   const deployable = $derived(has("sonde") || has("heavy_artillery"));
-  const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? d.units.map((u, i) => ({ u, i })).filter(({ u }) => u.factory === bdef.factory) : []);
+  // même ordre que la rangée de touches de l'usine (factory1, factory2…)
+  const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory).map((i) => ({ u: d.units[i], i })) : []);
   const recipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
   const total = $derived(ui.selUnits.reduce((s, g) => s + g.count, 0));
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
@@ -75,7 +78,7 @@
     {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
     {#if mine && info}
       {#if info.build < 65536}
-        <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier <span class="key">Suppr</span></button>
+        <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {/if}
       {#if rate}
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
@@ -100,18 +103,20 @@
         {/if}
       {:else if bdef.cls === BClass.Factory}
         <div class="units">
-          {#each factoryUnits as { u, i }}
+          {#each factoryUnits as { u, i }, slot}
             {@const ok = hasTechUI(u.tech)}
             {@const q = info.queue.find((e: [number, number]) => e[0] === i)}
+            {@const hk = keyOf(`factory${slot + 1}`)}
             <div class="tip">
               <button class="ub" class:locked={!ok} disabled={!ok} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
                 {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
                 {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
+                {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
                 <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br /><Cost cost={u.cost} />
-                <span class="dim">Clic : +1 · Maj+clic : +5 · clic droit : retirer. Les composants arrivent par bras.</span></div>
+                <span class="dim">Clic{#if hk} ou {hk}{/if} : +1 · Maj+clic{#if hk} ou Maj+{hk}{/if} : +5 · clic droit : retirer. Les composants arrivent par bras.</span></div>
             </div>
           {/each}
         </div>
@@ -125,7 +130,7 @@
         {/if}
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
-        <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir <span class="key">T</span></button></div>
+        <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}</button></div>
         <div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} size={20} />{/each}</div>
       {:else if bdef.cls === BClass.Silo}
         <div class="row">Missiles prêts : <b class="num">{info.ammo}</b> <button class="icon-btn primary" disabled={!info.ammo} onclick={() => client.setMode("launch")}><Icon name="target" size={14} /> Lancer</button></div>
@@ -187,14 +192,14 @@
     </div>
     {#if ui.me >= 0}
       <div class="cmds">
-        <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">X</span></button>
-        <button class="cmd" onclick={() => client.setMode("attackMove")} title="Attaque en mouvement"><Icon name="attack" size={17} /><span class="key">A</span></button>
-        <button class="cmd" onclick={() => client.setMode("patrol")} title="Patrouille"><Icon name="patrol" size={17} /><span class="key">P</span></button>
-        <button class="cmd" onclick={() => client.setMode("assist")} title="Escorter / assister"><Icon name="assist" size={17} /><span class="key">G</span></button>
+        <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">{keyOf("stop")}</span></button>
+        <button class="cmd" onclick={() => client.setMode("attackMove")} title="Attaque en mouvement"><Icon name="attack" size={17} /><span class="key">{keyOf("attackMove")}</span></button>
+        <button class="cmd" onclick={() => client.setMode("patrol")} title="Patrouille"><Icon name="patrol" size={17} /><span class="key">{keyOf("patrol")}</span></button>
+        <button class="cmd" onclick={() => client.setMode("assist")} title="Escorter / assister"><Icon name="assist" size={17} /><span class="key">{keyOf("assist")}</span></button>
         <button class="cmd" onclick={() => client.setMode("attackGround")} title="Tir au sol"><Icon name="ground" size={17} /></button>
-        {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">E</span></button>{/if}
-        {#if deployable}<button class="cmd" onclick={() => client.deploySelected()} title="Déployer"><Icon name="deploy" size={17} /><span class="key">F</span></button>{/if}
-        {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">U</span></button>{/if}
+        {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
+        {#if deployable}<button class="cmd" onclick={() => client.deploySelected()} title="Déployer"><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
+        {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
         {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
         {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
       </div>
@@ -233,6 +238,7 @@
   .ub.locked img { filter: grayscale(1) brightness(0.5); }
   .qn { position: absolute; right: 3px; bottom: 2px; font-size: 11px; color: var(--accent-ink); background: var(--accent); padding: 0 3px; font-weight: 600; }
   .lk { position: absolute; left: 3px; top: 3px; color: var(--amber); }
+  .ub .hk { position: absolute; right: 2px; top: 2px; font-size: 8.5px; line-height: 11px; padding: 0 2px; background: rgba(4, 7, 12, 0.7); }
   .rep { display: inline-flex; align-items: center; gap: 6px; }
   .uhead { display: flex; align-items: baseline; gap: 8px; }
   .uhead .title { font-size: 20px; color: var(--accent); }
@@ -245,6 +251,7 @@
   .cmd { position: relative; width: 40px; height: 36px; display: grid; place-items: center; padding: 0; color: var(--accent); }
   .cmd:hover:not(:disabled) { color: #fff; }
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
+  .sel :global(.key:empty) { display: none; }
   .sel :global(.tip .tt) { bottom: calc(100% + 8px); }
   @keyframes blink { 50% { opacity: 0.3; } }
 </style>

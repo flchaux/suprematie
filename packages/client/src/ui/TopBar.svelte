@@ -4,6 +4,12 @@
   import { PACK1 } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
+  import Shortcuts from "./Shortcuts.svelte";
+  import { kb, keyOf } from "../game/keys.svelte.ts";
+  const t = (label: string, id: string) => {
+    const k = keyOf(id);
+    return k ? `${label} (${k})` : label;
+  };
   // objets montrés en permanence (les plaques et composants de base), puis les autres dès qu'il y en a
   const SHOWN = [6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
   const tech = $derived(ui.data && ui.research ? ui.data.techs[ui.research] : null);
@@ -37,7 +43,7 @@
       <div class="sep"></div>
       <span class="tip stat"><Icon name="units" size={15} /><span class="num">{ui.unitCount}<span class="faint">/1000</span></span><span class="tt">Limite de 1 000 unités par joueur</span></span>
       <div class="sep"></div>
-      <button class="research" class:idle={!tech} onclick={() => (ui.showResearch = !ui.showResearch)} title="Recherche (T)">
+      <button class="research" class:idle={!tech} onclick={() => (ui.showResearch = !ui.showResearch)} title={t("Recherche", "research")}>
         {#if tech}
           <Item id={PACK1 + tech.tier - 1} size={18} />
           <span class="rt">
@@ -45,7 +51,7 @@
             <span class="bar amber"><span style:width={(ui.researchProgress / tech.count) * 100 + "%"}></span></span>
           </span>
           <span class="num dim">{ui.researchProgress}/{tech.count}</span>
-        {:else}<Icon name="research" size={15} /> <span>Choisir une recherche</span> <span class="key">T</span>{/if}
+        {:else}<Icon name="research" size={15} /> <span>Choisir une recherche</span> {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}{/if}
       </button>
     {:else}
       <span class="spect"><Icon name="eye" size={15} /> Mode spectateur</span>
@@ -55,10 +61,10 @@
   <div class="panel right">
     <span class="clock num"><Icon name="clock" size={14} /> {time}</span>
     <div class="sep"></div>
-    <button class="ghost icon-btn" class:on={ui.showStats} onclick={() => (ui.showStats = !ui.showStats)} title="Statistiques (Tab)"><Icon name="stats" /></button>
-    <button class="ghost icon-btn" class:on={ui.showHelp} onclick={() => (ui.showHelp = !ui.showHelp)} title="Aide (F1)"><Icon name="help" /></button>
+    <button class="ghost icon-btn" class:on={ui.showStats} onclick={() => (ui.showStats = !ui.showStats)} title={t("Statistiques", "stats")}><Icon name="stats" /></button>
+    <button class="ghost icon-btn" class:on={ui.showHelp} onclick={() => (ui.showHelp = !ui.showHelp)} title={t("Aide", "help")}><Icon name="help" /></button>
     <button class="ghost icon-btn" class:on={ui.showGfx} onclick={() => (ui.showGfx = !ui.showGfx)} title="Réglages"><Icon name="settings" /></button>
-    <button class="ghost perf num" onclick={() => (ui.showPerf = !ui.showPerf)} title="Détail des performances (F3)">{ui.fps} i/s · {ui.backend} · {ui.ping} ms</button>
+    <button class="ghost perf num" onclick={() => (ui.showPerf = !ui.showPerf)} title={t("Détail des performances", "perf")}>{ui.fps} i/s · {ui.backend} · {ui.ping} ms</button>
   </div>
 </div>
 {#if ui.showGfx}
@@ -76,9 +82,12 @@
         <option value="0.4">Réduits</option>
       </select>
     </label>
-    <p class="dim small"><span class="key">F3</span> détail des performances</p>
+    <div class="kicker sub">Clavier</div>
+    <button class="icon-btn kbtn" onclick={() => { ui.showGfx = false; kb.showKeys = true; }}><Icon name="keyboard" /> Raccourcis clavier…</button>
+    {#if keyOf("perf")}<p class="dim small"><span class="key">{keyOf("perf")}</span> détail des performances</p>{/if}
   </div>
 {/if}
+{#if kb.showKeys}<Shortcuts />{/if}
 
 <style>
   .top { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; align-items: stretch; gap: 8px; pointer-events: none; }
@@ -126,5 +135,7 @@
   .gfx input[type="range"] { width: 100px; }
   .gfx .sub { margin-top: 6px; }
   .gfx p { margin: 4px 0 0; }
+  .gfx .kbtn { justify-content: flex-start; gap: 9px; }
+  .gfx .kbtn :global(.ic) { color: var(--accent); }
   @keyframes drop { from { opacity: 0; transform: translateY(-6px); } }
 </style>

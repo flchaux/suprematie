@@ -50,6 +50,7 @@
     target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>',
     eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     rally: '<path d="M6 21V4"/><path d="M6 4l12 4-12 4"/>',
+    keyboard: '<rect x="2" y="6" width="20" height="12"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0.5M6 14h.5M8.5 14h7M18 14h.5"/>',
     repeat: '<path d="M4 11V8a3 3 0 0 1 3-3h11l-3-3"/><path d="M20 13v3a3 3 0 0 1-3 3H6l3 3"/>',
   };
 </script>

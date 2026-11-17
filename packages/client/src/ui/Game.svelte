@@ -10,6 +10,7 @@
   import Help from "./Help.svelte";
   import Icon from "./Icon.svelte";
   import EndReport from "./EndReport.svelte";
+  import { keyOf } from "../game/keys.svelte.ts";
 
   let view: HTMLDivElement;
   let box: HTMLDivElement;
@@ -43,7 +44,7 @@
     transfer: ["teleport", "Transfert : cliquez la plateforme d'arrivée"],
     link: ["link", "Liaison : cliquez la destination (porte, gare ou héliport, le vôtre ou celui d'un allié)"],
     attackGround: ["ground", "Tir au sol : cliquez la cible"],
-    build: ["production", "Construction : clic gauche pour poser (glisser pour une ligne), R pour tourner, clic droit pour annuler"],
+    build: ["production", "Construction : clic gauche pour poser (glisser pour une ligne), clic droit pour annuler"],
   };
   const MSG_ICON: Record<string, string> = { alert: "alert", good: "check", chat: "chat", info: "flag" };
 </script>
@@ -64,7 +65,7 @@
     </div>
     {#if ui.mode}
       {@const m = MODE_LABEL[ui.mode]}
-      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode} <span class="key">Échap</span></div>
+      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if ui.mode === "build" && keyOf("rotate")}, {keyOf("rotate")} pour tourner{/if} <span class="key">Échap</span></div>
     {/if}
     <div class="messages">
       {#each ui.messages.filter((m) => now - m.time < 10000) as m (m.id)}
@@ -82,7 +83,7 @@
     {/if}
     {#if ui.showPerf}
       <div class="perfbox panel num">
-        <div class="kicker">Performances <span class="key">F3</span></div>
+        <div class="kicker">Performances {#if keyOf("perf")}<span class="key">{keyOf("perf")}</span>{/if}</div>
         <div><b>{ui.fps}</b> images/s · {ui.perf.frameMs.toFixed(1)} ms par image</div>
         <div>Rendu (processeur) : {ui.perf.cpuMs.toFixed(1)} ms</div>
         <div>Appels de dessin : {ui.perf.drawCalls} · triangles : {(ui.perf.triangles / 1000).toFixed(0)} k</div>
