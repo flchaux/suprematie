@@ -95,8 +95,4 @@
     .card { width: 92px; height: 78px; }
     .card img { width: 48px; height: 48px; }
   }
-  @media (max-width: 1100px) {
-    .grid { grid-template-columns: repeat(4, 96px); }
-    .card { width: 96px; }
-  }
 </style>

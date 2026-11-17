@@ -29,8 +29,9 @@ await page.waitForTimeout(800);
 const canBuild = await page.evaluate(() => window.__game.ui.canBuild);
 console.log("peut construire :", canBuild);
 // poser un générateur à droite de l'écran
-await page.click("button.tab[title='Énergie']");
-await page.click("button.card:has-text('Générateur')");
+// rendu logiciel très lent (sans carte graphique) : pas d'attente de stabilité sur ces boutons
+await page.click("button.tab[title='Énergie']", { force: true });
+await page.click("button.card:has-text('Générateur')", { force: true });
 await page.mouse.move(600, 300);
 await page.waitForTimeout(1500);
 await page.mouse.move(605, 302);

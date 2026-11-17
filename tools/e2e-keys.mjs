@@ -78,15 +78,15 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
   const back = await page.evaluate(() => ({ x: window.__game.client.scene.target.x, z: window.__game.client.scene.target.z }));
   check(Math.abs(back.x - saved.x) < 1e-6 && Math.abs(back.z - saved.z) < 1e-6, "Maj+F2 puis F2 : marque-page");
 
-  // menu de construction : B, 3 (Énergie), 1 (Générateur)
+  // menu de construction : B, 4 (Énergie), 1 (Générateur)
   await page.waitForTimeout(400);
   await page.keyboard.press("KeyB");
   check(await page.evaluate(() => window.__game.kb.buildStep === "cat"), "B ouvre le menu de construction");
   check((await page.textContent(".build .hint")).includes("Catégorie"), "l'invite « Catégorie ? » s'affiche");
   const tabNums = await page.$$eval(".build .tab .kn", (els) => els.map((e) => e.textContent).join(""));
-  check(tabNums === "123456", "numéros sur les onglets", tabNums);
-  await page.keyboard.press("Digit3");
-  check(await page.evaluate(() => window.__game.kb.buildStep === "item" && window.__game.kb.buildCat === 2), "3 choisit la catégorie Énergie");
+  check(tabNums === "1234567", "numéros sur les onglets", tabNums);
+  await page.keyboard.press("Digit4");
+  check(await page.evaluate(() => window.__game.kb.buildStep === "item" && window.__game.kb.buildCat === 3), "4 choisit la catégorie Énergie");
   check(await page.isVisible("button.tab.on[title='Énergie']"), "onglet Énergie affiché");
   await page.screenshot({ path: "tools/viewer/captures/e2e-keys-menu.png" });
   await page.keyboard.press("Digit1");
