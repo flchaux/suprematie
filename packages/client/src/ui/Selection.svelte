@@ -210,7 +210,7 @@
           <div class="row">
             <span class="kicker">Part de la sortie</span>
             <b class="num">{info.share ? info.share + " %" : "Auto"}</b>
-            {#if info.takers > 1}<span class="dim small">effective : <span class="num">{(info.shareEff / 10).toFixed(1)} %</span> · {info.takers} bras sur cette source</span>{/if}
+            {#if info.takers > 1}<span class="dim small">effective : <span class="num">{(info.shareEff / 10).toFixed(1)} %</span> · {info.takers} sorties sur cette source (bras et tapis)</span>{/if}
           </div>
           <input type="range" min="0" max="100" step="5" value={info.share} title="0 : automatique (part égale du reste)" onchange={(e) => client.setShare(Number((e.target as HTMLInputElement).value))} />
           <span class="dim small">Les bras qui se servent au même bâtiment alternent. En automatique, ils se partagent à égalité ce que les parts réglées laissent.</span>

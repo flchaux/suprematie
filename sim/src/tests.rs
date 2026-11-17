@@ -410,3 +410,69 @@ fn belts_feed_and_drain_buildings_without_arms() {
     let got = w.players[0].stock[IRON_PLATE as usize] - before;
     assert!(got >= 10, "plaques arrivées au dépôt : {}", got);
 }
+
+/// Fonderie approvisionnée en minerai (elle produit à son rythme), ses tapis de sortie en cul-de-sac.
+fn outlet_world() -> (World, usize) {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    let f = put(&mut w, B_FURNACE, 100, 100, 0);
+    set_recipe(&mut w, f, "iron_plate");
+    put(&mut w, B_GENERATOR, 96, 96, 0);
+    (w, f)
+}
+
+/// Objets posés sur la ligne du tapis `b` (cul-de-sac : ils s'y accumulent).
+fn items_on(w: &World, b: usize) -> usize {
+    w.belts.lines[w.buildings[b].line as usize].items.len()
+}
+
+/// Plusieurs tapis de sortie : ils reçoivent les produits à tour de rôle.
+#[test]
+fn output_belts_alternate() {
+    let (mut w, f) = outlet_world();
+    let east = put(&mut w, B_BELT1, 102, 100, 0);
+    for x in 103..110 {
+        put(&mut w, B_BELT1, x, 100, 0);
+    }
+    let south = put(&mut w, B_BELT1, 100, 102, 1);
+    for y in 103..110 {
+        put(&mut w, B_BELT1, 100, y, 1);
+    }
+    assert_eq!(crate::buildings::out_belts(&w, f).len(), 2);
+    for _ in 0..1600 {
+        w.buildings[f].inv[0] = w.buildings[f].inv[0].max(10);
+        w.step(&[]);
+    }
+    let (a, b) = (items_on(&w, east), items_on(&w, south));
+    println!("tapis est {} sud {}", a, b);
+    assert!(a + b >= 12, "trop peu de produits posés : {} + {}", a, b);
+    assert!(a.abs_diff(b) <= 1, "les tapis n'alternent pas : {} contre {}", a, b);
+}
+
+/// Un bras et un tapis sur le même bâtiment : chacun reçoit, le bras n'est pas affamé par le tapis.
+#[test]
+fn output_arm_and_belt_alternate() {
+    let (mut w, f) = outlet_world();
+    let belt = put(&mut w, B_BELT1, 102, 100, 0);
+    for x in 103..112 {
+        put(&mut w, B_BELT1, x, 100, 0);
+    }
+    let arm = put(&mut w, B_INSERTER, 100, 99, 3); // prend dans la fonderie, pose au nord
+    put(&mut w, B_DEPOT, 100, 97, 0);
+    let mut picks = 0;
+    let mut prev = 0u8;
+    for _ in 0..1600 {
+        w.buildings[f].inv[0] = w.buildings[f].inv[0].max(10);
+        w.step(&[]);
+        let ph = w.buildings[arm].phase;
+        if prev == 0 && ph == 1 {
+            picks += 1;
+        }
+        prev = ph;
+    }
+    let on_belt = items_on(&w, belt);
+    println!("bras {} tapis {}", picks, on_belt);
+    assert!(picks + on_belt as u32 >= 12, "trop peu de produits : {} + {}", picks, on_belt);
+    assert!(picks.abs_diff(on_belt as u32) <= 1, "le bras et le tapis n'alternent pas : {} contre {}", picks, on_belt);
+}
