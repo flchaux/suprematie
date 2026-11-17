@@ -70,7 +70,8 @@
 {#if ui.showGfx}
   <div class="gfx panel">
     <div class="kicker">Réglages</div>
-    <label class="row"><Icon name="volume" /> <span>Volume</span><input type="range" min="0" max="1" step="0.05" value={ui.volume} oninput={(e) => client.setVolume(Number((e.target as HTMLInputElement).value))} /></label>
+    <label class="row"><Icon name="volume" /> <span>Effets sonores</span><input type="range" min="0" max="1" step="0.05" value={ui.volume} oninput={(e) => client.setVolume(Number((e.target as HTMLInputElement).value))} /></label>
+    <label class="row"><Icon name="music" /> <span>Musique</span><input type="range" min="0" max="1" step="0.05" value={ui.music} oninput={(e) => client.setMusicVolume(Number((e.target as HTMLInputElement).value))} /></label>
     <label class="row" title="Distance de la caméra à partir de laquelle les unités deviennent des icônes"><Icon name="icons" /> <span>Vue stratégique</span><input type="range" min="80" max="600" step="10" value={client.iconDistance()} oninput={(e) => client.setIconDistance(Number((e.target as HTMLInputElement).value))} /></label>
     <div class="kicker sub">Graphismes</div>
     <label class="row"><Icon name="eye" /> <span>Ombres portées</span><input type="checkbox" checked={ui.gfx.shadows} onchange={(e) => client.setGfx({ shadows: (e.target as HTMLInputElement).checked })} /></label>
