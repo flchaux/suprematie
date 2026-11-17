@@ -3,7 +3,7 @@
 // Mesure le temps de simulation par tick (moyenne, 99e centile) et le temps des bots séparément.
 //
 //   node tools/bench/bench.ts [--minutes N] [--size 512|1024] [--players 8] [--seed S]
-//                             [--water 0|1] [--personality a,b,...] [--aix 100]
+//                             [--water 0|1] [--personality a,b,...] [--aix 100] [--level normal]
 //                             [--check] [--until-victory] [--quiet]
 //
 // --check : une seconde simulation reçoit les mêmes ordres ; les hash doivent être égaux à chaque tick
@@ -36,6 +36,7 @@ const nPlayers = Math.max(2, Math.min(8, Number(arg("players", "8"))));
 const seed = Number(arg("seed", "20261116"));
 const water = arg("water", "1") !== "0";
 const aix = Number(arg("aix", "100"));
+const level = arg("level", "normal");
 const personas = arg("personality", PERSONALITIES.join(",")).split(",");
 const maxTicks = Math.round(minutes * TICKS_PER_MIN);
 
@@ -68,7 +69,7 @@ interface BotRun {
 const bots: BotRun[] = [];
 for (let i = 0; i < nPlayers; i++) {
   const personality = personas[i % personas.length];
-  bots.push({ slot: i, personality, bot: createBot({ slot: i, personality, aix, sim, data, map }), ms: 0, calls: 0, max: 0 });
+  bots.push({ slot: i, personality, bot: createBot({ slot: i, personality, aix, level, sim, data, map }), ms: 0, calls: 0, max: 0 });
 }
 
 const log = (...a: unknown[]) => {

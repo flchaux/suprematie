@@ -6,10 +6,16 @@ Spécification : [docs/SPEC.md](docs/SPEC.md). Règles pour Claude Code : [CLAUD
 ## Jouer
 
 Ouvrir le lien d'invitation `https://supreme.chaux.me/?k=<code>` dans Chrome (code dans `data/key.txt`).
-Le premier arrivé est l'hôte du salon : il ajoute les IA (Adaptative, Rush, Tortue, Technologique, variante AIx),
-règle les équipes et la carte, puis lance la partie. Aide en jeu : F1.
+Le premier arrivé est l'hôte du salon : il ajoute les IA (Adaptative, Rush, Tortue, Technologique ; difficulté
+Facile, Normal ou Difficile ; variante AIx), règle les équipes et la carte, puis lance la partie. Aide en jeu : F1.
+
+L'IA (`packages/server/src/bots/`) s'inspire de celle du mod LOUD : cartes de menace par catégorie (`intel.ts`),
+rapports de force qui orientent la production et la recherche, objectifs choisis selon leur valeur et leur défense,
+pelotons qui se regroupent, jugent le combat et se replient (`army.ts`), chasseurs d'interception, frappes
+aériennes sur l'économie, appels à l'aide et cible commune entre IA alliées.
 
 - `?demo` : partie de référence synthétique (8 armées, 8 000 unités) jouée localement, pour tester le rendu.
+- `?demo=eau` : carte avec de l'eau, sans les armées (aperçu du terrain).
 - `?webgl` : force le moteur WebGL2 au lieu de WebGPU.
 
 ## Développement

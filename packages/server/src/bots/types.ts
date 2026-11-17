@@ -15,6 +15,7 @@ export interface BotContext {
   slot: number;
   personality: string; // "adaptive" | "rush" | "turtle" | "tech"
   aix: number; // multiplicateur AIx en % (100 = pas de triche)
+  level?: string; // "facile" | "normal" | "difficile" (défaut : normal)
   sim: Sim; // copie de référence (lecture seule : can_place, tile_info, etc.)
   data: GameData;
   map: MapInfo;

@@ -66,7 +66,7 @@ export class Game {
     for (let i = 0; i < ns; i++, o += 3) map.spots.push({ kind: info[o], x: info[o + 1], y: info[o + 2] });
     for (const p of this.lobby.players) {
       if (p.bot) {
-        this.bots.push({ slot: p.slot, bot: createBot({ slot: p.slot, personality: p.personality ?? "adaptive", aix: p.aix ?? 100, sim: this.sim, data: this.data, map }), ms: 0 });
+        this.bots.push({ slot: p.slot, bot: createBot({ slot: p.slot, personality: p.personality ?? "adaptive", aix: p.aix ?? 100, level: p.level ?? "normal", sim: this.sim, data: this.data, map }), ms: 0 });
       }
     }
     this.startedAt = Date.now();

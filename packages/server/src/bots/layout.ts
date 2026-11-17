@@ -204,6 +204,12 @@ const BAND = 7; // demi-largeur de la bande réservée
 const HEAD = 5;
 
 export class Planner {
+  /** raison du dernier échec de planification (journal de débogage) */
+  lastFail = "";
+  fail(why: string): null {
+    this.lastFail = why;
+    return null;
+  }
   sim: Sim;
   slot: number;
   ids: Ids;
@@ -840,8 +846,9 @@ export class Planner {
     const ext = this.ids.b.extractor;
     const fur = this.ids.b.furnace;
     const ins = this.ids.b.inserter;
-    if (!this.sim.canPlace(this.slot, ext, sx, sy, 0)) return null;
-    for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] !== P_FREE && this.plan[this.idx(tx, ty)] !== P_KEEP) return null;
+    this.lastFail = "";
+    if (!this.sim.canPlace(this.slot, ext, sx, sy, 0)) return this.fail("extracteur impossible à poser");
+    for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] !== P_FREE && this.plan[this.idx(tx, ty)] !== P_KEEP) return this.fail("case du gisement réservée (" + this.plan[this.idx(tx, ty)] + ")");
     const [hx, hy] = this.netTarget(m, net);
     const inE = (x: number, y: number) => x >= sx && x < sx + 2 && y >= sy && y < sy + 2;
     interface Cand {
@@ -930,7 +937,15 @@ export class Planner {
       for (let k = saved.length - 1; k >= 0; k--) this.plan[saved[k][0]] = saved[k][1];
       if (path && (!best || path.length < best.path.length)) best = { c, path };
     }
-    if (!best) return null;
+    if (!best) {
+      // détail des positions de fonderie refusées (plan des cases, pose possible)
+      const why = furnOpts.flat().map(([fx, fy]) => {
+        const pl: number[] = [];
+        for (let k = 0; k < 4; k++) pl.push(this.inside(fx + (k & 1), fy + (k >> 1)) ? this.plan[this.idx(fx + (k & 1), fy + (k >> 1))] : -1);
+        return `${fx},${fy}:${pl.join("")}${this.sim.canPlace(this.slot, fur, fx, fy, 0) ? "" : "x"}`;
+      });
+      return this.fail(`pas de chemin (${cands.length} positions de fonderie, ${tried} essais) [${why.join(" ")}]`);
+    }
     const c = best.c;
     const places: Placement[] = [];
     places.push({ kind: ext, x: sx, y: sy, dir: c.d, tag: "extractor" });

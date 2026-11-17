@@ -6,6 +6,7 @@ export interface LobbyPlayer {
   bot: boolean;
   personality?: string;
   aix?: number; // multiplicateur AIx en %, 100 = normal
+  level?: string; // difficulté de l'IA : "facile" | "normal" | "difficile"
   team: number;
   connected: boolean;
   host: boolean;
@@ -29,7 +30,7 @@ export interface GameStart {
 
 export type ClientMsg =
   | { t: "hello"; name: string; token: string; key: string }
-  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; personality?: string; aix?: number }
+  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; personality?: string; aix?: number; level?: string }
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
   | { t: "chat"; text: string }

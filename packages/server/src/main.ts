@@ -245,7 +245,7 @@ wss.on("connection", (ws, req) => {
         if (msg.action === "addBot" && lobby.players.length < 8) {
           const n = lobby.players.filter((p) => p.bot).length + 1;
           const pers = PERSONALITIES.includes(msg.personality as (typeof PERSONALITIES)[number]) ? msg.personality! : "adaptive";
-          lobby.players.push({ slot: lobby.players.length, name: `IA ${n}`, bot: true, personality: pers, aix: 100, team: lobby.players.length, connected: true, host: false });
+          lobby.players.push({ slot: lobby.players.length, name: `IA ${n}`, bot: true, personality: pers, aix: 100, level: "normal", team: lobby.players.length, connected: true, host: false });
         } else if (msg.action === "removeSlot" && lobby.players[s]?.bot) {
           lobby.players.splice(s, 1);
           reindex();
@@ -254,6 +254,7 @@ wss.on("connection", (ws, req) => {
         } else if (msg.action === "setBot" && lobby.players[s]?.bot) {
           if (msg.personality && PERSONALITIES.includes(msg.personality as (typeof PERSONALITIES)[number])) lobby.players[s].personality = msg.personality;
           if (msg.aix) lobby.players[s].aix = Math.max(100, Math.min(300, msg.aix | 0));
+          if (msg.level === "facile" || msg.level === "normal" || msg.level === "difficile") lobby.players[s].level = msg.level;
         } else if (msg.action === "setMap") {
           if (msg.mapSize === 512 || msg.mapSize === 1024) lobby.mapSize = msg.mapSize;
           if (typeof msg.water === "boolean") lobby.water = msg.water;

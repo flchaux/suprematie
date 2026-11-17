@@ -2,16 +2,22 @@
 // et conditions) choisis par des gestionnaires (ingénieurs, usines, recherche, pelotons), et des
 // personnalités qui changent les listes et les priorités.
 //
+// Couche militaire inspirée de l'IA du mod LOUD : cartes de menace (intel.ts), rapports de force qui
+// orientent la production (antiaérien contre l'aviation, amphibies contre les îles), objectifs choisis
+// selon leur valeur et leur défense, pelotons qui se regroupent et jugent un combat avant de l'engager
+// (army.ts), appels à l'aide et cible commune entre IA alliées.
+//
 // Économie : modules « sushi » (voir layout.ts). Chaque module a un tapis principal qui finit dans
 // un dépôt ; les extracteurs y versent le minerai, les bâtiments de part et d'autre prennent ce dont
 // ils ont besoin et y reposent leurs produits ; le reste alimente le stock commun des ingénieurs.
 import type { Bot, BotContext } from "./types.ts";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
 import { build, move, target, O, factoryQueue, rally, setRecipe, research, hasTech, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
-import { Ids, indexView, TILE, dist2, type ViewIndex } from "./util.ts";
+import { Ids, indexView, TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { Planner, CELLS, type Module, type Placement, type Slot, type CellSlot } from "./layout.ts";
 import { PERSONAS, AIR_PLAN, TECH_PLAN, ARMY_PLAN, MAIN_AIR_PLAN, type Persona } from "./personas.ts";
 import { Army } from "./army.ts";
+import { intelOf, teamBoard, kindPowers, T, type Intel, type TeamBoard } from "./intel.ts";
 
 interface Project {
   id: number;
@@ -165,12 +171,27 @@ export class SkirmishAI implements Bot {
   landTarget = -1;
   airTarget = -1;
   debug = false;
+  /** niveau de difficulté */
+  level: string;
+  intel!: Intel;
+  board!: TeamBoard;
+  enemyIds: number[] = [];
+  friendIds: number[] = [];
+  /** aviation ennemie / défense antiaérienne : > 1 = il manque de l'antiaérien */
+  airRatio = 0;
+  /** puissance terrestre ennemie (la plus forte) / la nôtre */
+  landRatio = 1;
+  turretsAA = 0;
+  /** le commandant se met à l'abri jusqu'à ce tick (pas de construction) */
+  cmdHoldUntil = -1;
+  cmdMoved = -1e9;
   prof = typeof process !== "undefined" && process.env?.BOTPROF === "1";
 
   constructor(ctx: BotContext) {
     this.ctx = ctx;
     this.ids = new Ids(ctx.data);
     this.persona = PERSONAS[ctx.personality] ?? PERSONAS.adaptive;
+    this.level = ctx.level === "facile" || ctx.level === "difficile" ? ctx.level : "normal";
     this.planner = new Planner(ctx.sim, ctx.slot, this.ids, ctx.map.w, ctx.map.h);
     this.army = new Army(this.persona.firstAttack, this.persona.airAttack);
     const st = ctx.map.starts[ctx.slot] ?? [ctx.map.w >> 1, ctx.map.h >> 1];
@@ -235,8 +256,12 @@ export class SkirmishAI implements Bot {
    * Pour une armée terrestre, seulement les adversaires joignables par la terre. Cible collante.
    */
   pickTarget(land: boolean): number {
+    const valid = (t: number) => t >= 0 && this.view.players[t]?.alive && !this.sameTeam(t) && (!land || this.reachable(t));
     const prev = land ? this.landTarget : this.airTarget;
-    if (prev >= 0 && this.view.players[prev]?.alive && !this.sameTeam(prev) && (!land || this.reachable(prev))) return prev;
+    if (valid(prev)) {
+      if (land && !valid(this.board.target)) this.board.target = prev;
+      return prev;
+    }
     const [bx, by] = this.baseCenter();
     let best = -1;
     let bd = Infinity;
@@ -245,8 +270,9 @@ export class SkirmishAI implements Bot {
       if (i === this.ctx.slot || !p.alive || p.team === this.me.team) continue;
       if (land && !this.reachable(i)) continue;
       const [x, y] = this.playerPos(i);
-      const army = this.ix.unitsBy[i].length;
-      let d = Math.sqrt(dist2(bx, by, x, y)) * (1 + army / 150);
+      // plus proche, et plus faible (puissance terrestre et défenses d'après le renseignement)
+      const strength = this.intel.land[i] / Math.max(1, this.intel.land[this.ctx.slot]);
+      let d = Math.sqrt(dist2(bx, by, x, y)) * (1 + Math.min(3, strength) * 0.4);
       // l'aviation va de préférence là où l'armée de terre ne peut pas aller
       if (!land && !this.reachable(i)) d *= 0.5;
       if (d < bd) {
@@ -254,8 +280,134 @@ export class SkirmishAI implements Bot {
         best = i;
       }
     }
-    if (land) this.landTarget = best;
-    else this.airTarget = best;
+    // cible commune de l'équipe : on rejoint l'adversaire choisi par un allié s'il n'est pas beaucoup
+    // plus loin que le nôtre (sinon chacun garde son adversaire naturel, pour ne pas laisser l'autre libre)
+    const shared = this.board.target;
+    if (land && this.level !== "facile" && best >= 0 && shared !== best && valid(shared)) {
+      const [sx, sy] = this.playerPos(shared);
+      const [px, py] = this.playerPos(best);
+      if (Math.sqrt(dist2(bx, by, sx, sy)) < Math.sqrt(dist2(bx, by, px, py)) * 1.3) best = shared;
+    }
+    if (land) {
+      this.landTarget = best;
+      if (best >= 0 && !valid(shared)) {
+        this.board.target = best;
+        this.board.targetSince = this.tick;
+      }
+    } else this.airTarget = best;
+    return best;
+  }
+
+  // ---------- Renseignement (cartes de menace) ----------
+  enemySum(layer: T, x: number, y: number, rTiles: number): number {
+    return this.intel.sum(this.enemyIds, layer, x, y, rTiles);
+  }
+  friendSum(layer: T, x: number, y: number, rTiles: number): number {
+    return this.intel.sum(this.friendIds, layer, x, y, rTiles);
+  }
+  enemyAirTotal(): number {
+    let s = 0;
+    for (const e of this.enemyIds) s += this.intel.air[e];
+    return s;
+  }
+  /** Défense en place autour d'un point : tourelles et unités de l'équipe. */
+  defensePower(x: number, y: number): number {
+    return this.friendSum(T.Surface, x, y, 30);
+  }
+
+  /** Rapports de force (LOUD : ArmyAnalysis), recalculés régulièrement. */
+  analyse(): void {
+    const I = this.intel;
+    const me = this.ctx.slot;
+    let airMax = 0;
+    let airSum = 0;
+    let landMax = 0;
+    for (const e of this.enemyIds) {
+      airMax = Math.max(airMax, I.air[e]);
+      airSum += I.air[e];
+      landMax = Math.max(landMax, I.land[e]);
+    }
+    // l'adversaire le plus aérien compte plein, les autres en partie
+    const enemyAir = airMax + (airSum - airMax) * 0.3;
+    const myAA = I.airToAir[me] + I.aaUnits[me] + I.aaTurrets[me] * 0.5;
+    this.airRatio = enemyAir / Math.max(150, myAA);
+    this.landRatio = landMax / Math.max(100, I.land[me]);
+  }
+
+  /**
+   * Objectif d'attaque chez un adversaire (LOUD : plan d'attaque sur les cartes de menace).
+   * mode 1 : assaut terrestre (valeur / défense au sol), 2 : frappe aérienne (valeur / antiaérien),
+   * 3 : raid (installations isolées, la défense compte beaucoup).
+   */
+  objective(p: number, power: number, landOnly: boolean, mode: number): [number, number] | null {
+    const I = this.intel;
+    const seen = new Set<number>();
+    const comp = landOnly ? landComponents(this.ctx.map) : null;
+    const [hx, hy] = this.home;
+    const home = comp ? comp[hy * this.ctx.map.w + hx] : -1;
+    const [bx, by] = this.baseCenter();
+    let best: [number, number] | null = null;
+    let bs = 0;
+    for (const b of this.ix.buildingsBy[p]) {
+      const x = b.x * TILE + TILE;
+      const y = b.y * TILE + TILE;
+      const c = I.cell(x, y);
+      if (seen.has(c) || I.layers[p][T.Eco][c] < 1) continue;
+      seen.add(c);
+      if (comp && comp[b.y * this.ctx.map.w + b.x] !== home && comp[Math.min(this.ctx.map.h - 1, b.y + 2) * this.ctx.map.w + b.x] !== home) continue;
+      const value = I.sum([p], T.Eco, x, y, 16);
+      const threat = mode === 2 ? this.enemySum(T.AntiAir, x, y, 14) : this.enemySum(T.Surface, x, y, 22);
+      const dist = Math.sqrt(dist2(x, y, bx, by)) / TILE;
+      let score = Math.pow(value, 0.6) / (1 + (threat / Math.max(1, power)) * (mode === 3 ? 5 : 2)) / (1 + dist / 250);
+      if (mode !== 2 && threat > power * 1.3) score *= 0.15;
+      if (score > bs) {
+        bs = score;
+        best = [x, y];
+      }
+    }
+    // le commandant adverse : sa destruction élimine le joueur (assaut seulement)
+    const c = mode === 1 ? this.unitById(this.view.players[p].commander) : undefined;
+    if (c && (!comp || comp[Math.floor(c.y / TILE) * this.ctx.map.w + Math.floor(c.x / TILE)] === home)) {
+      const threat = this.enemySum(T.Surface, c.x, c.y, 22);
+      const dist = Math.sqrt(dist2(c.x, c.y, bx, by)) / TILE;
+      let score = Math.pow(2500, 0.6) / (1 + (threat / Math.max(1, power)) * 2) / (1 + dist / 250);
+      if (threat > power * 1.3) score *= 0.15;
+      if (score > bs) best = [c.x, c.y];
+    }
+    return best;
+  }
+
+  /** Publie un appel à l'aide pour l'équipe (menace sur une de nos installations). */
+  postDistress(x: number, y: number, power: number, air: boolean, vip = false): void {
+    const D = this.board.distress;
+    const me = this.ctx.slot;
+    const old = D.find((d) => d.player === me && d.air === air && d.vip === vip && dist2(d.x, d.y, x, y) < (30 * TILE) ** 2);
+    if (old) Object.assign(old, { x, y, power, tick: this.tick });
+    else D.push({ x, y, power, tick: this.tick, player: me, air, vip });
+  }
+
+  /** Appel à l'aide auquel un peloton (au point x, y, de puissance donnée) devrait répondre. */
+  distressFor(x: number, y: number, power: number, air: boolean): { x: number; y: number } | null {
+    if (this.level === "facile") {
+      const t = this.army.threat;
+      return t && !air && this.tick - t.tick < 60 ? { x: t.x, y: t.y } : null;
+    }
+    this.board.distress = this.board.distress.filter((d) => this.tick - d.tick < 120 && this.view.players[d.player]?.alive);
+    let best: { x: number; y: number } | null = null;
+    let bd = Infinity;
+    for (const d of this.board.distress) {
+      if (d.air !== air || this.tick - d.tick > 40) continue;
+      const mine = d.player === this.ctx.slot;
+      const dd = dist2(x, y, d.x, d.y);
+      // un allié : seulement s'il est à portée et si notre aide peut compter
+      if (!mine && (dd > (160 * TILE) ** 2 || power < d.power * 0.3)) continue;
+      // un commandant menacé passe avant tout (le perdre, c'est perdre la partie)
+      const score = dd * (d.vip ? 0.02 : mine ? 0.25 : 1);
+      if (score < bd) {
+        bd = score;
+        best = { x: d.x, y: d.y };
+      }
+    }
     return best;
   }
   playerPos(i: number): [number, number] {
@@ -274,9 +426,17 @@ export class SkirmishAI implements Bot {
   anyUnreachable(): boolean {
     for (let i = 0; i < this.view.players.length; i++) {
       if (i === this.ctx.slot || !this.view.players[i].alive || this.sameTeam(i)) continue;
-      if (!this.reachable(i)) return true;
+      if (!this.reachable(i) || !this.baseReachable(i)) return true;
     }
     return false;
+  }
+  /** La base de départ du joueur est-elle sur notre terre ? (stable, contrairement au commandant) */
+  baseReachable(i: number): boolean {
+    const comp = landComponents(this.ctx.map);
+    const w = this.ctx.map.w;
+    const [hx, hy] = this.home;
+    const [sx, sy] = this.ctx.map.starts[i];
+    return comp[hy * w + hx] >= 0 && comp[hy * w + hx] === comp[sy * w + sx];
   }
   unitById(id: number): BotUnit | undefined {
     if (!this.unitMap) {
@@ -322,7 +482,20 @@ export class SkirmishAI implements Bot {
     this.thinkN++;
     const out: Cmd[] = [];
     if (!this.me?.alive) return out;
+    // niveau facile : décisions trois fois moins fréquentes
+    if (this.level === "facile" && this.thinkN % 3 !== 1) return out;
     if (this.planner.modules.length === 0) this.setupBase();
+    this.intel = intelOf(view, this.ctx.data, this.ctx.map.w, this.ctx.map.h);
+    this.board = teamBoard(this.ctx.sim, this.me.team);
+    this.enemyIds = [];
+    this.friendIds = [];
+    for (let i = 0; i < view.players.length; i++) {
+      const pl = view.players[i];
+      if (!pl.alive) continue;
+      if (pl.team === this.me.team) this.friendIds.push(i);
+      else this.enemyIds.push(i);
+    }
+    if (this.thinkN % 10 === 1 && this.level !== "facile") this.analyse();
     this.underPressure = this.tick - this.lastThreat < 1200;
     const prof = this.prof;
     let t0 = prof ? performance.now() : 0;
@@ -338,7 +511,8 @@ export class SkirmishAI implements Bot {
     if (this.thinkN % 2 === 1) this.factories(out);
     lap("économie/usines");
     if (this.thinkN % 4 === 0) this.researchMgr(out);
-    this.army.think(this, this.ix, this.tick, out);
+    // niveau normal : tactique deux fois moins réactive que le niveau difficile
+    if (this.level !== "normal" || this.thinkN % 2 === 0) this.army.think(this, this.ix, this.tick, out);
     this.commander(out);
     lap("armée");
     return out;
@@ -398,6 +572,8 @@ export class SkirmishAI implements Bot {
     let started = 0;
     const cmdId = this.me.commander;
     for (const u of builders) {
+      // commandant à l'abri : il garde son chantier mais n'y retourne qu'une fois le danger passé
+      if (u.id === cmdId && this.tick < this.cmdHoldUntil) continue;
       const p = this.busy.get(u.id);
       if (p) {
         if (u.nOrders === 0 && this.tick - p.lastIssue > 25) this.issue(p, u, out);
@@ -749,10 +925,14 @@ export class SkirmishAI implements Bot {
       const minutes = this.tick / 1200;
       const want = Math.min(P.turrets + Math.floor(minutes / 8) * (P.turrets > 4 ? 2 : 1), P.turrets * 3 + 2);
       const threatened = this.underPressure;
-      if (this.turretsPlanned < want || (threatened && this.turretsPlanned < want + 4)) {
+      // antiaérien : quand l'aviation ennemie dépasse notre défense (la moitié des tourelles au plus)
+      const wantAA = this.level !== "facile" && this.has(this.ids.t.aa_turret) && this.airRatio > 0.4 && this.turretsAA < Math.min(12, 2 + this.airRatio * 4);
+      const airRaid = this.army.threat && this.army.threat.air > 0 && this.tick - this.army.threat.tick < 200;
+      if (this.turretsPlanned < want || (threatened && this.turretsPlanned < want + 4) || wantAA) {
         const heavy = this.has(this.ids.t.heavy_turret) && this.stock(it.steel) > 60 && this.stock(it.ammo) > 20 && this.turretsPlanned % 2 === 1;
-        const kind = heavy ? this.ids.b.heavy_turret : this.ids.b.light_turret;
-        L.push({ name: "turret", prio: (threatened ? 870 : 560) + P.defenseBias, est: heavy ? [0, 0, 20, 0, 5] : [12, 0, 0, 4, 2], make: () => this.makeTurret(kind) });
+        const aa = wantAA && (this.turretsAA * 2 <= this.turretsPlanned || airRaid) && this.stock(it.steel) > 8;
+        const kind = aa ? this.ids.b.aa_turret : heavy ? this.ids.b.heavy_turret : this.ids.b.light_turret;
+        L.push({ name: "turret", prio: (threatened || (aa && airRaid) ? 870 : aa ? 760 : 560) + P.defenseBias, est: aa ? [0, 0, 8, 0, 4] : heavy ? [0, 0, 20, 0, 5] : [12, 0, 0, 4, 2], make: () => this.makeTurret(kind) });
       }
     }
     // module supplémentaire
@@ -869,7 +1049,7 @@ export class SkirmishAI implements Bot {
     const hx = this.planner.wx(m, 0, 0);
     const hy = this.planner.wy(m, 0, 0);
     const cand = this.spots
-      .filter((s) => s.kind === ore && s.st === 0 && s.next <= this.tick && Math.hypot(s.x - m.cx, s.y - m.cy) < m.L / 2 + (ore === this.ids.item.hydrocarbon ? 50 : m.id === 0 ? 34 : ore === this.ids.item.iron_ore ? 60 : 40))
+      .filter((s) => s.kind === ore && s.st === 0 && s.next <= this.tick && Math.hypot(s.x - m.cx, s.y - m.cy) < m.L / 2 + (ore === this.ids.item.hydrocarbon ? 50 : m.id === 0 ? (ore === this.ids.item.iron_ore && this.moduleExt(m, ore) < 3 && this.stock(this.ids.item.iron_plate) < 120 && this.tick > 6000 ? 60 : 34) : ore === this.ids.item.iron_ore ? 60 : 40))
       .map((s) => ({ s, d: Math.hypot(s.x - hx, s.y - hy) }))
       .sort((a, b) => a.d - b.d);
     for (const { s } of cand.slice(0, 3)) {
@@ -879,13 +1059,16 @@ export class SkirmishAI implements Bot {
       // trafic du tapis principal limité (les bras ne posent un objet que dans un trou de 1/2 case)
       const quota = ore === this.ids.item.iron_ore ? (m.role === "air" ? 4 : m.role === "tech" ? 4 : 5) : ore === this.ids.item.copper_ore ? (m.role === "tech" ? 3 : 2) : 9;
       const toDepot = smelt && busMines >= quota;
-      // le module principal laisse le fer en trop aux autres modules
-      if (toDepot && m.role === "main" && ore === this.ids.item.iron_ore && this.tick > 9000) {
+      // le module principal laisse le fer en trop aux autres modules (sauf si le fer manque :
+      // rééquilibrage de l'économie selon les stocks, comme LOUD)
+      const ironShort = this.stock(this.ids.item.iron_plate) < 100 && this.stock(this.ids.item.copper_plate) > 400 && this.moduleExt(m, ore) < 7;
+      if (toDepot && m.role === "main" && ore === this.ids.item.iron_ore && this.tick > 9000 && !ironShort) {
         s.next = this.tick + 6000;
         continue;
       }
       const places = smelt ? this.planner.planMine(m, s.x, s.y, toDepot) : this.planner.planExtractor(m, s.x, s.y);
       if (!places) {
+        this.log("échec du tracé de mine", ore, "en", s.x, s.y, "essai", s.tries + 1, ":", this.planner.lastFail);
         s.tries++;
         s.next = this.tick + 2400;
         if (s.tries > 3) s.st = 2;
@@ -910,14 +1093,33 @@ export class SkirmishAI implements Bot {
   }
 
   makeTurret(kind: number): Project | null {
-    const m = this.planner.modules[0];
+    // défense du module le plus récemment menacé (LOUD : points de défense aux bases d'expansion),
+    // tournée vers la menace ; sinon module principal, tourné vers les adversaires
+    const t = this.army.threat && this.tick - this.army.threat.tick < 1200 ? this.army.threat : null;
+    let m = this.planner.modules[0];
     if (!m) return null;
+    let dir = this.enemyDir;
+    if (t && this.level !== "facile") {
+      let bd = Infinity;
+      for (const mm of this.planner.modules) {
+        const d = dist2(mm.cx * TILE, mm.cy * TILE, t.x, t.y);
+        if (d < bd) {
+          bd = d;
+          m = mm;
+        }
+      }
+      const dx = t.x / TILE - m.cx;
+      const dy = t.y / TILE - m.cy;
+      const dn = Math.hypot(dx, dy);
+      if (dn > 1) dir = [dx / dn, dy / dn];
+    }
     const n = this.turretsPlanned;
-    // anneau orienté vers les adversaires
-    const base = Math.atan2(this.enemyDir[1], this.enemyDir[0]);
+    if (kind === this.ids.b.aa_turret) this.turretsAA++;
+    // anneau orienté vers la menace (l'antiaérien plus près du centre)
+    const base = Math.atan2(dir[1], dir[0]);
     const spread = [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3, 3.1][n % 10];
     const a = base + spread + (Math.floor(n / 10) * 0.25);
-    const r = m.L / 2 + 10 + Math.floor(n / 10) * 4;
+    const r = (kind === this.ids.b.aa_turret ? m.L / 2 + 2 : m.L / 2 + 10) + Math.floor(n / 10) * 4;
     const tx = Math.round(m.cx + Math.cos(a) * r);
     const ty = Math.round(m.cy + Math.sin(a) * r);
     const pos = this.planner.findFree(kind, tx, ty, 0, 8, 1);
@@ -937,7 +1139,9 @@ export class SkirmishAI implements Bot {
     const hasTech = this.planner.modules.some((mm) => mm.role === "tech");
     const airReady = this.has(this.ids.t.electronics) && this.has(this.ids.t.hydrocarbons);
     // pas d'aviation sans les recherches ; pas d'armée de terre en plus si personne n'est joignable
-    if (!hasTech && (plan === AIR_PLAN || this.anyUnreachable())) plan = TECH_PLAN;
+    // progression technologique garantie : recherche à l'arrêt, ou déjà un module secondaire sans technologie
+    const researchStalled = this.me.research === 0 && this.tick - this.lastResearch > 3600;
+    if (!hasTech && (plan === AIR_PLAN || this.anyUnreachable() || (this.level !== "facile" && (researchStalled || this.planner.modules.length >= 2)))) plan = TECH_PLAN;
     else if (plan === AIR_PLAN && !airReady) plan = ARMY_PLAN;
     const nAir = this.planner.modules.filter((mm) => mm.role === "air").length;
     if (this.anyUnreachable() && airReady && (!hasAir || (this.pickTarget(true) < 0 && nAir < 2))) plan = AIR_PLAN;
@@ -1186,6 +1390,7 @@ export class SkirmishAI implements Bot {
     let engs = this.engineerCount();
     let landArmy = 0;
     for (const u of this.ix.unitsBy[this.ctx.slot]) if (this.combatKinds[u.kind] && data.units[u.kind].layer !== 4) landArmy++;
+    const weights = this.armyWeights();
     for (const b of this.ix.buildingsBy[this.ctx.slot]) {
       if (data.buildings[b.kind].cls !== 8 || b.build < BUILD_FULL) continue;
       let fi = this.factoryInfo.get(b.ref);
@@ -1221,18 +1426,19 @@ export class SkirmishAI implements Bot {
       if (fk === 1 && engs < engTarget && this.canBuild(eng, avail)) {
         pick = eng;
         engs++;
-      } else if (fk === 1 && landArmy > 24 && this.pickTarget(true) < 0 && !this.underPressure) {
-        // personne n'est joignable par la terre : garder les ressources pour l'aviation
+      } else if (fk === 1 && this.pickTarget(true) < 0 && !this.canBuild(this.ids.u.hover_tank, avail) && ((landArmy > 24 && !this.underPressure) || (landArmy > 50 && !this.baseInvaded()))) {
+        // personne n'est joignable par la terre (et pas d'amphibies) : garder les ressources pour l'aviation
         continue;
       } else if (this.stock(this.ids.item.iron_plate) < 40 && !this.underPressure && engs >= 1) {
         // le stock de construction passe d'abord
         continue;
+
       } else {
         // composition de l'armée : type disponible le moins représenté par rapport à son poids
         const counts = new Map<number, number>();
         for (const u of this.ix.unitsBy[this.ctx.slot]) counts.set(u.kind, (counts.get(u.kind) ?? 0) + 1);
         let best = Infinity;
-        for (const [key, wgt] of Object.entries(P.army)) {
+        for (const [key, wgt] of Object.entries(weights)) {
           const k = this.ids.u[key];
           if (k === undefined || data.units[k].factory !== fk || !this.canBuild(k, avail)) continue;
           if ((this.starved.get(fi.module.id * 100 + k) ?? 0) > this.tick) continue;
@@ -1245,12 +1451,55 @@ export class SkirmishAI implements Bot {
           }
         }
       }
+      if (pick < 0 && this.debug && this.thinkN % 30 === 1) this.log("usine sans production", b.kind, "disponible :", [...avail].map((i) => this.ctx.data.items[i].key).join(","));
       if (pick >= 0) {
         out.push(factoryQueue(b.ref, pick, 1));
         fi.lastQ = this.tick;
         fi.front = pick;
       }
     }
+  }
+
+  /** Le fer manque alors que le cuivre s'accumule : l'économie doit se rééquilibrer. */
+  ironStarved(): boolean {
+    const it = this.ids.item;
+    return this.level !== "facile" && this.stock(it.iron_plate) < 60 && this.stock(it.copper_plate) > 150 && this.tick > 3000;
+  }
+  /** Ennemis dans la base, plus forts que la défense en place (pas seulement un harcèlement). */
+  baseInvaded(): boolean {
+    const t = this.army.threat;
+    return !!t && this.tick - t.tick < 60 && t.power > this.defensePower(t.x, t.y) * 0.7;
+  }
+
+  /**
+   * Composition voulue de l'armée : poids de la personnalité, corrigés par les rapports de force
+   * (LOUD : la production répond à ce que fait l'adversaire).
+   */
+  armyWeights(): Record<string, number> {
+    const w: Record<string, number> = { ...this.persona.army };
+    if (this.level === "facile") return w;
+    const r = Math.min(2.5, this.airRatio);
+    // antiaérien : chasseurs et antiaérien mobile, d'autant plus que l'aviation ennemie domine
+    w.interceptor = (w.interceptor ?? 0) + 0.6 + r * 3;
+    w.asf = (w.asf ?? 0) + 0.5 + r * 3;
+    if (r > 0.35) w.mobile_aa = (w.mobile_aa ?? 0) + r * 2.5;
+    // frappes sur l'économie adverse
+    w.bomber = (w.bomber ?? 0) + 1.2;
+    // un adversaire hors d'atteinte par la terre : aéroglisseurs amphibies, et l'aviation d'attaque
+    // devient la priorité (les chasseurs seulement contre une aviation ennemie)
+    if (this.anyUnreachable()) w.hover_tank = (w.hover_tank ?? 0) + (this.pickTarget(true) < 0 ? 8 : 2);
+    if (this.pickTarget(true) < 0) {
+      w.glider = (w.glider ?? 0) * 2 + 2;
+      w.gunship = (w.gunship ?? 0) * 2 + 1;
+      w.bomber = (w.bomber ?? 0) * 2;
+      if (r < 0.3) w.interceptor = 0.3;
+    }
+    // adversaire plus fort au sol : plus d'artillerie et de lance-missiles (portée)
+    if (this.landRatio > 1.3) {
+      w.artillery = (w.artillery ?? 0) + 1;
+      w.missile_launcher = (w.missile_launcher ?? 0) + 1;
+    }
+    return w;
   }
 
   /** L'unité a-t-elle besoin d'objets du tapis principal autres que les plaques (hors cellule) ? */
@@ -1300,7 +1549,14 @@ export class SkirmishAI implements Bot {
       }
     }
     const pack1 = this.ids.item.pack1;
-    for (const k of this.persona.research) {
+    // recherches urgentes selon les rapports de force, puis la liste de la personnalité
+    const urgent: string[] = [];
+    if (this.level !== "facile") {
+      if (this.airRatio > 0.5) urgent.push("aa_turret", "heavy_air", "superiority");
+      if (this.anyUnreachable()) urgent.push("electronics", "hydrocarbons", "mobile_artillery", "assault", "heavy_air");
+      if (this.landRatio > 1.5) urgent.push("heavy_turret");
+    }
+    for (const k of [...urgent, ...this.persona.research]) {
       const t = this.ids.t[k];
       if (t === undefined || this.has(t)) continue;
       const td = techs[t];
@@ -1318,10 +1574,73 @@ export class SkirmishAI implements Bot {
   commander(out: Cmd[]): void {
     const c = this.unitById(this.me.commander);
     if (!c) return;
-    // en danger : rentrer au centre de la base si des ennemis sont proches et qu'il est blessé
-    if (c.hp < this.ctx.data.units[c.kind].hp * 0.35 && this.army.threat) {
-      const [bx, by] = this.baseCenter();
-      if (dist2(c.x, c.y, bx, by) > (6 * TILE) ** 2 && this.tick % 100 === 0) out.push(move([c], bx - this.enemyDir[0] * 10 * TILE, by - this.enemyDir[1] * 10 * TILE));
+    const def = this.ctx.data.units[c.kind];
+    const [bx, by] = this.baseCenter();
+    // repli vers le centre de la base, à l'abri des tourelles, du côté opposé aux adversaires
+    const sx = bx - this.enemyDir[0] * 8 * TILE;
+    const sy = by - this.enemyDir[1] * 8 * TILE;
+    const far = dist2(c.x, c.y, sx, sy) > (8 * TILE) ** 2;
+    if (this.level === "facile") {
+      if (c.hp < def.hp * 0.35 && this.army.threat && far && this.tick % 100 === 0) out.push(move([c], sx, sy));
+      return;
+    }
+    // LOUD : le commandant n'affronte pas une force qui le dépasse (ses points de vie ne se réparent pas) :
+    // il recule à l'opposé, derrière notre armée si elle est assez forte.
+    const air = this.enemySum(T.Air, c.x, c.y, 16);
+    const enemy = this.enemySum(T.Surface, c.x, c.y, 22) + air;
+    const mine = kindPowers(this.ctx.data).units[c.kind].ground * Math.sqrt(c.hp / def.hp);
+    if (enemy > 0) this.postDistress(c.x, c.y, enemy, air > enemy * 0.5, true);
+    // il défend la base avec les tourelles et l'armée (il est solide et reste le principal bâtisseur
+    // au début), mais recule si la défense locale est dépassée ou s'il est sérieusement blessé
+    const local = this.friendSum(T.Surface, c.x, c.y, 22); // lui, nos tourelles et nos unités autour
+    const danger = enemy > local * 1.1 || (c.hp < def.hp * 0.5 && enemy > mine * 0.3);
+    if (danger) this.cmdHoldUntil = this.tick + 150;
+    if (this.tick >= this.cmdHoldUntil) return;
+    if (this.tick - this.cmdMoved < 40) return;
+    let ex = 0;
+    let ey = 0;
+    let en = 0;
+    let ax = 0;
+    let ay = 0;
+    let apow = 0;
+    const kp = kindPowers(this.ctx.data).units;
+    unitsNear(this.ix, c.x, c.y, 40 * TILE, (u) => {
+      if (u.id === c.id || !this.combatKinds[u.kind]) return;
+      const k = kp[u.kind];
+      if (u.owner === this.ctx.slot || this.sameTeam(u.owner)) {
+        ax += u.x * k.ground;
+        ay += u.y * k.ground;
+        apow += k.ground;
+      } else if (dist2(u.x, u.y, c.x, c.y) < (26 * TILE) ** 2) {
+        ex += u.x;
+        ey += u.y;
+        en++;
+      }
+    });
+    let tx = sx;
+    let ty = sy;
+    if (en > 0) {
+      ex /= en;
+      ey /= en;
+      const dx = c.x - ex;
+      const dy = c.y - ey;
+      const dn = Math.hypot(dx, dy) || 1;
+      if (apow > enemy * 0.8) {
+        // derrière notre armée, à l'opposé de l'ennemi
+        tx = ax / apow + (dx / dn) * 8 * TILE;
+        ty = ay / apow + (dy / dn) * 8 * TILE;
+      } else {
+        // fuite à l'opposé de l'ennemi, en se rapprochant du centre de la base
+        tx = c.x + (dx / dn) * 16 * TILE * 0.7 + (sx - c.x) * 0.3;
+        ty = c.y + (dy / dn) * 16 * TILE * 0.7 + (sy - c.y) * 0.3;
+      }
+    } else if (!far) return;
+    const m = this.ctx.map;
+    tx = Math.max(2 * TILE, Math.min((m.w - 3) * TILE, tx));
+    ty = Math.max(2 * TILE, Math.min((m.h - 3) * TILE, ty));
+    if (c.nOrders === 0 || en > 0) {
+      out.push(move([c], tx, ty));
+      this.cmdMoved = this.tick;
     }
   }
 }

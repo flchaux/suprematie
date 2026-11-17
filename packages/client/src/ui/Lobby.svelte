@@ -6,6 +6,7 @@
   const lobby = $derived(ui.lobby);
   const isHost = $derived(!!lobby && lobby.players.some((p) => p.host && p.slot === ui.slot));
   const PERS: Record<string, string> = { adaptive: "Adaptative", rush: "Rush", turtle: "Tortue", tech: "Technologique" };
+  const LEVELS: Record<string, string> = { facile: "Facile", normal: "Normal", difficile: "Difficile" };
   let replays = $state<string[]>([]);
   let showReplays = $state(false);
   async function loadReplays() {
@@ -51,10 +52,13 @@
                     <select value={p.personality} onchange={(e) => client.lobbyAction("setBot", { slot: p.slot, personality: (e.target as HTMLSelectElement).value })}>
                       {#each Object.entries(PERS) as [k, v]}<option value={k}>{v}</option>{/each}
                     </select>
+                    <select value={p.level ?? "normal"} title="Difficulté : réactivité, adaptation à l'adversaire, repli et entraide" onchange={(e) => client.lobbyAction("setBot", { slot: p.slot, level: (e.target as HTMLSelectElement).value })}>
+                      {#each Object.entries(LEVELS) as [k, v]}<option value={k}>{v}</option>{/each}
+                    </select>
                     <select value={p.aix ?? 100} title="Variante AIx : multiplicateur de ressources et de vitesse de construction" onchange={(e) => client.lobbyAction("setBot", { slot: p.slot, aix: Number((e.target as HTMLSelectElement).value) })}>
                       {#each [100, 120, 150, 200, 300] as a}<option value={a}>{a === 100 ? "Normal" : "AIx ×" + a / 100}</option>{/each}
                     </select>
-                  {:else}{PERS[p.personality ?? "adaptive"]} {p.aix && p.aix > 100 ? "AIx ×" + p.aix / 100 : ""}{/if}
+                  {:else}{PERS[p.personality ?? "adaptive"]} · {LEVELS[p.level ?? "normal"]} {p.aix && p.aix > 100 ? "AIx ×" + p.aix / 100 : ""}{/if}
                 {/if}
               </td>
               <td>{#if isHost && p.bot && !lobby.running}<button onclick={() => client.lobbyAction("removeSlot", { slot: p.slot })}>Retirer</button>{/if}</td>
