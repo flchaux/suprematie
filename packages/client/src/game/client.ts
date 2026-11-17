@@ -2,6 +2,7 @@
 // sélection, ordres contextuels, placement de bâtiments, minicarte, alertes et sons.
 import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
+import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, hasTech } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
@@ -334,6 +335,8 @@ export class GameClient {
       this.lastPowerShow = 0;
       sc.power?.hide();
     }
+    // curseur : les unités bougent sous une souris immobile, la sélection change
+    if (now - this.cursorAt > 150) this.updateCursor();
     // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
     const shift = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
     sc.showOrders = shift && this.selected.size > 0;
@@ -742,6 +745,7 @@ export class GameClient {
       return;
     }
     if (this.mouse.down && Math.hypot(x - this.mouse.startX, y - this.mouse.startY) > 6) this.mouse.dragging = true;
+    this.updateCursor();
     if (ui.mode === "build") this.updateGhost();
     else this.plans.move();
     if (this.mouse.down && this.mouse.button === 0 && this.mouse.dragging && ui.mode !== "build" && ui.mode !== "copy" && ui.mode !== "paste" && this.selBox) {
@@ -1124,6 +1128,7 @@ export class GameClient {
     ui.mode = mode;
     if (mode !== "build") this.scene?.hideGhost();
     sfx.click();
+    this.updateCursor(true);
   }
   cancelMode(): void {
     ui.mode = "";
@@ -1131,6 +1136,7 @@ export class GameClient {
     this.ghostStart = null;
     this.scene?.hideGhost();
     this.plans.clear();
+    this.updateCursor(true);
   }
 
   // ---------- sélection ----------
@@ -1264,6 +1270,85 @@ export class GameClient {
   }
   engineers(): number[] {
     return this.selectedUnits().filter((u) => this.data!.units[u.kind].buildPower > 0).map((u) => u.id);
+  }
+
+  // ---------- curseur contextuel ----------
+  private cursorKind: CursorKind | "" = "";
+  private cursorAt = 0;
+
+  /** Met à jour la forme du curseur selon ce qu'un clic ferait sous la souris (au plus 20 fois par seconde). */
+  updateCursor(force = false): void {
+    const el = this.canvasEl;
+    if (!el) return;
+    const now = performance.now();
+    if (!force && now - this.cursorAt < 50) return;
+    this.cursorAt = now;
+    const kind = this.cursorIntent(this.mouse.x, this.mouse.y);
+    if (kind !== this.cursorKind) {
+      this.cursorKind = kind;
+      el.style.cursor = cursorCss(kind);
+    }
+  }
+
+  /**
+   * Ce que ferait un clic à l'écran (x, y), pour le curseur : mêmes règles que le clic droit
+   * (contextCommand) et que les modes d'ordre (modeClick).
+   */
+  private cursorIntent(x: number, y: number): CursorKind {
+    if (this.middle.active) return "grab";
+    if (this.mouse.down && this.mouse.button === 2 && this.mouse.dragging) return this.formStart ? "move" : "grab";
+    if (!this.data || !this.frame) return "default";
+    const mode = ui.mode;
+    const playing = ui.me >= 0 && !ui.spectator && !ui.replay;
+    if (mode === "build" || mode === "paste") return this.ghostCells.some((c) => !c.ok) ? "invalid" : "build";
+    if (mode === "copy") return "select";
+    const g = this.groundAt(x, y);
+    if (!g) return mode ? "invalid" : "default";
+    const unit = this.ownedUnitAt(x, y, true);
+    const tb = this.buildingAtTile(Math.floor(g.x), Math.floor(g.z));
+    const mine = (owner: number) => owner === ui.me;
+    const enemy = (owner: number) => this.teamOf(owner) !== this.teamOf(ui.me);
+    if (mode) {
+      switch (mode) {
+        case "attackMove":
+          return "attackMove";
+        case "patrol":
+          return "patrol";
+        case "reclaim":
+          return "reclaim";
+        case "unload":
+          return "unload";
+        case "assist":
+          return (unit && !enemy(unit.owner)) || (tb && !enemy(tb.owner)) ? "assist" : "invalid";
+        default:
+          return "target";
+      }
+    }
+    const units = playing ? this.selectedUnits() : [];
+    if (!units.length) {
+      // rien de sélectionné (ou spectateur) : ce qui peut être sélectionné sous la souris
+      if (playing && ui.selBuilding && mine(ui.selBuilding.owner) && this.data.buildings[ui.selBuilding.kind]?.cls === BClass.Factory) return "rally";
+      if (unit && (mine(unit.owner) || !playing)) return "select";
+      if (tb && (mine(tb.owner) || !playing)) return "select";
+      return "default";
+    }
+    const ids = units.map((u) => u.id);
+    if (unit && enemy(unit.owner)) return "attack";
+    if (tb && enemy(tb.owner)) return "attack";
+    const engs = units.some((u) => this.data!.units[u.kind].buildPower > 0);
+    if (unit && mine(unit.owner) && !ids.includes(unit.id)) return this.data.units[unit.kind].carry > 0 ? "load" : "assist";
+    if (tb && mine(tb.owner)) {
+      const def = this.data.buildings[tb.kind];
+      if (def.cls === BClass.Gate) return "move";
+      if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
+    }
+    if (engs) {
+      const f = this.frame;
+      for (let i = 0, o = f.wreckOff; i < f.nWrecks; i++, o += WRECK_WORDS) {
+        if (Math.hypot(f.buf[o] / TILE - g.x, f.buf[o + 1] / TILE - g.z) < 1.5) return "reclaim";
+      }
+    }
+    return "move";
   }
 
   // ---------- ordres ----------
