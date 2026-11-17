@@ -2,11 +2,11 @@
 // Les images brutes (1024 px, PNG) vont dans tools/sprites/raw/ (non versionné) ; process.py les
 // réduit ensuite en WebP dans packages/client/src/assets/sprites/.
 //
-//   node tools/sprites/generate.mjs [items|buildings|units|art] [clé…] [--quality low|medium|high] [--force]
+//   node tools/sprites/generate.mjs [items|buildings|units|art|decor] [clé…] [--quality low|medium|high] [--force]
 //
 // Une image déjà générée n'est pas redemandée (sauf --force).
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
-import { STYLE, ITEM_STYLE, ITEMS, BUILDINGS, UNITS, ART } from "./manifest.mjs";
+import { STYLE, ITEM_STYLE, ITEMS, BUILDINGS, UNITS, ART, DECOR, DECOR_STYLE } from "./manifest.mjs";
 
 const ROOT = new URL("./raw/", import.meta.url).pathname;
 const KEY = process.env.OPENAI_API_KEY;
@@ -24,7 +24,7 @@ const quality = opt("quality", "medium");
 const model = opt("model", "gpt-image-1.5"); // gpt-image-2 ne gère pas les fonds transparents
 const WITH_VALUE = ["--quality", "--model", "--concurrency"];
 const positional = args.filter((a, i) => !a.startsWith("--") && !WITH_VALUE.includes(args[i - 1]));
-const cats = ["items", "buildings", "units", "art"];
+const cats = ["items", "buildings", "units", "art", "decor"];
 const onlyCat = positional.find((a) => cats.includes(a));
 const onlyKeys = new Set(positional.filter((a) => !cats.includes(a)));
 
@@ -38,6 +38,7 @@ for (const [k, s] of Object.entries(ITEMS)) add("items", k, `${ITEM_STYLE} Subje
 for (const [k, s] of Object.entries(BUILDINGS)) add("buildings", k, `${STYLE} Subject: ${s}.`);
 for (const [k, s] of Object.entries(UNITS)) add("units", k, `${STYLE} Subject: ${s}.`);
 for (const [k, a] of Object.entries(ART)) add("art", k, a.prompt, a.size, a.background);
+for (const [k, s] of Object.entries(DECOR)) add("decor", k, `${DECOR_STYLE} Subject: ${s}.`);
 
 async function gen(j) {
   const dir = ROOT + j.cat;

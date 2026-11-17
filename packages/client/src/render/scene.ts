@@ -9,6 +9,7 @@ import { DEFAULT_GFX, type GfxSettings } from "./gfx.ts";
 import type { GameData, Frame } from "@supreme/shared";
 import { Terrain, groundHeight, type MapData } from "./terrain.ts";
 import { Entities } from "./entities.ts";
+import { Decorations } from "./decor.ts";
 import { buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
@@ -18,6 +19,8 @@ export interface RenderStats {
   drawCalls: number;
   triangles: number;
   particles: number;
+  /** décorations du sol affichées */
+  decor: number;
   cpuMs: number;
   shadowSize: number;
 }
@@ -28,6 +31,7 @@ export class GameScene {
   camera = new THREE.PerspectiveCamera(40, 1, 0.5, 6000);
   terrain!: Terrain;
   entities!: Entities;
+  decor: Decorations | null = null;
   map!: MapData;
   data!: GameData;
   // caméra : point visé, distance, inclinaison, rotation
@@ -49,7 +53,7 @@ export class GameScene {
   post: THREE.RenderPipeline | null = null;
   bloomPass: ReturnType<typeof bloom> | null = null;
   gfx: GfxSettings = { ...DEFAULT_GFX };
-  stats: RenderStats = { drawCalls: 0, triangles: 0, particles: 0, cpuMs: 0, shadowSize: 0 };
+  stats: RenderStats = { drawCalls: 0, triangles: 0, particles: 0, decor: 0, cpuMs: 0, shadowSize: 0 };
   time = 0;
 
   constructor(public canvasParent: HTMLElement) {
@@ -110,6 +114,8 @@ export class GameScene {
     setTexturesEnabled(g.textures !== false);
     this.renderer.shadowMap.enabled = g.shadows;
     if (this.entities) this.entities.effects.quality = g.effects;
+    this.terrain?.setDetail(g.ground !== false);
+    if (this.decor) this.decor.enabled = g.decor !== false;
     // changer les ombres impose de recompiler les matériaux
     this.scene.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
@@ -120,10 +126,18 @@ export class GameScene {
   setWorld(map: MapData, data: GameData): void {
     if (this.terrain) this.scene.remove(this.terrain.group);
     if (this.entities) this.scene.remove(this.entities.group);
+    if (this.decor) {
+      this.scene.remove(this.decor.mesh);
+      this.decor.dispose();
+    }
     this.map = map;
     this.data = data;
     this.terrain = new Terrain(map);
+    this.terrain.setDetail(this.gfx.ground !== false);
     this.scene.add(this.terrain.group);
+    this.decor = new Decorations(map, data);
+    this.decor.enabled = this.gfx.decor !== false;
+    this.scene.add(this.decor.mesh);
     this.entities = new Entities(data, map);
     this.entities.camera = this.camera;
     this.entities.effects.quality = this.gfx.effects;
@@ -313,10 +327,12 @@ export class GameScene {
     this.updateShadow();
     fogEnabled.value = spectator ? 0 : 1;
     this.terrain?.tick(dt, this.time);
+    const view = this.viewRect();
     if (frame && this.entities) {
       const iconScale = Math.max(1, this.distance / 160);
-      this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, this.viewRect());
+      this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, view);
     }
+    this.decor?.update(frame, this.camera, this.distance, this.strategic, view, this.target, this.time);
     // repères de clic
     const m = new THREE.Matrix4();
     this.markerList = this.markerList.filter((k) => (k.age += dt) < 0.8);
@@ -338,6 +354,7 @@ export class GameScene {
     this.stats.drawCalls = info.drawCalls ?? info.calls ?? 0;
     this.stats.triangles = info.triangles;
     this.stats.particles = this.entities?.effects.count ?? 0;
+    this.stats.decor = this.decor?.count ?? 0;
     this.stats.cpuMs = performance.now() - t0;
   }
 }

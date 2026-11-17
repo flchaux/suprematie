@@ -61,7 +61,7 @@ export const ui = $state({
   gfx: loadGfx(),
   showGfx: false,
   showPerf: false,
-  perf: { drawCalls: 0, triangles: 0, particles: 0, cpuMs: 0, shadowSize: 0, frameMs: 0 },
+  perf: { drawCalls: 0, triangles: 0, particles: 0, decor: 0, cpuMs: 0, shadowSize: 0, frameMs: 0 },
 });
 
 function loadGfx(): GfxSettings {

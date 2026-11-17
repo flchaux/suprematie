@@ -87,8 +87,8 @@
         <div><b>{ui.fps}</b> images/s · {ui.perf.frameMs.toFixed(1)} ms par image</div>
         <div>Rendu (processeur) : {ui.perf.cpuMs.toFixed(1)} ms</div>
         <div>Appels de dessin : {ui.perf.drawCalls} · triangles : {(ui.perf.triangles / 1000).toFixed(0)} k</div>
-        <div>Particules : {ui.perf.particles}</div>
-        <div>Moteur : {ui.backend} · ombres {ui.gfx.shadows ? `${Math.round(ui.perf.shadowSize)} cases` : "désactivées"} · halo {ui.gfx.bloom ? "oui" : "non"} · textures {ui.gfx.textures ? "oui" : "non"}</div>
+        <div>Particules : {ui.perf.particles} · décorations : {ui.perf.decor}</div>
+        <div>Moteur : {ui.backend} · ombres {ui.gfx.shadows ? `${Math.round(ui.perf.shadowSize)} cases` : "désactivées"} · halo {ui.gfx.bloom ? "oui" : "non"} · textures {ui.gfx.textures ? "oui" : "non"} · sol {ui.gfx.ground ? "détaillé" : "simple"}</div>
       </div>
     {/if}
     {#if ui.replay}

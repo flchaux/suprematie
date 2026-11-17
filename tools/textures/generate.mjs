@@ -1,10 +1,11 @@
-// Génère les textures des modèles 3D (matières répétables) avec l'API d'images d'OpenAI
+// Génère les textures des modèles 3D (matières répétables) et du sol avec l'API d'images d'OpenAI
 // (clé : variable OPENAI_API_KEY). Images brutes dans tools/textures/raw/ (non versionné) ;
 // process.py les rend raccordables et les réduit pour le client.
 //
 //   node tools/textures/generate.mjs [clé…] [--quality low|medium|high] [--force]
+// Les textures du sol ont pour clé « ground_<nom> » (ex. ground_grass) ; « ground » seul les choisit toutes.
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
-import { MATERIALS, STYLE } from "./manifest.mjs";
+import { MATERIALS, STYLE, GROUND, GROUND_STYLE } from "./manifest.mjs";
 
 const RAW = new URL("./raw/", import.meta.url).pathname;
 const KEY = process.env.OPENAI_API_KEY;
@@ -22,14 +23,14 @@ const model = opt("model", "gpt-image-1.5");
 const only = new Set(args.filter((a, i) => !a.startsWith("--") && !["--quality", "--model"].includes(args[i - 1])));
 mkdirSync(RAW, { recursive: true });
 
-async function gen(key, desc) {
+async function gen(key, prompt) {
   const file = `${RAW}${key}.png`;
   if (existsSync(file) && !args.includes("--force")) return "existe";
   for (let attempt = 1; attempt <= 3; attempt++) {
     const res = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${KEY}` },
-      body: JSON.stringify({ model, prompt: `${STYLE} Surface: ${desc}`, size: "1024x1024", quality, background: "opaque", output_format: "png", n: 1 }),
+      body: JSON.stringify({ model, prompt, size: "1024x1024", quality, background: "opaque", output_format: "png", n: 1 }),
     });
     const body = await res.json().catch(() => ({}));
     if (res.ok && body.data?.[0]?.b64_json) {
@@ -43,10 +44,14 @@ async function gen(key, desc) {
   return "échec";
 }
 
-const jobs = MATERIALS.filter((m) => !only.size || only.has(m.key));
+const all = [
+  ...MATERIALS.map((m) => ({ key: m.key, prompt: `${STYLE} Surface: ${m.desc}` })),
+  ...GROUND.map((g) => ({ key: `ground_${g.key}`, prompt: `${GROUND_STYLE} Ground: ${g.desc}` })),
+];
+const jobs = all.filter((j) => !only.size || only.has(j.key) || (only.has("ground") && j.key.startsWith("ground_")));
 await Promise.all(
-  jobs.map(async (m) => {
+  jobs.map(async (j) => {
     const t0 = Date.now();
-    console.log(`${m.key} : ${await gen(m.key, m.desc)} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
+    console.log(`${j.key} : ${await gen(j.key, j.prompt)} (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   }),
 );
