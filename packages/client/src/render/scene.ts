@@ -11,7 +11,7 @@ import { BClass } from "@supreme/shared";
 import { Terrain, groundHeight, type MapData } from "./terrain.ts";
 import { Entities } from "./entities.ts";
 import { Decorations } from "./decor.ts";
-import { buildModel, fallbackModel } from "../models/generator.ts";
+import { buildingScale, buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
 import { CommandOverlay } from "./overlay.ts";
@@ -349,7 +349,7 @@ export class GameScene {
       mat.depthWrite = false;
       const size = new THREE.Vector3();
       built.box.getSize(size);
-      g.mesh.userData.scale = (def.w * 0.98) / Math.max(size.x, size.z, 0.01);
+      g.mesh.userData.scale = buildingScale(def.w, size.x, size.z);
       this.scene.add(g.mesh);
       this.ghostMeshes.set(key, g);
     }
