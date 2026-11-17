@@ -397,6 +397,44 @@ export class Effects {
     }
   }
 
+  /**
+   * Rayon prolongé (appelé à chaque image) : étincelles et lueur au point d'impact ; pour le souffle
+   * de feu (proj 10), flammes projetées le long du rayon.
+   */
+  beam(ax: number, ay: number, az: number, bx: number, by: number, bz: number, proj: number, dt: number, big: number): void {
+    if (!this.inView(bx, bz, 4) && !this.inView(ax, az, 4)) return;
+    const fire = proj === 10;
+    const c: [number, number, number] = fire ? [2.4, 1.1, 0.25] : [2.4, 0.5, 0.45];
+    this.fire.spawn({ x: bx, y: by, z: bz, life: 0.08, s0: 0.4 * big, s1: 0.7 * big, c0: c });
+    if (fire) {
+      const n = Math.ceil(dt * 50 * this.quality);
+      const dx = bx - ax;
+      const dy = by - ay;
+      const dz = bz - az;
+      for (let i = 0; i < n; i++) {
+        const t = Math.random();
+        const sp = rnd(0.6, 1.4);
+        this.fire.spawn({
+          x: ax + dx * t + rnd(-0.2, 0.2) * big,
+          y: ay + dy * t + rnd(-0.2, 0.2) * big,
+          z: az + dz * t + rnd(-0.2, 0.2) * big,
+          vx: dx * 0.25 * sp,
+          vy: dy * 0.25 * sp + 0.4,
+          vz: dz * 0.25 * sp,
+          life: rnd(0.18, 0.35),
+          s0: (0.15 + t * 0.45) * big,
+          s1: (0.35 + t * 0.9) * big,
+          c0: [2.2, 1.1, 0.3],
+          c1: [1.4, 0.35, 0.05],
+        });
+      }
+      if (Math.random() < dt * 20 * this.quality) this.smoke.spawn({ x: bx, y: by + 0.3, z: bz, vy: 0.8, life: rnd(0.8, 1.4), s0: 0.6 * big, s1: 2 * big, c0: [0.25, 0.22, 0.2], c1: [0.4, 0.4, 0.4], a: 0.45, drag: 1 });
+    } else if (Math.random() < dt * 30 * this.quality) {
+      // laser : fumée de la surface brûlée
+      this.smoke.spawn({ x: bx, y: by, z: bz, vy: 0.7, life: rnd(0.5, 0.9), s0: 0.2 * big, s1: 0.8 * big, c0: [0.35, 0.33, 0.32], a: 0.4, drag: 1 });
+    }
+  }
+
   /** Traînée d'un projectile (appelée à chaque image). */
   trail(x: number, y: number, z: number, proj: number, dt: number, big: number): void {
     if (!this.inView(x, z, 2)) return;

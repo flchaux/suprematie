@@ -71,6 +71,51 @@ function chenille(x: number, w: number, len: number, h: number): Part[] {
   ];
 }
 
+/** Patte de blatte côté droit ou gauche (pivot à la hanche) : cuisse relevée, tibia vers le sol, ergot. */
+function patteBlatte(name: string, side: 1 | -1, z: number, yaw: number): Part[] {
+  const x = (v: number): number => +(v * side).toFixed(3);
+  const r = (v: number): number => v * side;
+  return [
+    { shape: "bevel", size: [0.34,0.34,0.34], pos: [x(1.5),1.0,z], color: "light", pivot: name },
+    { shape: "box", size: [1.1,0.2,0.2], pos: [x(2.0),1.23,z], rot: [0,r(yaw),r(25)], color: "dark", parent: name },
+    { shape: "box", size: [0.05,0.05,0.7], pos: [x(2.0),1.35,z], rot: [0,r(yaw),0], color: "glow", parent: name },
+    { shape: "box", size: [1.5,0.16,0.16], pos: [x(2.7),0.73,z], rot: [0,r(yaw),r(-75)], color: "faction", parent: name },
+    { shape: "cone", sides: 5, radius: 0.08, height: 0.4, pos: [x(2.62),1.05,z], rot: [0,0,r(-40)], color: "metal", parent: name },
+  ];
+}
+
+/** Anneau du corps du dragon (pivot « onduleN ») : écailles, ventre clair, crête, filets. */
+function anneauDragon(k: number, z: number, w: number): Part[] {
+  const n = `ondule${k}`;
+  const out: Part[] = [
+    { shape: "bevel", size: [w, w * 0.85, 1.05], pos: [0,0.35,z], color: "faction", pivot: n },
+    { shape: "bevel", size: [+(w * 0.72).toFixed(3), 0.2, 0.95], pos: [0,+(0.35 - w * 0.42).toFixed(3),z], color: "light", parent: n },
+    { shape: "wedge", size: [0.08, +(0.2 + w * 0.25).toFixed(3), 0.75], pos: [0,+(0.35 + w * 0.5).toFixed(3),z], color: "amber", parent: n },
+    { shape: "box", size: [0.03,0.06,0.8], pos: [+(w / 2 + 0.01).toFixed(3),0.42,z], color: "glow", mirror: true, parent: n },
+  ];
+  return out;
+}
+
+/** Patte griffue du dragon, portée par un anneau. */
+function griffeDragon(k: number, z: number, w: number): Part[] {
+  const n = `ondule${k}`;
+  const x = +(w / 2 + 0.12).toFixed(3);
+  return [
+    { shape: "box", size: [0.2,0.6,0.2], pos: [x,0.0,z], rot: [0,0,20], color: "light", mirror: true, parent: n },
+    { shape: "cone", sides: 5, radius: 0.09, height: 0.35, pos: [+(x + 0.12).toFixed(3),-0.38,+(z + 0.15).toFixed(3)], rot: [90,0,0], color: "metal", mirror: true, parent: n },
+  ];
+}
+
+/** Tourelle de batterie du cuirassé : socle pivotant et deux tubes. */
+function batterie(name: string, x: number, z: number): Part[] {
+  return [
+    { shape: "bevel", size: [0.42,0.2,0.42], pos: [x,1.47,z], color: "metal", pivot: name },
+    { shape: "box", size: [0.05,0.05,0.5], pos: [+(x + 0.08).toFixed(3),1.52,+(z + 0.33).toFixed(3)], color: "dark", parent: name },
+    { shape: "box", size: [0.05,0.05,0.5], pos: [+(x - 0.08).toFixed(3),1.52,+(z + 0.33).toFixed(3)], color: "dark", parent: name },
+    { shape: "box", size: [0.2,0.04,0.04], pos: [x,1.58,+(z - 0.1).toFixed(3)], color: "glow", parent: name },
+  ];
+}
+
 export const UNIT_MODELS: Record<string, Model> = {
   // commander : grand mécha bipède, blindage clair, canon au bras droit, visière cyan
   commander: {
@@ -802,7 +847,7 @@ export const UNIT_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 6, radius: 0.06, height: 0.8, pos: [0,0.86,2.4], rot: [90,0,0], color: "dark", parent: "tourelle" },
     ],
   },
-  // spider : araignée de siège à huit pattes articulées (filets cyan), carapace aux couleurs du camp, canon-rail en tourelle (1552 triangles)
+  // spider : araignée de siège à huit pattes (filets cyan), carapace aux couleurs du camp, émetteur laser au centre (1552 triangles)
   spider: {
     parts: [
       { shape: "bevel", size: [2.0,0.8,2.8], pos: [0,1.9,0], color: "dark" },
@@ -819,16 +864,122 @@ export const UNIT_MODELS: Record<string, Model> = {
           { tilt: 40, len: 1.1, w: 0.42, color: "faction", shape: "bevel", joint: { size: [0.44,0.44,0.44], color: "light" } },
           { tilt: -75, len: 2.6, w: 0.4, color: "dark", shape: "bevel", strip: "glow", joint: { size: [0.46,0.12,0.5], color: "black" } },
         ])),
-      // tourelle et canon-rail
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 0.25, pos: [0,2.65,0.1], color: "metal", pivot: "tourelle" },
-      { shape: "bevel", size: [1.1,0.55,1.3], pos: [0,2.98,0], color: "dark", parent: "tourelle" },
-      { shape: "box", size: [0.8,0.06,0.9], pos: [0,3.28,-0.1], color: "faction", parent: "tourelle" },
-      { shape: "bevel", size: [0.6,0.55,2.4], pos: [0,3.15,0.9], color: "light", parent: "tourelle" },
-      { shape: "box", size: [0.04,0.06,1.8], pos: [0.31,3.15,0.9], color: "glow", mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.08,0.05,0.05], pos: [0.18,3.44,0.2], color: "amber", mirror: true, parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.14, height: 1.2, pos: [0,3.15,2.6], rot: [90,0,0], color: "metal", parent: "tourelle" },
-      { shape: "box", size: [0.36,0.36,0.04], pos: [0,3.15,2.12], color: "glow", parent: "tourelle" },
-      { shape: "box", size: [0.5,0.4,0.4], pos: [0,3.1,-0.75], color: "dark", parent: "tourelle" },
+      // émetteur laser central (pivot « laser » : le rayon part du centre de l'araignée et suit sa cible)
+      { shape: "sphere", radius: 0.62, detail: 1, pos: [0,2.95,0], color: "dark", pivot: "laser" },
+      { shape: "cylinder", sides: 8, radius: 0.75, height: 0.22, pos: [0,2.62,0], color: "metal", parent: "laser" },
+      { shape: "cylinder", sides: 8, radius: 0.67, height: 0.07, pos: [0,2.98,0], color: "glow", parent: "laser" },
+      { shape: "bevel", size: [0.95,0.28,0.55], pos: [0,3.38,-0.3], color: "faction", parent: "laser" },
+      { shape: "box", size: [0.04,0.05,0.4], pos: [0.36,3.4,-0.3], color: "glow", mirror: true, parent: "laser" },
+      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.3, pos: [0,3.0,0.55], rot: [90,0,0], color: "metal", parent: "laser" },
+      { shape: "sphere", radius: 0.27, detail: 1, pos: [0,3.0,0.72], color: "glow", parent: "laser" },
+      { shape: "box", size: [0.08,0.05,0.05], pos: [0.22,3.28,0.42], color: "amber", mirror: true, parent: "laser" },
+    ],
+  },
+  // roach : char Blatte, carapace segmentée aux couleurs du camp sur chenilles, six pattes articulées,
+  // tête pivotante à canons-mandibules et antennes
+  roach: {
+    parts: [
+      // chenilles et caisse
+      { shape: "bevel", size: [0.8,0.75,4.0], pos: [1.15,0.4,-0.2], color: "dark", mirror: true },
+      { shape: "box", size: [0.84,0.1,3.4], pos: [1.15,0.8,-0.2], color: "metal", mirror: true },
+      { shape: "box", size: [0.03,0.05,2.6], pos: [1.56,0.45,-0.2], color: "glow", mirror: true },
+      { shape: "bevel", size: [2.2,0.7,4.2], pos: [0,0.9,0], color: "dark" },
+      // élytres (carapace), joint lumineux, taches ambre
+      { shape: "bevel", size: [1.25,0.38,3.6], pos: [0.62,1.42,-0.55], rot: [4,0,-9], color: "faction", mirror: true },
+      { shape: "box", size: [0.05,0.06,3.2], pos: [0,1.6,-0.6], color: "glow" },
+      { shape: "box", size: [0.4,0.05,0.04], pos: [0.62,1.58,-1.4], rot: [0,0,-9], color: "light", mirror: true },
+      { shape: "box", size: [0.4,0.05,0.04], pos: [0.62,1.6,-0.4], rot: [0,0,-9], color: "light", mirror: true },
+      // abdomen et cerques
+      { shape: "bevel", size: [1.8,0.42,0.9], pos: [0,1.1,-2.55], rot: [-12,0,0], color: "light" },
+      { shape: "cone", sides: 5, radius: 0.12, height: 0.9, pos: [0.5,1.0,-3.2], rot: [-100,0,0], color: "metal", mirror: true },
+      // pronotum (bouclier de tête)
+      { shape: "bevel", size: [2.5,0.42,1.4], pos: [0,1.38,1.55], rot: [-12,0,0], color: "faction" },
+      { shape: "box", size: [2.0,0.05,0.05], pos: [0,1.42,2.25], color: "glow" },
+      { shape: "box", size: [0.3,0.06,0.3], pos: [0.55,1.62,1.45], rot: [-12,0,0], color: "amber", mirror: true },
+      // pattes (trépied alterné : avant droite, milieu gauche, arrière droite ensemble)
+      ...patteBlatte("jambe_d1", 1, 1.2, -20),
+      ...patteBlatte("jambe_d2_ar", 1, 0, 0),
+      ...patteBlatte("jambe_d3", 1, -1.2, 20),
+      ...patteBlatte("jambe_g_1", -1, 1.2, -20),
+      ...patteBlatte("jambe_g_2_ar", -1, 0, 0),
+      ...patteBlatte("jambe_g_3", -1, -1.2, 20),
+      // tête pivotante : yeux, canons-mandibules, antennes
+      { shape: "bevel", size: [1.3,0.62,0.85], pos: [0,0.95,2.55], color: "dark", pivot: "tourelle" },
+      { shape: "sphere", radius: 0.16, pos: [0.5,1.08,2.8], color: "glow", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [0.32,0.26,0.9], pos: [0.5,0.8,3.05], rot: [0,-15,0], color: "light", mirror: true, parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 1.4, pos: [0.36,0.88,3.4], rot: [90,0,0], color: "metal", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.2,0.2,0.04], pos: [0.36,0.88,4.11], color: "amber", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.07,0.07,2.2], pos: [0.67,1.37,3.8], rot: [-15,20,0], color: "metal", mirror: true, parent: "tourelle" },
+    ],
+  },
+  // dragon : « Gros Chinois », dragon robot volant ; tête pivotante (pivot « laser » : souffle de feu),
+  // corps en anneaux qui ondulent (pivots ondule2…ondule11), crête ambre, moustaches, perle d'énergie
+  dragon: {
+    parts: [
+      { shape: "bevel", size: [1.4,1.05,1.82], pos: [0.0,0.4,4.2], color: "faction", pivot: "laser" },
+      { shape: "bevel", size: [1.05,0.63,1.26], pos: [0.0,0.26,5.32], color: "light", parent: "laser" },
+      { shape: "bevel", size: [0.91,0.28,1.4], pos: [0.0,-0.16,5.18], rot: [8,0,0], color: "dark", parent: "laser" },
+      { shape: "box", size: [0.77,0.084,0.7], pos: [0.0,0.022,5.53], color: "amber", parent: "laser" },
+      { shape: "sphere", radius: 0.112, pos: [0.308,0.47,5.908], color: "glow", mirror: true, parent: "laser" },
+      { shape: "sphere", radius: 0.168, pos: [0.588,0.708,4.69], color: "glow", mirror: true, parent: "laser" },
+      { shape: "cone", sides: 5, radius: 0.14, height: 1.54, pos: [0.42,1.422,3.164], rot: [-55,0,0], color: "metal", mirror: true, parent: "laser" },
+      { shape: "box", size: [0.056,0.056,2.24], pos: [1.092,0.036,4.872], rot: [-12,-38,0], color: "amber", mirror: true, parent: "laser" },
+      { shape: "bevel", size: [0.84,0.49,1.26], pos: [0.0,1.03,3.29], color: "light", parent: "laser" },
+      { shape: "sphere", radius: 0.42, detail: 1, pos: [0.0,-0.65,6.58], color: "glow", parent: "laser" },
+      // corps
+      ...anneauDragon(2, 3.1, 1.42),
+      ...anneauDragon(3, 2.15, 1.38),
+      ...griffeDragon(3, 2.15, 1.38),
+      ...anneauDragon(4, 1.2, 1.32),
+      ...anneauDragon(5, 0.25, 1.26),
+      ...anneauDragon(6, -0.7, 1.2),
+      ...anneauDragon(7, -1.65, 1.11),
+      ...griffeDragon(7, -1.65, 1.11),
+      ...anneauDragon(8, -2.6, 1.02),
+      ...anneauDragon(9, -3.55, 0.9),
+      ...anneauDragon(10, -4.5, 0.78),
+      // queue : dernier anneau et nageoire lumineuse
+      { shape: "bevel", size: [0.63,0.54,0.9], pos: [0,0.35,-5.4], color: "faction", pivot: "ondule11" },
+      { shape: "wedge", size: [0.08,0.7,1.2], pos: [0,0.8,-5.6], color: "amber", parent: "ondule11" },
+      { shape: "box", size: [0.9,0.05,0.7], pos: [0,0.35,-5.95], color: "glow", parent: "ondule11" },
+    ],
+  },
+  // star_cruiser : cuirassé stellaire, coque en triangle (deux demi-coques biseautées), superstructure
+  // en gradins, tour de commandement à passerelle et deux globes, réacteurs, batteries pivotantes
+  star_cruiser: {
+    parts: [
+      // coque (deux moitiés triangulaires : pointe vers l'avant, au centre)
+      { shape: "wedge", size: [0.7,2.7,10], pos: [1.35,1.0,0], rot: [0,0,-90], color: "light", mirror: true },
+      { shape: "wedge", size: [0.5,2.4,9], pos: [1.2,0.45,-0.45], rot: [0,0,-90], color: "dark", mirror: true },
+      { shape: "box", size: [0.04,0.04,9], pos: [1.2,1.37,0], rot: [0,-15,0], color: "glow", mirror: true },
+      { shape: "box", size: [0.35,0.03,4.0], pos: [0.85,1.36,-1.6], rot: [0,-15,0], color: "faction", mirror: true },
+      { shape: "bevel", size: [0.9,0.4,7.0], pos: [0,1.45,-1.0], color: "light" },
+      { shape: "box", size: [1.0,0.04,1.2], pos: [0,0.19,-0.5], color: "glow" },
+      // superstructure en gradins
+      { shape: "bevel", size: [3.0,0.4,2.6], pos: [0,1.55,-3.2], color: "light" },
+      { shape: "bevel", size: [2.2,0.4,2.0], pos: [0,1.95,-3.4], color: "metal" },
+      { shape: "bevel", size: [1.4,0.4,1.4], pos: [0,2.35,-3.6], color: "faction" },
+      { shape: "box", size: [2.9,0.05,0.04], pos: [0,1.6,-1.89], color: "glow" },
+      // tour de commandement
+      { shape: "bevel", size: [0.5,0.9,0.5], pos: [0,3.0,-3.9], color: "dark" },
+      { shape: "bevel", size: [2.2,0.35,0.6], pos: [0,3.55,-3.9], color: "light" },
+      { shape: "box", size: [1.8,0.06,0.04], pos: [0,3.58,-3.59], color: "glow" },
+      { shape: "cylinder", sides: 6, radius: 0.06, height: 0.3, pos: [0.85,3.82,-3.9], color: "metal", mirror: true },
+      { shape: "sphere", radius: 0.28, detail: 1, pos: [0.85,4.05,-3.9], color: "metal", mirror: true },
+      // réacteurs
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.5, pos: [0,1.0,-5.2], rot: [90,0,0], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.5, pos: [1.1,1.0,-5.2], rot: [90,0,0], color: "metal", mirror: true },
+      { shape: "cylinder", sides: 6, radius: 0.2, height: 0.4, pos: [1.9,0.95,-5.15], rot: [90,0,0], color: "metal", mirror: true },
+      { shape: "box", size: [0.7,0.7,0.04], pos: [0,1.0,-5.46], color: "glow" },
+      { shape: "box", size: [0.48,0.48,0.04], pos: [1.1,1.0,-5.46], color: "glow", mirror: true },
+      { shape: "box", size: [0.3,0.3,0.04], pos: [1.9,0.95,-5.36], color: "glow", mirror: true },
+      // batteries pivotantes le long des flancs
+      ...batterie("tourelle_1d", 1.6, -1.6),
+      ...batterie("tourelle_1g", -1.6, -1.6),
+      ...batterie("tourelle_2d", 1.0, 0.8),
+      ...batterie("tourelle_2g", -1.0, 0.8),
+      ...batterie("tourelle_3d", 0.45, 2.8),
+      ...batterie("tourelle_3g", -0.45, 2.8),
     ],
   },
   // colossus : mécha géant, blindage clair sur ossature sombre, visière cyan, épaulières massives, canons d'avant-bras (1328 triangles)

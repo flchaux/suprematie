@@ -124,11 +124,14 @@ export const UNITS = {
   submarine: "a sleek attack submarine partially surfaced",
   destroyer: "a naval destroyer warship with several gun turrets",
   missile_cruiser: "a large missile cruiser warship with vertical launch cells",
-  spider: "a gigantic experimental spider walker with eight legs and a laser cannon",
+  spider: "a gigantic experimental spider walker with eight legs and a glowing laser emitter dome at the centre of its body",
   colossus: "a gigantic experimental humanoid colossus robot",
   fortress: "a gigantic experimental walking fortress with many turrets",
   mothership: "a gigantic experimental flying saucer mothership",
   hyper_cruiser: "a gigantic experimental hyperspace cruiser starship",
+  roach: "a gigantic experimental armoured tank shaped like a cockroach, segmented glossy carapace with wing covers, six jointed legs, long antennae, twin mandible cannons at the front",
+  dragon: "a gigantic experimental flying robot Chinese dragon, long serpentine segmented body, horned head with long whiskers, amber dorsal crest, glowing energy pearl in front of its open mouth",
+  star_cruiser: "a gigantic experimental wedge-shaped capital starship, long triangular hull seen from above, stepped superstructure and a command tower at the rear, rows of small gun turrets, glowing engines",
 };
 
 /** Illustrations (pas d'arrière-plan transparent). */

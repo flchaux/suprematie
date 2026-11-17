@@ -315,7 +315,7 @@ pub struct Projectile {
     pub total: u16,
     pub dmg: i32,
     pub aoe: i32,
-    pub special: u8, // 0 normal, 1 missile stratégique, 2 frappe orbitale
+    pub special: u8, // 0 normal, 1 missile stratégique, 2 frappe orbitale, 3 rayon prolongé (combat::SPECIAL_BEAM)
     /// unité qui a tiré (NONE : bâtiment ou arme spéciale)
     pub src: u32,
 }

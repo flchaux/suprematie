@@ -20,7 +20,7 @@ const ANG = (Math.PI * 2) / 65536;
 
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number }[] = [];
   cap = 0;
   n = 0;
   /** hauteur du modèle à l'échelle (pour placer la fumée au sommet) */
@@ -54,7 +54,9 @@ class KindMesh {
       this.scene.add(tm.mesh);
       // jambe : 1 ou 2 selon la phase (gauche ou arrière décalée d'un demi-pas), 0 sinon
       const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg };
+      // anneau d'un corps qui ondule (« ondule1 », « ondule2 »… de la tête vers la queue), 0 sinon
+      const wave = Number(/^ondule(\d+)/.exec(p.name)?.[1] ?? 0);
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave };
     });
     this.cap = cap;
   }
@@ -121,6 +123,13 @@ export class Entities {
   itemMeshes: (KindMesh | undefined)[] = [];
   itemColors: THREE.Color[] = [];
   proj: THREE.InstancedMesh;
+  /** projectiles cinétiques (balles, obus) : métal éclairé, pas de halo */
+  slugs: THREE.InstancedMesh;
+  /** rayons prolongés : cœur clair et halo coloré (cylindres étirés de la source à la cible) */
+  beamCore: THREE.InstancedMesh;
+  beamGlow: THREE.InstancedMesh;
+  /** origine des rayons prolongés par arme : hauteur et avancée (vers la cible) du pivot « laser » */
+  private beamFrom = new Map<number, { h: number; fwd: number; air: boolean; big: number }>();
   effects: Effects;
   camera: THREE.Camera | null = null;
   /** trains (0) et drones de fret (1) */
@@ -200,6 +209,21 @@ export class Entities {
     this.proj.frustumCulled = false;
     this.proj.setColorAt(0, new THREE.Color());
     this.group.add(this.proj);
+    this.slugs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardNodeMaterial({ color: 0xffffff, metalness: 0.7, roughness: 0.35 }), 6000);
+    this.slugs.count = 0;
+    this.slugs.frustumCulled = false;
+    this.slugs.setColorAt(0, new THREE.Color());
+    this.group.add(this.slugs);
+    // cylindre d'axe +z, de z = 0 à z = 1
+    const tube = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+    this.beamCore = new THREE.InstancedMesh(tube, basic({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 400);
+    this.beamGlow = new THREE.InstancedMesh(tube, basic({ transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 400);
+    for (const m of [this.beamCore, this.beamGlow]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.setColorAt(0, new THREE.Color());
+      this.group.add(m);
+    }
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
     for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
@@ -419,7 +443,14 @@ export class Entities {
       for (const p of km.pivots) {
         // la tourelle tourne vers sa cible ; les rotors tournent en continu ; les jambes se balancent
         tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z);
-        if (p.leg !== 0) {
+        if (p.wave !== 0) {
+          // ondulation : chaque anneau se décale sur le côté et s'oriente le long de la vague, avec un retard
+          // croissant vers la queue (la tête, anneau 1, bouge à peine)
+          const ph = now / 260 - p.wave * 0.9;
+          const amp = Math.min(1, (p.wave - 1) * 0.35) * 0.45 * sc;
+          tmpM2.multiply(new THREE.Matrix4().makeTranslation(Math.sin(ph) * amp, Math.sin(ph * 0.5 + p.wave) * amp * 0.25, 0));
+          tmpM2.multiply(new THREE.Matrix4().makeRotationY(Math.cos(ph) * 0.35 * Math.min(1, (p.wave - 1) * 0.35)));
+        } else if (p.leg !== 0) {
           // jambes opposées (gauche / droite, avant / arrière) : balancement autour de la hanche
           tmpM2.multiply(new THREE.Matrix4().makeRotationX(Math.sin(st.phase + (p.leg > 1 ? Math.PI : 0)) * 0.55 * walk));
         } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
@@ -664,6 +695,8 @@ export class Entities {
     for (const km of this.itemMeshes) km?.end();
     // ----- projectiles -----
     let np = 0;
+    let nk = 0;
+    let nb = 0;
     o = f.projOff;
     for (let i = 0; i < f.nProj && np < 8000; i++, o += PROJ_WORDS) {
       const t = ((buf[o + 4] & 0xffff) + alpha) / Math.max(1, (buf[o + 4] >>> 16) & 0xffff);
@@ -678,6 +711,35 @@ export class Entities {
       const z = z0 + (z1 - z0) * tt;
       if (!spectator && !seen(x, z, 1) && !seen(x0, z0, 1)) continue;
       const w = this.data.weapons[wi];
+      if (special === 3) {
+        // rayon prolongé : de la source (pivot « laser » du modèle) à la cible, pendant toute sa durée
+        if (nb >= 400) continue;
+        const src = this.beamSource(wi);
+        const d0 = Math.hypot(x1 - x0, z1 - z0) || 1;
+        const ax = x0 + ((x1 - x0) / d0) * src.fwd;
+        const az = z0 + ((z1 - z0) / d0) * src.fwd;
+        const ay = (src.air ? this.unitHeightAt(wi, ax, az) : groundHeight(this.map, ax, az)) + src.h;
+        const by = groundHeight(this.map, x1, z1) + 0.4;
+        const fire = w?.proj === 10;
+        const life = (buf[o + 4] & 0xffff) + alpha;
+        const total = Math.max(1, (buf[o + 4] >>> 16) & 0xffff);
+        // montée et extinction en quelques ticks, scintillement
+        const ramp = Math.min(1, life / 3, (total - life + 1) / 3);
+        const flick = 1 + 0.18 * Math.sin(now / 23 + i * 1.7) + 0.08 * Math.sin(now / 7 + i);
+        const r = (fire ? 0.16 : 0.05) * src.big * Math.max(0.15, ramp) * flick;
+        tmpV.set(x1 - ax, by - ay, z1 - az);
+        const len = tmpV.length();
+        tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tmpV.normalize());
+        tmpM.compose(tmpV.set(ax, ay, az), tmpQ, tmpS.set(r * 0.5, r * 0.5, len));
+        this.beamCore.setMatrixAt(nb, tmpM);
+        this.beamCore.setColorAt(nb, fire ? tmpC.setRGB(1.9, 1.1, 0.4) : tmpC.setRGB(2.0, 0.9, 0.9));
+        tmpM.compose(tmpV.set(ax, ay, az), tmpQ, tmpS.set(r * 1.8, r * 1.8, len));
+        this.beamGlow.setMatrixAt(nb, tmpM);
+        this.beamGlow.setColorAt(nb, fire ? tmpC.setRGB(1.2, 0.35, 0.05) : tmpC.setRGB(1.3, 0.1, 0.1));
+        nb++;
+        fx.beam(ax, ay, az, x1, by, z1, w?.proj ?? 8, dt, src.big);
+        continue;
+      }
       const dist = Math.hypot(x1 - x0, z1 - z0);
       let arc = 1.2;
       if (w?.proj === 1 || special === 1) arc = Math.min(60, dist * 0.35); // obus, missile stratégique
@@ -692,11 +754,29 @@ export class Entities {
       const dz = z1 - z0;
       tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tmpV.set(dx, special === 2 ? -50 : 0, dz).normalize());
       const big = special === 1 ? 3 : special === 2 ? 2 : w && w.aoe > 600 ? 1.8 : 1;
-      tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(big, big, big * (w?.proj === 0 ? 2 : 1)));
-      this.proj.setMatrixAt(np, tmpM);
       const pk = w?.proj ?? 0;
-      this.proj.setColorAt(np, tmpC.setHex(special ? 0xffe070 : PROJ_COLORS[pk] ?? 0xffffff).multiplyScalar(pk === 3 ? 0.6 : 2.6));
-      np++;
+      if (special === 0 && (pk === 0 || pk === 1) && nk < 6000) {
+        // cinétique : balle (laiton) ou obus (acier sombre), et un traceur discret derrière la balle
+        const shell = pk === 1;
+        const k = shell ? 0.16 * big : 0.06 * big;
+        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(k, k, shell ? 0.3 * big : 0.22 * big));
+        this.slugs.setMatrixAt(nk, tmpM);
+        this.slugs.setColorAt(nk, shell ? tmpC.setHex(0x4a5058) : tmpC.setHex(0xd8a850));
+        nk++;
+        if (!shell) {
+          tmpM.compose(tmpV.set(x - (dx / (dist || 1)) * 0.35, y, z - (dz / (dist || 1)) * 0.35), tmpQ, tmpS.set(0.3 * big, 0.3 * big, 1.3 * big));
+          this.proj.setMatrixAt(np, tmpM);
+          this.proj.setColorAt(np, tmpC.setHex(0xffb060).multiplyScalar(0.9));
+          np++;
+        }
+      } else {
+        // énergie : trait lumineux (les traits « blaster » sont plus longs et plus fins)
+        const blaster = pk === 9;
+        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(big * (blaster ? 0.7 : 1), big * (blaster ? 0.7 : 1), big * (blaster ? 2.6 : 1)));
+        this.proj.setMatrixAt(np, tmpM);
+        this.proj.setColorAt(np, tmpC.setHex(special ? 0xffe070 : PROJ_COLORS[pk] ?? 0xffffff).multiplyScalar(pk === 3 ? 0.6 : blaster ? 3.2 : 2.6));
+        np++;
+      }
       const elapsed = buf[o + 4] & 0xffff;
       if (elapsed >= 1 && elapsed <= tickDelta && special === 0 && pk !== 3 && pk !== 4) fx.muzzle(x0, gy0 + 1, z0, pk, big);
       if (special || pk === 1 || pk === 2 || pk === 4) fx.trail(x, y, z, pk, dt, big);
@@ -704,6 +784,14 @@ export class Entities {
     this.proj.count = np;
     this.proj.instanceMatrix.needsUpdate = true;
     if (this.proj.instanceColor) this.proj.instanceColor.needsUpdate = true;
+    this.slugs.count = nk;
+    this.slugs.instanceMatrix.needsUpdate = true;
+    if (this.slugs.instanceColor) this.slugs.instanceColor.needsUpdate = true;
+    for (const m of [this.beamCore, this.beamGlow]) {
+      m.count = nb;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
     // ----- épaves -----
     let nw = 0;
     if (!strategic) {
@@ -962,6 +1050,31 @@ export class Entities {
     for (const m of this.logoMeshes.values()) m.instanceMatrix.needsUpdate = true;
   }
 
+  /**
+   * Origine d'un rayon prolongé de l'arme `wi` : pivot « laser » du modèle de l'unité qui la porte
+   * (hauteur et avancée vers la cible, à l'échelle), sinon aux trois cinquièmes de sa hauteur.
+   */
+  private beamSource(wi: number): { h: number; fwd: number; air: boolean; big: number } {
+    let s = this.beamFrom.get(wi);
+    if (s) return s;
+    const kind = this.data.units.findIndex((u) => u.weapons.includes(wi));
+    const km = kind >= 0 ? this.unitMeshes[kind] : undefined;
+    const def = kind >= 0 ? this.data.units[kind] : undefined;
+    const piv = km?.built.pivots.find((p) => p.name === "laser");
+    const h = piv ? piv.origin.y * km!.scale : (km?.height ?? 1) * 0.6;
+    const fwd = piv ? Math.hypot(piv.origin.x, piv.origin.z) * km!.scale : 0;
+    const air = def ? def.layer === Layer.Air || def.layer === Layer.Hover : false;
+    s = { h, fwd, air, big: def && def.tier === 6 ? 1.5 : 1 };
+    this.beamFrom.set(wi, s);
+    return s;
+  }
+
+  /** Hauteur de vol de l'unité qui porte l'arme `wi` (rayons tirés depuis les airs). */
+  private unitHeightAt(wi: number, x: number, z: number): number {
+    const kind = this.data.units.findIndex((u) => u.weapons.includes(wi));
+    return kind >= 0 ? this.unitHeight(kind, x, z) : groundHeight(this.map, x, z);
+  }
+
   /** Maillage des objets d'un type (modèle de assets/models/items.ts, un quart de case de large). */
   private itemMesh(kind: number): KindMesh | undefined {
     let km = this.itemMeshes[kind];
@@ -1076,4 +1189,4 @@ function diagAtlas(): THREE.Texture {
   return t;
 }
 
-const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050 };
+const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030 };

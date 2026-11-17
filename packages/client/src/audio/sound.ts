@@ -136,7 +136,12 @@ export const sfx = {
     else if (proj === 6 || proj === 7) tone(900, 200, 0.18, g * 0.7, "square");
     else if (proj === 2) noise(0.35, 1800, g * 0.8, 0.7, "bandpass");
     else if (proj === 1) noise(0.25, 400, g * 1.4);
-    else noise(0.09, 2400, g, 0.8, "bandpass");
+    else if (proj === 9) tone(1800, 420, 0.1, g * 0.55, "sawtooth"); // trait de blaster
+    else if (proj === 10) {
+      // souffle de feu : grondement long
+      noise(1.6, 500, g * 2.2, 0.6, "lowpass");
+      tone(70, 45, 1.4, g * 1.2, "sawtooth");
+    } else noise(0.09, 2400, g, 0.8, "bandpass");
   },
   explosion(size: number, near: number): void {
     if (near <= 0.05 || !throttle("boom" + Math.min(3, size | 0), 70)) return;

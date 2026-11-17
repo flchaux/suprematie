@@ -287,3 +287,61 @@ pub fn logistics_demo() -> World {
     }
     w
 }
+
+/// Scène de démonstration des armes (?demo=armes) : les expérimentales et des unités à balles, à traits
+/// d'énergie et à obus (joueur 0) face à une armée nombreuse et à des tourelles (joueur 1).
+pub fn weapons_demo() -> World {
+    let mut w = World::new(&[11, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    // au centre de la carte, loin des commandants (la mort d'un commandant élimine son armée)
+    let (x0, y0) = (w.map.w / 2 - 40, w.map.h / 2 - 30);
+    flat(&mut w, x0 - 6, y0 - 6, x0 + 80, y0 + 66);
+    let spawn = |w: &mut World, kind: u16, owner: u8, x: i32, y: i32| {
+        w.spawn_unit(kind, owner, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    };
+    // joueur 0 : expérimentales au centre, appuis sur les ailes
+    spawn(&mut w, U_SPIDER, 0, x0 + 14, y0 + 30);
+    spawn(&mut w, U_ROACH, 0, x0 + 18, y0 + 18);
+    spawn(&mut w, U_COLOSSUS, 0, x0 + 18, y0 + 42);
+    spawn(&mut w, U_DRAGON, 0, x0 + 30, y0 + 24);
+    spawn(&mut w, U_STAR_CRUISER, 0, x0 + 6, y0 + 30);
+    for k in 0..6 {
+        spawn(&mut w, U_LIGHT_TANK, 0, x0 + 20, y0 + 8 + k * 2);
+        spawn(&mut w, U_LINE_ROBOT, 0, x0 + 22, y0 + 46 + k * 2);
+        spawn(&mut w, U_LINE_ROBOT, 0, x0 + 23, y0 + 46 + k * 2);
+    }
+    for k in 0..3 {
+        spawn(&mut w, U_ARTILLERY, 0, x0 + 8, y0 + 12 + k * 3);
+    }
+    // joueur 1 : une armée serrée et des défenses fixes
+    spawn(&mut w, U_FORTRESS, 1, x0 + 56, y0 + 22);
+    spawn(&mut w, U_FORTRESS, 1, x0 + 56, y0 + 42);
+    spawn(&mut w, U_COLOSSUS, 1, x0 + 46, y0 + 20);
+    spawn(&mut w, U_ROACH, 1, x0 + 46, y0 + 42);
+    for k in 0..120 {
+        spawn(&mut w, U_LINE_ROBOT, 1, x0 + 40 + (k % 10) * 2, y0 + 8 + (k / 10) * 4);
+    }
+    for k in 0..24 {
+        spawn(&mut w, U_LIGHT_TANK, 1, x0 + 62 + (k % 4) * 3, y0 + 8 + (k / 4) * 9);
+    }
+    for k in 0..3 {
+        spawn(&mut w, U_SIEGE_WALKER, 1, x0 + 62, y0 + 16 + k * 14);
+    }
+    for k in 0..4 {
+        if let Some(b) = place_building(&mut w, 1, B_HEAVY_TURRET, x0 + 68, y0 + 10 + k * 12, 0) {
+            complete_building(&mut w, b);
+        }
+    }
+    // les deux armées marchent l'une vers l'autre en attaquant (attaque en mouvement)
+    for s in 0..w.units.alive.len() {
+        if !w.units.alive[s] || w.units.kind[s] == U_COMMANDER {
+            continue;
+        }
+        let gx = if w.units.owner[s] == 0 { x0 + 64 } else { x0 + 10 };
+        let (x, y) = (gx * TILE, w.units.y[s]);
+        crate::orders::give(&mut w, s, false, Order::Move { x, y, gx: x, gy: y, attack: true });
+    }
+    w
+}
