@@ -186,3 +186,87 @@ fn wrecks_merge_are_capped_and_expire() {
     assert_eq!(w.wrecks.iter().filter(|k| k.alive).count(), 0, "les débris disparaissent avec le temps");
 }
 
+
+/// Ordre de construction donné directement à un ingénieur posé à côté du chantier ; joue jusqu'à la fin.
+fn build_with(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) {
+    let id = w.spawn_unit(U_ENG1, owner, x * TILE, (y + 2) * TILE);
+    let s = w.unit(id).unwrap();
+    w.units.cold[s].orders.push(Order::Build { kind, x, y, dir, bid: 0 });
+    for _ in 0..1200 {
+        w.step(&[]);
+        let s = w.unit(id).unwrap();
+        if w.units.cold[s].orders.is_empty() {
+            break;
+        }
+    }
+}
+
+fn building_at(w: &World, x: i32, y: i32) -> Option<usize> {
+    let o = w.map.occ[w.map.idx(x, y)];
+    (o != 0).then(|| (o - 1) as usize)
+}
+
+#[test]
+fn belt_corner_shape_follows_neighbours() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    // tapis vers l'est jusqu'en (102, 100), puis vers le sud : la case d'angle (103, 100) est un virage
+    for x in 100..103 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    let corner = put(&mut w, 0, B_BELT1, 103, 100, 1);
+    let after = put(&mut w, 0, B_BELT1, 103, 101, 1);
+    // alimenté par l'ouest = côté (1 + 1) % 4 = 2 : forme 1
+    assert_eq!(crate::belts::belt_shape(&w, corner), 1);
+    assert_eq!(crate::belts::belt_shape(&w, after), 0, "tapis derrière : droit");
+    // un tapis derrière qui pointe vers l'angle le rend droit
+    put(&mut w, 0, B_BELT1, 103, 99, 1);
+    assert_eq!(crate::belts::belt_shape(&w, corner), 0);
+    let _ = after;
+    // les objets passent l'angle (sans tapis derrière) et arrivent au dépôt en bout de tracé
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    for x in 100..103 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    put(&mut w, 0, B_BELT1, 103, 100, 1);
+    put(&mut w, 0, B_BELT1, 103, 101, 1);
+    put(&mut w, 0, B_DEPOT, 103, 102, 0);
+    let first = building_at(&w, 100, 100).unwrap();
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    for _ in 0..4 {
+        while !crate::belts::put_on_belt(&mut w, first, IRON_PLATE) {
+            w.step(&[]);
+        }
+    }
+    run(&mut w, 400);
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize] - before, 4, "objets arrivés après le virage");
+}
+
+#[test]
+fn belt_replacement_rotates_or_swaps_with_refund() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let b = put(&mut w, 0, B_BELT1, 100, 100, 0);
+    let other = put(&mut w, 1, B_BELT1, 105, 100, 0);
+    let _ = other;
+    // sans le bit de remplacement : refusé (les IA ne remplacent jamais) ; avec : accepté
+    assert!(!crate::buildings::can_place(&w, 0, B_SPLITTER, 100, 100, 0));
+    assert!(crate::buildings::can_place(&w, 0, B_SPLITTER, 100, 100, crate::buildings::DIR_REPLACE));
+    // jamais le tapis d'un autre joueur, ni un bâtiment non logistique
+    assert!(!crate::buildings::can_place(&w, 0, B_BELT2, 105, 100, crate::buildings::DIR_REPLACE));
+    assert!(!crate::buildings::can_place(&w, 0, B_DEPOT, 100, 100, crate::buildings::DIR_REPLACE));
+    // même type, autre direction : réorienté sur place, sans chantier
+    build_with(&mut w, 0, B_BELT1, 100, 100, 1 | crate::buildings::DIR_REPLACE);
+    assert_eq!(building_at(&w, 100, 100), Some(b));
+    assert_eq!(w.buildings[b].dir, 1);
+    // autre type : le tapis est démonté et remboursé, le répartiteur construit à sa place
+    let iron = w.players[0].stock[IRON_PLATE as usize];
+    let belt_iron: i32 = bdef(B_BELT1).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
+    let split_iron: i32 = bdef(B_SPLITTER).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
+    build_with(&mut w, 0, B_SPLITTER, 100, 100, crate::buildings::DIR_REPLACE);
+    let s = building_at(&w, 100, 100).expect("répartiteur posé");
+    assert_eq!(w.buildings[s].kind, B_SPLITTER);
+    assert!(w.buildings[s].complete());
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], iron + belt_iron - split_iron, "tapis remboursé, répartiteur payé");
+}

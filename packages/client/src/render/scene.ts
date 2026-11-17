@@ -272,18 +272,21 @@ export class GameScene {
   }
 
   /** Fantôme de placement d'un bâtiment (ou d'une ligne de bâtiments). */
-  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[]): void {
-    this.setGhosts(kind < 0 ? [] : [{ kind, cells }]);
+  /** Fantôme de pose ; `shape` (tapis) : 1 et 2 pour les virages (modèles « _virage_g » et « _virage_d »). */
+  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number }[]): void {
+    if (kind < 0) return this.setGhosts([]);
+    const groups = [0, 1, 2].map((variant) => ({ kind, variant, cells: cells.filter((c) => (c.shape ?? 0) === variant) }));
+    this.setGhosts(groups);
   }
 
   /**
    * Fantômes de plusieurs types à la fois (plans) : vert si la case est libre, rouge sinon,
    * ou la teinte donnée (aperçu d'une copie). Les types absents de la liste sont cachés.
    */
-  setGhosts(groups: { kind: number; cells: { x: number; y: number; dir: number; ok: boolean }[]; tint?: number }[]): void {
-    const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind));
+  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean }[]; tint?: number }[]): void {
+    const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind * 4 + (g.variant ?? 0)));
     for (const [k, g] of this.ghostMeshes) g.mesh.visible = shown.has(k);
-    for (const { kind, cells, tint } of groups) if (kind >= 0 && cells.length) this.fillGhost(kind, cells, tint);
+    for (const { kind, cells, tint, variant } of groups) if (kind >= 0 && cells.length) this.fillGhost(kind, cells, tint, variant ?? 0);
     this.fillArmArrows(groups);
   }
 
@@ -331,11 +334,13 @@ export class GameScene {
     }
   }
 
-  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[], tint?: number): void {
-    let g = this.ghostMeshes.get(kind);
+  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[], tint?: number, variant = 0): void {
+    const key = kind * 4 + variant;
+    let g = this.ghostMeshes.get(key);
     if (!g || g.mesh.count === undefined) {
       const def = this.data.buildings[kind];
-      const built = buildModel(BUILDING_MODELS[def.key] ?? fallbackModel());
+      const vkey = variant === 1 ? def.key + "_virage_g" : variant === 2 ? def.key + "_virage_d" : def.key;
+      const built = buildModel(BUILDING_MODELS[vkey] ?? BUILDING_MODELS[def.key] ?? fallbackModel());
       g = teamInstancedMesh(built.body, 512);
       g.mesh.castShadow = false;
       const mat = g.mesh.material as THREE.MeshStandardNodeMaterial;
@@ -346,7 +351,7 @@ export class GameScene {
       built.box.getSize(size);
       g.mesh.userData.scale = (def.w * 0.98) / Math.max(size.x, size.z, 0.01);
       this.scene.add(g.mesh);
-      this.ghostMeshes.set(kind, g);
+      this.ghostMeshes.set(key, g);
     }
     const def = this.data.buildings[kind];
     const s = g.mesh.userData.scale as number;

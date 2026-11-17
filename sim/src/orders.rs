@@ -134,7 +134,8 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
                     if udef(w.units.kind[s]).build_power > 0 {
-                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 3) as u8, bid: 0 });
+                        // bit 4 : pose avec remplacement des tapis (voir buildings::DIR_REPLACE)
+                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 7) as u8, bid: 0 });
                     }
                 }
             }

@@ -44,6 +44,81 @@ pub fn front_tile(x: i32, y: i32, w: i32, h: i32, dir: u8) -> (i32, i32) {
     }
 }
 
+/// Bit de la direction d'une pose : la pose peut remplacer les tapis et tapis de contrôle du joueur
+/// sur son emprise (pose par le joueur ; les IA posent sans ce bit).
+pub const DIR_REPLACE: u8 = 4;
+
+/// Bâtiments logistiques qui peuvent prendre la place d'un tapis.
+fn replaces_belts(class: BClass) -> bool {
+    matches!(class, BClass::Belt | BClass::Router | BClass::Inserter)
+}
+
+/// Bâtiment (indice) remplaçable sur la case `i` par une pose logistique du joueur `owner`.
+fn replaceable_at(w: &World, owner: u8, i: usize) -> Option<usize> {
+    let o = w.map.occ[i];
+    if o == 0 {
+        return None;
+    }
+    let b = (o - 1) as usize;
+    let bb = &w.buildings[b];
+    (bb.alive && bb.owner == owner && matches!(bb.def().class, BClass::Belt | BClass::Router)).then_some(b)
+}
+
+/// Libère l'emprise d'une pose avec remplacement. Un tapis du même type sur la même case est
+/// simplement réorienté (renvoie son indice : rien à construire) ; sinon les tapis remplacés sont
+/// démontés, leur coût et les objets qu'ils portent rendus au stock (renvoie None : poser le chantier).
+pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
+    if dir & DIR_REPLACE == 0 || !replaces_belts(bdef(kind).class) {
+        return None;
+    }
+    let (bw, bh) = dims(kind, dir);
+    let mut found: Vec<usize> = Vec::new();
+    for ty in y..y + bh {
+        for tx in x..x + bw {
+            if !w.map.inside(tx, ty) {
+                return None;
+            }
+            if let Some(b) = replaceable_at(w, owner, w.map.idx(tx, ty)) {
+                if !found.contains(&b) {
+                    found.push(b);
+                }
+            }
+        }
+    }
+    found.sort_unstable();
+    if let [b] = found[..] {
+        let bb = &w.buildings[b];
+        if bb.kind == kind && bb.x == x && bb.y == y && bb.complete() {
+            if bb.dir != dir & 3 {
+                w.buildings[b].dir = dir & 3;
+                belts::rebuild_around(w, &[(x, y)]);
+                wake_watchers(w, b);
+                w.buildings_version = w.buildings_version.wrapping_add(1);
+            }
+            return Some(b);
+        }
+    }
+    for b in found {
+        let p = owner as usize;
+        if w.buildings[b].def().class == BClass::Belt {
+            for _ in 0..8 {
+                let it = belts::take_from_belt(w, b, &|_| true);
+                if it == 0 {
+                    break;
+                }
+                w.players[p].stock[it as usize] += 1;
+            }
+        }
+        let def = w.buildings[b].def();
+        let complete = w.buildings[b].complete();
+        for (k, &(it, n)) in def.cost.iter().enumerate() {
+            w.players[p].stock[it as usize] += if complete { n as i32 } else { w.buildings[b].paid[k] as i32 };
+        }
+        remove_building(w, b, false);
+    }
+    None
+}
+
 pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bool {
     if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
         return false;
@@ -56,10 +131,18 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
     if x < 1 || y < 1 || x + bw > w.map.w - 1 || y + bh > w.map.h - 1 {
         return false;
     }
+    let replace = dir & DIR_REPLACE != 0 && replaces_belts(def.class);
     for ty in y..y + bh {
         for tx in x..x + bw {
             let i = w.map.idx(tx, ty);
-            if w.map.occ[i] != 0 || w.map.cliff[i] != 0 {
+            if w.map.occ[i] != 0 {
+                // pose logistique du joueur : ses tapis et tapis de contrôle peuvent être remplacés
+                if replace && replaceable_at(w, owner, i).is_some() {
+                    continue;
+                }
+                return false;
+            }
+            if w.map.cliff[i] != 0 {
                 return false;
             }
             let water = w.map.height[i] < w.map.water_level;
