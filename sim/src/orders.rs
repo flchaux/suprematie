@@ -102,6 +102,8 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
         O_MOVE => {
             let flags = c.next();
             let (gx, gy) = (c.next(), c.next());
+            // drapeau 4 : formation orientée, chaque unité se tourne vers cet angle à l'arrivée
+            let face = if flags & 4 != 0 { Some(c.next() & 0xffff) } else { None };
             let n = c.next().clamp(0, 2000);
             for _ in 0..n {
                 let (id, tx, ty) = (c.next(), c.next(), c.next());
@@ -110,6 +112,9 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     let my = w.map.h * TILE - 1;
                     let o = Order::Move { x: tx.clamp(0, mx), y: ty.clamp(0, my), gx: gx.clamp(0, mx), gy: gy.clamp(0, my), attack: flags & 2 != 0 };
                     give(w, s, flags & 1 != 0, o);
+                    if let Some(a) = face {
+                        give(w, s, true, Order::Face { a });
+                    }
                 }
             }
         }

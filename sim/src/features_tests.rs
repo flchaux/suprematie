@@ -441,3 +441,36 @@ fn weapons_demo_shows_every_weapon_family() {
     assert!(beams > 0 && kinetic > 0 && energy > 0);
     assert!(beam_weapons.len() >= 2, "plusieurs armes à rayon tirent : {:?}", beam_weapons);
 }
+
+#[test]
+fn formation_move_ends_facing_the_drag_direction() {
+    use crate::fixed::dist;
+    use crate::orders::{apply_orders, O_MOVE};
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 140, 140);
+    let a = w.spawn_unit(U_LIGHT_TANK, 0, 100 * TILE, 100 * TILE);
+    let b = w.spawn_unit(U_LIGHT_TANK, 0, 101 * TILE, 102 * TILE);
+    // vers le sud (+y) : angle 16384 ; les deux chars face au sud, côte à côte sur l'axe x
+    let face = 16384;
+    let (gx, gy) = (110 * TILE, 115 * TILE);
+    let cmd = [O_MOVE, 0, 4, gx, gy, face, 2, a as i32, gx - TILE, gy, b as i32, gx + TILE, gy];
+    let mut msg = vec![cmd.len() as i32];
+    msg.extend_from_slice(&cmd);
+    apply_orders(&mut w, &msg);
+    let sa = w.unit(a).unwrap();
+    assert!(matches!(w.units.cold[sa].orders.get(1), Some(Order::Face { a: 16384 })), "le déplacement est suivi d'une orientation");
+    run(&mut w, 600);
+    for id in [a, b] {
+        let s = w.unit(id).unwrap();
+        assert!(w.units.cold[s].orders.is_empty(), "ordres terminés");
+        assert_eq!(w.units.facing[s], 16384, "orienté vers le sud");
+        assert!(dist(w.units.x[s], w.units.y[s], gx, gy) < 3 * TILE, "arrivé à sa place");
+    }
+    // sans le drapeau 4 : pas d'orientation imposée
+    let cmd = [O_MOVE, 0, 0, gx, gy - 10 * TILE, 1, a as i32, gx, gy - 10 * TILE];
+    let mut msg = vec![cmd.len() as i32];
+    msg.extend_from_slice(&cmd);
+    apply_orders(&mut w, &msg);
+    let sa = w.unit(a).unwrap();
+    assert_eq!(w.units.cold[sa].orders.len(), 1);
+}

@@ -85,6 +85,8 @@ pub enum Order {
     Teleport { x: i32, y: i32 },
     Jump { beacon: u32 },
     Enter { target: u32 },
+    /// se tourner vers l'angle `a` (16 bits) : fin d'un déplacement en formation orientée
+    Face { a: i32 },
 }
 
 impl Order {
@@ -103,6 +105,7 @@ impl Order {
             Order::Teleport { .. } => 11,
             Order::Jump { .. } => 12,
             Order::Enter { .. } => 13,
+            Order::Face { .. } => 14,
         }
     }
 }
@@ -125,6 +128,7 @@ impl Ser for Order {
             }
             Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } => target.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
+            Order::Face { a } => a.ser(w),
             Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } => {
                 x.ser(w);
                 y.ser(w);
@@ -154,6 +158,7 @@ impl Ser for Order {
             10 => Order::Unload { x: i(r), y: i(r) },
             11 => Order::Teleport { x: i(r), y: i(r) },
             12 => Order::Jump { beacon: u(r) },
+            14 => Order::Face { a: i(r) },
             _ => Order::Enter { target: u(r) },
         }
     }
