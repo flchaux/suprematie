@@ -124,11 +124,12 @@ onmessage = async (e: MessageEvent<In>) => {
 
 // Mode démo : partie de référence synthétique jouée localement (test du rendu à grande échelle)
 addEventListener("message", async (e: MessageEvent) => {
-  const m = e.data as { type: string; wasmUrl?: string };
+  const m = e.data as { type: string; wasmUrl?: string; water?: boolean };
   if (m.type !== "demo" || !m.wasmUrl) return;
   sim = await loadSim(m.wasmUrl);
-  sim.init([1, 1024, 0, 8, 0, 0, 100, 100, 1, 0, 100, 100, 2, 0, 100, 100, 3, 0, 100, 100, 4, 0, 100, 100, 5, 0, 100, 100, 6, 0, 100, 100, 7, 0, 100, 100]);
-  sim.benchReference();
+  sim.init([1, 1024, m.water ? 1 : 0, 8, 0, 0, 100, 100, 1, 0, 100, 100, 2, 0, 100, 100, 3, 0, 100, 100, 4, 0, 100, 100, 5, 0, 100, 100, 6, 0, 100, 100, 7, 0, 100, 100]);
+  // la partie de référence (armées, usines) est sur carte sèche ; avec ?demo=eau on garde la carte seule
+  if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;
   sendStatic();

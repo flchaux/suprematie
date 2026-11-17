@@ -68,6 +68,15 @@
         <input bind:value={chatText} placeholder="Message à tous (Entrée)" autofocus onkeydown={(e) => e.key === "Escape" && (ui.chatOpen = false)} />
       </form>
     {/if}
+    {#if ui.showPerf}
+      <div class="perfbox panel">
+        <div><b>{ui.fps}</b> images/s · {ui.perf.frameMs.toFixed(1)} ms par image</div>
+        <div>Rendu (processeur) : {ui.perf.cpuMs.toFixed(1)} ms</div>
+        <div>Appels de dessin : {ui.perf.drawCalls} · triangles : {(ui.perf.triangles / 1000).toFixed(0)} k</div>
+        <div>Particules : {ui.perf.particles}</div>
+        <div>Moteur : {ui.backend} · ombres {ui.gfx.shadows ? `${Math.round(ui.perf.shadowSize)} cases` : "désactivées"} · halo {ui.gfx.bloom ? "oui" : "non"}</div>
+      </div>
+    {/if}
     {#if ui.waiting.length}
       <div class="waiting panel">En attente de : {ui.waiting.join(", ")}</div>
     {/if}
@@ -133,4 +142,5 @@
   .end table { border-collapse: collapse; }
   .end td, .end th { padding: 3px 10px; text-align: left; }
   .row { display: flex; gap: 8px; }
+  .perfbox { position: absolute; top: 48px; left: 8px; padding: 6px 10px; font-size: 12px; font-family: ui-monospace, monospace; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
 </style>

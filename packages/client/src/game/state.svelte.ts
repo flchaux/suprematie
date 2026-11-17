@@ -1,5 +1,6 @@
 // État partagé entre le contrôleur de partie et l'interface Svelte (rafraîchi quelques fois par seconde).
 import type { GameData, LobbyState } from "@supreme/shared";
+import { DEFAULT_GFX, type GfxSettings } from "../render/gfx.ts";
 
 export interface SelUnitGroup { kind: number; count: number; ids: number[] }
 export interface Message { id: number; text: string; kind: "info" | "alert" | "chat" | "good"; time: number }
@@ -51,7 +52,19 @@ export const ui = $state({
   replaySpeed: 1,
   spectator: false,
   ping: 0,
+  gfx: loadGfx(),
+  showGfx: false,
+  showPerf: false,
+  perf: { drawCalls: 0, triangles: 0, particles: 0, cpuMs: 0, shadowSize: 0, frameMs: 0 },
 });
+
+function loadGfx(): GfxSettings {
+  try {
+    return { ...DEFAULT_GFX, ...(JSON.parse(localStorage.getItem("supreme.gfx") ?? "{}") as Partial<GfxSettings>) };
+  } catch {
+    return { ...DEFAULT_GFX };
+  }
+}
 
 let msgId = 0;
 export function pushMessage(text: string, kind: Message["kind"] = "info"): void {

@@ -1,6 +1,7 @@
 // Matériaux : couleur de sommet, teinte du joueur par instance (pièces « faction »), pièces lumineuses.
 import * as THREE from "three/webgpu";
-import { attribute, mix, instancedBufferAttribute, float, step, clamp, vec3 } from "three/tsl";
+import { attribute, mix, instancedBufferAttribute, float, step, clamp } from "three/tsl";
+import { fogFactor, applyFog } from "./fog.ts";
 
 export interface TeamMesh {
   mesh: THREE.InstancedMesh;
@@ -17,9 +18,14 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number): 
   const isFaction = clamp(mask, float(0), float(1)).mul(float(1).sub(step(float(1.5), mask)));
   const glow = step(float(1.5), mask);
   const tcol = instancedBufferAttribute(team, "vec3");
-  mat.colorNode = mix(vcol, tcol, isFaction);
-  mat.emissiveNode = vcol.mul(glow).mul(float(0.9)).add(vec3(0, 0, 0));
+  // brouillard : les bâtiments ennemis explorés mais hors de vue restent assombris
+  const fog = fogFactor();
+  mat.colorNode = applyFog(mix(vcol, tcol, isFaction), fog);
+  // pièces lumineuses : au-delà de 1 pour nourrir le halo (bloom)
+  mat.emissiveNode = vcol.mul(glow).mul(float(1.6)).mul(fog);
   const mesh = new THREE.InstancedMesh(geometry, mat, max);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.count = 0;
   mesh.frustumCulled = false;

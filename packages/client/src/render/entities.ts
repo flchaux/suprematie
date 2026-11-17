@@ -1,5 +1,6 @@
 // Rendu des entités : un InstancedMesh par type d'unité, de bâtiment et d'objet sur tapis ;
 // chaque pièce mobile (tourelle) est un mesh instancié séparé. Interpolation entre les deux derniers ticks.
+// Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, UF, BF, BClass, Layer } from "@supreme/shared";
@@ -8,6 +9,7 @@ import { teamInstancedMesh, setTeamColor, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
+import { Effects } from "./effects.ts";
 
 const TILE = 256;
 const ANG = (Math.PI * 2) / 65536;
@@ -17,11 +19,17 @@ class KindMesh {
   pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean }[] = [];
   cap = 0;
   n = 0;
+  /** hauteur du modèle à l'échelle (pour placer la fumée au sommet) */
+  height = 1;
   constructor(
     public scene: THREE.Object3D,
     public built: ReturnType<typeof buildModel>,
     public scale: number,
-  ) {}
+  ) {
+    const size = new THREE.Vector3();
+    built.box.getSize(size);
+    this.height = size.y * scale;
+  }
   ensure(need: number): void {
     if (need <= this.cap) return;
     const cap = Math.max(16, this.cap * 2, need);
@@ -77,7 +85,9 @@ export class Entities {
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
   items: THREE.InstancedMesh;
   proj: THREE.InstancedMesh;
-  explosions: THREE.InstancedMesh;
+  effects: Effects;
+  camera: THREE.Camera | null = null;
+  lastFxTick = -1;
   shields: THREE.InstancedMesh;
   wrecks: THREE.InstancedMesh;
   rings: THREE.InstancedMesh;
@@ -87,7 +97,6 @@ export class Entities {
   beamPos: Float32Array;
   beamCol: Float32Array;
   ghostGroup = new THREE.Group();
-  fx: { x: number; y: number; z: number; r: number; age: number; life: number; color: THREE.Color }[] = [];
   beamList: { a: THREE.Vector3; b: THREE.Vector3; age: number; life: number; color: THREE.Color }[] = [];
   /** Positions monde interpolées des unités affichées (pour la sélection à la souris). */
   screen: UnitScreen[] = [];
@@ -118,16 +127,14 @@ export class Entities {
     this.items.frustumCulled = false;
     this.items.setColorAt(0, new THREE.Color());
     this.group.add(this.items);
-    this.proj = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.12, 0.5), basic({}), 8000);
+    // projectiles lumineux (couleurs au-delà de 1 : halo)
+    this.proj = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 0.5), basic({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 8000);
     this.proj.count = 0;
     this.proj.frustumCulled = false;
     this.proj.setColorAt(0, new THREE.Color());
     this.group.add(this.proj);
-    this.explosions = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), basic({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 3000);
-    this.explosions.count = 0;
-    this.explosions.frustumCulled = false;
-    this.explosions.setColorAt(0, new THREE.Color());
-    this.group.add(this.explosions);
+    this.effects = new Effects(map);
+    this.group.add(this.effects.group);
     this.shields = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), basic({ transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }), 400);
     this.shields.count = 0;
     this.shields.frustumCulled = false;
@@ -136,6 +143,8 @@ export class Entities {
     this.wrecks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardNodeMaterial({ color: 0x4a3b30, roughness: 1 }), 6000);
     this.wrecks.count = 0;
     this.wrecks.frustumCulled = false;
+    this.wrecks.castShadow = true;
+    this.wrecks.receiveShadow = true;
     this.group.add(this.wrecks);
     const ring = new THREE.RingGeometry(0.85, 1, 24).rotateX(-Math.PI / 2);
     this.rings = new THREE.InstancedMesh(ring, basic({ color: 0x7dff9a, depthTest: false, transparent: true }), 4000);
@@ -219,6 +228,12 @@ export class Entities {
     let bars = 0;
     this.screen.length = 0;
     const [vx0, vz0, vx1, vz1] = viewRect;
+    const fx = this.effects;
+    fx.view = viewRect;
+    fx.enabled = !strategic;
+    // nouveau tick : les projectiles apparus depuis le dernier affichage font un éclair de départ
+    const tickDelta = this.lastFxTick < 0 ? 0 : Math.max(0, Math.min(40, f.tick - this.lastFxTick));
+    this.lastFxTick = f.tick;
     // ----- unités -----
     let o = f.unitOff;
     for (let i = 0; i < f.nUnits; i++, o += UNIT_WORDS) {
@@ -298,6 +313,7 @@ export class Entities {
         this.bars.setColorAt(bars, tmpC.setRGB(1 - frac, 0.25 + frac * 0.7, 0.2));
         bars++;
       }
+      if (frac < 0.4 && def.radius >= 200) fx.burning(x, y + km.height * 0.8, z, 1 - frac / 0.4, def.radius / TILE, dt);
       // rayon de construction des ingénieurs
       if (flags & UF.WORKING) {
         const aux = buf[o + 8];
@@ -371,6 +387,10 @@ export class Entities {
       }
       const hp = buf[o + 3];
       const frac = Math.max(0, Math.min(1, hp / def.hp));
+      // bâtiment endommagé : fumée, puis flammes
+      if (frac < 0.6 && build >= 1 && def.cls !== BClass.Belt && def.cls !== BClass.Inserter && (!enemy || seen(cx, cz, 1))) {
+        fx.burning(cx, y + km.height * 0.85, cz, (0.6 - frac) / 0.6, Math.max(def.w, def.h) * 0.45, dt);
+      }
       if ((frac < 0.999 || selected.has(ref)) && build >= 1 && def.cls !== BClass.Belt && bars < 5900) {
         const wdt = def.w * 0.8;
         tmpM.compose(tmpV.set(cx, y + 2.2, cz + def.h / 2), tmpQ.identity(), tmpS.set(wdt, 1, 1));
@@ -443,8 +463,12 @@ export class Entities {
       const big = special === 1 ? 3 : special === 2 ? 2 : w && w.aoe > 600 ? 1.8 : 1;
       tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(big, big, big * (w?.proj === 0 ? 2 : 1)));
       this.proj.setMatrixAt(np, tmpM);
-      this.proj.setColorAt(np, tmpC.setHex(special ? 0xffe070 : PROJ_COLORS[w?.proj ?? 0] ?? 0xffffff));
+      const pk = w?.proj ?? 0;
+      this.proj.setColorAt(np, tmpC.setHex(special ? 0xffe070 : PROJ_COLORS[pk] ?? 0xffffff).multiplyScalar(pk === 3 ? 0.6 : 2.6));
       np++;
+      const elapsed = buf[o + 4] & 0xffff;
+      if (elapsed >= 1 && elapsed <= tickDelta && special === 0 && pk !== 3 && pk !== 4) fx.muzzle(x0, gy0 + 1, z0, pk, big);
+      if (special || pk === 1 || pk === 2 || pk === 4) fx.trail(x, y, z, pk, dt, big);
     }
     this.proj.count = np;
     this.proj.instanceMatrix.needsUpdate = true;
@@ -490,10 +514,7 @@ export class Entities {
   }
 
   addExplosion(x: number, z: number, r: number, kind: number): void {
-    if (this.fx.length > 2900) return;
-    const y = groundHeight(this.map, x, z) + 0.3;
-    const color = kind === 3 ? new THREE.Color(1, 0.95, 0.8) : kind === 2 ? new THREE.Color(1, 0.6, 0.25) : new THREE.Color(1, 0.55, 0.15);
-    this.fx.push({ x, y, z, r: Math.max(0.4, r), age: 0, life: kind === 3 ? 2.5 : kind >= 1 ? 1.2 : 0.45, color });
+    this.effects.explosion(x, z, r, kind);
   }
 
   addBeam(a: THREE.Vector3, b: THREE.Vector3, color: number, life = 0.15): void {
@@ -502,23 +523,11 @@ export class Entities {
   }
 
   private updateFx(dt: number): void {
-    let n = 0;
-    this.fx = this.fx.filter((e) => (e.age += dt) < e.life);
-    for (const e of this.fx) {
-      const k = e.age / e.life;
-      const s = e.r * (0.4 + k * 0.9);
-      tmpM.compose(tmpV.set(e.x, e.y, e.z), tmpQ.identity(), tmpS.set(s, s * 0.8, s));
-      this.explosions.setMatrixAt(n, tmpM);
-      this.explosions.setColorAt(n, tmpC.copy(e.color).multiplyScalar((1 - k) * (1 - k)));
-      n++;
-    }
-    this.explosions.count = n;
-    this.explosions.instanceMatrix.needsUpdate = true;
-    if (this.explosions.instanceColor) this.explosions.instanceColor.needsUpdate = true;
+    if (this.camera) this.effects.update(dt, this.camera);
     this.beamList = this.beamList.filter((b) => (b.age += dt) < b.life);
     let k = 0;
     for (const b of this.beamList) {
-      const f = 1 - b.age / b.life;
+      const f = (1 - b.age / b.life) * 2.2;
       this.beamPos.set([b.a.x, b.a.y, b.a.z, b.b.x, b.b.y, b.b.z], k * 6);
       this.beamCol.set([b.color.r * f, b.color.g * f, b.color.b * f, b.color.r * f, b.color.g * f, b.color.b * f], k * 6);
       k++;

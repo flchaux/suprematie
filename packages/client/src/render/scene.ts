@@ -1,12 +1,25 @@
 // Scène : moteur Three.js (WebGPU, repli automatique WebGL2), caméra inclinable à zoom continu,
-// lumières, terrain, entités, fantôme de placement, sélection à la souris.
+// lumières et ombres portées, halo lumineux (bloom), terrain, entités, fantôme de placement, sélection à la souris.
 import * as THREE from "three/webgpu";
+import { pass } from "three/tsl";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { fogEnabled } from "./fog.ts";
+import { DEFAULT_GFX, type GfxSettings } from "./gfx.ts";
 import type { GameData, Frame } from "@supreme/shared";
 import { Terrain, groundHeight, type MapData } from "./terrain.ts";
 import { Entities } from "./entities.ts";
 import { buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
+
+/** Statistiques du rendu de la dernière image. */
+export interface RenderStats {
+  drawCalls: number;
+  triangles: number;
+  particles: number;
+  cpuMs: number;
+  shadowSize: number;
+}
 
 export class GameScene {
   renderer!: THREE.WebGPURenderer;
@@ -29,6 +42,14 @@ export class GameScene {
   markers: THREE.InstancedMesh;
   markerList: { x: number; z: number; age: number; color: THREE.Color }[] = [];
   rangeRing: THREE.Mesh;
+  sun = new THREE.DirectionalLight(0xfff1dc, 2.3);
+  /** direction vers le soleil (normalisée) */
+  sunDir = new THREE.Vector3(-0.55, 0.72, 0.42).normalize();
+  post: THREE.RenderPipeline | null = null;
+  bloomPass: ReturnType<typeof bloom> | null = null;
+  gfx: GfxSettings = { ...DEFAULT_GFX };
+  stats: RenderStats = { drawCalls: 0, triangles: 0, particles: 0, cpuMs: 0, shadowSize: 0 };
+  time = 0;
 
   constructor(public canvasParent: HTMLElement) {
     const marker = new THREE.ConeGeometry(0.4, 1.2, 5).rotateX(Math.PI);
@@ -50,14 +71,46 @@ export class GameScene {
     await this.renderer.init();
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL2";
     this.scene.background = new THREE.Color(0x0b1016);
-    this.scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3b3426, 1.25));
-    const sun = new THREE.DirectionalLight(0xfff4e0, 2.0);
-    sun.position.set(-0.5, 1, 0.35);
-    this.scene.add(sun);
+    this.scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3b3426, 1.1));
+    // soleil : l'ombre suit la caméra et couvre seulement la zone vue
+    const sun = this.sun;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.04;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 900;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.scene.add(sun, sun.target);
+    this.renderer.info.autoReset = false;
+    this.buildPost();
     this.scene.add(this.markers);
     this.scene.add(this.rangeRing);
     this.resize();
     addEventListener("resize", () => this.resize());
+  }
+
+  /** Rendu en deux temps : scène puis halo lumineux sur les parties très claires (tirs, explosions). */
+  private buildPost(): void {
+    const post = new THREE.RenderPipeline(this.renderer);
+    const scenePass = pass(this.scene, this.camera);
+    const color = scenePass.getTextureNode("output");
+    this.bloomPass = bloom(color, 0.55, 0.35, 0.82);
+    post.outputNode = color.add(this.bloomPass);
+    this.post = post;
+  }
+
+  applySettings(g: GfxSettings): void {
+    this.gfx = { ...g };
+    this.sun.castShadow = g.shadows;
+    this.renderer.shadowMap.enabled = g.shadows;
+    if (this.entities) this.entities.effects.quality = g.effects;
+    // changer les ombres impose de recompiler les matériaux
+    this.scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (m && !Array.isArray(m)) m.needsUpdate = true;
+    });
   }
 
   setWorld(map: MapData, data: GameData): void {
@@ -68,6 +121,8 @@ export class GameScene {
     this.terrain = new Terrain(map);
     this.scene.add(this.terrain.group);
     this.entities = new Entities(data, map);
+    this.entities.camera = this.camera;
+    this.entities.effects.quality = this.gfx.effects;
     this.scene.add(this.entities.group);
     this.camera.far = map.w * 4;
   }
@@ -173,6 +228,7 @@ export class GameScene {
       const def = this.data.buildings[kind];
       const built = buildModel(BUILDING_MODELS[def.key] ?? fallbackModel());
       g = teamInstancedMesh(built.body, 512);
+      g.mesh.castShadow = false;
       const mat = g.mesh.material as THREE.MeshStandardNodeMaterial;
       mat.transparent = true;
       mat.opacity = 0.55;
@@ -217,8 +273,42 @@ export class GameScene {
     this.rangeRing.scale.set(r, 1, r);
   }
 
+  /** Place la caméra d'ombre sur la zone vue, alignée sur ses texels pour éviter le scintillement. */
+  private updateShadow(): void {
+    const sun = this.sun;
+    if (!this.gfx.shadows) return;
+    const half = Math.max(24, Math.min(170, this.distance * 1.1));
+    const cam = sun.shadow.camera as THREE.OrthographicCamera;
+    if (cam.right !== half) {
+      cam.left = -half;
+      cam.right = half;
+      cam.top = half;
+      cam.bottom = -half;
+      cam.updateProjectionMatrix();
+    }
+    // centre un peu en avant de la cible : la caméra voit plus loin vers le haut de l'écran
+    const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).multiplyScalar(half * 0.25);
+    const c = this.target.clone().add(fwd);
+    // alignement sur la grille des texels, dans le repère de la lumière
+    const texel = (half * 2) / sun.shadow.mapSize.x;
+    const right = new THREE.Vector3().crossVectors(this.sunDir, new THREE.Vector3(0, 1, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(right, this.sunDir).normalize();
+    const pr = Math.round(c.dot(right) / texel) * texel - c.dot(right);
+    const pu = Math.round(c.dot(up) / texel) * texel - c.dot(up);
+    c.addScaledVector(right, pr).addScaledVector(up, pu);
+    sun.target.position.copy(c);
+    sun.position.copy(c).addScaledVector(this.sunDir, 400);
+    sun.target.updateMatrixWorld();
+    this.stats.shadowSize = half * 2;
+  }
+
   render(frame: Frame | null, alpha: number, me: number, myTeam: number, selected: Set<number>, dt: number, spectator: boolean): void {
+    const t0 = performance.now();
+    this.time += dt;
     this.updateCamera();
+    this.updateShadow();
+    fogEnabled.value = spectator ? 0 : 1;
+    this.terrain?.tick(dt, this.time);
     if (frame && this.entities) {
       const iconScale = Math.max(1, this.distance / 160);
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, this.viewRect());
@@ -237,6 +327,13 @@ export class GameScene {
     this.markers.count = n;
     this.markers.instanceMatrix.needsUpdate = true;
     if (this.markers.instanceColor) this.markers.instanceColor.needsUpdate = true;
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.info.reset();
+    if (this.gfx.bloom && this.post) this.post.render();
+    else this.renderer.render(this.scene, this.camera);
+    const info = this.renderer.info.render as unknown as { drawCalls?: number; calls?: number; triangles: number };
+    this.stats.drawCalls = info.drawCalls ?? info.calls ?? 0;
+    this.stats.triangles = info.triangles;
+    this.stats.particles = this.entities?.effects.count ?? 0;
+    this.stats.cpuMs = performance.now() - t0;
   }
 }

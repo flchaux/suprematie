@@ -1,7 +1,8 @@
-// Terrain : maillage à facettes tiré de la carte de hauteurs, couleurs par altitude et pente,
-// eau, gisements, brouillard de guerre (texture de visibilité de l'équipe).
+// Terrain : maillage lissé tiré de la carte de hauteurs, couleurs continues selon l'altitude et la pente,
+// grain procédural, eau animée avec écume, gisements, brouillard de guerre (voir fog.ts).
 import * as THREE from "three/webgpu";
-import { attribute, texture, positionWorld, vec2, float, mix, uniform, vec3 } from "three/tsl";
+import { attribute, texture, positionWorld, vec2, float, mix, uniform, vec3, mx_noise_float, smoothstep, normalize, transformNormalToView, cameraPosition, dot, max, pow, sin } from "three/tsl";
+import { fogFactor, applyFog, setFogTexture } from "./fog.ts";
 
 export const HSCALE = 0.08; // hauteur monde par unité de hauteur de la carte
 
@@ -45,25 +46,45 @@ export function surfaceHeight(m: MapData, x: number, z: number): number {
 
 export const DEPOSIT_COLORS: Record<number, number> = { 1: 0x6f8ba8, 2: 0xd0763a, 3: 0xe4dcc0, 4: 0x241c2c, 5: 0x66e8ff };
 
+const C_SEABED = new THREE.Color(0.36, 0.35, 0.27);
+const C_SAND = new THREE.Color(0.7, 0.64, 0.46);
+const C_GRASS = new THREE.Color(0.26, 0.4, 0.19);
+const C_GRASS2 = new THREE.Color(0.33, 0.43, 0.22);
+const C_DRY = new THREE.Color(0.45, 0.42, 0.33);
+const C_SNOW = new THREE.Color(0.78, 0.79, 0.82);
+const C_ROCK = new THREE.Color(0.36, 0.34, 0.32);
+const C_DIRT = new THREE.Color(0.42, 0.38, 0.3);
+
+const sstep = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** Couleur continue selon l'altitude (relative à l'eau) et la pente : transitions douces. */
 function terrainColor(h: number, slope: number, water: number, out: THREE.Color): void {
-  // altitude relative à l'eau
   const rel = h - water;
-  if (rel < 0) out.setRGB(0.42, 0.4, 0.3);
-  else if (rel < 5) out.setRGB(0.66, 0.62, 0.45);
-  else if (h < 140) out.setRGB(0.27, 0.41, 0.21);
-  else if (h < 190) out.setRGB(0.32, 0.43, 0.24);
-  else if (h < 220) out.setRGB(0.43, 0.41, 0.34);
-  else out.setRGB(0.72, 0.73, 0.75);
-  if (slope > 7) out.lerp(new THREE.Color(0.32, 0.3, 0.3), 0.8);
-  else if (slope > 3) out.lerp(new THREE.Color(0.4, 0.38, 0.33), 0.35);
+  out.copy(C_SEABED);
+  out.lerp(C_SAND, sstep(-3, 0, rel));
+  out.lerp(C_GRASS, sstep(3, 9, rel));
+  out.lerp(C_GRASS2, sstep(125, 160, h));
+  out.lerp(C_DRY, sstep(175, 205, h));
+  out.lerp(C_SNOW, sstep(212, 232, h));
+  out.lerp(rel < 2 ? C_DIRT : C_ROCK, sstep(2.5, 8, slope) * 0.85);
 }
+
+/** Lissage temporel du brouillard : vitesse d'apparition / de disparition (niveaux par seconde). */
+const FOG_REVEAL = 900;
+const FOG_HIDE = 260;
 
 export class Terrain {
   group = new THREE.Group();
   fogTex: THREE.DataTexture;
   fogData: Uint8Array;
+  fogTarget: Uint8Array;
+  fogDirty = false;
+  heightTex: THREE.DataTexture;
   visW = 0;
-  fogEnabled = uniform(1);
+  waterTime = uniform(0);
 
   constructor(public map: MapData) {
     const { w, h, heights } = map;
@@ -74,23 +95,24 @@ export class Terrain {
     const col = new Float32Array(nx * nz * 3);
     const c = new THREE.Color();
     const hAt = (x: number, z: number) => heights[Math.min(h - 1, Math.max(0, z)) * w + Math.min(w - 1, Math.max(0, x))];
+    // hauteur d'un sommet : moyenne des 4 cases qui le touchent
+    const hv = (x: number, z: number) => (hAt(x - 1, z - 1) + hAt(x, z - 1) + hAt(x - 1, z) + hAt(x, z)) / 4;
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
         const x = i * step;
         const z = j * step;
-        // moyenne des cases autour du sommet
-        const hv = (hAt(x - 1, z - 1) + hAt(x, z - 1) + hAt(x - 1, z) + hAt(x, z)) / 4;
+        const hc = hv(x, z);
         const k = j * nx + i;
         pos[k * 3] = x;
-        pos[k * 3 + 1] = hv * HSCALE;
+        pos[k * 3 + 1] = hc * HSCALE;
         pos[k * 3 + 2] = z;
-        const slope = Math.max(Math.abs(hAt(x, z) - hAt(x - step, z)), Math.abs(hAt(x, z) - hAt(x, z - step))) / step;
-        terrainColor(hv, slope, map.waterLevel, c);
-        // légère variation
-        const n = ((Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1) * 0.04;
-        col[k * 3] = c.r + n;
-        col[k * 3 + 1] = c.g + n;
-        col[k * 3 + 2] = c.b + n;
+        // pente : différences centrées sur 2 cases, plus douces que la différence brute
+        const gx = (hv(x + 2, z) - hv(x - 2, z)) / 4;
+        const gz = (hv(x, z + 2) - hv(x, z - 2)) / 4;
+        terrainColor(hc, Math.hypot(gx, gz) * 1.6, map.waterLevel, c);
+        col[k * 3] = c.r;
+        col[k * 3 + 1] = c.g;
+        col[k * 3 + 2] = c.b;
       }
     }
     const idx = new Uint32Array((nx - 1) * (nz - 1) * 6);
@@ -109,38 +131,42 @@ export class Terrain {
         idx[o++] = d;
       }
     }
-    let geo = new THREE.BufferGeometry();
+    const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
-    geo = geo.toNonIndexed();
-    geo.computeVertexNormals();
-    // brouillard : texture de visibilité
+    geo.computeVertexNormals(); // normales lissées : plus de facettes
+    // brouillard : texture de visibilité, lissée dans le temps (fogData suit fogTarget)
     this.visW = Math.floor(w / 4);
-    this.fogData = new Uint8Array(this.visW * this.visW).fill(60);
+    this.fogData = new Uint8Array(this.visW * this.visW).fill(40);
+    this.fogTarget = new Uint8Array(this.visW * this.visW).fill(40);
     this.fogTex = new THREE.DataTexture(this.fogData, this.visW, this.visW, THREE.RedFormat, THREE.UnsignedByteType);
     this.fogTex.magFilter = THREE.LinearFilter;
     this.fogTex.minFilter = THREE.LinearFilter;
     this.fogTex.needsUpdate = true;
-    const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
-    const uv = vec2(positionWorld.x.div(float(w)), positionWorld.z.div(float(h)));
-    const fog = texture(this.fogTex, uv).r;
-    const fogF = mix(float(1), fog, this.fogEnabled);
-    mat.colorNode = attribute("color", "vec3").mul(fogF);
+    setFogTexture(this.fogTex, w, h);
+    const fog = fogFactor();
+    // hauteurs du sol (pour la profondeur de l'eau et l'écume)
+    this.heightTex = new THREE.DataTexture(heights, w, h, THREE.RedFormat, THREE.UnsignedByteType);
+    this.heightTex.magFilter = THREE.LinearFilter;
+    this.heightTex.minFilter = THREE.LinearFilter;
+    this.heightTex.needsUpdate = true;
+    // sol : couleur des sommets + grain procédural (taches de végétation, gravier fin)
+    const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.93, metalness: 0 });
+    const p2 = vec2(positionWorld.x, positionWorld.z);
+    const macro = mx_noise_float(p2.mul(0.045)); // -1..1, grandes taches
+    const mid = mx_noise_float(p2.mul(0.27));
+    const fine = mx_noise_float(p2.mul(2.3));
+    const base = attribute("color", "vec3");
+    const tint = mix(vec3(0.92, 0.95, 0.85), vec3(1.08, 1.02, 0.94), macro.mul(0.5).add(0.5));
+    const grain = float(1).add(mid.mul(0.07)).add(fine.mul(0.045));
+    const ground = base.mul(tint).mul(grain);
+    mat.colorNode = applyFog(ground, fog);
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = false;
+    mesh.receiveShadow = true;
     this.group.add(mesh);
     // eau
-    if (map.waterLevel > 0) {
-      const wg = new THREE.PlaneGeometry(w + 400, h + 400, 1, 1);
-      wg.rotateX(-Math.PI / 2);
-      const wm = new THREE.MeshStandardNodeMaterial({ roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.78 });
-      const wfog = mix(float(1), texture(this.fogTex, uv).r, this.fogEnabled);
-      wm.colorNode = vec3(0.12, 0.3, 0.45).mul(wfog);
-      const water = new THREE.Mesh(wg, wm);
-      water.position.set(w / 2, map.waterLevel * HSCALE - 0.05, h / 2);
-      this.group.add(water);
-    }
+    if (map.waterLevel > 0) this.group.add(this.buildWater(map, fog));
     // bordure sombre autour de la carte
     const border = new THREE.Mesh(new THREE.PlaneGeometry(w * 4, h * 4).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ color: 0x0b1016 }));
     border.position.set(w / 2, -1, h / 2);
@@ -181,13 +207,74 @@ export class Terrain {
     }
   }
 
-  /** Met à jour le brouillard à partir de la grille de visibilité (bits : 1 vue, 2 radar, 8 explorée). */
+  /** Eau animée : profondeur (couleur, transparence), vaguelettes, reflet du ciel, écume sur les rives. */
+  private buildWater(map: MapData, fog: ReturnType<typeof fogFactor>): THREE.Mesh {
+    const { w, h } = map;
+    const wg = new THREE.PlaneGeometry(w + 400, h + 400, 1, 1);
+    wg.rotateX(-Math.PI / 2);
+    const wm = new THREE.MeshStandardNodeMaterial({ roughness: 0.12, metalness: 0.05, transparent: true, depthWrite: false });
+    const t = this.waterTime;
+    const p2 = vec2(positionWorld.x, positionWorld.z);
+    const ground = texture(this.heightTex, p2.div(vec2(w, h))).r.mul(255);
+    const depth = float(map.waterLevel).sub(ground).mul(HSCALE).max(0); // en unités du monde
+    const shallow = vec3(0.13, 0.44, 0.47);
+    const deep = vec3(0.04, 0.14, 0.27);
+    const body = mix(shallow, deep, smoothstep(0, 3.5, depth));
+    // vaguelettes : deux bruits qui défilent dans des directions différentes
+    const n1 = mx_noise_float(vec3(p2.mul(0.35).add(vec2(t.mul(0.11), t.mul(0.07))), t.mul(0.15)));
+    const n2 = mx_noise_float(vec3(p2.mul(0.9).sub(vec2(t.mul(0.05), t.mul(0.13))), t.mul(0.21)));
+    const nx = n1.mul(0.16).add(n2.mul(0.08));
+    const nz = n2.mul(0.16).sub(n1.mul(0.06));
+    const nWorld = normalize(vec3(nx, 1, nz));
+    wm.normalNode = transformNormalToView(nWorld);
+    // reflet du ciel selon l'angle de vue (Fresnel)
+    const viewDir = normalize(cameraPosition.sub(positionWorld));
+    const fres = pow(float(1).sub(max(dot(viewDir, nWorld), 0)), 4);
+    const sky = vec3(0.55, 0.68, 0.82);
+    // écume : bande près des rives, ondulante
+    // écume : un liseré fin au bord, et des bandes qui avancent vers la rive en eau peu profonde
+    const shore = float(1).sub(smoothstep(0.0, 0.32, depth));
+    const edge = float(1).sub(smoothstep(0.0, 0.05, depth));
+    const ripple = sin(depth.mul(32).sub(t.mul(1.7)).add(n1.mul(2.5))).mul(0.5).add(0.5);
+    const bands = smoothstep(0.72, 0.97, ripple).mul(shore).mul(n2.mul(0.4).add(0.65));
+    const foam = max(edge.mul(0.85), bands.mul(0.75)).min(1);
+    const color = mix(mix(body, sky, fres.mul(0.55)), vec3(0.92, 0.96, 0.98), foam);
+    wm.colorNode = applyFog(color, fog);
+    wm.opacityNode = mix(float(0.5), float(0.9), smoothstep(0, 2.2, depth)).max(foam).mul(fog.mul(0.25).add(0.75));
+    const water = new THREE.Mesh(wg, wm);
+    water.position.set(w / 2, map.waterLevel * HSCALE - 0.05, h / 2);
+    water.receiveShadow = true;
+    water.renderOrder = 1;
+    return water;
+  }
+
+  /** Nouvelle grille de visibilité (bits : 1 vue, 2 radar, 8 explorée) ; le passage est progressif. */
   updateFog(vis: Uint8Array): void {
-    const n = Math.min(vis.length, this.fogData.length);
+    const n = Math.min(vis.length, this.fogTarget.length);
     for (let i = 0; i < n; i++) {
       const v = vis[i];
-      this.fogData[i] = v & 1 ? 255 : v & 8 ? 150 : v & 2 ? 110 : 70;
+      this.fogTarget[i] = v & 1 ? 255 : v & 8 ? 140 : v & 2 ? 100 : 40;
     }
-    this.fogTex.needsUpdate = true;
+    this.fogDirty = true;
+  }
+
+  /** Avance le fondu du brouillard et l'animation de l'eau. */
+  tick(dt: number, time: number): void {
+    this.waterTime.value = time;
+    if (!this.fogDirty) return;
+    const up = Math.max(1, Math.round(FOG_REVEAL * dt));
+    const down = Math.max(1, Math.round(FOG_HIDE * dt));
+    const cur = this.fogData;
+    const tgt = this.fogTarget;
+    let moving = false;
+    for (let i = 0; i < cur.length; i++) {
+      const a = cur[i];
+      const b = tgt[i];
+      if (a === b) continue;
+      cur[i] = b > a ? Math.min(b, a + up) : Math.max(b, a - down);
+      moving = true;
+    }
+    if (moving) this.fogTex.needsUpdate = true;
+    else this.fogDirty = false;
   }
 }

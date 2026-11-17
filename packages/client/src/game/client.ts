@@ -5,6 +5,7 @@ import * as Ord from "@supreme/shared/orders.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, hasTech } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
+import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { PLAYER_COLORS } from "../models/generator.ts";
 import { ui, pushMessage } from "./state.svelte.ts";
@@ -188,7 +189,9 @@ export class GameClient {
     this.worker?.terminate();
     this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (e) => this.onWorker(e.data);
-    this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href });
+    // ?demo=eau : carte avec de l'eau, sans les armées (aperçu du terrain)
+    const water = new URLSearchParams(location.search).get("demo") === "eau";
+    this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water });
   }
 
   setReplaySpeed(s: number): void {
@@ -207,6 +210,7 @@ export class GameClient {
           await this.scene.init(new URLSearchParams(location.search).has("webgl"));
           ui.backend = this.scene.backend;
           this.scene.iconDistance = this.iconDistance();
+          this.scene.applySettings(ui.gfx);
         }
         this.scene.setWorld(this.map, this.data);
         const st = this.map.starts[Math.max(0, ui.me)] ?? [this.map.w / 2, this.map.h / 2];
@@ -277,6 +281,7 @@ export class GameClient {
     this.worker?.postMessage({ type: "view", x0: Math.floor(r[0]), y0: Math.floor(r[1]), x1: Math.ceil(r[2]), y1: Math.ceil(r[3]), detail: sc.strategic ? 0 : sc.distance > 150 ? 1 : 2, player: ui.me });
     if (now - this.lastUiUpdate > 250) {
       ui.fps = Math.round((this.fpsCount * 1000) / (now - this.lastUiUpdate || 1));
+      if (ui.showPerf) ui.perf = { ...sc.stats, frameMs: this.fpsCount ? (now - this.lastUiUpdate) / this.fpsCount : 0 };
       this.fpsCount = 0;
       this.lastUiUpdate = now;
       this.updateUi();
@@ -324,21 +329,35 @@ export class GameClient {
       return Math.max(0, 1 - d / (sc.distance * 1.2 + 20));
     };
     const myTeam = f.players[ui.me]?.team ?? -1;
+    // les effets ne trahissent pas ce qui se passe sous le brouillard de guerre
+    const vis = f.vis;
+    const vw = f.visW;
+    const seen = (x: number, z: number) => {
+      if (ui.spectator || !vis) return true;
+      const cx = Math.min(vw - 1, Math.max(0, (x / 4) | 0));
+      const cz = Math.min(vw - 1, Math.max(0, (z / 4) | 0));
+      return (vis[cz * vw + cx] & 1) !== 0;
+    };
+    const fx = sc.entities.effects;
     for (let i = 0, o = f.eventOff; i < f.nEvents; i++, o += 5) {
       const [type, a, c, d, e] = [b[o], b[o + 1], b[o + 2], b[o + 3], b[o + 4]];
       switch (type) {
         case EV.EXPLOSION: {
           const x = a / TILE;
           const z = c / TILE;
-          sc.entities.addExplosion(x, z, d / TILE, e);
-          sfx.explosion(e + d / 2048, near(x, z));
+          if (seen(x, z) || e === 3) {
+            sc.entities.addExplosion(x, z, d / TILE, e);
+            sfx.explosion(e + d / 2048, near(x, z));
+          }
           break;
         }
         case EV.BEAM: {
           const x0 = a / TILE, z0 = c / TILE, x1 = d / TILE, z1 = e / TILE;
           const y0 = groundHeight(this.map!, x0, z0) + 1.2;
           const y1 = groundHeight(this.map!, x1, z1) + 0.5;
+          if (!seen(x0, z0) && !seen(x1, z1)) break;
           sc.entities.addBeam(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1), 0xff4040, 0.12);
+          fx.sparks(x1, y1, z1, [4, 0.8, 0.6], 4);
           sfx.laser(near(x0, z0));
           break;
         }
@@ -369,6 +388,10 @@ export class GameClient {
           break;
         case EV.UNIT_DIED: {
           const owner = e;
+          if (seen(a / TILE, c / TILE)) {
+            const def = this.data!.units[d];
+            if (def && def.layer !== Layer.Sub) fx.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(PLAYER_COLORS[owner % 8]), false);
+          }
           if (owner === ui.me && performance.now() - this.lastAttackAlert > 15000) {
             this.lastAttackAlert = performance.now();
             const x = a / TILE, z = c / TILE;
@@ -380,17 +403,23 @@ export class GameClient {
           }
           break;
         }
+        case EV.BUILDING_DIED:
+          if (seen(a / TILE, c / TILE)) {
+            const def = this.data!.buildings[d];
+            if (def && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) fx.wreckage(a / TILE, c / TILE, Math.max(def.w, def.h), new THREE.Color(PLAYER_COLORS[e % 8]), true);
+          }
+          break;
         case EV.TELEPORT:
           sfx.teleport(Math.max(near(a / TILE, c / TILE), near(d / TILE, e / TILE)));
-          sc.entities.addExplosion(a / TILE, c / TILE, 1.5, 1);
-          sc.entities.addExplosion(d / TILE, e / TILE, 1.5, 1);
+          if (seen(a / TILE, c / TILE)) fx.warp(a / TILE, c / TILE);
+          if (seen(d / TILE, e / TILE)) fx.warp(d / TILE, e / TILE);
           break;
         case EV.INTERCEPT:
           sc.entities.addBeam(new THREE.Vector3(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 2, c / TILE), new THREE.Vector3(d / TILE, 40, e / TILE), 0x80ffff, 0.6);
           pushMessage("Missile intercepté", "good");
           break;
         case EV.SHIELD_HIT:
-          if (Math.random() < 0.3) sc.entities.addExplosion(a / TILE, c / TILE, 0.6, 0);
+          if (Math.random() < 0.4 && seen(a / TILE, c / TILE)) fx.sparks(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 1, c / TILE, [1.2, 2.6, 4], 3);
           break;
       }
     }
@@ -706,6 +735,10 @@ export class GameClient {
         break;
       case "tab":
         ui.showStats = !ui.showStats;
+        e.preventDefault();
+        break;
+      case "f3":
+        ui.showPerf = !ui.showPerf;
         e.preventDefault();
         break;
       case "f1":
@@ -1281,6 +1314,17 @@ export class GameClient {
   setIconDistance(d: number): void {
     localStorage.setItem("supreme.icons", String(d));
     if (this.scene) this.scene.iconDistance = d;
+  }
+
+  /** Réglages graphiques (ombres, halo, quantité d'effets), mémorisés dans le navigateur. */
+  setGfx(g: Partial<GfxSettings>): void {
+    ui.gfx = { ...ui.gfx, ...g };
+    try {
+      localStorage.setItem("supreme.gfx", JSON.stringify(ui.gfx));
+    } catch {
+      // stockage indisponible : le réglage vaut pour cette session
+    }
+    this.scene?.applySettings(ui.gfx);
   }
 
   setVolume(v: number): void {
