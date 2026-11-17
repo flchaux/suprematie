@@ -675,6 +675,7 @@ export class GameClient {
     if (e.button === 0 && ui.mode === "build") {
       const g = this.groundAt(x, y);
       if (g) this.ghostStart = this.snapBuild(g);
+      this.lineEndDir = null;
     }
     if (e.button === 0) this.plans.down();
     // clic droit sur le terrain avec des unités : le glisser oriente la formation (sinon : caméra)
@@ -945,6 +946,13 @@ export class GameClient {
         break;
       case "rotate":
         if (ui.mode === "build") {
+          // file de tapis en cours de tracé : R tourne la fin de la file (d'un quart de tour à chaque appui)
+          if (this.isBeltKind() && this.mouse.down && this.ghostStart && this.ghostCells.length > 1) {
+            const end = this.ghostCells[this.ghostCells.length - 1].dir;
+            this.lineEndDir = (end + 1) % 4;
+            this.updateGhost();
+            break;
+          }
           // tapis : la direction (donc la forme) est automatique jusqu'au premier R, qui la force
           const cur = this.ghostCells.length === 1 ? this.ghostCells[0].dir : ui.buildDir;
           ui.buildDir = ((this.isBeltKind() && !this.beltForced ? cur : ui.buildDir) + 1) % 4;
@@ -1569,8 +1577,14 @@ export class GameClient {
       for (let j = 0; j <= Math.abs(dy); j += step) out.push({ x: a.x, y: a.y + j * sy, dir: isBelt ? (dx !== 0 && j === Math.abs(dy) ? hdir : vdir) : ui.buildDir });
       for (let i = step; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: b.y, dir: isBelt ? hdir : ui.buildDir });
     }
-    return out.slice(0, 200);
+    const cells = out.slice(0, 200);
+    // fin de file tournée avec R pendant le tracé
+    if (isBelt && this.lineEndDir !== null && cells.length > 1) cells[cells.length - 1].dir = this.lineEndDir;
+    return cells;
   }
+
+  /** file de tapis en cours de tracé : direction de la dernière case choisie avec R (null : automatique) */
+  lineEndDir: number | null = null;
 
   /** pose de tapis : direction forcée par R (sinon déduite des tapis voisins) */
   beltForced = false;
