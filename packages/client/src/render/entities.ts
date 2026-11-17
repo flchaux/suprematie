@@ -594,7 +594,31 @@ export class Entities {
       if (frac < 0.6 && build >= 1 && def.cls !== BClass.Belt && def.cls !== BClass.Inserter && (!enemy || seen(cx, cz, 1))) {
         fx.burning(cx, y + km.height * 0.85, cz, (0.6 - frac) / 0.6, Math.max(def.w, def.h) * 0.45, dt);
       }
-      if ((frac < 0.999 || selected.has(ref)) && build >= 1 && def.cls !== BClass.Belt && bars < 5900) {
+      if (build < 1 && def.cls !== BClass.Belt && bars < 5900) {
+        // chantier : barre toujours visible ; avancement en cyan, points de vie perdus (dégâts) en rouge
+        // (la simulation fait monter les points de vie avec l'avancement)
+        const wdt = def.w * 0.8;
+        const z = cz + def.h / 2;
+        const lift = y + 2.2;
+        const hpf = Math.min(build, frac);
+        tmpM.compose(tmpV.set(cx, lift, z), tmpQ.identity(), tmpS.set(wdt + 0.12, 1, 2.4));
+        this.bars.setMatrixAt(bars, tmpM);
+        this.bars.setColorAt(bars, tmpC.setRGB(0.08, 0.1, 0.12));
+        bars++;
+        if (hpf > 0.002) {
+          tmpM.compose(tmpV.set(cx - (wdt * (1 - hpf)) / 2, lift + 0.02, z), tmpQ.identity(), tmpS.set(wdt * hpf, 1, 1.6));
+          this.bars.setMatrixAt(bars, tmpM);
+          this.bars.setColorAt(bars, tmpC.setRGB(0.35, 0.85, 1));
+          bars++;
+        }
+        if (build - hpf > 0.01) {
+          const mid = hpf + (build - hpf) / 2;
+          tmpM.compose(tmpV.set(cx - wdt / 2 + wdt * mid, lift + 0.02, z), tmpQ.identity(), tmpS.set(wdt * (build - hpf), 1, 1.6));
+          this.bars.setMatrixAt(bars, tmpM);
+          this.bars.setColorAt(bars, tmpC.setRGB(0.9, 0.2, 0.15));
+          bars++;
+        }
+      } else if ((frac < 0.999 || selected.has(ref)) && def.cls !== BClass.Belt && bars < 5900) {
         const wdt = def.w * 0.8;
         tmpM.compose(tmpV.set(cx, y + 2.2, cz + def.h / 2), tmpQ.identity(), tmpS.set(wdt, 1, 1));
         this.bars.setMatrixAt(bars, tmpM);
