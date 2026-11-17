@@ -2,7 +2,7 @@
 // Le modèle est redimensionné pour couvrir son emprise au sol (w x h cases) ; +z = avant (sortie).
 // Style (comme les unités refaites) : volumes à arêtes chanfreinées (bevel), blindage clair et acier,
 // couleur d'équipe sur le dessus (toits, bandeaux), filets cyan (glow) et voyants ambre.
-import type { Model, Part } from "./types.ts";
+import type { Model, Part, Vec3 } from "./types.ts";
 
 /** Socle chanfreiné de w x d cases (dessus à y = 0.25), sans dépasser de l'emprise. 88 triangles. */
 function socle(w: number, d = w): Part[] {
@@ -83,16 +83,34 @@ function assembleur(): Part[] {
   ];
 }
 
-/** Bras robotisé posé dans le caisson ; avec `pivot`, c'est le bras animé « bras ». */
-function brasRobot(x: number, z: number, pivot: boolean): Part[] {
+/**
+ * Bras robotisé posé dans le caisson ; avec `pivot`, c'est le bras animé « bras ».
+ * `yaw` : direction du bras en degrés (0 = vers l'avant, +z ; 90 = vers +x), `reach` : longueur relative,
+ * `lift` : surélévation du socle (posé sur un pilier d'angle).
+ */
+function brasRobot(x: number, z: number, pivot: boolean, o: { yaw?: number; reach?: number; lift?: number } = {}): Part[] {
   const p = pivot ? { parent: "bras" } : {};
+  const yaw = ((o.yaw ?? 0) * Math.PI) / 180;
+  const k = o.reach ?? 1;
+  const dy = o.lift ?? 0;
+  const sy = Math.sin(yaw);
+  const cy = Math.cos(yaw);
+  // point à la distance d le long du bras
+  const at = (d: number, y: number): Vec3 => [x + d * k * sy, y + dy, z + d * k * cy];
+  // inclinaison du bras (-10° autour de son axe transversal) puis lacet, exprimés dans l'ordre XYZ du générateur
+  const t = (-10 * Math.PI) / 180;
+  const st = Math.sin(t);
+  const ct = Math.cos(t);
+  const deg = 180 / Math.PI;
+  const armRot: Vec3 = [Math.atan2(st, cy * ct) * deg, Math.asin(sy * ct) * deg, Math.atan2(-sy * st, cy) * deg];
+  const r = (o.yaw ?? 0) % 360;
   return [
-    { shape: "cylinder", sides: 8, radius: 0.2, height: 0.3, pos: [x,1.12,z], color: "metal" },
-    { shape: "bevel", size: [0.3,0.26,0.3], pos: [x,1.38,z], color: "light", ...(pivot ? { pivot: "bras" } : {}) },
-    { shape: "bevel", size: [0.16,0.16,0.8], pos: [x,1.5,z + 0.35], rot: [-10,0,0], color: "light", ...p },
-    { shape: "box", size: [0.12,0.36,0.12], pos: [x,1.32,z + 0.72], color: "metal", ...p },
-    { shape: "box", size: [0.3,0.08,0.16], pos: [x,1.12,z + 0.72], color: "dark", ...p },
-    { shape: "box", size: [0.05,0.05,0.03], pos: [x,1.5,z + 0.18], color: "amber", ...p },
+    { shape: "cylinder", sides: 8, radius: 0.2, height: 0.3, pos: at(0, 1.12), color: "metal" },
+    { shape: "bevel", size: [0.3,0.26,0.3], pos: at(0, 1.38), rot: [0,r,0], color: "light", ...(pivot ? { pivot: "bras" } : {}) },
+    { shape: "bevel", size: [0.16,0.16,0.8 * k], pos: at(0.35, 1.5), rot: armRot, color: "light", ...p },
+    { shape: "box", size: [0.12,0.36,0.12], pos: at(0.72, 1.32), rot: [0,r,0], color: "metal", ...p },
+    { shape: "box", size: [0.3,0.08,0.16], pos: at(0.72, 1.12), rot: [0,r,0], color: "dark", ...p },
+    { shape: "box", size: [0.05,0.05,0.03], pos: at(0.18, 1.5), rot: [0,r,0], color: "amber", ...p },
   ];
 }
 
@@ -184,15 +202,16 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.08,0.05,0.03], pos: [0.4,1.98,-0.14], color: "amber" },
     ],
   },
-  // assembler1 : caisson à coins clairs, couvercle ouvert à l'arrière, bras robotisé (940 triangles)
+  // assembler1 : caisson à coins clairs, couvercle ouvert à l'arrière, bras robotisé sur le pilier arrière
+  // gauche, tourné en diagonale : le centre du toit reste dégagé pour l'icône de la recette (940 triangles)
   assembler1: {
     parts: [
       ...assembleur(),
-      ...brasRobot(0, -0.35, true),
-      { shape: "bevel", size: [1.9,0.08,0.9], pos: [0,1.47,-1.1], rot: [70,0,0], color: "light" },
-      { shape: "box", size: [1.4,0.03,0.05], pos: [0,1.75,-1.12], rot: [70,0,0], color: "glow" },
-      { shape: "bevel", size: [0.5,0.3,0.4], pos: [-0.55,1.12,0.35], color: "metal" },
-      { shape: "box", size: [0.1,0.06,0.03], pos: [-0.55,1.15,0.56], color: "amber" },
+      ...brasRobot(-1.1, -1.1, true, { yaw: 45, reach: 0.85, lift: 0.19 }),
+      { shape: "bevel", size: [1.7,0.08,0.9], pos: [0.1,1.47,-1.1], rot: [70,0,0], color: "light" },
+      { shape: "box", size: [1.2,0.03,0.05], pos: [0.1,1.75,-1.12], rot: [70,0,0], color: "glow" },
+      { shape: "bevel", size: [0.42,0.24,0.36], pos: [1.1,1.28,1.08], color: "metal" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [1.1,1.3,1.27], color: "amber" },
     ],
   },
   // assembler2 : plateau vitré à croix lumineuse, deux bras de part et d'autre (1064 triangles)
