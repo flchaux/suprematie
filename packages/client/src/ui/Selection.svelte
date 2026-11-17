@@ -327,6 +327,10 @@
       <b class="title num">{total}</b>
       <span class="dim">unité{total > 1 ? "s" : ""}{#if ui.selUnits.length === 1} · {d.units[ui.selUnits[0].kind].name}{/if}</span>
     </div>
+    {#if ui.unitInfo && total === 1}
+      {@const f = ui.unitInfo.hp / Math.max(1, ui.unitInfo.maxHp)}
+      <div class="hpline own"><span class="hp" class:mid={f < 0.6} class:low={f < 0.3}><span style:width={f * 100 + "%"}></span></span><span class="num small">{ui.unitInfo.hp} / {ui.unitInfo.maxHp} PV</span></div>
+    {/if}
     <div class="groups">
       {#each ui.selUnits as g}
         <button class="grp tip" onclick={() => client.selectIds(g.ids)}>
@@ -381,6 +385,7 @@
   .ht { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
   .title { font-size: 15px; font-weight: 600; letter-spacing: 0.04em; }
   .hpline { display: flex; align-items: center; gap: 8px; }
+  .hpline.own { margin: 4px 0 6px; }
   .hpline .hp { flex: 1; display: block; }
   .hpline .hp > span { display: block; height: 100%; background: linear-gradient(90deg, var(--good), #a8ffd8); box-shadow: 0 0 6px rgba(77, 255, 176, 0.5); }
   .hpline .hp.mid > span { background: linear-gradient(90deg, var(--amber), #ffd28a); }

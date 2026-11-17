@@ -337,6 +337,8 @@ export class GameClient {
       this.lastPowerShow = 0;
       sc.power?.hide();
     }
+    // points de vie de l'unité sélectionnée seule
+    if (ui.unitInfo && now - this.unitInfoAt > 400) this.refreshUnitInfo();
     // curseur : les unités bougent sous une souris immobile, la sélection change
     if (now - this.cursorAt > 150) this.updateCursor();
     // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
@@ -592,9 +594,9 @@ export class GameClient {
     // unités d'un autre joueur (sans aucune des nôtres) : fiche de statistiques seulement
     ui.selForeign = this.selOwn.size === 0 && ui.selUnits.length ? foreign : -1;
     if (this.selected.size) ui.selDeposit = null;
-    if (ui.selForeign >= 0 && ui.selUnits.length === 1 && ui.selUnits[0].count === 1) {
-      void this.query<{ hp: number; maxHp: number; lvl: number } | null>("unit", [ui.selUnits[0].ids[0]]).then((r) => (ui.unitInfo = r));
-    } else ui.unitInfo = null;
+    // une seule unité (la nôtre ou une autre) : ses points de vie (rafraîchis dans la boucle d'affichage)
+    if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1) this.refreshUnitInfo();
+    else ui.unitInfo = null;
     ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0 && ui.selForeign < 0;
     if (!ui.canBuild && kb.buildStep) kb.buildStep = "";
     if (selB) {
@@ -1310,6 +1312,22 @@ export class GameClient {
   }
   engineers(): number[] {
     return this.selectedUnits().filter((u) => this.data!.units[u.kind].buildPower > 0).map((u) => u.id);
+  }
+
+  private unitInfoAt = 0;
+  /** Points de vie et vétérance de l'unité sélectionnée seule (fiche de sélection). */
+  private refreshUnitInfo(): void {
+    this.unitInfoAt = performance.now();
+    const g = ui.selUnits.length === 1 && ui.selUnits[0].count === 1 ? ui.selUnits[0] : null;
+    if (!g) {
+      ui.unitInfo = null;
+      return;
+    }
+    const id = g.ids[0];
+    void this.query<{ hp: number; maxHp: number; lvl: number } | null>("unit", [id]).then((r) => {
+      // la sélection a pu changer pendant la requête
+      if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
+    });
   }
 
   // ---------- curseur contextuel ----------
