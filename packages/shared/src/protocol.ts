@@ -105,7 +105,8 @@ export const HASH_EVERY = 20;
 export function simParams(lobby: LobbyState): number[] {
   const p = [lobby.seed | 0, lobby.mapSize, lobby.water ? 1 : 0, lobby.players.length];
   for (const pl of lobby.players) {
-    const m = pl.bot ? pl.aix ?? 100 : 100;
+    // IA facile : économie (extraction, construction) à 80 % en plus de ses décisions plus lentes
+    const m = pl.bot ? Math.round((pl.aix ?? 100) * (pl.level === "facile" ? 0.8 : 1)) : 100;
     p.push(pl.team, pl.bot ? 1 : 0, m, m);
   }
   return p;

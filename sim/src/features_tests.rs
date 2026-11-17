@@ -175,11 +175,11 @@ fn robots_feed_and_evacuate_nearby_buildings() {
 fn wrecks_merge_are_capped_and_expire() {
     let mut w = world(&[0]);
     let cost = udef(U_LIGHT_TANK).cost;
-    w.spawn_wreck(100 * TILE, 100 * TILE, cost, 1);
-    w.spawn_wreck(100 * TILE + 100, 100 * TILE, cost, 1);
+    w.spawn_wreck(100 * TILE, 100 * TILE, cost, 1, 0, 0);
+    w.spawn_wreck(100 * TILE + 100, 100 * TILE, cost, 1, 0, 0);
     assert_eq!(w.wrecks.iter().filter(|k| k.alive).count(), 1, "deux débris voisins fusionnent");
     for i in 0..(MAX_WRECKS as i32 + 50) {
-        w.spawn_wreck((10 + (i % 40) * 5) * TILE, (10 + (i / 40) * 5) * TILE, cost, 1);
+        w.spawn_wreck((10 + (i % 40) * 5) * TILE, (10 + (i / 40) * 5) * TILE, cost, 1, 0, 0);
     }
     assert!(w.wrecks.iter().filter(|k| k.alive).count() <= MAX_WRECKS);
     run(&mut w, WRECK_LIFE + 200);
@@ -473,4 +473,62 @@ fn formation_move_ends_facing_the_drag_direction() {
     apply_orders(&mut w, &msg);
     let sa = w.unit(a).unwrap();
     assert_eq!(w.units.cold[sa].orders.len(), 1);
+}
+
+/// Sorties : un bras sans courant (hors de portée du générateur) ne doit pas bloquer le tapis de sortie
+/// du même bâtiment, qui reçoit alors toute la production.
+#[test]
+fn unpowered_arm_does_not_starve_the_output_belt() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    // générateur en (100, 100) : alimente jusqu'à x = 109 ; la fonderie (109-110) est couverte
+    put(&mut w, 0, B_GENERATOR, 100, 100, 0);
+    let f = put(&mut w, 0, B_FURNACE, 109, 100, 0);
+    // bras à l'est, hors de portée électrique, vers un dépôt
+    let arm = put(&mut w, 0, B_INSERTER, 111, 100, 0);
+    put(&mut w, 0, B_DEPOT, 112, 100, 0);
+    // tapis de sortie à l'ouest, vers un dépôt
+    for x in (104..109).rev() {
+        put(&mut w, 0, B_BELT1, x, 100, 2);
+    }
+    put(&mut w, 0, B_DEPOT, 102, 100, 0);
+    run(&mut w, 5);
+    assert_eq!(w.buildings[arm].net, 0, "le bras doit être hors réseau pour ce test");
+    assert_ne!(w.buildings[f].net, 0, "la fonderie doit être alimentée");
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    for _ in 0..3000 {
+        if crate::buildings::accepts(&w, f, IRON_ORE) {
+            insert_item(&mut w, f, IRON_ORE);
+        }
+        w.step(&[]);
+    }
+    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    assert!(got > 20, "le tapis de sortie n'a presque rien reçu : {} plaques", got);
+}
+
+/// Sorties : deux tapis de sortie alimentés se partagent la production ; un seul tapis branché reçoit tout.
+#[test]
+fn single_output_belt_gets_everything() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    let f = put(&mut w, 0, B_FURNACE, 100, 100, 0);
+    // un bras d'entrée (ne compte pas comme sortie) et un tapis de sortie à l'est
+    put(&mut w, 0, B_INSERTER, 99, 100, 0);
+    for x in 102..106 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    put(&mut w, 0, B_DEPOT, 106, 100, 0);
+    assert_eq!(crate::buildings::outlets_of(&w, f).len(), 1);
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    let mut fed = 0;
+    for _ in 0..3000 {
+        if crate::buildings::accepts(&w, f, IRON_ORE) {
+            insert_item(&mut w, f, IRON_ORE);
+            fed += 1;
+        }
+        w.step(&[]);
+    }
+    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    assert!(got > 20 && got as i64 + 6 >= fed as i64, "production perdue ou bloquée : {} plaques pour {} minerais", got, fed);
 }

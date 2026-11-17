@@ -8,7 +8,7 @@ export const BUILDING_WORDS = 8;
 export const ITEM_WORDS = 3;
 export const PROJ_WORDS = 6;
 export const EVENT_WORDS = 5;
-export const WRECK_WORDS = 3;
+export const WRECK_WORDS = 4;
 export const SHIELD_WORDS = 4;
 export const CARRIER_WORDS = 5;
 

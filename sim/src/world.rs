@@ -342,8 +342,15 @@ pub struct Wreck {
     pub size: u8,
     /// tick de création (ou du dernier ajout) : les débris disparaissent avec le temps
     pub born: u32,
+    /// modèle détruit (rendu de l'épave) : 0 inconnu, 1 + type d'unité, ou WRECK_BUILDING | type de bâtiment
+    pub model: u16,
+    /// orientation du modèle (angle 16 bits)
+    pub rot: u16,
 }
-crate::ser_struct!(Wreck { alive, gen, x, y, iron, steel, size, born });
+crate::ser_struct!(Wreck { alive, gen, x, y, iron, steel, size, born, model, rot });
+
+/// Épave d'un bâtiment (sinon d'une unité) dans `Wreck::model`.
+pub const WRECK_BUILDING: u16 = 0x8000;
 
 #[derive(Clone, Copy, Default)]
 pub struct Net {
@@ -642,7 +649,7 @@ impl World {
         udef(self.units.kind[s]).hp * (100 + 10 * self.units.cold[s].lvl as i32) / 100
     }
 
-    pub fn spawn_wreck(&mut self, x: i32, y: i32, cost: &[(u8, u16)], size: u8) {
+    pub fn spawn_wreck(&mut self, x: i32, y: i32, cost: &[(u8, u16)], size: u8, model: u16, rot: u16) {
         let (iron, steel) = wreck_value(cost);
         if iron + steel <= 0 {
             return;
@@ -653,6 +660,11 @@ impl World {
             let wk = &mut self.wrecks[k];
             wk.iron += iron;
             wk.steel += steel;
+            // le plus gros débris donne sa forme à l'épave
+            if size > wk.size || wk.model == 0 {
+                wk.model = model;
+                wk.rot = rot;
+            }
             wk.size = wk.size.max(size).saturating_add(if wk.size < 6 { 1 } else { 0 });
             wk.born = self.tick;
             return;
@@ -665,7 +677,7 @@ impl World {
                 self.wfree.push(k as u32);
             }
         }
-        let w = Wreck { alive: true, gen: 0, x, y, iron, steel, size, born: self.tick };
+        let w = Wreck { alive: true, gen: 0, x, y, iron, steel, size, born: self.tick, model, rot };
         if let Some(s) = self.wfree.pop() {
             let g = self.wrecks[s as usize].gen.wrapping_add(1);
             self.wrecks[s as usize] = Wreck { gen: g, ..w };

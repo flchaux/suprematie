@@ -45,6 +45,8 @@ export class GameClient {
   map: MapData | null = null;
   start: GameStart | null = null;
   selected = new Set<number>();
+  /** unités sélectionnées qui nous appartiennent (mis à jour par updateUi) */
+  private selOwn = new Set<number>();
   groups = new Map<number, number[]>();
   /** Touches physiques enfoncées (KeyboardEvent.code). */
   keys = new Set<string>();
@@ -339,10 +341,11 @@ export class GameClient {
     if (now - this.cursorAt > 150) this.updateCursor();
     // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
     const shift = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
-    sc.showOrders = shift && this.selected.size > 0;
+    // ordres des seules unités qui nous appartiennent (jamais ceux d'un ennemi sélectionné)
+    sc.showOrders = shift && this.selOwn.size > 0;
     if (sc.showOrders && now - this.lastOrdersQuery > 250) {
       this.lastOrdersQuery = now;
-      const ids = [...this.selected].filter((id) => !Ord.isBuildingRef(id)).slice(0, 400);
+      const ids = [...this.selOwn].slice(0, 400);
       void this.query<Int32Array | null>("orders", ids).then((r) => sc.overlay?.setOrders(r));
     }
     if (ui.me >= 0 && !ui.spectator && now - this.lastPlannedQuery > 500) {
@@ -559,10 +562,15 @@ export class GameClient {
     const groups = new Map<number, number[]>();
     const lvls = new Map<number, number>();
     const alive = new Set<number>();
+    let foreign = -1;
+    this.selOwn.clear();
     for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
       const id = f.buf[o] >>> 0;
       if (!this.selected.has(id)) continue;
       alive.add(id);
+      const own = (f.buf[o + 1] >> 8) & 0xff;
+      if (own === ui.me) this.selOwn.add(id);
+      else foreign = own;
       const k = f.buf[o + 1] & 0xff;
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k)!.push(id);
@@ -581,7 +589,13 @@ export class GameClient {
     for (const id of [...this.selected]) if (!alive.has(id)) this.selected.delete(id);
     ui.selUnits = [...groups.entries()].map(([kind, ids]) => ({ kind, count: ids.length, ids, lvl: lvls.get(kind) ?? 0 })).sort((a, b) => a.kind - b.kind);
     ui.selBuilding = selB;
-    ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0;
+    // unités d'un autre joueur (sans aucune des nôtres) : fiche de statistiques seulement
+    ui.selForeign = this.selOwn.size === 0 && ui.selUnits.length ? foreign : -1;
+    if (this.selected.size) ui.selDeposit = null;
+    if (ui.selForeign >= 0 && ui.selUnits.length === 1 && ui.selUnits[0].count === 1) {
+      void this.query<{ hp: number; maxHp: number; lvl: number } | null>("unit", [ui.selUnits[0].ids[0]]).then((r) => (ui.unitInfo = r));
+    } else ui.unitInfo = null;
+    ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0 && ui.selForeign < 0;
     if (!ui.canBuild && kb.buildStep) kb.buildStep = "";
     if (selB) {
       void this.query<Record<string, unknown> | null>("building", [selB.ref]).then((r) => (ui.buildingInfo = r));
@@ -1198,10 +1212,25 @@ export class GameClient {
           if (!add) this.selected.clear();
           this.selected.add(b.ref);
           sfx.click();
+        } else if (!add) {
+          // gisement (2 x 2 cases) sous le curseur : fiche du gisement
+          const tx = Math.floor(g.x);
+          const tz = Math.floor(g.z);
+          const s = this.map?.spots.find((p) => tx >= p.x && tx < p.x + 2 && tz >= p.y && tz < p.y + 2);
+          ui.selDeposit = s ? { kind: s.kind, x: s.x, y: s.y } : null;
+          if (s) sfx.click();
         }
       }
     }
     this.updateUi();
+  }
+
+  /** Bâtiment posé sur le gisement sélectionné (un extracteur), s'il y en a un. */
+  depositUser(): { kind: number; owner: number } | null {
+    const d = ui.selDeposit;
+    if (!d) return null;
+    const b = this.buildingAtTile(d.x, d.y) ?? this.buildingAtTile(d.x + 1, d.y + 1);
+    return b ? { kind: b.kind, owner: b.owner } : null;
   }
 
   private boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean): void {

@@ -266,7 +266,7 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
     let mut nw = 0;
     for wk in &w.wrecks {
         if wk.alive && wk.x / TILE >= mx0 && wk.x / TILE <= mx1 && wk.y / TILE >= my0 && wk.y / TILE <= my1 {
-            out.extend_from_slice(&[wk.x, wk.y, wk.size as i32 | (wk.iron + wk.steel) << 8]);
+            out.extend_from_slice(&[wk.x, wk.y, wk.size as i32 | (wk.iron + wk.steel) << 8, wk.model as i32 | (wk.rot as i32) << 16]);
             nw += 1;
         }
     }
@@ -403,9 +403,17 @@ pub fn info_building(w: &World, r: u32) -> String {
     let stash = if bb.stash.is_empty() { "[]".to_string() } else { js_list(bb.stash.iter()) };
     // bras : part réglée, part effective (millièmes) et nombre de bras sur la même source
     let (share_eff, takers) = if bb.def().class == crate::data::BClass::Inserter { crate::buildings::share_info(w, b) } else { (1000, 1) };
+    // extracteur : débit (dixièmes d'objet par minute) au niveau d'énergie actuel et à pleine puissance
+    let (extract_now, extract_max) = if bb.def().class == crate::data::BClass::Extractor {
+        let mult = w.players[bb.owner as usize].res_mult.max(0) as u64;
+        let per = |s: u64| (1200 * 10 * s * mult / (30 * crate::buildings::RECIPE_SCALE as u64)) as i32;
+        (per(sat.clamp(0, 1024) as u64), per(1024))
+    } else {
+        (0, 0)
+    };
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{}}}",
-        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{}}}",
+        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max
     )
 }
 
