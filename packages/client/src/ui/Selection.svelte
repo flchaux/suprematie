@@ -55,6 +55,12 @@
     const max = (1200 / ticks) * r.output[1];
     return { max, now: info.working ? max * Math.min(1, (info.sat ?? 1024) / 1024) : 0, item: r.output[0] };
   });
+  /** Caractéristiques d'une recette dans ce bâtiment : durée d'un cycle (s), énergie par cycle (kJ), objets par minute. */
+  const recipeSpec = (r: { time: number; output: [number, number] }) => {
+    const secs = r.time / 20 / (Math.max(1, bdef?.speed ?? 100) / 100);
+    return { secs, energy: (bdef?.powerUse ?? 0) * secs, perMin: (60 / secs) * r.output[1] };
+  };
+  const fmtE = (kj: number) => (kj >= 1000 ? `${(kj / 1000).toFixed(1)} MJ` : `${Math.round(kj)} kJ`);
   const STATE = ["à quai", "en route vers la destination", "à quai à destination", "en retour"];
   const isStation = $derived(!!bdef && (bdef.cls === BClass.Station || bdef.cls === BClass.CargoPad));
   const NI = $derived(d?.items.length ?? 27);
@@ -84,14 +90,34 @@
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
       {/if}
       {#if bdef.cls === BClass.Crafter}
-        <div class="row">
-          <span class="kicker">Recette</span>
-          <select value={info.recipe} onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value))}>
-            <option value={RECIPE_NONE}>{bdef.crafter === 1 ? "— choisir —" : "automatique"}</option>
-            {#each recipes as { r, i }}
-              <option value={i} disabled={!hasTechUI(r.tech)}>{d.items[r.output[0]].name}</option>
-            {/each}
-          </select>
+        <div class="kicker">Recette</div>
+        <div class="recipes">
+          <button class="rc none" class:on={info.recipe === RECIPE_NONE} onclick={() => client.setRecipe(RECIPE_NONE)}>
+            <span class="dim small">{bdef.crafter === 1 ? "Aucune" : "Automatique"}</span>
+            {#if bdef.crafter !== 1}<span class="dim tiny">selon le minerai reçu</span>{/if}
+          </button>
+          {#each recipes as { r, i }}
+            {@const ok = hasTechUI(r.tech)}
+            {@const s = recipeSpec(r)}
+            <div class="tip">
+              <button class="rc" class:on={info.recipe === i} class:locked={!ok} disabled={!ok} onclick={() => client.setRecipe(i)}>
+                <span class="rflow">
+                  <span class="rin">{#each r.inputs as [it, n]}<Item id={it} n={n} size={18} />{/each}</span>
+                  <span class="arrow">▸</span>
+                  <Item id={r.output[0]} n={r.output[1]} size={24} />
+                </span>
+                <span class="rname">{d.items[r.output[0]].name}</span>
+                <span class="rmeta num"><span><Icon name="power" size={11} />{fmtE(s.energy)}</span><span><Icon name="clock" size={11} />{s.secs.toFixed(1)} s</span></span>
+                {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
+              </button>
+              <div class="tt">
+                <b>{d.items[r.output[0]].name} ×{r.output[1]}</b>{#if !ok}<br /><span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[r.tech]?.name}</span>{/if}<br />
+                <span class="dim">Coût :</span> {r.inputs.map(([it, n]) => `${n} ${d.items[it].name}`).join(", ")}<br />
+                <span class="dim">Durée :</span> <span class="num">{s.secs.toFixed(1)} s</span> · <span class="dim">énergie :</span> <span class="num">{fmtE(s.energy)}</span> ({bdef.powerUse} kW)<br />
+                <span class="dim">Production :</span> <span class="num">{s.perMin.toFixed(1)}</span>/min · <span class="dim">consommation :</span> {r.inputs.map(([it, n]) => `${((n * 60) / s.secs).toFixed(1)} ${d.items[it].name}`).join(", ")} /min
+              </div>
+            </div>
+          {/each}
         </div>
         {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe]}
           {@const r = d.recipes[info.recipe]}
@@ -99,6 +125,16 @@
             {#each r.inputs as [it, n], j}<span class="tip slot"><Item id={it} n={info.inv[j]} need={n} size={22} /><span class="tt">{d.items[it].name} : {info.inv[j]} (recette : {n})</span></span>{/each}
             <span class="arrow">▸▸</span>
             <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">{d.items[r.output[0]].name} ×{r.output[1]} en {(r.time / 20 / (bdef.speed / 100)).toFixed(1)} s</span></span>
+          </div>
+          {@const sp = recipeSpec(r)}
+          <div class="detail small">
+            <span class="kicker">Détail</span>
+            <span>{r.inputs.map(([it, n]) => `${n} ${d.items[it].name}`).join(" + ")} ⟶ {r.output[1]} {d.items[r.output[0]].name}</span>
+            <span class="num dim">{sp.secs.toFixed(1)} s par cycle · {fmtE(sp.energy)} par cycle ({bdef.powerUse} kW) · {fmtE(sp.energy / r.output[1])} par objet</span>
+            <span class="num">
+              {#each r.inputs as [it, n]}<span class="pm"><Item id={it} size={14} />−{((n * 60) / sp.secs).toFixed(1)}</span>{/each}
+              <span class="pm good"><Item id={r.output[0]} size={14} />+{sp.perMin.toFixed(1)}</span><span class="dim"> /min à pleine énergie</span>
+            </span>
           </div>
         {/if}
       {:else if bdef.cls === BClass.Factory}
@@ -251,6 +287,23 @@
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
   .arrow { color: var(--accent); letter-spacing: -2px; }
+  .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; max-height: 236px; overflow-y: auto; padding-right: 2px; }
+  .recipes > .tip { display: block; }
+  .rc { position: relative; width: 100%; height: 100%; min-height: 70px; display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 5px 6px; text-align: left; }
+  .rc.none { justify-content: center; align-items: center; text-align: center; }
+  .rc.on { border-color: var(--accent); background: rgba(62, 240, 255, 0.12); box-shadow: inset 0 0 0 1px var(--accent); }
+  .rc.locked { opacity: 0.45; }
+  .rc .lk { position: absolute; right: 4px; top: 3px; color: var(--amber); }
+  .rflow { display: flex; align-items: center; gap: 4px; }
+  .rin { display: flex; flex-wrap: wrap; gap: 2px; }
+  .rflow .arrow { font-size: 11px; }
+  .rname { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rmeta { display: flex; gap: 8px; font-size: 10.5px; color: var(--dim); }
+  .rmeta > span { display: inline-flex; align-items: center; gap: 2px; }
+  .tiny { font-size: 10px; }
+  .detail { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border: 1px solid var(--line); }
+  .pm { display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; color: var(--warn); }
+  .pm.good { color: var(--good); }
   .units { display: grid; grid-template-columns: repeat(auto-fill, 52px); gap: 4px; }
   .ub { position: relative; width: 52px; height: 52px; padding: 2px; display: grid; place-items: center; }
   .ub img { width: 44px; height: 44px; object-fit: contain; }

@@ -7,7 +7,7 @@ type In =
   | { type: "snapshot"; wasmUrl: string; tick: number; data: Uint8Array }
   | { type: "tick"; tick: number; orders: number[] }
   | { type: "view"; x0: number; y0: number; x1: number; y1: number; detail: number; player: number }
-  | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "wreckAt"; a: number[] }
+  | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "wreckAt" | "orders" | "planned"; a: number[] }
   | { type: "replay"; speed: number }
   | { type: "pause"; paused: boolean };
 
