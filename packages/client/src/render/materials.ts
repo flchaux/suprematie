@@ -11,6 +11,8 @@ export const TEX_PER_TILE_BUILDING = 0.33;
 export interface TeamMesh {
   mesh: THREE.InstancedMesh;
   team: THREE.InstancedBufferAttribute;
+  /** teinte des pièces « ore » (ressource exploitée), par instance */
+  accent: THREE.InstancedBufferAttribute;
 }
 
 /**
@@ -24,11 +26,15 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   const vcol = attribute("color", "vec3");
   const mask = attribute("mask", "float");
   const isFaction = clamp(mask, float(0), float(1)).mul(float(1).sub(step(float(1.5), mask)));
-  const glow = step(float(1.5), mask);
+  const isOre = step(float(3), mask);
+  const glow = step(float(1.5), mask).mul(float(1).sub(isOre));
+  const accent = new THREE.InstancedBufferAttribute(new Float32Array(max * 3).fill(0.6), 3);
+  accent.setUsage(THREE.DynamicDrawUsage);
+  const acol = instancedBufferAttribute(accent, "vec3");
   const tcol = instancedBufferAttribute(team, "vec3");
   // brouillard : les bâtiments ennemis explorés mais hors de vue restent assombris
   const fog = fogFactor();
-  let base = mix(vcol, tcol, isFaction);
+  let base = mix(mix(vcol, tcol, isFaction), acol, isOre);
   if (texScale > 0) {
     const t = modelTexture(texScale);
     // détail : module la couleur autour de 1 ; une salissure à grande échelle varie d'une unité à l'autre
@@ -47,14 +53,19 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   }
   mat.colorNode = applyFog(base, fog);
   // pièces lumineuses : au-delà de 1 pour nourrir le halo (bloom)
-  mat.emissiveNode = vcol.mul(glow).mul(float(1.6)).mul(fog);
+  mat.emissiveNode = vcol.mul(glow).mul(float(1.6)).add(acol.mul(isOre).mul(float(0.9))).mul(fog);
   const mesh = new THREE.InstancedMesh(geometry, mat, max);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.count = 0;
   mesh.frustumCulled = false;
-  return { mesh, team };
+  return { mesh, team, accent };
+}
+
+export function setAccentColor(tm: TeamMesh, i: number, color: THREE.Color): void {
+  tm.accent.setXYZ(i, color.r, color.g, color.b);
+  tm.accent.needsUpdate = true;
 }
 
 export function setTeamColor(tm: TeamMesh, i: number, color: THREE.Color): void {

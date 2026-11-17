@@ -73,7 +73,7 @@ export const BUILDING_MODELS: Record<string, Model> = {
       ...socle(2),
       ...filets(2),
       // puits : cratère sombre, anneau lumineux
-      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.04, pos: [0,0.26,0.3], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.04, pos: [0,0.26,0.3], color: "ore" },
       { shape: "cylinder", sides: 8, radius: 0.4, height: 0.04, pos: [0,0.28,0.3], color: "dark" },
       // foret (tourne en continu) : cône vers le bas et filets d'hélice
       { shape: "cone", sides: 8, radius: 0.3, height: 0.88, pos: [0,0.74,0.3], rot: [180,0,0], color: "metal", pivot: "foret" },
@@ -85,7 +85,7 @@ export const BUILDING_MODELS: Record<string, Model> = {
       // tour de forage
       { shape: "bevel", size: [0.62,1.8,0.5], pos: [0,1.15,-0.4], color: "dark" },
       { shape: "bevel", size: [0.18,1.1,0.46], pos: [0.38,1.3,-0.38], color: "light", mirror: true },
-      { shape: "box", size: [0.06,0.4,0.03], pos: [0,1.8,-0.14], color: "glow" },
+      { shape: "box", size: [0.3,0.5,0.03], pos: [0,1.8,-0.14], color: "ore" },
       { shape: "bevel", size: [0.68,0.22,0.56], pos: [0,2.12,-0.4], color: "faction" },
       { shape: "cylinder", sides: 8, radius: 0.13, height: 0.3, pos: [0,2.35,-0.45], color: "metal" },
       { shape: "box", size: [0.08,0.05,0.03], pos: [0.2,2.12,-0.11], color: "amber", mirror: true },
@@ -93,10 +93,10 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 8, radius: 0.27, height: 0.8, pos: [-0.66,0.65,-0.1], color: "light" },
       { shape: "cylinder", sides: 8, radius: 0.29, height: 0.14, pos: [-0.66,0.55,-0.1], color: "dark" },
       { shape: "cylinder", sides: 8, radius: 0.2, height: 0.12, pos: [-0.66,1.1,-0.1], color: "faction" },
-      { shape: "sphere", radius: 0.09, pos: [-0.66,1.2,-0.1], color: "amber" },
+      { shape: "sphere", radius: 0.16, pos: [-0.66,1.2,-0.1], color: "ore" },
       // cuve droite : dôme et filet cyan
       { shape: "cylinder", sides: 8, radius: 0.25, height: 0.55, pos: [0.66,0.52,-0.5], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.06, pos: [0.66,0.62,-0.5], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.12, pos: [0.66,0.62,-0.5], color: "ore" },
       { shape: "sphere", radius: 0.25, pos: [0.66,0.8,-0.5], color: "metal" },
       // conduite vers l'avant
       { shape: "box", size: [0.12,0.12,0.8], pos: [0.66,0.36,0.1], color: "dark" },

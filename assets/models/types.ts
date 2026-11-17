@@ -4,7 +4,7 @@
 
 export type Vec3 = [number, number, number];
 
-export type ColorName = "faction" | "metal" | "dark" | "light" | "glow" | "amber" | "hazard" | "glass" | "red" | "black";
+export type ColorName = "faction" | "metal" | "dark" | "light" | "glow" | "amber" | "hazard" | "glass" | "red" | "black" | "ore";
 // glow (cyan) et amber (voyants) sont lumineux : ils nourrissent le halo du rendu.
 
 export interface Part {

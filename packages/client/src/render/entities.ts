@@ -6,7 +6,7 @@ import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, instancedBufferAttribute } from "three/tsl";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
-import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
+import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
@@ -80,6 +80,21 @@ export interface UnitScreen {
   y: number; // hauteur
   z: number;
   visible: boolean;
+}
+
+/** Teinte vive de chaque ressource extraite (plus lisible que la couleur d'objet, souvent terne). */
+const ORE_TINTS: Record<string, number> = { iron_ore: 0x6f9be0, copper_ore: 0xf07a2a, silicon: 0xf2e6b0, hydrocarbon: 0xa050e0, crystal: 0x40f0ff };
+const oreCache = new Map<number, THREE.Color>();
+function oreTint(item: number, data: GameData): THREE.Color | null {
+  if (!item || item === 255) return null;
+  let c = oreCache.get(item);
+  if (!c) {
+    const it = data.items[item];
+    if (!it) return null;
+    c = new THREE.Color(ORE_TINTS[it.key] ?? it.color);
+    oreCache.set(item, c);
+  }
+  return c;
 }
 
 export class Entities {
@@ -421,6 +436,9 @@ export class Entities {
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
+      // extracteur : pièces teintées selon la ressource exploitée
+      const ore = def.cls === BClass.Extractor ? oreTint(buf[o + 5] & 0xff, this.data) : null;
+      if (ore) setAccentColor(km.body!, km.n, ore);
       for (const p of km.pivots) {
         let rot = 0;
         if (def.cls === BClass.Turret) rot = Math.PI / 2 - (buf[o + 5] & 0xffff) * ANG - (Math.PI / 2 - (dir * Math.PI) / 2);
@@ -436,6 +454,7 @@ export class Entities {
         base.multiply(tmpM2);
         p.tm.mesh.setMatrixAt(km.n, base);
         setTeamColor(p.tm, km.n, c);
+        if (ore) setAccentColor(p.tm, km.n, ore);
       }
       km.n++;
       const ref = buf[o] >>> 0;

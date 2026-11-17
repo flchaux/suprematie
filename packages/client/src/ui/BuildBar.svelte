@@ -89,12 +89,13 @@
   .card.locked img { filter: grayscale(1) brightness(0.55); }
   .card:disabled { opacity: 0.62; }
   /* écrans étroits : le panneau rétrécit, les onglets passent à la ligne, la grille perd des colonnes */
-  .build { min-width: 0; flex-shrink: 1; max-width: min(600px, calc(100vw - 545px)); }
+  /* taille fixe : la largeur ne dépend pas de la catégorie, la grille défile au-delà de deux rangées */
+  .build { min-width: 0; flex-shrink: 0; width: min(600px, calc(100vw - 545px)); max-width: none; }
   .tabs { flex-wrap: wrap; }
-  .grid { grid-template-columns: repeat(auto-fill, 106px); }
+  .grid { grid-template-columns: repeat(auto-fill, 106px); height: 182px; overflow-y: auto; align-content: start; padding-right: 2px; scrollbar-width: thin; }
   @media (max-width: 1250px) {
     .grid { grid-template-columns: repeat(auto-fill, 92px); }
-    .card { width: 92px; height: 78px; }
+    .card { width: 92px; height: 78px; } .grid { height: 166px; }
     .card img { width: 48px; height: 48px; }
   }
 </style>

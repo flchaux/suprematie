@@ -18,10 +18,12 @@ export const PALETTE: Record<ColorName, number> = {
   glass: 0x27496b,
   red: 0xc84040,
   black: 0x15181c,
+  /** teinte de la ressource exploitée (extracteur), fixée par instance ; couleur par défaut pour le visualiseur */
+  ore: 0xd08a40,
 };
 
 /** Couche de texture de chaque couleur de pièce (voir render/textures.ts ; 5 = pas de texture). */
-export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5 };
+export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -184,7 +186,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
     col[i * 3] = c.r;
     col[i * 3 + 1] = c.g;
     col[i * 3 + 2] = c.b;
-    mask[i] = isFaction + glow * 2;
+    mask[i] = color === "ore" ? 4 : isFaction + glow * 2;
   }
   ng.setAttribute("color", new THREE.BufferAttribute(col, 3));
   ng.setAttribute("mask", new THREE.BufferAttribute(mask, 1));
