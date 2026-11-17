@@ -334,6 +334,17 @@ pub fn weapons_demo() -> World {
             complete_building(&mut w, b);
         }
     }
+    // un mur continu devant les tourelles, avec un retour en angle
+    for y in y0 + 6..y0 + 56 {
+        if let Some(b) = place_building(&mut w, 1, B_WALL, x0 + 66, y, 0) {
+            complete_building(&mut w, b);
+        }
+    }
+    for x in x0 + 67..x0 + 72 {
+        if let Some(b) = place_building(&mut w, 1, B_WALL, x, y0 + 6, 0) {
+            complete_building(&mut w, b);
+        }
+    }
     // les deux armées marchent l'une vers l'autre en attaquant (attaque en mouvement)
     for s in 0..w.units.alive.len() {
         if !w.units.alive[s] || w.units.kind[s] == U_COMMANDER {

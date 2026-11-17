@@ -657,14 +657,22 @@ export const BUILDING_MODELS: Record<string, Model> = {
   },
   // wall : bloc sombre à toit d'équipe, deux créneaux clairs, filet cyan et voyants (108 triangles)
   wall: {
+    // poteau fin au centre de la case ; le jeu ajoute un pan (wall_seg) vers chaque mur voisin du même camp
     parts: [
-      { shape: "box", size: [1,0.2,1], pos: [0,0.1,0], color: "dark" },
-      { shape: "box", size: [0.94,0.72,0.94], pos: [0,0.56,0], color: "dark" },
-      { shape: "box", size: [0.96,0.14,0.96], pos: [0,0.96,0], color: "faction" },
-      { shape: "box", size: [0.36,0.26,0.8], pos: [0.26,1.15,0], color: "light", mirror: true },
-      { shape: "box", size: [0.52,0.42,0.05], pos: [0,0.52,0.475], color: "light" },
-      { shape: "box", size: [0.7,0.05,0.03], pos: [0,0.82,0.485], color: "glow" },
-      { shape: "box", size: [0.08,0.12,0.03], pos: [0.36,0.52,0.485], color: "amber", mirror: true },
+      { shape: "bevel", size: [0.5,0.12,0.5], pos: [0,0.06,0], color: "dark" },
+      { shape: "bevel", size: [0.36,0.98,0.36], pos: [0,0.55,0], color: "dark" },
+      { shape: "bevel", size: [0.42,0.1,0.42], pos: [0,1.06,0], color: "faction" },
+      { shape: "box", size: [0.03,0.5,0.03], pos: [0.13,0.6,0.185], color: "glow", mirror: true },
+    ],
+  },
+  // wall_seg : pan de mur fin, du centre de la case vers le bord +x (tourné vers chaque voisin)
+  wall_seg: {
+    parts: [
+      { shape: "box", size: [0.5,0.1,0.32], pos: [0.25,0.05,0], color: "dark" },
+      { shape: "box", size: [0.5,0.78,0.2], pos: [0.25,0.48,0], color: "light" },
+      { shape: "box", size: [0.5,0.07,0.24], pos: [0.25,0.9,0], color: "faction" },
+      { shape: "box", size: [0.5,0.04,0.02], pos: [0.25,0.62,0.105], color: "dark" },
+      { shape: "box", size: [0.5,0.04,0.02], pos: [0.25,0.62,-0.105], color: "dark" },
     ],
   },
   // light_turret : socle rond à segments clairs et anneau cyan, tourelle à deux paires de canons (772 triangles)

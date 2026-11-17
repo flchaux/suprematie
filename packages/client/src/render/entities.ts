@@ -82,6 +82,7 @@ const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BCl
 const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
+const tmpQ2 = new THREE.Quaternion();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const tmpC = new THREE.Color();
@@ -118,6 +119,8 @@ export class Entities {
   buildingMeshes: KindMesh[] = [];
   /** virages des tapis par type : [entrée à gauche, entrée à droite] (forme 1 et 2 de la simulation) */
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
+  /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
+  wallSeg: KindMesh | null = null;
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
@@ -200,6 +203,7 @@ export class Entities {
         const d = BUILDING_MODELS[b.key + "_virage_d"];
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
       }
+      if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, buildModel(BUILDING_MODELS.wall_seg), scale, TEX_PER_TILE_BUILDING);
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
     this.itemColors = data.items.map((it) => new THREE.Color(it.color ?? 0xffffff));
@@ -363,6 +367,7 @@ export class Entities {
       g.begin();
       d.begin();
     }
+    this.wallSeg?.begin();
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
@@ -502,6 +507,12 @@ export class Entities {
       }
     }
     // ----- bâtiments -----
+    // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
+    const walls = new Map<number, number>();
+    o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      if (this.data.buildings[buf[o + 1] & 0xff]?.cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
+    }
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = buf[o + 1] & 0xff;
@@ -541,6 +552,23 @@ export class Entities {
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
+      const seg = this.wallSeg;
+      if (def.cls === BClass.Wall && seg) {
+        // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
+        const team = teamOf(owner);
+        const ys = def.water ? this.map.waterLevel * HSCALE : y;
+        for (let d = 0; d < 4; d++) {
+          const nx = bx + [1, 0, -1, 0][d];
+          const nz = bz + [0, 1, 0, -1][d];
+          if (nx < 0 || nz < 0 || walls.get((nx | (nz << 16)) >>> 0) !== team) continue;
+          seg.ensure(seg.n + 1);
+          tmpQ2.setFromAxisAngle(UP, (-d * Math.PI) / 2);
+          tmpM2.compose(tmpV.set(cx, ys, cz), tmpQ2, tmpS.set(seg.scale, sy * (seg.scale / sc), seg.scale));
+          seg.body!.mesh.setMatrixAt(seg.n, tmpM2);
+          setTeamColor(seg.body!, seg.n, c);
+          seg.n++;
+        }
+      }
       // extracteur : pièces teintées selon la ressource exploitée
       const ore = def.cls === BClass.Extractor ? oreTint(buf[o + 5] & 0xff, this.data) : null;
       if (ore) setAccentColor(km.body!, km.n, ore);
@@ -683,6 +711,7 @@ export class Entities {
       g.end();
       d.end();
     }
+    this.wallSeg?.end();
     this.updateHatches(f, strategic, myTeam, spectator);
     this.updateLogos(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
