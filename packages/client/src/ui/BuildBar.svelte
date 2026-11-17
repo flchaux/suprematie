@@ -6,6 +6,7 @@
   import { sprite } from "./sprites.ts";
   import { BUILD_CATS as CATS } from "../game/catalog.ts";
   import { kb, keyOf } from "../game/keys.svelte.ts";
+  import { plans } from "../game/plans.svelte.ts";
 
   // catégorie affichée : partagée avec le menu au clavier (B, puis chiffre, puis chiffre)
   const cat = $derived(kb.buildCat);
@@ -23,6 +24,11 @@
       {#if kb.buildStep === "cat"}<span class="ask">Catégorie ? <span class="key">1–{CATS.length}</span> <span class="key">Échap</span></span>
       {:else if kb.buildStep === "item"}<span class="ask">Bâtiment ? <span class="key">1–{CATS[cat][2].length}</span> <span class="key">Échap</span></span>
       {:else if bKey}<span class="key" title="Menu de construction au clavier : {bKey}, puis le numéro de la catégorie, puis celui du bâtiment">{bKey}</span>{/if}
+    </span>
+    <span class="plan-btns">
+      <button class="tab" class:on={ui.mode === "copy"} onclick={() => client.plans.startCopy()} title="Copier une zone de vos bâtiments (glisser un cadre){keyOf('copyPlan') ? ` : ${keyOf('copyPlan')}` : ''}"><Icon name="copy" size={15} /></button>
+      <button class="tab" class:on={ui.mode === "paste"} disabled={!plans.active} onclick={() => client.plans.startPaste()} title="Coller le plan actif{keyOf('pastePlan') ? ` : ${keyOf('pastePlan')}` : ''}"><Icon name="paste" size={15} /></button>
+      <button class="tab" class:on={plans.show} onclick={() => (plans.show = !plans.show)} title="Bibliothèque de plans{keyOf('planLibrary') ? ` : ${keyOf('planLibrary')}` : ''}"><Icon name="blueprint" size={15} /><span class="num pc">{plans.list.length}</span></button>
     </span>
   </div>
   <div class="grid" class:armed={kb.buildStep === "item"}>
@@ -63,6 +69,8 @@
   .tab:not(.on) .tn { display: none; }
   .tab:hover .tn { display: inline; }
   .hint { margin-left: auto; padding-right: 4px; white-space: nowrap; }
+  .plan-btns { display: inline-flex; gap: 3px; padding-left: 6px; border-left: 1px solid var(--line); }
+  .pc { font-size: 9.5px; color: var(--dim); }
   .ask { color: var(--amber); font-size: 11.5px; letter-spacing: 0.06em; }
   .kn { font-size: 9.5px; color: var(--dim); line-height: 1; }
   .tab.on .kn { color: inherit; opacity: 0.8; }

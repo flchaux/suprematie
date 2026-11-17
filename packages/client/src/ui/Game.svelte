@@ -11,6 +11,8 @@
   import Icon from "./Icon.svelte";
   import EndReport from "./EndReport.svelte";
   import { keyOf } from "../game/keys.svelte.ts";
+  import Plans from "./Plans.svelte";
+  import { plans } from "../game/plans.svelte.ts";
 
   let view: HTMLDivElement;
   let box: HTMLDivElement;
@@ -45,6 +47,8 @@
     link: ["link", "Liaison : cliquez la destination (porte, gare ou héliport, le vôtre ou celui d'un allié)"],
     attackGround: ["ground", "Tir au sol : cliquez la cible"],
     build: ["production", "Construction : clic gauche pour poser (glisser pour une ligne), clic droit pour annuler"],
+    copy: ["copy", "Copie : glissez un cadre sur vos bâtiments terminés, clic droit pour annuler"],
+    paste: ["paste", "Plan : clic gauche pour construire (Maj : garder l'outil), clic droit pour annuler"],
   };
   const MSG_ICON: Record<string, string> = { alert: "alert", good: "check", chat: "chat", info: "flag" };
 </script>
@@ -65,7 +69,7 @@
     </div>
     {#if ui.mode}
       {@const m = MODE_LABEL[ui.mode]}
-      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if ui.mode === "build" && keyOf("rotate")}, {keyOf("rotate")} pour tourner{/if} <span class="key">Échap</span></div>
+      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
     {/if}
     <div class="messages">
       {#each ui.messages.filter((m) => now - m.time < 10000) as m (m.id)}
@@ -103,6 +107,7 @@
     {#if ui.showResearch}<Research />{/if}
     {#if ui.showStats}<Stats />{/if}
     {#if ui.showHelp}<Help />{/if}
+    {#if plans.show}<Plans />{/if}
     {#if ui.gameOver}<EndReport />{/if}
   {/if}
 </div>
@@ -122,6 +127,7 @@
   .corner.br { bottom: 3px; right: 3px; border-width: 0 2px 2px 0; }
   .mode { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); padding: 7px 14px; display: flex; align-items: center; gap: 8px; color: var(--accent); }
   .mode :global(.key) { margin-left: 4px; }
+  .nowrap { white-space: nowrap; }
   .messages { position: absolute; left: 10px; bottom: 252px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; max-width: 480px; }
   .msg {
     display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 9px;

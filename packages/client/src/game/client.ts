@@ -13,6 +13,7 @@ import { sfx, setVolume } from "../audio/sound.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
+import { PlanTool, plans } from "./plans.svelte.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -70,6 +71,8 @@ export class GameClient {
   /** Marque-pages de caméra (F2..F4 ; Maj pour enregistrer). */
   bookmarks: ({ x: number; z: number; distance: number } | null)[] = [null, null, null];
   lastIdleEngineer = 0;
+  /** Outils « Copier » / « Coller » des plans. */
+  plans = new PlanTool(this);
 
   // ---------- réseau ----------
   connect(name: string): void {
@@ -553,6 +556,7 @@ export class GameClient {
     if (selB) {
       void this.query<Record<string, unknown> | null>("building", [selB.ref]).then((r) => (ui.buildingInfo = r));
     } else ui.buildingInfo = null;
+    this.plans.tick();
     if (ui.gameOver === null && f.winner !== -1 && ui.replay) ui.gameOver = { winner: f.winner, replay: "", won: false };
   }
 
@@ -637,6 +641,7 @@ export class GameClient {
       const g = this.groundAt(x, y);
       if (g) this.ghostStart = this.snapBuild(g);
     }
+    if (e.button === 0) this.plans.down();
   }
 
   private onMove(e: PointerEvent): void {
@@ -657,7 +662,8 @@ export class GameClient {
     }
     if (this.mouse.down && Math.hypot(x - this.mouse.startX, y - this.mouse.startY) > 6) this.mouse.dragging = true;
     if (ui.mode === "build") this.updateGhost();
-    if (this.mouse.down && this.mouse.button === 0 && this.mouse.dragging && ui.mode !== "build" && this.selBox) {
+    else this.plans.move();
+    if (this.mouse.down && this.mouse.button === 0 && this.mouse.dragging && ui.mode !== "build" && ui.mode !== "copy" && ui.mode !== "paste" && this.selBox) {
       const b = this.selBox;
       b.style.display = "block";
       b.style.left = Math.min(x, this.mouse.startX) + "px";
@@ -686,6 +692,10 @@ export class GameClient {
     if (e.button === 0) {
       if (ui.mode === "build") {
         this.placeBuildings(e.shiftKey);
+        return;
+      }
+      if (ui.mode === "copy" || ui.mode === "paste") {
+        this.plans.up(e.shiftKey);
         return;
       }
       if (ui.mode) {
@@ -774,7 +784,7 @@ export class GameClient {
     if (e.code === "Escape" && !e.ctrlKey && !e.altKey) {
       if (kb.buildStep) kb.buildStep = "";
       else if (ui.mode) this.cancelMode();
-      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = false;
+      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = plans.show = false;
       else {
         this.selected.clear();
         this.updateUi();
@@ -782,7 +792,7 @@ export class GameClient {
       return;
     }
     const units = ui.me >= 0 && this.selectedUnits().length > 0;
-    const m = keymap.match(e, { units, build: ui.mode === "build", factory: !units && this.myFactory() !== null });
+    const m = keymap.match(e, { units, build: ui.mode === "build" || ui.mode === "paste", factory: !units && this.myFactory() !== null });
     if (!m) return;
     e.preventDefault();
     if (e.repeat && !actionDef(m.id)?.repeat) return;
@@ -829,7 +839,16 @@ export class GameClient {
         if (ui.mode === "build") {
           ui.buildDir = (ui.buildDir + 1) % 4;
           this.updateGhost();
-        }
+        } else if (ui.mode === "paste") this.plans.rotate();
+        break;
+      case "copyPlan":
+        this.plans.startCopy();
+        break;
+      case "pastePlan":
+        this.plans.startPaste();
+        break;
+      case "planLibrary":
+        plans.show = !plans.show;
         break;
       case "selectArmy":
         this.selectAllArmy();
@@ -994,6 +1013,7 @@ export class GameClient {
   }
 
   setMode(mode: string): void {
+    if (ui.mode === "copy" || ui.mode === "paste") this.plans.clear();
     ui.mode = mode;
     if (mode !== "build") this.scene?.hideGhost();
     sfx.click();
@@ -1003,6 +1023,7 @@ export class GameClient {
     ui.buildKind = -1;
     this.ghostStart = null;
     this.scene?.hideGhost();
+    this.plans.clear();
   }
 
   // ---------- sélection ----------
@@ -1278,6 +1299,7 @@ export class GameClient {
 
   // ---------- placement des bâtiments ----------
   startBuild(kind: number): void {
+    if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
     ui.buildKind = kind;
     ui.mode = "build";
     this.ghostStart = null;
