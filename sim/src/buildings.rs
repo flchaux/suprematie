@@ -215,7 +215,8 @@ pub fn rebuild_power(w: &mut World) {
     let np = w.players.len();
     w.nets.clear();
     w.nets.push(Net::default());
-    let mut stamp: Vec<u16> = vec![0; (w.map.w * w.map.h) as usize];
+    let mut pole_net: Vec<u16> = vec![0; w.buildings.len()];
+    let max_supply = BUILDINGS.iter().map(|d| d.supply).max().unwrap_or(0);
     for owner in 0..np as u8 {
         let poles: Vec<usize> = (0..w.buildings.len())
             .filter(|&i| {
@@ -262,21 +263,10 @@ pub fn rebuild_power(w: &mut World) {
             }
             root_net[i] = root_net[r];
         }
-        // tamponner les zones d'alimentation
-        let mut stamped: Vec<usize> = Vec::new();
-        for i in 0..poles.len() {
-            let b = &w.buildings[poles[i]];
-            let (bw, bh) = b.size();
-            let s = b.def().supply;
-            for ty in (b.y - s).max(0)..(b.y + bh + s).min(w.map.h) {
-                for tx in (b.x - s).max(0)..(b.x + bw + s).min(w.map.w) {
-                    let k = (ty * w.map.w + tx) as usize;
-                    if stamp[k] == 0 {
-                        stamp[k] = root_net[i];
-                        stamped.push(k);
-                    }
-                }
-            }
+        // chaque bâtiment électrique rejoint le réseau du premier poteau (indice le plus bas) dont la zone
+        // d'alimentation touche son emprise ; recherche locale par la grille des bâtiments
+        for (i, &pb) in poles.iter().enumerate() {
+            pole_net[pb] = root_net[i];
         }
         for bi in 0..w.buildings.len() {
             let b = &w.buildings[bi];
@@ -289,16 +279,22 @@ pub fn rebuild_power(w: &mut World) {
                 continue;
             }
             let (bw, bh) = b.size();
-            let mut net = 0u16;
-            'outer: for ty in b.y..b.y + bh {
-                for tx in b.x..b.x + bw {
-                    let k = (ty * w.map.w + tx) as usize;
-                    if stamp[k] != 0 {
-                        net = stamp[k];
-                        break 'outer;
-                    }
+            let (bx, by) = (b.x, b.y);
+            let (cx, cy) = b.center();
+            let r = (max_supply + bw.max(bh) + 1) * TILE;
+            let mut best = usize::MAX;
+            w.grid.query_buildings(cx, cy, r, |p| {
+                if p >= best || pole_net[p] == 0 {
+                    return;
                 }
-            }
+                let pb = &w.buildings[p];
+                let (pw, ph) = pb.size();
+                let sp = pb.def().supply;
+                if bx < pb.x + pw + sp && bx + bw > pb.x - sp && by < pb.y + ph + sp && by + bh > pb.y - sp {
+                    best = p;
+                }
+            });
+            let net = if best != usize::MAX { pole_net[best] } else { 0 };
             if b.complete() && def.power_prod > 0 && net != 0 {
                 w.nets[net as usize].prod += def.power_prod;
             }
@@ -307,8 +303,8 @@ pub fn rebuild_power(w: &mut World) {
                 w.buildings[bi].wake = 0;
             }
         }
-        for k in stamped {
-            stamp[k] = 0;
+        for &pb in &poles {
+            pole_net[pb] = 0;
         }
     }
 }

@@ -1,6 +1,7 @@
 // Terrain : maillage lissé tiré de la carte de hauteurs, textures du sol mélangées selon l'altitude et
 // la pente (ground.ts ; repli : couleurs continues et grain procédural), eau animée avec écume,
 // gisements, brouillard de guerre (voir fog.ts).
+import { applyPower } from "./power.ts";
 import * as THREE from "three/webgpu";
 import { attribute, texture, positionWorld, vec2, float, mix, uniform, vec3, mx_noise_float, smoothstep, normalize, transformNormalToView, cameraPosition, dot, max, pow, sin } from "three/tsl";
 import { fogFactor, applyFog, setFogTexture } from "./fog.ts";
@@ -186,7 +187,7 @@ export class Terrain {
     const tint = mix(vec3(0.92, 0.95, 0.85), vec3(1.08, 1.02, 0.94), macro.mul(0.5).add(0.5));
     const grain = float(1).add(mid.mul(0.07)).add(fine.mul(0.045));
     const ground = base.mul(tint).mul(grain);
-    mat.colorNode = applyFog(ground, fog);
+    mat.colorNode = applyPower(applyFog(ground, fog));
     this.plainMat = mat;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
@@ -196,7 +197,7 @@ export class Terrain {
     loadGroundTextures().then((ok) => {
       if (!ok) return;
       const tm = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
-      tm.colorNode = applyFog(groundColor(), fogFactor());
+      tm.colorNode = applyPower(applyFog(groundColor(), fogFactor()));
       this.texturedMat = tm;
       this.setDetail(this.wantDetail);
     });

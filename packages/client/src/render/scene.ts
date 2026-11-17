@@ -14,6 +14,7 @@ import { buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
 import { CommandOverlay } from "./overlay.ts";
+import { PowerCoverage } from "./power.ts";
 
 /** Statistiques du rendu de la dernière image. */
 export interface RenderStats {
@@ -43,6 +44,8 @@ export class GameScene {
   iconDistance = 260;
   backend = "";
   ghost: { mesh: THREE.InstancedMesh; kind: number } | null = null;
+  /** couverture électrique (surimpression pendant la pose d'un bâtiment électrique) */
+  power: PowerCoverage | null = null;
   /** constructions prévues et ordres affichés avec Maj */
   overlay: CommandOverlay | null = null;
   showOrders = false;
@@ -142,6 +145,7 @@ export class GameScene {
     this.decor = new Decorations(map, data);
     this.decor.enabled = this.gfx.decor !== false;
     this.scene.add(this.decor.mesh);
+    this.power = new PowerCoverage(map.w, map.h);
     if (this.overlay) this.scene.remove(this.overlay.group);
     this.overlay = new CommandOverlay(data, map);
     this.scene.add(this.overlay.group);

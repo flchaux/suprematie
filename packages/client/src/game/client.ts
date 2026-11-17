@@ -311,6 +311,28 @@ export class GameClient {
       this.lastUiUpdate = now;
       this.updateUi();
     }
+    // pose d'un bâtiment électrique : zones alimentées en surimpression bleu clair
+    const placing = ui.mode === "build" && ui.buildKind >= 0 ? this.data?.buildings[ui.buildKind] : undefined;
+    if (placing && placing.supply > 0 && sc.power && this.frame) {
+      if (now - this.lastPowerShow > 250) {
+        this.lastPowerShow = now;
+        const f = this.frame;
+        const poles: { x: number; y: number; w: number; h: number; s: number }[] = [];
+        for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+          const kind = f.buf[o + 1] & 0xff;
+          const owner = (f.buf[o + 1] >> 8) & 0xff;
+          const d = this.data!.buildings[kind];
+          if (owner !== ui.me || !d || d.supply <= 0 || f.buf[o + 4] < 65536) continue;
+          const dir = (f.buf[o + 1] >> 16) & 3;
+          poles.push({ x: f.buf[o + 2] & 0xffff, y: (f.buf[o + 2] >>> 16) & 0xffff, w: dir & 1 ? d.h : d.w, h: dir & 1 ? d.w : d.h, s: d.supply });
+        }
+        sc.power.setNetwork(poles);
+        sc.power.show(this.ghostCells.map((c) => ({ x: c.x, y: c.y, w: c.dir & 1 ? placing.h : placing.w, h: c.dir & 1 ? placing.w : placing.h, s: placing.supply })));
+      }
+    } else if (this.lastPowerShow) {
+      this.lastPowerShow = 0;
+      sc.power?.hide();
+    }
     // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
     const shift = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
     sc.showOrders = shift && this.selected.size > 0;
@@ -1430,6 +1452,7 @@ export class GameClient {
   }
   lastPromo = 0;
   lastOrdersQuery = 0;
+  lastPowerShow = 0;
   lastPlannedQuery = 0;
   gifts = new Map<string, number>();
   giftTimer = 0;
