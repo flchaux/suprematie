@@ -1,9 +1,8 @@
 // Scène : moteur Three.js (WebGPU, repli automatique WebGL2), caméra inclinable à zoom continu,
 // lumières et ombres portées, halo lumineux (bloom), terrain, entités, fantôme de placement, sélection à la souris.
 import * as THREE from "three/webgpu";
-import { pass, renderOutput, vec3, vec4, float, dot, mix, screenUV, smoothstep, length } from "three/tsl";
+import { pass } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
-import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { fogEnabled } from "./fog.ts";
 import { loadModelTextures, setTexturesEnabled } from "./textures.ts";
 import { DEFAULT_GFX, type GfxSettings } from "./gfx.ts";
@@ -61,8 +60,7 @@ export class GameScene {
   markers: THREE.InstancedMesh;
   markerList: { x: number; z: number; age: number; color: THREE.Color }[] = [];
   rangeRing: THREE.Mesh;
-  // soleil chaud ; l'ambiance (ciel et environnement réfléchi) est froide : ombres bleutées
-  sun = new THREE.DirectionalLight(0xffe2b8, 2.6);
+  sun = new THREE.DirectionalLight(0xfff1dc, 2.3);
   /** direction vers le soleil (normalisée) */
   sunDir = new THREE.Vector3(-0.55, 0.72, 0.42).normalize();
   post: THREE.RenderPipeline | null = null;
@@ -103,21 +101,14 @@ export class GameScene {
   }
 
   async init(forceWebGL = false): Promise<void> {
-    // anticrénelage en passe finale (FXAA) plutôt que matériel (MSAA) : moins coûteux
-    this.renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL });
-    // courbe de tons « cinéma » : les hautes lumières (tirs, explosions) gardent du détail au lieu de saturer
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL });
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.canvasParent.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
     await this.renderer.init();
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL2";
     this.scene.background = new THREE.Color(0x0b1016);
-    // ambiance : environnement réfléchi (métal) et lumière d'appoint froide, faible
-    this.scene.environment = environmentTexture();
-    this.scene.environmentIntensity = 0.65;
-    this.scene.add(new THREE.HemisphereLight(0xb8cff0, 0x2e2820, 0.45));
+    this.scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3b3426, 1.1));
     // soleil : l'ombre suit la caméra et couvre seulement la zone vue
     const sun = this.sun;
     sun.castShadow = true;
@@ -141,35 +132,15 @@ export class GameScene {
     addEventListener("resize", () => this.resize());
   }
 
-  /**
-   * Chaîne d'image : scène, halo lumineux facultatif (tirs, explosions), courbe de tons et espace de
-   * couleur, étalonnage (contraste, saturation, vignettage léger), puis anticrénelage FXAA.
-   */
+  /** Rendu en deux temps : scène puis halo lumineux sur les parties très claires (tirs, explosions). */
   private buildPost(): void {
-    const make = (withBloom: boolean): THREE.RenderPipeline => {
-      const post = new THREE.RenderPipeline(this.renderer);
-      post.outputColorTransform = false;
-      const scenePass = pass(this.scene, this.camera);
-      const color = scenePass.getTextureNode("output");
-      let hdr = color;
-      if (withBloom) {
-        this.bloomPass = bloom(color, 0.5, 0.35, 0.9);
-        hdr = color.add(this.bloomPass) as typeof color;
-      }
-      const ldr = renderOutput(hdr);
-      // étalonnage : un peu plus de contraste, couleurs légèrement désaturées (rendu « métal »), coins assombris
-      const lum = dot(ldr.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const sat = mix(vec3(lum, lum, lum), ldr.rgb, float(0.86));
-      const con = sat.sub(0.5).mul(1.08).add(0.5);
-      const vig = float(1).sub(smoothstep(0.45, 0.95, length(screenUV.sub(0.5)).mul(1.25)).mul(0.22));
-      post.outputNode = fxaa(vec4(con.mul(vig).clamp(0, 1), float(1)));
-      return post;
-    };
-    this.postNoBloom = make(false);
-    this.post = make(true);
+    const post = new THREE.RenderPipeline(this.renderer);
+    const scenePass = pass(this.scene, this.camera);
+    const color = scenePass.getTextureNode("output");
+    this.bloomPass = bloom(color, 0.55, 0.35, 0.82);
+    post.outputNode = color.add(this.bloomPass);
+    this.post = post;
   }
-  /** chaîne d'image sans halo (réglage graphique) */
-  postNoBloom: THREE.RenderPipeline | null = null;
 
   applySettings(g: GfxSettings): void {
     this.gfx = { ...g };
@@ -572,8 +543,7 @@ export class GameScene {
       });
     }
     this.renderer.info.reset();
-    const post = this.gfx.bloom ? this.post : this.postNoBloom;
-    if (post) post.render();
+    if (this.gfx.bloom && this.post) this.post.render();
     else this.renderer.render(this.scene, this.camera);
     const info = this.renderer.info.render as unknown as { drawCalls?: number; calls?: number; triangles: number };
     this.stats.drawCalls = info.drawCalls ?? info.calls ?? 0;
@@ -582,50 +552,4 @@ export class GameScene {
     this.stats.decor = this.decor?.count ?? 0;
     this.stats.cpuMs = performance.now() - t0;
   }
-}
-
-/**
- * Environnement réfléchi par les matériaux (équirectangulaire, généré une fois) : ciel bleu, horizon
- * clair et chaud, crêtes sombres irrégulières sur l'horizon, sol brun. Le contraste ciel / crêtes donne
- * aux surfaces métalliques des reflets nets, sans aucune géométrie supplémentaire.
- */
-function environmentTexture(): THREE.DataTexture {
-  const W = 256;
-  const H = 128;
-  const data = new Float32Array(W * H * 4);
-  const sky = [0.32, 0.46, 0.72];
-  const zenith = [0.16, 0.26, 0.5];
-  const horizon = [0.82, 0.78, 0.72];
-  const ground = [0.16, 0.14, 0.11];
-  const ridge = [0.1, 0.11, 0.13];
-  const lerp = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i] - v) * t);
-  for (let y = 0; y < H; y++) {
-    // v : 0 en haut (zénith), 0,5 à l'horizon, 1 en bas
-    const v = (y + 0.5) / H;
-    const el = (0.5 - v) * Math.PI; // élévation
-    for (let x = 0; x < W; x++) {
-      const u = x / W;
-      let c: number[];
-      if (el > 0) {
-        const t = Math.pow(1 - el / (Math.PI / 2), 3);
-        c = lerp(lerp(zenith, sky, Math.min(1, (1 - el / (Math.PI / 2)) * 1.6)), horizon, t);
-        // crêtes : silhouette sombre et irrégulière juste au-dessus de l'horizon
-        const crest = 0.05 + 0.05 * Math.abs(Math.sin(u * 23.0) * Math.sin(u * 7.0 + 1.3)) + 0.03 * Math.abs(Math.sin(u * 61.0));
-        if (el < crest) c = ridge;
-      } else {
-        c = lerp(ground, [0.28, 0.25, 0.2], Math.max(0, 1 + el / 0.25));
-      }
-      const i = (y * W + x) * 4;
-      data[i] = c[0];
-      data[i + 1] = c[1];
-      data[i + 2] = c[2];
-      data[i + 3] = 1;
-    }
-  }
-  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
-  tex.mapping = THREE.EquirectangularReflectionMapping;
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-  return tex;
 }
