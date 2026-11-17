@@ -7,8 +7,14 @@ Chaque texture devient une image 512 x 512 WebP (qualité 92) :
 Le raccord des bords : fondu, sur une bande près des bords, avec l'image décalée d'une demi-largeur
 (dont les bords sont ceux du milieu de l'image d'origine, donc continus).
 
+Textures du sol (raw/ground_<clé>.png) : en couleur, 512 x 512 WebP dans assets/ground/, ramenées à
+la couleur moyenne et au contraste fixés dans manifest.mjs (GROUND) pour que les couches se
+raccordent et que le sol reste moins contrasté que les unités.
+
     python3 tools/textures/process.py
 """
+import json
+import subprocess
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
@@ -71,5 +77,35 @@ def process(key: str) -> None:
     print(key, f"moyenne {detail.mean():.3f}", f"{(OUT / f'{key}.webp').stat().st_size // 1024} Ko")
 
 
+def ground_manifest() -> list:
+    """Lit la liste GROUND de manifest.mjs (via node)."""
+    code = "import('./manifest.mjs').then((m) => console.log(JSON.stringify(m.GROUND)))"
+    out = subprocess.run(["node", "--input-type=module", "-e", code], cwd=HERE, capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+def process_ground(g: dict) -> None:
+    src = RAW / f"ground_{g['key']}.png"
+    if not src.exists():
+        print("absente :", src.name)
+        return
+    im = Image.open(src).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+    rgb = np.asarray(im, dtype=np.float32) / 255.0
+    rgb = np.stack([seamless(rgb[..., c]) for c in range(3)], axis=-1)
+    lum = rgb @ np.array([0.3, 0.55, 0.15], dtype=np.float32)
+    # écarts à la moyenne ramenés au contraste visé, puis recentrés sur la couleur visée
+    dev = (rgb - rgb.reshape(-1, 3).mean(axis=0)) * (g["contrast"] / max(1e-3, float(lum.std())))
+    lin = np.array(g["mean"], dtype=np.float32)
+    srgb = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055)
+    out = np.clip(srgb + dev, 0, 1)
+    dst = OUT.parent / "ground" / f"{g['key']}.webp"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray((out * 255 + 0.5).astype(np.uint8), "RGB").save(dst, "WEBP", quality=90, method=6)
+    print("sol", g["key"], f"{dst.stat().st_size // 1024} Ko")
+
+
 for k in KEYS:
-    process(k)
+    if (RAW / f"{k}.png").exists():
+        process(k)
+for g in ground_manifest():
+    process_ground(g)

@@ -14,3 +14,28 @@ export const MATERIALS = [
   { key: "hazard", colors: ["hazard"], desc: "diagonal hazard stripes, alternating light grey and near-black bands of equal width, painted on worn metal with chipped edges." },
   { key: "glass", colors: ["glass"], desc: "dark tinted glass panels separated by a thin metal frame grid, with faint diagonal reflection streaks." },
 ];
+
+/**
+ * Style des textures du sol : en COULEUR (contrairement aux modèles), vues de haut, petits détails
+ * réguliers (une texture couvre environ 8 cases du jeu, une unité fait environ une case).
+ */
+export const GROUND_STYLE =
+  "Seamless tileable ground texture for a top-down real-time strategy game, photographed straight down from about 20 meters, " +
+  "flat orthographic view, perfectly even overcast lighting, no perspective, no horizon, no cast shadows, no vignette, no text, " +
+  "small fine-grained natural detail evenly distributed over the whole image, no single large feature, no paths, no objects, " +
+  "muted natural colors with low contrast, the pattern repeats seamlessly on all four edges.";
+
+/**
+ * Textures du sol, dans l'ordre des couches du shader (render/ground.ts) : les cinq premières se
+ * suivent par altitude (fond marin, sable, herbe, herbe sèche, neige), la roche vient des pentes.
+ * `mean` : couleur moyenne visée (0..1, linéaire : la palette de l'ancien terrain), `contrast` : écart
+ * type visé de la luminance (en sRGB).
+ */
+export const GROUND = [
+  { key: "seabed", mean: [0.36, 0.35, 0.28], contrast: 0.05, desc: "wet muddy lake bottom with small rounded pebbles, silt and a few dark algae patches, olive brown." },
+  { key: "sand", mean: [0.69, 0.63, 0.46], contrast: 0.04, desc: "fine beige beach sand with subtle wind ripples, scattered tiny pebbles and a few small shell fragments." },
+  { key: "grass", mean: [0.27, 0.4, 0.19], contrast: 0.045, desc: "short dense meadow grass seen from above, varied green tones with tiny clover leaves, a few small darker tufts and specks of soil." },
+  { key: "dry", mean: [0.45, 0.42, 0.32], contrast: 0.05, desc: "dry steppe: sparse yellowed dry grass tufts over cracked dusty brown earth with small stones." },
+  { key: "snow", mean: [0.8, 0.81, 0.85], contrast: 0.035, desc: "wind-packed snow with soft drifts, a few tiny ice crystals and very faint blue shading, with rare small grey rocks poking through." },
+  { key: "rock", mean: [0.37, 0.35, 0.33], contrast: 0.06, desc: "rough grey granite rock face with natural cracks, small ledges, lichen specks and gravel, slightly warm grey." },
+];

@@ -75,6 +75,8 @@
     <div class="kicker sub">Graphismes</div>
     <label class="row"><Icon name="eye" /> <span>Ombres portées</span><input type="checkbox" checked={ui.gfx.shadows} onchange={(e) => client.setGfx({ shadows: (e.target as HTMLInputElement).checked })} /></label>
     <label class="row"><Icon name="factory" /> <span>Textures des modèles</span><input type="checkbox" checked={ui.gfx.textures} onchange={(e) => client.setGfx({ textures: (e.target as HTMLInputElement).checked })} /></label>
+    <label class="row" title="Textures du sol mélangées selon l'altitude et la pente"><Icon name="map" /> <span>Détails du sol</span><input type="checkbox" checked={ui.gfx.ground} onchange={(e) => client.setGfx({ ground: (e.target as HTMLInputElement).checked })} /></label>
+    <label class="row" title="Herbes, buissons, arbres, rochers et débris sur le sol"><Icon name="seed" /> <span>Décorations</span><input type="checkbox" checked={ui.gfx.decor} onchange={(e) => client.setGfx({ decor: (e.target as HTMLInputElement).checked })} /></label>
     <label class="row"><Icon name="special" /> <span>Halo lumineux</span><input type="checkbox" checked={ui.gfx.bloom} onchange={(e) => client.setGfx({ bloom: (e.target as HTMLInputElement).checked })} /></label>
     <label class="row"><Icon name="target" /> <span>Effets de combat</span>
       <select value={String(ui.gfx.effects)} onchange={(e) => client.setGfx({ effects: Number((e.target as HTMLSelectElement).value) })}>

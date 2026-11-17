@@ -152,3 +152,31 @@ export const ART = {
       "isolated on a fully transparent background, no text, no letters.",
   },
 };
+
+/** Style des petites décorations du sol (panneaux face à la caméra, vues de trois quarts de haut). */
+export const DECOR_STYLE =
+  "Single small terrain decoration sprite for a futuristic sci-fi real-time strategy game seen from a high camera. " +
+  "Clean stylized 3D render, three-quarter top-down view from about 50 degrees above the horizon, soft even daylight from the upper left, " +
+  "muted natural colors, slightly desaturated, matte, readable simple silhouette, the base of the object touches the bottom of the frame, " +
+  "centered horizontally, isolated on a fully transparent background, no ground plane, no cast shadow, no text, no border.";
+
+/**
+ * Décorations : clé → description. L'ordre est celui des cases de l'atlas (process.py) et du
+ * tableau DECOR_KINDS de packages/client/src/render/decor.ts.
+ */
+export const DECOR = {
+  grass_tuft: "a small tuft of wild green grass blades with two thin seed stems",
+  bush: "a round leafy green shrub bush, dense small leaves",
+  flowers: "a small clump of green leaves with tiny yellow and white wildflowers",
+  conifer: "a small stylized conifer pine tree, dark green layered foliage, short brown trunk",
+  stump: "an old cut tree stump with exposed rings and a few roots, brown wood",
+  dead_tree: "a small dead leafless tree with twisted grey-brown bare branches",
+  dry_shrub: "a dry tumbleweed-like shrub with thin yellow-brown twigs",
+  rocks: "a small cluster of three grey rounded stones of different sizes",
+  boulder: "a single weathered grey granite boulder with a few cracks and a bit of moss",
+  reeds: "a clump of tall green and tan reeds and cattails",
+  metal_debris: "scattered wreckage debris: a bent gunmetal armor plate and twisted metal beams half buried, with one tiny dim cyan light",
+  crystal: "a small cluster of pale cyan translucent crystals growing from a grey rock, faint inner glow",
+  snow_pine: "a small stylized conifer pine tree covered with snow, dark green under white snow",
+  ice_rock: "a small grey rock partly covered with snow and ice",
+};

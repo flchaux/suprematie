@@ -1,8 +1,10 @@
-// Terrain : maillage lissé tiré de la carte de hauteurs, couleurs continues selon l'altitude et la pente,
-// grain procédural, eau animée avec écume, gisements, brouillard de guerre (voir fog.ts).
+// Terrain : maillage lissé tiré de la carte de hauteurs, textures du sol mélangées selon l'altitude et
+// la pente (ground.ts ; repli : couleurs continues et grain procédural), eau animée avec écume,
+// gisements, brouillard de guerre (voir fog.ts).
 import * as THREE from "three/webgpu";
 import { attribute, texture, positionWorld, vec2, float, mix, uniform, vec3, mx_noise_float, smoothstep, normalize, transformNormalToView, cameraPosition, dot, max, pow, sin } from "three/tsl";
 import { fogFactor, applyFog, setFogTexture } from "./fog.ts";
+import { groundColor, loadGroundTextures } from "./ground.ts";
 
 export const HSCALE = 0.08; // hauteur monde par unité de hauteur de la carte
 
@@ -60,6 +62,19 @@ const sstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
+/**
+ * Position dans la chaîne des textures du sol (0 fond marin, 1 sable, 2 herbe, 3 herbe sèche,
+ * 4 neige) selon l'altitude : mêmes seuils que terrainColor.
+ */
+export function groundChain(h: number, water: number): number {
+  const rel = h - water;
+  return Math.min(4, sstep(-3, 0, rel) + sstep(3, 9, rel) + sstep(175, 205, h) + sstep(212, 232, h));
+}
+/** Poids de la roche selon la pente. */
+export function rockWeight(slope: number): number {
+  return sstep(2.5, 8, slope) * 0.85;
+}
+
 /** Couleur continue selon l'altitude (relative à l'eau) et la pente : transitions douces. */
 function terrainColor(h: number, slope: number, water: number, out: THREE.Color): void {
   const rel = h - water;
@@ -85,6 +100,11 @@ export class Terrain {
   heightTex: THREE.DataTexture;
   visW = 0;
   waterTime = uniform(0);
+  /** sol : maillage, matériau texturé (une fois l'atlas chargé) et matériau simple */
+  ground!: THREE.Mesh;
+  private texturedMat: THREE.Material | null = null;
+  private plainMat!: THREE.Material;
+  private wantDetail = true;
 
   constructor(public map: MapData) {
     const { w, h, heights } = map;
@@ -93,6 +113,7 @@ export class Terrain {
     const nz = Math.floor(h / step) + 1;
     const pos = new Float32Array(nx * nz * 3);
     const col = new Float32Array(nx * nz * 3);
+    const gnd = new Float32Array(nx * nz * 2);
     const c = new THREE.Color();
     const hAt = (x: number, z: number) => heights[Math.min(h - 1, Math.max(0, z)) * w + Math.min(w - 1, Math.max(0, x))];
     // hauteur d'un sommet : moyenne des 4 cases qui le touchent
@@ -109,7 +130,10 @@ export class Terrain {
         // pente : différences centrées sur 2 cases, plus douces que la différence brute
         const gx = (hv(x + 2, z) - hv(x - 2, z)) / 4;
         const gz = (hv(x, z + 2) - hv(x, z - 2)) / 4;
-        terrainColor(hc, Math.hypot(gx, gz) * 1.6, map.waterLevel, c);
+        const slope = Math.hypot(gx, gz) * 1.6;
+        terrainColor(hc, slope, map.waterLevel, c);
+        gnd[k * 2] = groundChain(hc, map.waterLevel);
+        gnd[k * 2 + 1] = rockWeight(slope);
         col[k * 3] = c.r;
         col[k * 3 + 1] = c.g;
         col[k * 3 + 2] = c.b;
@@ -134,6 +158,7 @@ export class Terrain {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    geo.setAttribute("ground", new THREE.BufferAttribute(gnd, 2));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals(); // normales lissées : plus de facettes
     // brouillard : texture de visibilité, lissée dans le temps (fogData suit fogTarget)
@@ -162,9 +187,19 @@ export class Terrain {
     const grain = float(1).add(mid.mul(0.07)).add(fine.mul(0.045));
     const ground = base.mul(tint).mul(grain);
     mat.colorNode = applyFog(ground, fog);
+    this.plainMat = mat;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
+    this.ground = mesh;
     this.group.add(mesh);
+    // sol détaillé : textures mélangées (ground.ts), dès que l'atlas est prêt
+    loadGroundTextures().then((ok) => {
+      if (!ok) return;
+      const tm = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
+      tm.colorNode = applyFog(groundColor(), fogFactor());
+      this.texturedMat = tm;
+      this.setDetail(this.wantDetail);
+    });
     // eau
     if (map.waterLevel > 0) this.group.add(this.buildWater(map, fog));
     // bordure sombre autour de la carte
@@ -246,6 +281,12 @@ export class Terrain {
     water.receiveShadow = true;
     water.renderOrder = 1;
     return water;
+  }
+
+  /** Réglage « Détails du sol » : textures mélangées ou couleurs simples. */
+  setDetail(on: boolean): void {
+    this.wantDetail = on;
+    this.ground.material = on && this.texturedMat ? this.texturedMat : this.plainMat;
   }
 
   /** Nouvelle grille de visibilité (bits : 1 vue, 2 radar, 8 explorée) ; le passage est progressif. */
