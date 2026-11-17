@@ -10,6 +10,21 @@ export interface LobbyPlayer {
   team: number;
   connected: boolean;
   host: boolean;
+  /** partie chargée : nom du joueur qui occupait cette place dans la sauvegarde */
+  savedName?: string;
+}
+
+/** Résumé d'une sauvegarde (liste du salon). */
+export interface SaveMeta {
+  id: string;
+  name: string;
+  savedAt: string; // date ISO
+  tick: number;
+  auto: boolean;
+  mapSize: number;
+  water: boolean;
+  seed: number;
+  players: { name: string; bot: boolean; team: number; personality?: string; aix?: number; level?: string }[];
 }
 
 export interface LobbyState {
@@ -19,6 +34,8 @@ export interface LobbyState {
   seed: number;
   running: boolean;
   tick: number;
+  /** sauvegarde chargée dans le salon : la composition et les paramètres en viennent (non modifiables) */
+  save: SaveMeta | null;
 }
 
 export interface GameStart {
@@ -30,7 +47,8 @@ export interface GameStart {
 
 export type ClientMsg =
   | { t: "hello"; name: string; token: string; key: string }
-  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; personality?: string; aix?: number; level?: string }
+  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; personality?: string; aix?: number; level?: string; id?: string }
+  | { t: "save" }
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
   | { t: "chat"; text: string }
@@ -46,6 +64,7 @@ export type ServerMsg =
   | { t: "chat"; from: string; text: string }
   | { t: "desync"; tick: number }
   | { t: "end"; winner: number; replay: string }
+  | { t: "saved"; name: string; by: string; auto: boolean }
   | { t: "pong"; time: number }
   | { t: "error"; message: string };
 

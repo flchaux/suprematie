@@ -4,6 +4,7 @@
   import { PLAYER_COLORS, PLAYER_COLOR_NAMES } from "../models/generator.ts";
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
+  import type { SaveMeta } from "@supreme/shared";
 
   const lobby = $derived(ui.lobby);
   const isHost = $derived(!!lobby && lobby.players.some((p) => p.host && p.slot === ui.slot));
@@ -19,8 +20,38 @@
   let showReplays = $state(false);
   async function loadReplays() {
     showReplays = !showReplays;
+    showSaves = false;
     if (showReplays) replays = await (await fetch("/api/replays")).json();
   }
+  // sauvegardes : une partie chargée fixe la composition et les paramètres
+  let saves = $state<SaveMeta[]>([]);
+  let showSaves = $state(false);
+  async function refreshSaves() {
+    try {
+      saves = await (await fetch("/api/saves")).json();
+    } catch {
+      saves = [];
+    }
+  }
+  function toggleSaves() {
+    showSaves = !showSaves;
+    showReplays = false;
+    if (showSaves) void refreshSaves();
+  }
+  function loadSave(id: string) {
+    client.lobbyAction("loadSave", { id });
+    showSaves = false;
+  }
+  function removeSave(m: SaveMeta) {
+    if (!confirm(`Supprimer la sauvegarde « ${m.name} » ?`)) return;
+    client.lobbyAction("deleteSave", { id: m.id });
+    saves = saves.filter((x) => x.id !== m.id);
+  }
+  const loaded = $derived(lobby?.save ?? null);
+  const editable = $derived(isHost && !!lobby && !lobby.running && !loaded);
+  const missing = $derived(lobby && loaded ? lobby.players.filter((p) => !p.bot && !p.connected).length : 0);
+  const fmtDate = (iso: string) => new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const minutes = (tick: number) => Math.floor(tick / 1200);
   const color = (i: number) => "#" + PLAYER_COLORS[i % 8].toString(16).padStart(6, "0");
   const invite = location.origin + "/" + (new URLSearchParams(location.search).get("k") || localStorage.getItem("supreme.key") ? "?k=" + (new URLSearchParams(location.search).get("k") ?? localStorage.getItem("supreme.key")) : "");
   let copied = $state(false);
@@ -50,6 +81,16 @@
       {#if lobby.running}
         <div class="panel notice"><Icon name="alert" size={15} /> Une partie est en cours (tick <span class="num">{lobby.tick}</span>). Vous la rejoindrez comme spectateur ou reprendrez votre place.</div>
       {/if}
+      {#if loaded && !lobby.running}
+        <div class="panel loaded">
+          <Icon name="save" size={18} />
+          <div class="grow">
+            <b>Reprise de partie</b> · {loaded.name}
+            <div class="dim small">Sauvegardée le {fmtDate(loaded.savedAt)} · minute <span class="num">{minutes(loaded.tick)}</span> · composition, équipes et carte fixées par la sauvegarde</div>
+          </div>
+          {#if isHost}<button class="icon-btn" onclick={() => client.lobbyAction("unloadSave")}><Icon name="close" size={13} /> Annuler le chargement</button>{/if}
+        </div>
+      {/if}
       <div class="cols">
         <section class="panel box">
           <div class="kicker">Forces en présence</div>
@@ -63,10 +104,11 @@
                     <b>{p.name}</b>
                     {#if p.host}<span class="badge">Hôte</span>{/if}
                     {#if p.slot === ui.slot}<span class="badge you">Vous</span>{/if}
-                    {#if !p.connected}<span class="badge off">Déconnecté</span>{/if}
+                    {#if !p.connected && loaded && !lobby.running}<span class="badge free">Place libre</span>{:else if !p.connected}<span class="badge off">Déconnecté</span>{/if}
+                    {#if p.savedName && p.savedName !== p.name && p.connected}<span class="dim small">(place de {p.savedName})</span>{/if}
                   </div>
                   {#if p.bot}
-                    {#if isHost && !lobby.running}
+                    {#if editable}
                       <div class="opts">
                         <select value={p.personality} title="Personnalité de l'IA" onchange={(e) => client.lobbyAction("setBot", { slot: p.slot, personality: (e.target as HTMLSelectElement).value })}>
                           {#each Object.entries(PERS) as [k, v]}<option value={k}>{v}</option>{/each}
@@ -83,21 +125,24 @@
                     {/if}
                   {:else}
                     <div class="dim small">Commandant · {PLAYER_COLOR_NAMES[p.slot % 8]}</div>
+                    {#if loaded && !lobby.running && !p.connected && p.slot !== ui.slot}
+                      <div><button class="icon-btn" onclick={() => client.lobbyAction("claimSlot", { slot: p.slot })}><Icon name="user" size={13} /> Prendre cette place</button></div>
+                    {/if}
                   {/if}
                 </div>
                 <div class="team">
-                  {#if isHost && !lobby.running}
+                  {#if editable}
                     <select value={p.team} title="Équipe" onchange={(e) => client.lobbyAction("setTeam", { slot: p.slot, team: Number((e.target as HTMLSelectElement).value) })}>
                       {#each [0, 1, 2, 3, 4, 5, 6, 7] as t}<option value={t}>Équipe {t + 1}</option>{/each}
                     </select>
                   {:else}<span class="chip"><Icon name="team" size={13} /> Équipe {p.team + 1}</span>{/if}
-                  {#if isHost && p.bot && !lobby.running}
+                  {#if editable && p.bot}
                     <button class="ghost danger icon-btn" title="Retirer" onclick={() => client.lobbyAction("removeSlot", { slot: p.slot })}><Icon name="trash" size={15} /></button>
                   {/if}
                 </div>
               </div>
             {/each}
-            {#if isHost && !lobby.running && lobby.players.length < 8}
+            {#if editable && lobby.players.length < 8}
               <div class="add">
                 <span class="kicker">Ajouter une IA</span>
                 <div class="addrow">
@@ -112,7 +157,7 @@
 
         <aside class="panel box side">
           <div class="kicker">Théâtre d'opérations</div>
-          {#if isHost && !lobby.running}
+          {#if editable}
             <label class="set"><Icon name="map" /> <span>Carte</span>
               <select value={lobby.mapSize} onchange={(e) => client.lobbyAction("setMap", { mapSize: Number((e.target as HTMLSelectElement).value) })}>
                 <option value={512}>10 km · 512 × 512</option>
@@ -127,7 +172,14 @@
             <div class="set ro"><Icon name="water" /> <span>Eau</span><b>{lobby.water ? "Oui" : "Non"}</b></div>
             <div class="set ro"><Icon name="seed" /> <span>Graine</span><b class="num">{lobby.seed}</b></div>
             <div class="grow"></div>
-            {#if !lobby.running}<p class="dim waiting"><span class="dot"></span> En attente du lancement par l'hôte</p>{/if}
+            {#if loaded && !lobby.running && missing > 0}
+              <p class="dim waiting"><span class="dot"></span> En attente de {missing} joueur{missing > 1 ? "s" : ""} de la sauvegarde</p>
+            {:else if !lobby.running && !isHost}
+              <p class="dim waiting"><span class="dot"></span> En attente du lancement par l'hôte</p>
+            {/if}
+            {#if isHost && !lobby.running && loaded}
+              <button class="primary launch" disabled={missing > 0} title={missing > 0 ? "Il faut autant de joueurs que dans la sauvegarde" : ""} onclick={() => client.lobbyAction("start")}><Icon name="play" size={15} /> Reprendre la partie</button>
+            {/if}
           {/if}
         </aside>
       </div>
@@ -135,9 +187,27 @@
       <footer class="foot">
         <button class="icon-btn" onclick={copy}><Icon name={copied ? "check" : "link"} size={15} /> {copied ? "Lien copié" : "Copier le lien d'invitation"}</button>
         <button class="icon-btn" class:on={showReplays} onclick={loadReplays}><Icon name="replay" size={15} /> Replays</button>
+        <button class="icon-btn" class:on={showSaves} onclick={toggleSaves}><Icon name="save" size={15} /> Sauvegardes</button>
         <span class="grow"></span>
         <span class="dim"><Icon name="user" size={13} /> {ui.name}</span>
       </footer>
+      {#if showSaves}
+        <div class="panel saves">
+          {#each saves as m (m.id)}
+            <div class="save" class:cur={loaded?.id === m.id}>
+              <div class="grow">
+                <b>{m.name}</b>
+                <div class="dim small">{fmtDate(m.savedAt)} · minute <span class="num">{minutes(m.tick)}</span> · {m.mapSize === 1024 ? "20 km" : "10 km"}{m.water ? ", eau" : ""} · {m.players.map((p) => p.name).join(", ")} · {m.players.filter((p) => !p.bot).length} joueur{m.players.filter((p) => !p.bot).length > 1 ? "s" : ""}</div>
+              </div>
+              {#if isHost && !lobby.running}
+                <button class="icon-btn" disabled={loaded?.id === m.id} onclick={() => loadSave(m.id)}><Icon name="upload" size={13} /> Charger</button>
+                <button class="ghost danger icon-btn" title="Supprimer" disabled={loaded?.id === m.id} onclick={() => removeSave(m)}><Icon name="trash" size={14} /></button>
+              {/if}
+            </div>
+          {:else}<span class="dim">Aucune sauvegarde. En partie : panneau Statistiques (Tab), bouton Sauvegarder ; une sauvegarde automatique est faite toutes les 5 minutes de jeu.</span>{/each}
+          {#if !isHost && saves.length}<p class="dim small">Seul l'hôte peut charger une sauvegarde.</p>{/if}
+        </div>
+      {/if}
       {#if showReplays}
         <div class="panel replays">
           {#each replays as r}
@@ -188,6 +258,14 @@
   .waiting { display: flex; align-items: center; gap: 8px; margin: 0; }
   .dot { width: 8px; height: 8px; background: var(--amber); box-shadow: 0 0 10px var(--amber); animation: blink 1.2s ease-in-out infinite; }
   .foot { display: flex; gap: 8px; align-items: center; }
+  .loaded { padding: 10px 14px; display: flex; gap: 12px; align-items: center; border-color: var(--amber); color: var(--text); }
+  .loaded :global(.ic) { color: var(--amber); }
+  .badge.free { border-color: var(--amber); color: var(--amber); }
+  .small { font-size: 11.5px; }
+  .saves { padding: 12px; display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow: auto; }
+  .save { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.05); }
+  .save.cur { border-color: var(--amber); }
+  .side .launch:disabled { opacity: 0.45; filter: grayscale(0.8); cursor: not-allowed; box-shadow: none; }
   .replays { padding: 12px; display: flex; flex-wrap: wrap; gap: 6px; max-height: 200px; overflow: auto; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
   @keyframes blink { 50% { opacity: 0.25; } }

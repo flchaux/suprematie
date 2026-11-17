@@ -5,13 +5,15 @@ import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSy
 import { extname, join, normalize } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import type { LobbyState, LobbyPlayer, ClientMsg } from "@supreme/shared";
+import type { LobbyState, LobbyPlayer, ClientMsg, SaveMeta } from "@supreme/shared";
 import { Game, type Peer } from "./game.ts";
+import { listSaves, readSave, readSaveMeta, deleteSave, validSaveId } from "./saves.ts";
 import { PERSONALITIES } from "./bots/index.ts";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
 const DIST = process.env.SUPREME_DIST ?? join(ROOT, "packages/client/dist");
 const DATA = process.env.SUPREME_DATA ?? join(ROOT, "data");
+const SAVES = join(DATA, "saves");
 const PORT = Number(process.env.PORT ?? 3060);
 mkdirSync(DATA, { recursive: true });
 const keyFile = join(DATA, "key.txt");
@@ -68,6 +70,11 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify({ lobby: publicLobby(), game: game?.stats() ?? null }));
     return;
   }
+  if (path === "/api/saves") {
+    res.writeHead(200, { ...headers, "content-type": "application/json" });
+    res.end(JSON.stringify(listSaves(SAVES)));
+    return;
+  }
   if (path === "/api/replays") {
     const dir = join(DATA, "replays");
     const list = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort().reverse() : [];
@@ -105,7 +112,9 @@ interface Client extends Peer {
   token: string;
 }
 const clients = new Set<Client>();
-let lobby: LobbyState = { players: [], mapSize: 512, water: true, seed: (Math.random() * 1e9) | 0, running: false, tick: 0 };
+let lobby: LobbyState = { players: [], mapSize: 512, water: true, seed: (Math.random() * 1e9) | 0, running: false, tick: 0, save: null };
+/** paramètres de carte avant le chargement d'une sauvegarde (rétablis si on l'annule) */
+let preLoad: { mapSize: number; water: boolean; seed: number } | null = null;
 let game: Game | null = null;
 let endTimer: NodeJS.Timeout | null = null;
 const tokens = new Map<string, number>(); // jeton -> emplacement
@@ -140,6 +149,9 @@ function resetLobby(): void {
   game?.stop();
   game = null;
   lobby.running = false;
+  lobby.save = null;
+  preLoad = null;
+  for (const p of lobby.players) delete p.savedName;
   lobby.seed = (Math.random() * 1e9) | 0;
   // retirer les humains déconnectés
   const conn = new Set([...clients].filter((c) => c.connected).map((c) => c.token));
@@ -162,8 +174,102 @@ function resetLobby(): void {
   sendLobby();
 }
 
+// ---------- Sauvegardes dans le salon ----------
+/** Clients humains (avec ou sans place), l'hôte en premier. */
+function humanClients(): Client[] {
+  const host = hostSlot();
+  return [...clients].filter((c) => c.connected).sort((a, b) => (a.slot === host ? -1 : b.slot === host ? 1 : (a.slot < 0 ? 99 : a.slot) - (b.slot < 0 ? 99 : b.slot)));
+}
+
+/** Donne une place à un client : place vide de même nom d'abord, sinon la première place humaine vide. */
+function claimFor(c: Client, wanted = -1): boolean {
+  const taken = new Set([...tokens.values()]);
+  const free = lobby.players.filter((p) => !p.bot && !taken.has(p.slot));
+  const pick = free.find((p) => p.slot === wanted) ?? (wanted >= 0 ? undefined : free.find((p) => p.savedName === c.name) ?? free[0]);
+  if (!pick) return false;
+  if (c.slot >= 0) {
+    // libère l'ancienne place
+    const old = lobby.players[c.slot];
+    if (old?.savedName) old.name = old.savedName;
+  }
+  tokens.set(c.token, pick.slot);
+  c.slot = pick.slot;
+  pick.name = c.name;
+  return true;
+}
+
+/** Charge une sauvegarde dans le salon : composition, équipes et carte viennent de la sauvegarde. */
+function loadSaveInLobby(meta: SaveMeta): void {
+  if (!preLoad) preLoad = { mapSize: lobby.mapSize, water: lobby.water, seed: lobby.seed };
+  const humans = humanClients();
+  lobby.save = meta;
+  lobby.mapSize = meta.mapSize;
+  lobby.water = meta.water;
+  lobby.seed = meta.seed;
+  lobby.players = meta.players.map((p, i) => ({
+    slot: i,
+    name: p.name,
+    bot: p.bot,
+    personality: p.personality,
+    aix: p.aix,
+    level: p.level,
+    team: p.team,
+    connected: p.bot,
+    host: false,
+    ...(p.bot ? {} : { savedName: p.name }),
+  }));
+  tokens.clear();
+  for (const c of humans) c.slot = -1;
+  // les noms identiques d'abord, puis les autres dans l'ordre (l'hôte en tête)
+  for (const c of humans) {
+    const same = lobby.players.find((p) => !p.bot && p.savedName === c.name && ![...tokens.values()].includes(p.slot));
+    if (same) claimFor(c, same.slot);
+  }
+  for (const c of humans) if (c.slot < 0) claimFor(c);
+  // l'hôte qui a chargé la sauvegarde reste hôte
+  const host = humans[0];
+  if (host && host.slot >= 0) lobby.players[host.slot].host = true;
+  hostSlot();
+}
+
+/** Annule le chargement : retour à un salon normal avec les humains présents. */
+function unloadSave(): void {
+  const humans = humanClients();
+  lobby.save = null;
+  if (preLoad) Object.assign(lobby, preLoad);
+  preLoad = null;
+  lobby.players = [];
+  tokens.clear();
+  for (const c of humans) {
+    if (lobby.players.length >= 8) {
+      c.slot = -1;
+      continue;
+    }
+    c.slot = lobby.players.length;
+    lobby.players.push({ slot: c.slot, name: c.name, bot: false, team: c.slot, connected: true, host: false });
+    tokens.set(c.token, c.slot);
+  }
+  hostSlot();
+}
+
+/** Places humaines de la sauvegarde encore libres. */
+function missingHumans(): number {
+  const taken = new Set([...clients].filter((c) => c.connected && c.slot >= 0).map((c) => c.slot));
+  return lobby.players.filter((p) => !p.bot && !taken.has(p.slot)).length;
+}
+
 async function startGame(): Promise<void> {
   if (game || lobby.players.length < 1) return;
+  let save = null;
+  if (lobby.save) {
+    // reprise : toutes les places humaines de la sauvegarde doivent être occupées
+    if (missingHumans() > 0) return;
+    save = readSave(SAVES, lobby.save.id);
+    if (!save) {
+      broadcast({ t: "error", message: "Sauvegarde introuvable ou illisible" });
+      return;
+    }
+  }
   lobby.running = true;
   game = new Game(publicLobby(), {
     broadcast,
@@ -173,11 +279,22 @@ async function startGame(): Promise<void> {
       broadcast({ t: "end", winner, replay: `/replays/${replay}` });
       endTimer = setTimeout(resetLobby, 30000);
     },
+    onSaved: (meta, by) => broadcast({ t: "saved", name: meta.name, by, auto: meta.auto }),
   }, wasmPath, DATA);
   for (const c of clients) c.ackTick = -1;
-  await game.start();
-  for (const c of clients) c.send({ t: "start", start: game.startInfo(c.slot) });
-  log("partie lancée", lobby.players.map((p) => p.name).join(", "), "carte", lobby.mapSize);
+  try {
+    await game.start(save ?? undefined);
+  } catch (e) {
+    log("échec du lancement", e);
+    game = null;
+    lobby.running = false;
+    broadcast({ t: "error", message: String((e as Error).message ?? e) });
+    sendLobby();
+    return;
+  }
+  if (save) for (const c of clients) game.sendSnapshot(c);
+  else for (const c of clients) c.send({ t: "start", start: game.startInfo(c.slot) });
+  log(save ? "partie reprise" : "partie lancée", lobby.players.map((p) => p.name).join(", "), "carte", lobby.mapSize, save ? "tick " + game.tick : "");
   sendLobby();
 }
 
@@ -224,6 +341,10 @@ wss.on("connection", (ws, req) => {
       if (existing !== undefined && lobby.players[existing]) {
         client.slot = existing;
         lobby.players[existing].name = client.name;
+      } else if (!lobby.running && lobby.save) {
+        // sauvegarde chargée : place libre de même nom, sinon première place libre, sinon spectateur
+        client.slot = -1;
+        claimFor(client);
       } else if (!lobby.running && lobby.players.length < 8) {
         lobby.players.push({ slot: lobby.players.length, name: client.name, bot: false, team: lobby.players.length, connected: true, host: false });
         client.slot = lobby.players.length - 1;
@@ -240,8 +361,36 @@ wss.on("connection", (ws, req) => {
     }
     switch (msg.t) {
       case "lobby": {
-        if (lobby.running || client.slot !== hostSlot()) return;
+        if (lobby.running) return;
+        // prendre une place libre d'une sauvegarde chargée : ouvert à tous
+        if (msg.action === "claimSlot") {
+          if (lobby.save && claimFor(client, msg.slot ?? -1)) {
+            hostSlot();
+            sendLobby();
+          }
+          return;
+        }
+        if (client.slot !== hostSlot()) return;
         const s = msg.slot ?? -1;
+        if (msg.action === "loadSave") {
+          const meta = validSaveId(msg.id) ? readSaveMeta(SAVES, msg.id) : null;
+          if (meta) loadSaveInLobby(meta);
+          else client.send({ t: "error", message: "Sauvegarde introuvable" });
+          sendLobby();
+          return;
+        }
+        if (msg.action === "unloadSave") {
+          if (lobby.save) unloadSave();
+          sendLobby();
+          return;
+        }
+        if (msg.action === "deleteSave") {
+          if (validSaveId(msg.id) && msg.id !== lobby.save?.id) deleteSave(SAVES, msg.id);
+          sendLobby();
+          return;
+        }
+        // partie chargée : composition et paramètres fixés par la sauvegarde
+        if (lobby.save && msg.action !== "start") return;
         if (msg.action === "addBot" && lobby.players.length < 8) {
           const n = lobby.players.filter((p) => p.bot).length + 1;
           const pers = PERSONALITIES.includes(msg.personality as (typeof PERSONALITIES)[number]) ? msg.personality! : "adaptive";
@@ -269,6 +418,11 @@ wss.on("connection", (ws, req) => {
       case "cmd":
         if (game && client.slot >= 0 && !game.ended) game.submit(client.slot, msg.tick, msg.cmd);
         return;
+      case "save":
+        if (game && client.slot >= 0 && !game.ended && game.tick > 0) {
+          if (!game.save(client.name, false)) client.send({ t: "error", message: "La sauvegarde a échoué" });
+        }
+        return;
       case "ack":
         if (game) game.ack(client, msg.tick, msg.hash);
         return;
@@ -284,7 +438,14 @@ wss.on("connection", (ws, req) => {
     clearInterval(hb);
     clients.delete(client);
     client.connected = false;
-    if (!lobby.running && client.slot >= 0 && client.token) {
+    if (!lobby.running && client.slot >= 0 && client.token && lobby.save) {
+      // sauvegarde chargée : la place redevient libre (elle garde le nom de la sauvegarde)
+      if (![...clients].some((c) => c.token === client.token)) {
+        tokens.delete(client.token);
+        const p = lobby.players[client.slot];
+        if (p?.savedName) p.name = p.savedName;
+      }
+    } else if (!lobby.running && client.slot >= 0 && client.token) {
       // en lobby : libérer la place
       const still = [...clients].some((c) => c.token === client.token);
       if (!still) {
@@ -303,6 +464,7 @@ wss.on("connection", (ws, req) => {
       setTimeout(() => {
         if (lobby.running && ![...clients].some((c) => c.connected)) {
           log("partie abandonnée (plus personne)");
+          game?.save("", true);
           if (endTimer) clearTimeout(endTimer);
           resetLobby();
         }
@@ -310,5 +472,13 @@ wss.on("connection", (ws, req) => {
     }
   });
 });
+
+// arrêt du service (mise à jour, redémarrage) : la partie en cours est sauvegardée automatiquement
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    if (game && !game.ended && lobby.running) game.save("", true);
+    process.exit(0);
+  });
+}
 
 server.listen(PORT, "127.0.0.1", () => log(`serveur prêt sur le port ${PORT}`));

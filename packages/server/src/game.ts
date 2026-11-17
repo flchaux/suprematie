@@ -1,8 +1,10 @@
-// Partie en cours : relais lockstep, copie de référence de la simulation, bots, hash, replays.
+// Partie en cours : relais lockstep, copie de référence de la simulation, bots, hash, replays,
+// sauvegardes (à la demande et automatiques) et reprise d'une sauvegarde.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { Sim, pack, validCmd, parseBotDump, ORDER_DELAY, HASH_EVERY, simParams } from "@supreme/shared";
-import type { LobbyState, GameStart, GameData, Cmd } from "@supreme/shared";
+import type { LobbyState, GameStart, GameData, Cmd, SaveMeta } from "@supreme/shared";
 import { createBot, type Bot, type MapInfo } from "./bots/index.ts";
+import { writeSave, pruneAutosaves, type SaveData } from "./saves.ts";
 
 export interface Peer {
   slot: number; // -1 = spectateur
@@ -16,11 +18,14 @@ export interface GameHooks {
   broadcast(msg: unknown): void;
   peers(): Peer[];
   onEnd(winner: number, replayFile: string): void;
+  onSaved?(meta: SaveMeta, by: string): void;
   log(...a: unknown[]): void;
 }
 
 const BOT_EVERY = 10;
 const MAX_LEAD = 30; // ticks d'avance maximum sur le client le plus lent (1,5 s)
+const AUTOSAVE_EVERY = 6000; // ticks (5 minutes de jeu)
+const AUTOSAVES_KEPT = 5;
 
 export class Game {
   sim!: Sim;
@@ -43,6 +48,9 @@ export class Game {
   hooks: GameHooks;
   wasmPath: string;
   dataDir: string;
+  /** identifiant de la sauvegarde automatique de cette partie (une seule, remplacée à chaque fois) */
+  autoId = "auto-" + new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  lastSave = 0;
 
   constructor(lobby: LobbyState, hooks: GameHooks, wasmPath: string, dataDir: string) {
     this.lobby = JSON.parse(JSON.stringify(lobby));
@@ -53,9 +61,18 @@ export class Game {
     this.dataDir = dataDir;
   }
 
-  async start(): Promise<GameStart> {
+  /** Démarre la partie ; avec une sauvegarde, reprend exactement où elle s'était arrêtée. */
+  async start(save?: SaveData): Promise<GameStart> {
     this.sim = await Sim.load(readFileSync(this.wasmPath));
-    this.sim.init(this.params);
+    if (save) {
+      this.params = save.params;
+      if (!this.sim.restore(Buffer.from(save.snapshot, "base64"))) throw new Error("sauvegarde incompatible avec cette version de la simulation");
+      this.tick = this.sim.tick();
+      this.replay = save.replay;
+      this.pending = save.pending.filter((p) => validCmd(p.cmd));
+    } else {
+      this.sim.init(this.params);
+    }
     this.data = JSON.parse(this.sim.dataJson());
     const info = this.sim.mapInfo();
     const heights = this.sim.mapHeights();
@@ -66,10 +83,21 @@ export class Game {
     for (let i = 0; i < ns; i++, o += 3) map.spots.push({ kind: info[o], x: info[o + 1], y: info[o + 2] });
     for (const p of this.lobby.players) {
       if (p.bot) {
-        this.bots.push({ slot: p.slot, bot: createBot({ slot: p.slot, personality: p.personality ?? "adaptive", aix: p.aix ?? 100, level: p.level ?? "normal", sim: this.sim, data: this.data, map }), ms: 0 });
+        const bot = createBot({ slot: p.slot, personality: p.personality ?? "adaptive", aix: p.aix ?? 100, level: p.level ?? "normal", sim: this.sim, data: this.data, map });
+        const st = save?.bots.find((b) => b.slot === p.slot);
+        if (st && bot.load) {
+          try {
+            bot.load(Buffer.from(st.state, "base64"));
+          } catch (e) {
+            // état illisible (IA modifiée depuis) : l'IA repart de zéro sur la partie en cours
+            this.hooks.log("état d'IA non repris", p.slot, e);
+          }
+        }
+        this.bots.push({ slot: p.slot, bot, ms: 0 });
       }
     }
-    this.startedAt = Date.now();
+    this.lastSave = this.tick;
+    this.startedAt = Date.now() - this.tick * 50;
     this.timer = setInterval(() => this.loop(), 10);
     return this.startInfo(-1);
   }
@@ -173,6 +201,7 @@ export class Game {
       this.hashes.delete(t - HASH_EVERY * 50);
     }
     this.tick = t + 1;
+    if (this.tick - this.lastSave >= AUTOSAVE_EVERY) this.save("", true);
     if (t % 20 === 0) {
       const winner = this.sim.winner();
       if (winner !== -1) this.finish(winner);
@@ -189,6 +218,40 @@ export class Game {
     writeFileSync(`${dir}/${name}`, JSON.stringify(this.replayData()));
     this.hooks.log("fin de partie, équipe gagnante", winner, "replay", name);
     this.hooks.onEnd(winner, name);
+  }
+
+  /** Sauvegarde l'état courant (entre deux ticks). Renvoie le résumé, ou null en cas d'échec. */
+  save(by: string, auto: boolean): SaveMeta | null {
+    if (this.ended && !auto) return null;
+    try {
+      const now = new Date();
+      const min = Math.floor(this.tick / 1200);
+      const humans = this.lobby.players.filter((p) => !p.bot).map((p) => p.name);
+      const id = auto ? this.autoId : "s-" + now.toISOString().replace(/[^0-9]/g, "").slice(0, 17);
+      const meta: SaveMeta = {
+        id,
+        name: `${auto ? "Automatique" : "Sauvegarde"} · ${humans.join(", ") || "IA seules"} · ${min} min`,
+        savedAt: now.toISOString(),
+        tick: this.tick,
+        auto,
+        mapSize: this.lobby.mapSize,
+        water: this.lobby.water,
+        seed: this.lobby.seed,
+        players: this.lobby.players.map((p) => ({ name: p.name, bot: p.bot, team: p.team, personality: p.personality, aix: p.aix, level: p.level })),
+      };
+      const bots = this.bots.filter((b) => b.bot.save).map((b) => ({ slot: b.slot, state: Buffer.from(b.bot.save!()).toString("base64") }));
+      const data: SaveData = { version: 1, meta, params: this.params, snapshot: Buffer.from(this.sim.snapshot()).toString("base64"), bots, pending: this.pending, replay: this.replay };
+      const dir = this.dataDir + "/saves";
+      writeSave(dir, data);
+      if (auto) pruneAutosaves(dir, AUTOSAVES_KEPT);
+      this.lastSave = this.tick;
+      this.hooks.log(auto ? "sauvegarde automatique" : "sauvegarde", id, "tick", this.tick, by);
+      this.hooks.onSaved?.(meta, by);
+      return meta;
+    } catch (e) {
+      this.hooks.log("échec de la sauvegarde", e);
+      return null;
+    }
   }
 
   replayData(): unknown {

@@ -104,11 +104,11 @@
     "winner": -1
   },
   "size=1024 players=8 seed=20261116 water=1 minutes=10 aix=100 pers=adaptive+rush+turtle+tech": {
-    "simMean": 0.28748192341666323,
-    "simP99": 0.9041280000000143,
-    "botPerThink": 1.0349024299999985,
+    "simMean": 0.30163457433333196,
+    "simP99": 1.0659529999998085,
+    "botPerThink": 1.133611124166667,
     "ticks": 12000,
-    "date": "2026-11-17T06:47:36.963Z",
+    "date": "2026-11-17T07:15:13.621Z",
     "winner": -1
   }
 }

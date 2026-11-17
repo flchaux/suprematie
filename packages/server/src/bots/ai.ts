@@ -11,6 +11,7 @@
 // un dépôt ; les extracteurs y versent le minerai, les bâtiments de part et d'autre prennent ce dont
 // ils ont besoin et y reposent leurs produits ; le reste alimente le stock commun des ingénieurs.
 import type { Bot, BotContext } from "./types.ts";
+import { serialize, deserialize } from "node:v8";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
 import { build, move, target, O, factoryQueue, rally, setRecipe, research, hasTech, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
 import { Ids, indexView, TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
@@ -214,6 +215,29 @@ export class SkirmishAI implements Bot {
     this.enemyDir = [ex / n, ey / n];
     this.debug = typeof process !== "undefined" && process.env?.BOTDEBUG === String(ctx.slot);
   }
+
+  // ---------- Sauvegarde de partie ----------
+  // L'état interne (modules, chantiers, pelotons…) est cloné d'un bloc par v8.serialize, qui garde les
+  // références partagées (un module est à la fois dans le planificateur, les chantiers et les usines).
+  // Le contexte (simulation, données) et les tampons de travail sont recréés par le constructeur.
+  static readonly SKIP_AI = new Set(["ctx", "ids", "persona", "planner", "army", "view", "ix", "me", "intel", "board", "savedBoard", "unitMap", "debug", "prof"]);
+  static readonly SKIP_PLANNER = new Set(["sim", "ids", "heap", "gcost", "from", "stamp", "stampN"]);
+
+  save(): Uint8Array {
+    const pick = (o: object, skip: Set<string>) => Object.fromEntries(Object.entries(o).filter(([k, v]) => !skip.has(k) && typeof v !== "function"));
+    return serialize({ version: 1, ai: pick(this, SkirmishAI.SKIP_AI), planner: pick(this.planner, SkirmishAI.SKIP_PLANNER), army: pick(this.army, new Set()), board: this.board ?? null });
+  }
+
+  load(state: Uint8Array): void {
+    const s = deserialize(state) as { version: number; ai: object; planner: object; army: object; board: TeamBoard | null };
+    if (s.version !== 1) throw new Error("état d'IA de version inconnue");
+    Object.assign(this, s.ai);
+    Object.assign(this.planner, s.planner);
+    Object.assign(this.army, s.army);
+    this.savedBoard = s.board;
+  }
+  /** tableau d'équipe sauvegardé, repris à la première décision (le premier allié rechargé le rétablit) */
+  savedBoard: TeamBoard | null = null;
 
   log(...a: unknown[]): void {
     if (this.debug) console.log(`[J${this.ctx.slot} t${this.tick}]`, ...a);
@@ -487,6 +511,10 @@ export class SkirmishAI implements Bot {
     if (this.planner.modules.length === 0) this.setupBase();
     this.intel = intelOf(view, this.ctx.data, this.ctx.map.w, this.ctx.map.h);
     this.board = teamBoard(this.ctx.sim, this.me.team);
+    if (this.savedBoard) {
+      if (this.board.targetSince === -1e9 && this.board.distress.length === 0) Object.assign(this.board, this.savedBoard);
+      this.savedBoard = null;
+    }
     this.enemyIds = [];
     this.friendIds = [];
     for (let i = 0; i < view.players.length; i++) {

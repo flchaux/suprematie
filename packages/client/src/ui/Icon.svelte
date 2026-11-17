@@ -41,6 +41,8 @@
     map: '<path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/>',
     water: '<path d="M12 3c3.5 4.5 6 7.7 6 11a6 6 0 0 1-12 0c0-3.3 2.5-6.5 6-11z"/>',
     seed: '<path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="8"/>',
+    save: '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/>',
+    upload: '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/>',
     replay: '<path d="M4 4v6h6"/><path d="M5 14a8 8 0 1 0 2-8.4L4 10"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',

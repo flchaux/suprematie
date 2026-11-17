@@ -62,7 +62,10 @@
           {/each}
         </tbody>
       </table>
-      {#if ui.me >= 0}<p class="surr"><button class="icon-btn danger" onclick={() => confirm("Abandonner la partie ?") && client.surrender()}><Icon name="flag" size={14} /> Abandonner</button></p>{/if}
+      {#if ui.me >= 0}<p class="surr">
+        <button class="icon-btn" title="Sauvegarde la partie sur le serveur ; l'hôte pourra la recharger depuis le salon" onclick={() => client.saveGame()}><Icon name="save" size={14} /> Sauvegarder</button>
+        <button class="icon-btn danger" onclick={() => confirm("Abandonner la partie ?") && client.surrender()}><Icon name="flag" size={14} /> Abandonner</button>
+      </p>{/if}
     </section>
   </div>
 </div>
@@ -78,6 +81,6 @@
   td:first-child { display: flex; align-items: center; gap: 6px; }
   .pc { display: inline-block; width: 9px; height: 9px; margin-right: 8px; transform: rotate(45deg); }
   tr.out td { color: var(--faint); }
-  .surr { margin-top: 14px; }
+  .surr { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
   @media (max-width: 1000px) { .two { grid-template-columns: 1fr; } }
 </style>

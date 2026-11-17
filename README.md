@@ -14,6 +14,12 @@ rapports de force qui orientent la production et la recherche, objectifs choisis
 pelotons qui se regroupent, jugent le combat et se replient (`army.ts`), chasseurs d'interception, frappes
 aériennes sur l'économie, appels à l'aide et cible commune entre IA alliées.
 
+Sauvegardes : en partie, panneau Statistiques (Tab) → Sauvegarder (n'importe quel joueur) ; sauvegarde automatique
+toutes les 5 minutes de jeu, à l'abandon et à l'arrêt du serveur (5 dernières gardées). Dans le salon, l'hôte charge
+une sauvegarde (bouton Sauvegardes) : composition, équipes et carte sont figées, chaque joueur retrouve sa place
+(même pseudo) ou prend une place libre, et la partie ne reprend qu'avec autant de joueurs que dans la sauvegarde.
+Fichiers : `data/saves/`.
+
 - `?demo` : partie de référence synthétique (8 armées, 8 000 unités) jouée localement, pour tester le rendu.
 - `?demo=eau` : carte avec de l'eau, sans les armées (aperçu du terrain).
 - `?webgl` : force le moteur WebGL2 au lieu de WebGPU.
@@ -42,6 +48,7 @@ Les icônes d'objets, de bâtiments et d'unités et les illustrations sont gén�
 | `npm run viewer:capture` | Capture du visualiseur de modèles (`tools/viewer`) |
 | `node tools/sync-test.mjs 10000` | Deux onglets Chrome reliés par le relais, ordres aléatoires (serveur de test : `tools/testserver.sh`) |
 | `node tools/e2e-reconnect.mjs` | Reconnexion, abandon, fin de partie et replay |
+| `node tools/e2e-save.mjs` | Sauvegarde en partie, redémarrage du serveur, chargement dans le salon, reprise synchronisée |
 
 Rust est installé par apt (`/usr/lib/rust-1.97/bin`). L'interface WebAssembly est faite d'exports bruts
 (`init`, `step`, `render_buffer`, `snapshot`, `restore`…) enveloppés par `packages/shared/src/sim.ts`.

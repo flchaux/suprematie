@@ -139,6 +139,9 @@ export class GameClient {
         ui.gameOver = { winner: m.winner, replay: m.replay, won };
         break;
       }
+      case "saved":
+        pushMessage(m.auto ? `Sauvegarde automatique : ${m.name}` : `Partie sauvegardée par ${m.by} : ${m.name}`, "good");
+        break;
       case "pong":
         ui.ping = Math.round(performance.now() - m.time);
         break;
@@ -338,7 +341,7 @@ export class GameClient {
       const cz = Math.min(vw - 1, Math.max(0, (z / 4) | 0));
       return (vis[cz * vw + cx] & 1) !== 0;
     };
-    const fx = sc.entities.effects;
+    const fx = sc.entities?.effects; // absent en mode sans rendu
     for (let i = 0, o = f.eventOff; i < f.nEvents; i++, o += 5) {
       const [type, a, c, d, e] = [b[o], b[o + 1], b[o + 2], b[o + 3], b[o + 4]];
       switch (type) {
@@ -346,7 +349,7 @@ export class GameClient {
           const x = a / TILE;
           const z = c / TILE;
           if (seen(x, z) || e === 3) {
-            sc.entities.addExplosion(x, z, d / TILE, e);
+            sc.entities?.addExplosion(x, z, d / TILE, e);
             sfx.explosion(e + d / 2048, near(x, z));
           }
           break;
@@ -356,8 +359,8 @@ export class GameClient {
           const y0 = groundHeight(this.map!, x0, z0) + 1.2;
           const y1 = groundHeight(this.map!, x1, z1) + 0.5;
           if (!seen(x0, z0) && !seen(x1, z1)) break;
-          sc.entities.addBeam(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1), 0xff4040, 0.12);
-          fx.sparks(x1, y1, z1, [4, 0.8, 0.6], 4);
+          sc.entities?.addBeam(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1), 0xff4040, 0.12);
+          fx?.sparks(x1, y1, z1, [4, 0.8, 0.6], 4);
           sfx.laser(near(x0, z0));
           break;
         }
@@ -390,7 +393,7 @@ export class GameClient {
           const owner = e;
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.units[d];
-            if (def && def.layer !== Layer.Sub) fx.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(PLAYER_COLORS[owner % 8]), false);
+            if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(PLAYER_COLORS[owner % 8]), false);
           }
           if (owner === ui.me && performance.now() - this.lastAttackAlert > 15000) {
             this.lastAttackAlert = performance.now();
@@ -406,20 +409,20 @@ export class GameClient {
         case EV.BUILDING_DIED:
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.buildings[d];
-            if (def && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) fx.wreckage(a / TILE, c / TILE, Math.max(def.w, def.h), new THREE.Color(PLAYER_COLORS[e % 8]), true);
+            if (def && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) fx?.wreckage(a / TILE, c / TILE, Math.max(def.w, def.h), new THREE.Color(PLAYER_COLORS[e % 8]), true);
           }
           break;
         case EV.TELEPORT:
           sfx.teleport(Math.max(near(a / TILE, c / TILE), near(d / TILE, e / TILE)));
-          if (seen(a / TILE, c / TILE)) fx.warp(a / TILE, c / TILE);
-          if (seen(d / TILE, e / TILE)) fx.warp(d / TILE, e / TILE);
+          if (seen(a / TILE, c / TILE)) fx?.warp(a / TILE, c / TILE);
+          if (seen(d / TILE, e / TILE)) fx?.warp(d / TILE, e / TILE);
           break;
         case EV.INTERCEPT:
-          sc.entities.addBeam(new THREE.Vector3(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 2, c / TILE), new THREE.Vector3(d / TILE, 40, e / TILE), 0x80ffff, 0.6);
+          sc.entities?.addBeam(new THREE.Vector3(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 2, c / TILE), new THREE.Vector3(d / TILE, 40, e / TILE), 0x80ffff, 0.6);
           pushMessage("Missile intercepté", "good");
           break;
         case EV.SHIELD_HIT:
-          if (Math.random() < 0.4 && seen(a / TILE, c / TILE)) fx.sparks(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 1, c / TILE, [1.2, 2.6, 4], 3);
+          if (Math.random() < 0.4 && seen(a / TILE, c / TILE)) fx?.sparks(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 1, c / TILE, [1.2, 2.6, 4], 3);
           break;
       }
     }
@@ -1175,6 +1178,12 @@ export class GameClient {
   cancelBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
   }
+  /** Sauvegarde de la partie sur le serveur (reprise ensuite depuis le salon). */
+  saveGame(): void {
+    if (ui.replay || ui.spectator) return;
+    this.send({ t: "save" });
+  }
+
   surrender(): void {
     this.cmd(Ord.surrender());
   }

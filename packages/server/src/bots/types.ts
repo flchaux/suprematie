@@ -24,4 +24,8 @@ export interface BotContext {
 export interface Bot {
   /** Appelé tous les 10 ticks. Renvoie les ordres à envoyer. */
   think(view: BotView): Cmd[];
+  /** État interne sérialisé (sauvegarde de partie). */
+  save?(): Uint8Array;
+  /** Reprend un état sauvegardé (bot fraîchement créé avec le même contexte). */
+  load?(state: Uint8Array): void;
 }
