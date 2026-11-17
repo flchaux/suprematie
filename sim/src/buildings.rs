@@ -459,15 +459,58 @@ pub fn takers_of(w: &World, sb: usize) -> Vec<usize> {
     v
 }
 
-/// Sorties d'un bâtiment : les bras qui s'y servent et les tapis qui en partent (trappes), par indice
-/// croissant. Elles reçoivent ses produits à tour de rôle, selon leur part (voir `next_outlet`).
+/// Sorties d'un bâtiment : les bras qui s'y servent et, pour un bâtiment de fabrication, les tapis qui
+/// partent de ses faces (trappes), par indice croissant ; un seul parcours du pourtour. Elles reçoivent
+/// ses produits à tour de rôle, selon leur part (voir `next_outlet`).
 pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
-    let mut v = takers_of(w, sb);
-    if w.buildings[sb].def().class == BClass::Crafter {
-        v.extend(out_belts(w, sb));
-        v.sort_unstable();
-        v.dedup();
+    let bb = &w.buildings[sb];
+    let (bw, bh) = bb.size();
+    let belts_too = bb.def().class == BClass::Crafter;
+    let inside = |x: i32, y: i32| x >= bb.x && x < bb.x + bw && y >= bb.y && y < bb.y + bh;
+    let mut v = Vec::new();
+    for ty in bb.y - 1..=bb.y + bh {
+        for tx in bb.x - 1..=bb.x + bw {
+            if inside(tx, ty) || !w.map.inside(tx, ty) {
+                continue;
+            }
+            let o = w.map.occ[w.map.idx(tx, ty)];
+            if o == 0 {
+                continue;
+            }
+            let c = (o - 1) as usize;
+            let cb = &w.buildings[c];
+            if !cb.alive || !cb.complete() {
+                continue;
+            }
+            match cb.def().class {
+                BClass::Inserter => {
+                    let (dx, dy) = DIRS[cb.dir as usize];
+                    if inside(cb.x - dx, cb.y - dy) {
+                        v.push(c);
+                    }
+                }
+                BClass::Belt if belts_too => {
+                    // tapis contre une face (pas un coin), tourné vers l'extérieur
+                    let face = if tx == bb.x - 1 && ty >= bb.y && ty < bb.y + bh {
+                        2
+                    } else if tx == bb.x + bw && ty >= bb.y && ty < bb.y + bh {
+                        0
+                    } else if ty == bb.y - 1 && tx >= bb.x && tx < bb.x + bw {
+                        3
+                    } else if ty == bb.y + bh && tx >= bb.x && tx < bb.x + bw {
+                        1
+                    } else {
+                        255
+                    };
+                    if cb.dir == face {
+                        v.push(c);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
+    v.sort_unstable();
     v
 }
 
@@ -526,13 +569,12 @@ fn outlet_ready(w: &World, c: usize, it: u8) -> bool {
  * son compteur avance de STRIDE / poids. Une sortie restée inactive repart du temps virtuel de la
  * source (pas de crédit accumulé). Renvoie la sortie choisie et son pas (0 : sortie unique).
  */
-fn next_outlet(w: &World, sb: usize, me: Option<usize>) -> Option<(usize, u64)> {
-    let outs = outlets_of(w, sb);
+fn next_outlet(w: &World, sb: usize, outs: &[usize], me: Option<usize>) -> Option<(usize, u64)> {
     let it = output_of(&w.buildings[sb]);
     if outs.len() <= 1 {
         return outs.first().filter(|&&c| Some(c) == me || outlet_ready(w, c, it)).map(|&c| (c, 0));
     }
-    let weights = share_weights(w, &outs);
+    let weights = share_weights(w, outs);
     let v = w.buildings[sb].vpass;
     let mut best: Option<(usize, u64, u64)> = None;
     for (i, &c) in outs.iter().enumerate() {
@@ -563,7 +605,11 @@ fn advance_outlet(w: &mut World, sb: usize, c: usize, stride: u64) {
  * réveillé la sortie prioritaire (un autre bras, ou la source elle-même si c'est un de ses tapis).
  */
 fn share_turn(w: &mut World, me: usize, sb: usize) -> Option<u64> {
-    match next_outlet(w, sb, Some(me)) {
+    let outs = outlets_of(w, sb);
+    if outs.len() <= 1 {
+        return Some(0);
+    }
+    match next_outlet(w, sb, &outs, Some(me)) {
         Some((c, st)) if c == me => Some(st),
         Some((c, _)) => {
             let target = if w.buildings[c].def().class == BClass::Belt { sb } else { c };
@@ -934,10 +980,12 @@ pub fn out_belts(w: &World, b: usize) -> Vec<usize> {
 /// Renvoie vrai si le bâtiment a au moins un tapis de sortie.
 fn push_out_belts(w: &mut World, b: usize) -> bool {
     let it = output_of(&w.buildings[b]);
+    // test rapide d'abord (faces seulement) : la plupart des bâtiments n'ont pas de tapis de sortie
     if it == 0 || out_belts(w, b).is_empty() {
         return false;
     }
-    match next_outlet(w, b, None) {
+    let outs = outlets_of(w, b);
+    match next_outlet(w, b, &outs, None) {
         Some((c, st)) if w.buildings[c].def().class == BClass::Belt => {
             if belts::put_on_belt(w, c, it) {
                 advance_outlet(w, b, c, st);
