@@ -106,7 +106,8 @@ export const PERSONAS: Record<string, Persona> = {
     engineers: 4,
     maxEngineers: 8,
     turrets: 10,
-    firstAttack: 40,
+    // 34 (et non 40) : avec la visée anticipée, les escarmouches coûtent plus d'unités
+    firstAttack: 34,
     airAttack: 10,
     attackGrow: 10,
     maxAttack: 90,
