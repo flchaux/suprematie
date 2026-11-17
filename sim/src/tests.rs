@@ -324,3 +324,30 @@ fn arms_share_output_of_same_source() {
     let f = n[0] as f64 / total as f64;
     assert!((f - 0.8).abs() < 0.05, "part réglée non respectée : {:?} ({:.2})", n, f);
 }
+
+/// Trappes : sans aucun bras, un tapis qui entre dans une fonderie la livre, et un tapis qui en
+/// part reçoit ses plaques jusqu'au dépôt.
+#[test]
+fn belts_feed_and_drain_buildings_without_arms() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    spot(&mut w, IRON_ORE, 94, 100);
+    put(&mut w, B_EXTRACTOR, 94, 100, 0); // sortie vers l'est, sur le tapis
+    for x in 96..100 {
+        put(&mut w, B_BELT1, x, 100, 0); // tapis entrant dans la fonderie
+    }
+    let f = put(&mut w, B_FURNACE, 100, 100, 0);
+    for x in 102..106 {
+        put(&mut w, B_BELT1, x, 100, 0); // tapis qui part de la face est de la fonderie
+    }
+    put(&mut w, B_DEPOT, 106, 100, 0);
+    put(&mut w, B_GENERATOR, 100, 104, 0);
+    assert_eq!(crate::buildings::out_belts(&w, f).len(), 1);
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    for _ in 0..4000 {
+        w.step(&[]);
+    }
+    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    assert!(got >= 10, "plaques arrivées au dépôt : {}", got);
+}

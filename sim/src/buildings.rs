@@ -771,7 +771,75 @@ fn tick_extractor(w: &mut World, b: usize) {
     }
 }
 
+/// Tapis qui partent d'une face du bâtiment `b` (case voisine d'un bord, tapis tourné vers l'extérieur) :
+/// les « trappes de sortie ». Par ordre de case (déterministe).
+pub fn out_belts(w: &World, b: usize) -> Vec<usize> {
+    let bb = &w.buildings[b];
+    let (bw, bh) = bb.size();
+    let mut v = Vec::new();
+    // (case voisine, direction vers l'extérieur) pour chaque case de bord
+    let mut probe = |x: i32, y: i32, d: u8| {
+        if !w.map.inside(x, y) {
+            return;
+        }
+        let o = w.map.occ[w.map.idx(x, y)];
+        if o == 0 {
+            return;
+        }
+        let t = (o - 1) as usize;
+        let tb = &w.buildings[t];
+        if tb.alive && tb.complete() && tb.def().class == BClass::Belt && tb.dir == d {
+            v.push(t);
+        }
+    };
+    for x in bb.x..bb.x + bw {
+        probe(x, bb.y - 1, 3);
+        probe(x, bb.y + bh, 1);
+    }
+    for y in bb.y..bb.y + bh {
+        probe(bb.x - 1, y, 2);
+        probe(bb.x + bw, y, 0);
+    }
+    v
+}
+
+/// Pose un produit du bâtiment sur l'un de ses tapis de sortie (à tour de rôle). Renvoie vrai si le
+/// bâtiment a au moins un tapis de sortie.
+fn push_out_belts(w: &mut World, b: usize) -> bool {
+    let it = output_of(&w.buildings[b]);
+    if it == 0 {
+        return false;
+    }
+    let belts = out_belts(w, b);
+    let n = belts.len();
+    if n == 0 {
+        return false;
+    }
+    let start = w.tick as usize % n;
+    for k in 0..n {
+        if belts::put_on_belt(w, belts[(start + k) % n], it) {
+            w.buildings[b].out -= 1;
+            wake_watchers(w, b);
+            break;
+        }
+    }
+    true
+}
+
 fn tick_crafter(w: &mut World, b: usize) {
+    // trappes de sortie : un tapis qui part du bâtiment reçoit ses produits sans bras
+    let outlets = w.buildings[b].out > 0 && push_out_belts(w, b);
+    tick_crafter_work(w, b);
+    if outlets && w.buildings[b].out > 0 {
+        // produits en attente : revenir bientôt les poser (le tapis avance)
+        let soon = w.tick + 2;
+        if w.buildings[b].wake > soon {
+            w.buildings[b].wake = soon;
+        }
+    }
+}
+
+fn tick_crafter_work(w: &mut World, b: usize) {
     let r = w.buildings[b].recipe;
     if r == RECIPE_NONE {
         w.buildings[b].working = false;

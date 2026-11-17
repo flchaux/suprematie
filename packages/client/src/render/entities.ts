@@ -73,6 +73,9 @@ class KindMesh {
   }
 }
 
+/** Bâtiments qui reçoivent des objets (et ont donc des trappes). */
+const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad]);
+
 const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
@@ -147,6 +150,11 @@ export class Entities {
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
   anim = new Map<number, { phase: number; torso: number; seen: number }>();
   animFrame = 0;
+  /** trappes des bâtiments qui reçoivent des objets : fermées, ou ouvertes (entrée cyan, sortie ambre) */
+  hatchClosed: THREE.InstancedMesh;
+  hatchFrame: THREE.InstancedMesh;
+  hatchHole: THREE.InstancedMesh;
+  private hatchFor: Frame | null = null;
   playerColor: number[] = [];
 
   constructor(
@@ -214,6 +222,17 @@ export class Entities {
     this.wrecks.count = 0;
     this.wrecks.frustumCulled = false;
     this.wrecks.castShadow = true;
+    // trappes : plaque fermée ; ouverte = cadre lumineux coloré autour d'une ouverture sombre
+    const HATCH_MAX = 6000;
+    this.hatchClosed = new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), new THREE.MeshStandardNodeMaterial({ color: 0x3a434e, roughness: 0.55, metalness: 0.5 }), HATCH_MAX);
+    this.hatchFrame = new THREE.InstancedMesh(new THREE.BoxGeometry(0.64, 0.44, 0.04), new THREE.MeshBasicNodeMaterial({}), HATCH_MAX);
+    this.hatchHole = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.3, 0.05), new THREE.MeshBasicNodeMaterial({ color: 0x06090d }), HATCH_MAX);
+    this.hatchFrame.setColorAt(0, new THREE.Color());
+    for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
     this.wrecks.receiveShadow = true;
     this.group.add(this.wrecks);
     const ring = new THREE.RingGeometry(0.85, 1, 24).rotateX(-Math.PI / 2);
@@ -578,6 +597,7 @@ export class Entities {
     for (const m of this.vehicleMeshes) m.end();
     for (const m of this.unitMeshes) m.end();
     for (const m of this.buildingMeshes) m.end();
+    this.updateHatches(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
       ic.instanceMatrix.needsUpdate = true;
       if (ic.instanceColor) ic.instanceColor.needsUpdate = true;
@@ -690,6 +710,96 @@ export class Entities {
     if (this.shields.instanceColor) this.shields.instanceColor.needsUpdate = true;
     this.updateFx(dt);
     void me;
+  }
+
+  /**
+   * Trappes des bâtiments qui reçoivent des objets : sur chaque case de bord, ouverte si un tapis
+   * ou un bras y entre (cadre cyan) ou en sort (cadre ambre), fermée sinon. Recalculées à chaque
+   * nouvel état de la partie (pas à chaque image).
+   */
+  private updateHatches(f: Frame, strategic: boolean, myTeam: number, spectator: boolean): void {
+    if (strategic) {
+      this.hatchClosed.count = this.hatchFrame.count = this.hatchHole.count = 0;
+      this.hatchFor = null;
+      return;
+    }
+    if (f === this.hatchFor) return;
+    this.hatchFor = f;
+    const buf = f.buf;
+    const W = this.map.w;
+    const DX = [1, 0, -1, 0];
+    const DZ = [0, 1, 0, -1];
+    // tapis et bras : case -> direction (bras : 4 + direction)
+    const links = new Map<number, number>();
+    let o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const cls = this.data.buildings[buf[o + 1] & 0xff].cls;
+      if (cls !== BClass.Belt && cls !== BClass.Inserter) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (cls === BClass.Inserter ? 4 : 0) + dir);
+    }
+    const inCol = new THREE.Color(0.5, 2.2, 2.6);
+    const outCol = new THREE.Color(2.8, 1.7, 0.35);
+    const q = new THREE.Quaternion();
+    const one = new THREE.Vector3(1, 1, 1);
+    let nc = 0;
+    let no = 0;
+    o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const kind = buf[o + 1] & 0xff;
+      const def = this.data.buildings[kind];
+      if (!RECEIVERS.has(def.cls) || buf[o + 4] < 65536) continue;
+      const owner = (buf[o + 1] >> 8) & 0xff;
+      if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      const bx = buf[o + 2] & 0xffff;
+      const bz = (buf[o + 2] >>> 16) & 0xffff;
+      const w = dir & 1 ? def.h : def.w;
+      const h = dir & 1 ? def.w : def.h;
+      const inside = (x: number, z: number) => x >= bx && x < bx + w && z >= bz && z < bz + h;
+      for (let side = 0; side < 4; side++) {
+        const n = side & 1 ? w : h; // cases le long de la face
+        for (let k = 0; k < n; k++) {
+          // case de bord, case voisine à l'extérieur, centre de la trappe sur la face
+          const ex = side === 0 ? bx + w - 1 : side === 2 ? bx : bx + k;
+          const ez = side === 1 ? bz + h - 1 : side === 3 ? bz : bz + k;
+          const ox = ex + DX[side];
+          const oz = ez + DZ[side];
+          const code = links.get(oz * W + ox);
+          let state = 0; // 0 fermée, 1 entrée, 2 sortie
+          if (code !== undefined && code < 4) {
+            if (code === side) state = 2;
+            else if (code === (side + 2) % 4) state = 1;
+          } else if (code !== undefined) {
+            const d = code - 4;
+            if (inside(ox + DX[d], oz + DZ[d])) state = 1;
+            else if (inside(ox - DX[d], oz - DZ[d])) state = 2;
+          }
+          const px = ex + 0.5 + DX[side] * 0.52;
+          const pz = ez + 0.5 + DZ[side] * 0.52;
+          const y = groundHeight(this.map, px, pz) + 0.3;
+          q.setFromAxisAngle(UP, [Math.PI / 2, 0, -Math.PI / 2, Math.PI][side]);
+          if (state === 0) {
+            if (nc >= 6000) continue;
+            tmpM.compose(tmpV.set(px, y, pz), q, one);
+            this.hatchClosed.setMatrixAt(nc++, tmpM);
+          } else {
+            if (no >= 6000) continue;
+            tmpM.compose(tmpV.set(px, y, pz), q, one);
+            this.hatchFrame.setMatrixAt(no, tmpM);
+            this.hatchFrame.setColorAt(no, state === 1 ? inCol : outCol);
+            tmpM.compose(tmpV.set(px + DX[side] * 0.012, y, pz + DZ[side] * 0.012), q, one);
+            this.hatchHole.setMatrixAt(no, tmpM);
+            no++;
+          }
+        }
+      }
+    }
+    this.hatchClosed.count = nc;
+    this.hatchFrame.count = no;
+    this.hatchHole.count = no;
+    for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole]) m.instanceMatrix.needsUpdate = true;
+    if (this.hatchFrame.instanceColor) this.hatchFrame.instanceColor.needsUpdate = true;
   }
 
   /** Maillage des objets d'un type (modèle de assets/models/items.ts, un tiers de case de large). */
