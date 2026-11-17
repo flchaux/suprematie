@@ -284,7 +284,8 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     }
     if with_wreck && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
         let (cx, cy) = w.buildings[b].center();
-        w.spawn_wreck(cx, cy, def.cost, (bw.max(bh)) as u8);
+        let (kind, dir) = (w.buildings[b].kind, w.buildings[b].dir & 3);
+        w.spawn_wreck(cx, cy, def.cost, (bw.max(bh)) as u8, WRECK_BUILDING | kind, dir as u16 * 16384);
     }
     w.buildings[b].watchers.clear();
     w.buildings[b].queue.clear();
@@ -565,12 +566,22 @@ fn taker_ready(w: &World, c: usize, it: u8) -> bool {
     w.buildings[t].complete() && (it == 0 || w.buildings[t].def().class == BClass::Belt || accepts(w, t, it))
 }
 
-/// La sortie `c` (bras ou tapis) peut-elle recevoir l'objet `it` maintenant ?
+/// Satisfaction électrique minimale (sur 1024) pour qu'un bras travaille.
+const ARM_MIN_SAT: i32 = 256;
+
+/// Le bras `c` a-t-il assez de courant pour travailler (même seuil que `tick_inserter`) ?
+fn arm_powered(w: &World, c: usize) -> bool {
+    let n = w.buildings[c].net as usize;
+    n != 0 && n < w.nets.len() && w.nets[n].sat >= ARM_MIN_SAT
+}
+
+/// La sortie `c` (bras ou tapis) peut-elle recevoir l'objet `it` maintenant ? Un bras sans courant ne
+/// compte pas : il ne prendrait jamais son tour et bloquerait les autres sorties.
 fn outlet_ready(w: &World, c: usize, it: u8) -> bool {
     if w.buildings[c].def().class == BClass::Belt {
         belts::belt_has_room(w, c)
     } else {
-        taker_ready(w, c, it)
+        arm_powered(w, c) && taker_ready(w, c, it)
     }
 }
 
@@ -1287,7 +1298,7 @@ fn tick_inserter(w: &mut World, b: usize) {
         return;
     }
     let s = use_power(w, b, w.buildings[b].def().power_use);
-    if s < 256 {
+    if s < ARM_MIN_SAT {
         w.buildings[b].wake = w.tick + 10;
         return;
     }

@@ -52,6 +52,10 @@
   });
   /** Débit d'un fabricant : objets par minute à pleine vitesse, et au niveau d'énergie actuel. */
   const rate = $derived.by(() => {
+    // extracteur : débit calculé par la simulation (dixièmes d'objet par minute) ; nul si la sortie est bloquée
+    if (info && bdef && bdef.cls === BClass.Extractor && info.extractMax) {
+      return { max: info.extractMax / 10, now: info.working && info.out < 5 ? info.extractNow / 10 : 0, item: info.recipe };
+    }
     if (!info || !bdef || !d || bdef.cls !== BClass.Crafter || info.recipe === RECIPE_NONE) return null;
     const r = d.recipes[info.recipe];
     const ticks = (r.time * 100) / Math.max(1, bdef.speed);
@@ -69,6 +73,17 @@
   const NI = $derived(d?.items.length ?? 27);
   const stashList = (recv: boolean) => (info?.stash?.length ? (info.stash as number[]).slice(recv ? NI : 0, recv ? 2 * NI : NI).map((n, i) => ({ i, n })).filter((x) => x.i > 0 && x.n > 0) : []);
   const hpf = $derived(info && bdef ? info.hp / bdef.hp : 1);
+  /** Statistiques d'un type d'unité (fiche d'une unité étrangère) : portée (cases), dégâts par seconde, vitesse (cases/s). */
+  const unitStats = (k: number) => {
+    const u = d!.units[k];
+    const ws = u.weapons.map((i) => d!.weapons[i]).filter(Boolean);
+    const dps = ws.reduce((t, w) => t + (w.dmg * Math.max(1, w.salvo) * Math.max(1, w.sustain) * 20) / Math.max(1, w.cooldown), 0);
+    return { u, range: ws.length ? Math.max(...ws.map((w) => w.range)) : 0, dps, speed: (u.speed * 20) / 256 };
+  };
+  const foreignColor = $derived(ui.selForeign >= 0 ? "#" + PLAYER_COLORS[ui.selForeign % 8].toString(16).padStart(6, "0") : "");
+  const enemyTeam = $derived(ui.selForeign >= 0 && (ui.players[ui.selForeign]?.team ?? -1) !== (ui.players[ui.me]?.team ?? -2));
+  const dep = $derived(ui.selDeposit);
+  const depUser = $derived(dep ? (ui.tick, client.depositUser()) : null);
   const owner = $derived(sb ? "#" + PLAYER_COLORS[sb.owner % 8].toString(16).padStart(6, "0") : "");
   // choix de recette : la grille ne s'ouvre que par « Changer de recette » (ou si aucune n'est choisie) ;
   // elle se referme quand on sélectionne un autre bâtiment
@@ -275,6 +290,36 @@
       {/if}
     {/if}
   </div>
+{:else if ui.selUnits.length && d && ui.selForeign >= 0}
+  <!-- unités d'un autre joueur : statistiques seulement (ni ordres ni commandes) -->
+  <div class="panel sel">
+    <div class="uhead">
+      <span class="kicker" style:color={foreignColor}>{enemyTeam ? "Ennemi" : "Allié"} · {ui.names[ui.selForeign] ?? ""}</span>
+      <b class="title num">{total}</b>
+      <span class="dim">unité{total > 1 ? "s" : ""}</span>
+    </div>
+    {#each ui.selUnits as g}
+      {@const st = unitStats(g.kind)}
+      <div class="stats">
+        <div class="sthumb">{#if sprite("units", st.u.key)}<img src={sprite("units", st.u.key)} alt="" />{:else}<span class="ab">{abbrev(st.u.name)}</span>{/if}</div>
+        <div class="sbody">
+          <b>{st.u.name}</b>{#if g.count > 1} <span class="dim">× <span class="num">{g.count}</span></span>{/if}{#if g.lvl} <span class="vet2">{"◆".repeat(g.lvl)}</span>{/if}
+          {#if ui.unitInfo && ui.selUnits.length === 1 && g.count === 1}
+            {@const f = ui.unitInfo.hp / Math.max(1, ui.unitInfo.maxHp)}
+            <div class="hpline"><span class="hp" class:mid={f < 0.6} class:low={f < 0.3}><span style:width={f * 100 + "%"}></span></span><span class="num small">{ui.unitInfo.hp}/{ui.unitInfo.maxHp}</span></div>
+          {/if}
+          <div class="sgrid small">
+            <span class="dim">PV</span><span class="num">{st.u.hp}</span>
+            <span class="dim">Dégâts/s</span><span class="num">{st.dps ? st.dps.toFixed(0) : "—"}</span>
+            <span class="dim">Portée</span><span class="num">{st.range ? st.range + " cases" : "—"}</span>
+            <span class="dim">Vitesse</span><span class="num">{st.speed ? st.speed.toFixed(1) + " cases/s" : "immobile"}</span>
+            <span class="dim">Milieu</span><span>{client.unitLayerName(st.u.layer)}</span>
+            <span class="dim">Vision</span><span class="num">{st.u.vision} cases</span>
+          </div>
+        </div>
+      </div>
+    {/each}
+  </div>
 {:else if ui.selUnits.length && d}
   <div class="panel sel">
     <div class="uhead">
@@ -308,6 +353,23 @@
     {/if}
     {#if anyEng}<span class="dim small">Choisissez un bâtiment à droite. Clic droit sur une épave : recycler.</span>{/if}
   </div>
+{:else if dep && d}
+  <!-- gisement : ce qu'il contient, s'il est exploité -->
+  <div class="panel sel">
+    <div class="head" style:--pc="#3ef0ff">
+      <div class="thumb"><Item id={dep.kind} size={44} /></div>
+      <div class="ht">
+        <div class="kicker">Gisement</div>
+        <b class="title">{d.items[dep.kind]?.name ?? "?"}</b>
+        <span class="dim small">Inépuisable · case {dep.x}, {dep.y}</span>
+      </div>
+    </div>
+    {#if depUser}
+      <div class="status {depUser.owner === ui.me ? 'good' : 'warn'}"><span class="led"></span>Exploité par {depUser.owner === ui.me ? "vous" : (ui.names[depUser.owner] ?? "un autre joueur")} ({d.buildings[depUser.kind]?.name})</div>
+    {:else}
+      <div class="status idle"><span class="led"></span>Libre : posez un extracteur dessus pour l'exploiter</div>
+    {/if}
+  </div>
 {/if}
 
 <style>
@@ -338,6 +400,12 @@
   .rhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .rhead .icon-btn { font-size: 11px; padding: 3px 8px; }
   .share { display: flex; flex-direction: column; gap: 6px; }
+  .stats { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
+  .sthumb { width: 46px; height: 46px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid var(--line); }
+  .sthumb img { width: 42px; height: 42px; object-fit: contain; }
+  .sbody { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+  .sgrid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 2px 10px; }
+  .vet2 { font-size: 9px; color: #ffd060; }
   .share input[type="range"] { width: 100%; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
   .arrow { color: var(--accent); letter-spacing: -2px; }

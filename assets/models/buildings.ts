@@ -207,15 +207,15 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.8,0.54,0.06], pos: [0,0.7,0.79], color: "amber" },
       { shape: "bevel", size: [1.06,0.16,0.22], pos: [0,1.17,0.72], color: "light" },
       { shape: "box", size: [0.04,0.04,0.9], pos: [0.85,1.3,-0.1], color: "glow", mirror: true },
-      // toit aux couleurs de l'équipe
+      // toit aux couleurs de l'équipe (centre dégagé pour l'icône de la recette)
       { shape: "bevel", size: [1.5,0.14,1.4], pos: [0,1.52,-0.08], color: "faction" },
-      { shape: "bevel", size: [0.5,0.12,0.4], pos: [-0.4,1.64,0.2], color: "metal" },
-      // cheminée
-      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.24, pos: [0.4,1.7,-0.4], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.26, height: 0.75, pos: [0.4,2.05,-0.4], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.31, height: 0.12, pos: [0.4,2.42,-0.4], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.02, pos: [0.4,2.48,-0.4], color: "amber" },
-      { shape: "box", size: [0.08,0.05,0.03], pos: [0.4,1.98,-0.14], color: "amber" },
+      { shape: "bevel", size: [0.26,0.1,0.22], pos: [-0.58,1.63,0.5], color: "metal" },
+      // cheminée courte, dans le coin arrière droit
+      { shape: "cylinder", sides: 8, radius: 0.24, height: 0.18, pos: [0.54,1.67,-0.56], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.18, height: 0.42, pos: [0.54,1.94,-0.56], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.22, height: 0.08, pos: [0.54,2.17,-0.56], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 0.02, pos: [0.54,2.22,-0.56], color: "amber" },
+      { shape: "box", size: [0.07,0.05,0.03], pos: [0.54,1.92,-0.37], color: "amber" },
     ],
   },
   // assembler1 : caisson à coins clairs, couvercle ouvert à l'arrière, bras robotisé sur le pilier arrière

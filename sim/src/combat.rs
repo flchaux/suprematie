@@ -830,7 +830,8 @@ fn kill_unit(w: &mut World, s: usize) {
     w.players[owner as usize].unit_count = w.players[owner as usize].unit_count.saturating_sub(1);
     w.players[owner as usize].losses += 1;
     if def.layer != Layer::Air || def.tier == 6 {
-        w.spawn_wreck(x, y, def.cost, (def.radius / TILE + 1) as u8);
+        let rot = w.units.facing[s];
+        w.spawn_wreck(x, y, def.cost, (def.radius / TILE + 1) as u8, kind + 1, rot);
     }
     if kind == U_COMMANDER {
         w.ev(EV_EXPLOSION, x, y, 12 * TILE, 3);

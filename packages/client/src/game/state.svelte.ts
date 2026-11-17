@@ -35,6 +35,12 @@ export const ui = $state({
   // sélection
   selUnits: [] as SelUnitGroup[],
   selBuilding: null as null | { ref: number; kind: number; owner: number },
+  /** unités sélectionnées appartenant à un autre joueur : fiche de statistiques, sans ordres */
+  selForeign: -1,
+  /** gisement sélectionné (clic sur un gisement libre ou exploité) */
+  selDeposit: null as null | { kind: number; x: number; y: number },
+  /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
+  unitInfo: null as null | { hp: number; maxHp: number; lvl: number },
   buildingInfo: null as null | Record<string, unknown>,
   canBuild: false,
   mode: "" as string,

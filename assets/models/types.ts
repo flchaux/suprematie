@@ -4,8 +4,11 @@
 
 export type Vec3 = [number, number, number];
 
-export type ColorName = "faction" | "metal" | "dark" | "light" | "glow" | "amber" | "hazard" | "glass" | "red" | "black" | "ore";
-// glow (cyan) et amber (voyants) sont lumineux : ils nourrissent le halo du rendu.
+export type ColorName =
+  | "faction" | "metal" | "dark" | "light" | "glow" | "amber" | "hazard" | "glass" | "red" | "black" | "ore"
+  // couleurs naturelles des décorations du sol (decor.ts)
+  | "leaf" | "leaf_dark" | "wood" | "dry" | "rock" | "snow" | "ice" | "crystal" | "flower" | "rust";
+// glow (cyan) et amber (voyants) sont lumineux : ils nourrissent le halo du rendu ; crystal a un léger éclat propre.
 
 export interface Part {
   /** Forme de base. */
@@ -20,7 +23,7 @@ export interface Part {
   radius?: number; // cylinder (bas), cone, sphere
   radiusTop?: number; // cylinder (haut), par défaut = radius
   height?: number; // cylinder, cone
-  sides?: number; // cylinder, cone : 5, 6 ou 8 (défaut 6)
+  sides?: number; // cylinder, cone : 5, 6 ou 8 (défaut 6) ; 3 ou 4 pour les brins fins des décorations
   pos?: Vec3;
   rot?: Vec3; // degrés, ordre XYZ
   scale?: number | Vec3; // pour `use`
