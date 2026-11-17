@@ -1,15 +1,23 @@
 // Matériaux : couleur de sommet, teinte du joueur par instance (pièces « faction »), pièces lumineuses.
 import * as THREE from "three/webgpu";
-import { attribute, mix, instancedBufferAttribute, float, step, clamp } from "three/tsl";
+import { attribute, mix, instancedBufferAttribute, float, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionWorld } from "three/tsl";
 import { fogFactor, applyFog } from "./fog.ts";
+import { modelTexture } from "./textures.ts";
+
+/** Répétitions de texture par unité du monde (une case = 1) : unités et bâtiments. */
+export const TEX_PER_TILE_UNIT = 0.8;
+export const TEX_PER_TILE_BUILDING = 0.33;
 
 export interface TeamMesh {
   mesh: THREE.InstancedMesh;
   team: THREE.InstancedBufferAttribute;
 }
 
-/** InstancedMesh dont les pièces « faction » prennent la couleur de chaque instance. */
-export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number): TeamMesh {
+/**
+ * InstancedMesh dont les pièces « faction » prennent la couleur de chaque instance.
+ * `texScale` : répétitions de la texture par unité du repère du modèle (0 : sans texture).
+ */
+export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, texScale = 0): TeamMesh {
   const team = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
   team.setUsage(THREE.DynamicDrawUsage);
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.65, metalness: 0.25 });
@@ -20,7 +28,24 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number): 
   const tcol = instancedBufferAttribute(team, "vec3");
   // brouillard : les bâtiments ennemis explorés mais hors de vue restent assombris
   const fog = fogFactor();
-  mat.colorNode = applyFog(mix(vcol, tcol, isFaction), fog);
+  let base = mix(vcol, tcol, isFaction);
+  if (texScale > 0) {
+    const t = modelTexture(texScale);
+    // détail : module la couleur autour de 1 ; une salissure à grande échelle varie d'une unité à l'autre
+    const grime = mx_noise_float(positionWorld.mul(0.35)).mul(0.08);
+    base = base.mul(mix(float(1), t.detail.mul(1.3).add(0.35).sub(grime), t.amount));
+    mat.roughnessNode = mix(float(0.65), t.rough.sub(0.5).mul(0.5).add(0.62), t.amount);
+    // relief : perturbation de la normale par les dérivées de la hauteur (sans coordonnées de texture)
+    const h = t.height.mul(t.amount).mul(0.025);
+    const sx = dFdx(positionView);
+    const sy = dFdy(positionView);
+    const r1 = cross(sy, normalView);
+    const r2 = cross(normalView, sx);
+    const det = dot(sx, r1);
+    const grad = sign(det).mul(r1.mul(dFdx(h)).add(r2.mul(dFdy(h))));
+    mat.normalNode = normalize(abs(det).mul(normalView).sub(grad));
+  }
+  mat.colorNode = applyFog(base, fog);
   // pièces lumineuses : au-delà de 1 pour nourrir le halo (bloom)
   mat.emissiveNode = vcol.mul(glow).mul(float(1.6)).mul(fog);
   const mesh = new THREE.InstancedMesh(geometry, mat, max);

@@ -68,6 +68,7 @@
     <label class="row" title="Distance de la caméra à partir de laquelle les unités deviennent des icônes"><Icon name="icons" /> <span>Vue stratégique</span><input type="range" min="80" max="600" step="10" value={client.iconDistance()} oninput={(e) => client.setIconDistance(Number((e.target as HTMLInputElement).value))} /></label>
     <div class="kicker sub">Graphismes</div>
     <label class="row"><Icon name="eye" /> <span>Ombres portées</span><input type="checkbox" checked={ui.gfx.shadows} onchange={(e) => client.setGfx({ shadows: (e.target as HTMLInputElement).checked })} /></label>
+    <label class="row"><Icon name="factory" /> <span>Textures des modèles</span><input type="checkbox" checked={ui.gfx.textures} onchange={(e) => client.setGfx({ textures: (e.target as HTMLInputElement).checked })} /></label>
     <label class="row"><Icon name="special" /> <span>Halo lumineux</span><input type="checkbox" checked={ui.gfx.bloom} onchange={(e) => client.setGfx({ bloom: (e.target as HTMLInputElement).checked })} /></label>
     <label class="row"><Icon name="target" /> <span>Effets de combat</span>
       <select value={String(ui.gfx.effects)} onchange={(e) => client.setGfx({ effects: Number((e.target as HTMLSelectElement).value) })}>

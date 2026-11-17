@@ -90,7 +90,7 @@
         <div>Rendu (processeur) : {ui.perf.cpuMs.toFixed(1)} ms</div>
         <div>Appels de dessin : {ui.perf.drawCalls} · triangles : {(ui.perf.triangles / 1000).toFixed(0)} k</div>
         <div>Particules : {ui.perf.particles}</div>
-        <div>Moteur : {ui.backend} · ombres {ui.gfx.shadows ? `${Math.round(ui.perf.shadowSize)} cases` : "désactivées"} · halo {ui.gfx.bloom ? "oui" : "non"}</div>
+        <div>Moteur : {ui.backend} · ombres {ui.gfx.shadows ? `${Math.round(ui.perf.shadowSize)} cases` : "désactivées"} · halo {ui.gfx.bloom ? "oui" : "non"} · textures {ui.gfx.textures ? "oui" : "non"}</div>
       </div>
     {/if}
     {#if ui.replay}

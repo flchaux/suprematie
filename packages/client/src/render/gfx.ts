@@ -4,5 +4,7 @@ export interface GfxSettings {
   bloom: boolean;
   /** 1 : effets complets, 0.4 : réduits */
   effects: number;
+  /** textures des unités et des bâtiments */
+  textures: boolean;
 }
-export const DEFAULT_GFX: GfxSettings = { shadows: true, bloom: true, effects: 1 };
+export const DEFAULT_GFX: GfxSettings = { shadows: true, bloom: true, effects: 1, textures: true };

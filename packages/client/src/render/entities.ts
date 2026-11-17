@@ -5,7 +5,7 @@ import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, UF, BF, BClass, Layer } from "@supreme/shared";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
-import { teamInstancedMesh, setTeamColor, type TeamMesh } from "./materials.ts";
+import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
@@ -25,6 +25,8 @@ class KindMesh {
     public scene: THREE.Object3D,
     public built: ReturnType<typeof buildModel>,
     public scale: number,
+    /** répétitions de texture par case du monde */
+    public texPerTile = 0,
   ) {
     const size = new THREE.Vector3();
     built.box.getSize(size);
@@ -35,10 +37,10 @@ class KindMesh {
     const cap = Math.max(16, this.cap * 2, need);
     if (this.body) this.scene.remove(this.body.mesh);
     for (const p of this.pivots) this.scene.remove(p.tm.mesh);
-    this.body = teamInstancedMesh(this.built.body, cap);
+    this.body = teamInstancedMesh(this.built.body, cap, this.texPerTile * this.scale);
     this.scene.add(this.body.mesh);
     this.pivots = this.built.pivots.map((p) => {
-      const tm = teamInstancedMesh(p.geometry, cap);
+      const tm = teamInstancedMesh(p.geometry, cap, this.texPerTile * this.scale);
       this.scene.add(tm.mesh);
       return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name) };
     });
@@ -112,14 +114,14 @@ export class Entities {
       built.box.getSize(size);
       const target = Math.max(0.7, (u.radius * 2.3) / TILE);
       const scale = target / Math.max(size.x, size.z, 0.01);
-      this.unitMeshes.push(new KindMesh(this.group, built, scale));
+      this.unitMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_UNIT));
     }
     for (const b of data.buildings) {
       const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4));
       const size = new THREE.Vector3();
       built.box.getSize(size);
       const scale = (b.w * 0.98) / Math.max(size.x, size.z, 0.01);
-      this.buildingMeshes.push(new KindMesh(this.group, built, scale));
+      this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
     this.items = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.14, 0.2), new THREE.MeshStandardNodeMaterial({ roughness: 0.5 }), 20000);

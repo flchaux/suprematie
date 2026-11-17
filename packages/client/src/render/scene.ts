@@ -4,6 +4,7 @@ import * as THREE from "three/webgpu";
 import { pass } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { fogEnabled } from "./fog.ts";
+import { loadModelTextures, setTexturesEnabled } from "./textures.ts";
 import { DEFAULT_GFX, type GfxSettings } from "./gfx.ts";
 import type { GameData, Frame } from "@supreme/shared";
 import { Terrain, groundHeight, type MapData } from "./terrain.ts";
@@ -84,6 +85,8 @@ export class GameScene {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.scene.add(sun, sun.target);
     this.renderer.info.autoReset = false;
+    // textures des modèles : chargées en tâche de fond (couleurs unies en attendant)
+    loadModelTextures().catch((e) => console.warn("textures des modèles indisponibles", e));
     this.buildPost();
     this.scene.add(this.markers);
     this.scene.add(this.rangeRing);
@@ -104,6 +107,7 @@ export class GameScene {
   applySettings(g: GfxSettings): void {
     this.gfx = { ...g };
     this.sun.castShadow = g.shadows;
+    setTexturesEnabled(g.textures !== false);
     this.renderer.shadowMap.enabled = g.shadows;
     if (this.entities) this.entities.effects.quality = g.effects;
     // changer les ombres impose de recompiler les matériaux

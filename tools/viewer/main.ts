@@ -2,7 +2,8 @@
 // ?set=units|buildings  &only=clé1,clé2
 import * as THREE from "three/webgpu";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../../packages/client/src/models/generator.ts";
-import { teamInstancedMesh, setTeamColor } from "../../packages/client/src/render/materials.ts";
+import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
+import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src/render/textures.ts";
 import { UNIT_MODELS } from "../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../assets/models/buildings.ts";
 import data from "./data.json";
@@ -22,6 +23,9 @@ renderer.setPixelRatio(1);
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 await renderer.init();
+// textures des modèles (?unies pour comparer avec les couleurs unies)
+await loadModelTextures();
+setTexturesEnabled(!new URLSearchParams(location.search).has("unies"));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x26303a);
 scene.add(new THREE.HemisphereLight(0xdde8ff, 0x3a3428, 1.6));
@@ -45,13 +49,14 @@ list.forEach((d, i) => {
   const z = Math.floor(i / cols) * cell;
   const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.6, 0)), new THREE.Vector3(s, s, s));
   const color = new THREE.Color(PLAYER_COLORS[i % 8]);
-  const body = teamInstancedMesh(built.body, 1);
+  const texScale = s * (set === "units" ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING);
+  const body = teamInstancedMesh(built.body, 1, texScale);
   body.mesh.count = 1;
   body.mesh.setMatrixAt(0, root);
   setTeamColor(body, 0, color);
   scene.add(body.mesh);
   for (const p of built.pivots) {
-    const pm = teamInstancedMesh(p.geometry, 1);
+    const pm = teamInstancedMesh(p.geometry, 1, texScale);
     pm.mesh.count = 1;
     const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(new THREE.Matrix4().makeRotationY(0.5));
     pm.mesh.setMatrixAt(0, m);

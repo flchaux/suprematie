@@ -1,6 +1,6 @@
 // Générateur de modèles : assemble les pièces simples d'une description en un mesh à facettes.
 // Les pièces de couleur « faction » portent un masque (attribut `mask`) : le shader les teinte
-// avec la couleur du joueur. Les pièces mobiles (pivot) forment des géométries séparées.
+// avec la couleur du joueur. L'attribut `mat` donne la couche de texture (matière) de chaque pièce. Les pièces mobiles (pivot) forment des géométries séparées.
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Model, Part, ColorName } from "../../../../assets/models/types.ts";
@@ -17,6 +17,9 @@ export const PALETTE: Record<ColorName, number> = {
   red: 0xc84040,
   black: 0x15181c,
 };
+
+/** Couche de texture de chaque couleur de pièce (voir render/textures.ts ; 5 = pas de texture). */
+export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -132,6 +135,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
   const c = new THREE.Color(PALETTE[color]);
   const col = new Float32Array(n * 3);
   const mask = new Float32Array(n);
+  const mat = new Float32Array(n).fill(MATERIAL_LAYER[color] ?? 1);
   const isFaction = color === "faction" ? 1 : 0;
   const glow = color === "glow" ? 1 : 0;
   for (let i = 0; i < n; i++) {
@@ -142,6 +146,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
   }
   ng.setAttribute("color", new THREE.BufferAttribute(col, 3));
   ng.setAttribute("mask", new THREE.BufferAttribute(mask, 1));
+  ng.setAttribute("mat", new THREE.BufferAttribute(mat, 1));
   return ng;
 }
 
@@ -151,6 +156,7 @@ function emptyGeometry(): THREE.BufferGeometry {
   g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(9), 3));
   g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(9), 3));
   g.setAttribute("mask", new THREE.BufferAttribute(new Float32Array(3), 1));
+  g.setAttribute("mat", new THREE.BufferAttribute(new Float32Array(3), 1));
   return g;
 }
 
