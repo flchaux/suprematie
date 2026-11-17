@@ -3,7 +3,7 @@
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
-import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1 } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, instancedBufferAttribute } from "three/tsl";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
@@ -13,6 +13,7 @@ import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
 import { ITEM_MODELS } from "../../../../assets/models/items.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
 import { Effects } from "./effects.ts";
+import { sprite } from "../ui/sprites.ts";
 
 const TILE = 256;
 const ANG = (Math.PI * 2) / 65536;
@@ -157,6 +158,13 @@ export class Entities {
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
   private hatchFor: Frame | null = null;
+  /** icônes de production sur les toits : un maillage instancié par icône, et les pastilles de fond */
+  private logoMeshes = new Map<string, THREE.InstancedMesh>();
+  private logoDiscs: THREE.InstancedMesh;
+  private logoFor: Frame | null = null;
+  private logoYaw = 0;
+  /** hauteur du toit au centre de chaque type de bâtiment (à l'échelle), calculée à la demande */
+  private roofCache = new Map<number, number>();
   playerColor: number[] = [];
 
   constructor(
@@ -241,6 +249,11 @@ export class Entities {
       m.frustumCulled = false;
       this.group.add(m);
     }
+    this.logoDiscs = new THREE.InstancedMesh(new THREE.CircleGeometry(0.58, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ color: 0x050a10, transparent: true, opacity: 0.72, depthWrite: false }), 4000);
+    this.logoDiscs.count = 0;
+    this.logoDiscs.frustumCulled = false;
+    this.logoDiscs.renderOrder = 2;
+    this.group.add(this.logoDiscs);
     this.wrecks.receiveShadow = true;
     this.group.add(this.wrecks);
     const ring = new THREE.RingGeometry(0.85, 1, 24).rotateX(-Math.PI / 2);
@@ -616,6 +629,7 @@ export class Entities {
       d.end();
     }
     this.updateHatches(f, strategic, myTeam, spectator);
+    this.updateLogos(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
       ic.instanceMatrix.needsUpdate = true;
       if (ic.instanceColor) ic.instanceColor.needsUpdate = true;
@@ -818,6 +832,132 @@ export class Entities {
     this.hatchHole.count = no;
     for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole]) m.instanceMatrix.needsUpdate = true;
     if (this.hatchFrame.instanceColor) this.hatchFrame.instanceColor.needsUpdate = true;
+  }
+
+  /**
+   * Hauteur du toit d'un bâtiment à son centre : la face la plus haute du modèle qui recouvre le
+   * point central (et non le sommet d'une cheminée ou d'une antenne posée à côté).
+   */
+  private roofHeight(kind: number): number {
+    const hit = this.roofCache.get(kind);
+    if (hit !== undefined) return hit;
+    const km = this.buildingMeshes[kind];
+    let top = 0;
+    if (km) {
+      const p = km.built.body.getAttribute("position");
+      for (let i = 0; i + 2 < p.count; i += 3) {
+        const ax = p.getX(i), az = p.getZ(i);
+        const bx = p.getX(i + 1), bz = p.getZ(i + 1);
+        const cx = p.getX(i + 2), cz = p.getZ(i + 2);
+        // le point (0, 0) est-il dans la projection du triangle sur le sol ?
+        const d1 = (0 - bx) * (az - bz) - (ax - bx) * (0 - bz);
+        const d2 = (0 - cx) * (bz - cz) - (bx - cx) * (0 - cz);
+        const d3 = (0 - ax) * (cz - az) - (cx - ax) * (0 - az);
+        const neg = d1 < 0 || d2 < 0 || d3 < 0;
+        const pos = d1 > 0 || d2 > 0 || d3 > 0;
+        if (neg && pos) continue;
+        top = Math.max(top, (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3);
+      }
+      top *= km.scale;
+      if (top <= 0) top = km.height;
+    }
+    this.roofCache.set(kind, top);
+    return top;
+  }
+
+  /** Maillage d'une icône posée à plat (texture de l'icône générée), créé à la première utilisation. */
+  private logoMesh(key: string): THREE.InstancedMesh | null {
+    let m = this.logoMeshes.get(key);
+    if (m) return m;
+    const [cat, k] = key.split("/") as ["items" | "units", string];
+    const url = sprite(cat, k);
+    if (!url) return null;
+    const tex = new THREE.TextureLoader().load(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ map: tex, transparent: true, alphaTest: 0.08, depthWrite: false }), 2000);
+    m.count = 0;
+    m.frustumCulled = false;
+    m.renderOrder = 3;
+    this.group.add(m);
+    this.logoMeshes.set(key, m);
+    return m;
+  }
+
+  /**
+   * Icônes de production sur les toits de nos bâtiments : recette d'un bâtiment de fabrication,
+   * minerai d'un extracteur, unité en cours d'une usine, lots de la recherche d'un laboratoire
+   * (plusieurs icônes côte à côte, un peu superposées). Posées à plat, tournées vers le haut de l'écran.
+   */
+  private updateLogos(f: Frame, strategic: boolean, myTeam: number, spectator: boolean): void {
+    const cam = this.camera;
+    let yaw = this.logoYaw;
+    if (cam) {
+      const fwd = new THREE.Vector3();
+      cam.getWorldDirection(fwd);
+      if (Math.abs(fwd.x) + Math.abs(fwd.z) > 1e-3) yaw = Math.atan2(-fwd.x, -fwd.z);
+    }
+    if (strategic) {
+      for (const m of this.logoMeshes.values()) m.count = 0;
+      this.logoDiscs.count = 0;
+      this.logoFor = null;
+      return;
+    }
+    if (f === this.logoFor && Math.abs(yaw - this.logoYaw) < 0.01) return;
+    this.logoFor = f;
+    this.logoYaw = yaw;
+    for (const m of this.logoMeshes.values()) m.count = 0;
+    const q = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const buf = f.buf;
+    let nd = 0;
+    let o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const kind = buf[o + 1] & 0xff;
+      const def = this.data.buildings[kind];
+      const cls = def.cls;
+      if (cls !== BClass.Crafter && cls !== BClass.Extractor && cls !== BClass.Factory && cls !== BClass.Lab) continue;
+      if (buf[o + 4] < 65536) continue;
+      const owner = (buf[o + 1] >> 8) & 0xff;
+      if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
+      const aux = buf[o + 5] & 0xff;
+      const keys: string[] = [];
+      if (cls === BClass.Crafter && aux !== 255) {
+        const it = this.data.recipes[aux]?.output[0];
+        if (it !== undefined) keys.push("items/" + this.data.items[it].key);
+      } else if (cls === BClass.Extractor && aux > 0) keys.push("items/" + this.data.items[aux]?.key);
+      else if (cls === BClass.Factory && aux > 0) keys.push("units/" + this.data.units[aux - 1]?.key);
+      else if (cls === BClass.Lab && aux > 0) {
+        const tier = this.data.techs[aux]?.tier ?? 0;
+        for (let k = 0; k < tier; k++) keys.push("items/" + this.data.items[PACK1 + k].key);
+      }
+      if (!keys.length) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      const bw = dir & 1 ? def.h : def.w;
+      const bh = dir & 1 ? def.w : def.h;
+      const cx = (buf[o + 2] & 0xffff) + bw / 2;
+      const cz = ((buf[o + 2] >>> 16) & 0xffff) + bh / 2;
+      const top = groundHeight(this.map, cx, cz) + this.roofHeight(kind) + 0.05;
+      const size = Math.min(1.7, Math.max(0.55, Math.min(bw, bh) * 0.42));
+      // icônes côte à côte, superposées d'un tiers, centrées sur le toit
+      const step = size * 0.68;
+      const n = keys.length;
+      for (let k = 0; k < n; k++) {
+        const m = this.logoMesh(keys[k]);
+        if (!m || m.count >= 2000) continue;
+        const off = (k - (n - 1) / 2) * step;
+        tmpM.compose(tmpV.set(cx + rx * off, top + k * 0.004, cz + rz * off), q, tmpS.set(size, 1, size));
+        m.setMatrixAt(m.count++, tmpM);
+      }
+      if (nd < 4000) {
+        const wd = size + step * (n - 1);
+        tmpM.compose(tmpV.set(cx, top - 0.01, cz), q, tmpS.set(wd / 1.0, 1, size));
+        this.logoDiscs.setMatrixAt(nd++, tmpM);
+      }
+    }
+    this.logoDiscs.count = nd;
+    this.logoDiscs.instanceMatrix.needsUpdate = true;
+    for (const m of this.logoMeshes.values()) m.instanceMatrix.needsUpdate = true;
   }
 
   /** Maillage des objets d'un type (modèle de assets/models/items.ts, un tiers de case de large). */

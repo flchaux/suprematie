@@ -67,6 +67,17 @@
   const stashList = (recv: boolean) => (info?.stash?.length ? (info.stash as number[]).slice(recv ? NI : 0, recv ? 2 * NI : NI).map((n, i) => ({ i, n })).filter((x) => x.i > 0 && x.n > 0) : []);
   const hpf = $derived(info && bdef ? info.hp / bdef.hp : 1);
   const owner = $derived(sb ? "#" + PLAYER_COLORS[sb.owner % 8].toString(16).padStart(6, "0") : "");
+  // choix de recette : la grille ne s'ouvre que par « Changer de recette » (ou si aucune n'est choisie) ;
+  // elle se referme quand on sélectionne un autre bâtiment
+  let picking = $state(false);
+  let pickFor = -1;
+  $effect(() => {
+    const r = ui.selBuilding?.ref ?? -1;
+    if (r !== pickFor) {
+      pickFor = r;
+      picking = false;
+    }
+  });
 </script>
 
 {#if sb && bdef && d}
@@ -90,9 +101,17 @@
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
       {/if}
       {#if bdef.cls === BClass.Crafter}
-        <div class="kicker">Recette</div>
+        <div class="rhead">
+          <span class="kicker">Recette</span>
+          {#if info.recipe !== RECIPE_NONE && !picking}
+            <button class="icon-btn small" onclick={() => (picking = true)}><Icon name="repeat" size={13} /> Changer de recette</button>
+          {:else if picking}
+            <button class="icon-btn small ghost" onclick={() => (picking = false)}><Icon name="close" size={13} /> Annuler</button>
+          {/if}
+        </div>
+        {#if info.recipe === RECIPE_NONE || picking}
         <div class="recipes">
-          <button class="rc none" class:on={info.recipe === RECIPE_NONE} onclick={() => client.setRecipe(RECIPE_NONE)}>
+          <button class="rc none" class:on={info.recipe === RECIPE_NONE} onclick={() => { client.setRecipe(RECIPE_NONE); picking = false; }}>
             <span class="dim small">{bdef.crafter === 1 ? "Aucune" : "Automatique"}</span>
             {#if bdef.crafter !== 1}<span class="dim tiny">selon le minerai reçu</span>{/if}
           </button>
@@ -100,7 +119,7 @@
             {@const ok = hasTechUI(r.tech)}
             {@const s = recipeSpec(r)}
             <div class="tip">
-              <button class="rc" class:on={info.recipe === i} class:locked={!ok} disabled={!ok} onclick={() => client.setRecipe(i)}>
+              <button class="rc" class:on={info.recipe === i} class:locked={!ok} disabled={!ok} onclick={() => { client.setRecipe(i); picking = false; }}>
                 <span class="rflow">
                   <span class="rin">{#each r.inputs as [it, n]}<Item id={it} n={n} size={18} />{/each}</span>
                   <span class="arrow">▸</span>
@@ -119,7 +138,8 @@
             </div>
           {/each}
         </div>
-        {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe]}
+        {/if}
+        {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe] && !picking}
           {@const r = d.recipes[info.recipe]}
           <div class="flow">
             {#each r.inputs as [it, n], j}<span class="tip slot"><Item id={it} n={info.inv[j]} need={n} size={22} /><span class="tt">{d.items[it].name} : {info.inv[j]} (recette : {n})</span></span>{/each}
@@ -295,6 +315,8 @@
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rhead .icon-btn { font-size: 11px; padding: 3px 8px; }
   .share { display: flex; flex-direction: column; gap: 6px; }
   .share input[type="range"] { width: 100%; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
