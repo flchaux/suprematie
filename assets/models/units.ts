@@ -75,13 +75,19 @@ export const UNIT_MODELS: Record<string, Model> = {
   // commander : grand mécha bipède, blindage clair, canon au bras droit, visière cyan
   commander: {
     parts: [
-      // jambes
-      { shape: "bevel", size: [0.5,0.4,0.55], pos: [0.5,1.35,0], color: "dark", mirror: true },
-      { shape: "bevel", size: [0.44,0.7,0.5], pos: [0.55,1.0,0.05], color: "light", mirror: true },
-      { shape: "bevel", size: [0.5,0.3,0.55], pos: [0.55,0.64,0.14], color: "faction", mirror: true },
-      { shape: "bevel", size: [0.42,0.58,0.56], pos: [0.55,0.36,0], color: "metal", mirror: true },
-      { shape: "box", size: [0.06,0.34,0.04], pos: [0.55,0.38,0.29], color: "glow", mirror: true },
-      { shape: "bevel", size: [0.62,0.18,0.95], pos: [0.55,0.09,0.1], color: "dark", mirror: true },
+      // jambes articulées : pivots jambe_d / jambe_g à la hanche (balancement pendant la marche)
+      { shape: "bevel", size: [0.5,0.4,0.55], pos: [0.5,1.35,0], color: "dark", pivot: "jambe_d" },
+      { shape: "bevel", size: [0.44,0.7,0.5], pos: [0.55,1.0,0.05], color: "light", parent: "jambe_d" },
+      { shape: "bevel", size: [0.5,0.3,0.55], pos: [0.55,0.64,0.14], color: "faction", parent: "jambe_d" },
+      { shape: "bevel", size: [0.42,0.58,0.56], pos: [0.55,0.36,0], color: "metal", parent: "jambe_d" },
+      { shape: "box", size: [0.06,0.34,0.04], pos: [0.55,0.38,0.29], color: "glow", parent: "jambe_d" },
+      { shape: "bevel", size: [0.62,0.18,0.95], pos: [0.55,0.09,0.1], color: "dark", parent: "jambe_d" },
+      { shape: "bevel", size: [0.5,0.4,0.55], pos: [-0.5,1.35,0], color: "dark", pivot: "jambe_g" },
+      { shape: "bevel", size: [0.44,0.7,0.5], pos: [-0.55,1.0,0.05], color: "light", parent: "jambe_g" },
+      { shape: "bevel", size: [0.5,0.3,0.55], pos: [-0.55,0.64,0.14], color: "faction", parent: "jambe_g" },
+      { shape: "bevel", size: [0.42,0.58,0.56], pos: [-0.55,0.36,0], color: "metal", parent: "jambe_g" },
+      { shape: "box", size: [0.06,0.34,0.04], pos: [-0.55,0.38,0.29], color: "glow", parent: "jambe_g" },
+      { shape: "bevel", size: [0.62,0.18,0.95], pos: [-0.55,0.09,0.1], color: "dark", parent: "jambe_g" },
       { shape: "bevel", size: [1.0,0.4,0.72], pos: [0,1.35,0], color: "dark" },
       // torse (pivot)
       { shape: "bevel", size: [1.3,0.9,1.0], pos: [0,1.92,0], color: "faction", pivot: "torse" },
@@ -183,20 +189,27 @@ export const UNIT_MODELS: Record<string, Model> = {
   // line_robot : petit fantassin bipède, fusil au bras droit (unité la plus nombreuse : peu de triangles)
   line_robot: {
     parts: [
-      { shape: "box", size: [0.16,0.38,0.2], pos: [0.15,0.55,0], color: "metal", mirror: true },
-      { shape: "box", size: [0.19,0.34,0.25], pos: [0.15,0.22,0.02], color: "light", mirror: true },
-      { shape: "box", size: [0.24,0.08,0.34], pos: [0.15,0.04,0.06], color: "dark", mirror: true },
+      // jambes articulées (pivots à la hanche) et bassin
+      { shape: "box", size: [0.14,0.1,0.16], pos: [0.15,0.72,0], color: "dark", pivot: "jambe_d" },
+      { shape: "box", size: [0.16,0.38,0.2], pos: [0.15,0.55,0], color: "metal", parent: "jambe_d" },
+      { shape: "box", size: [0.19,0.34,0.25], pos: [0.15,0.22,0.02], color: "light", parent: "jambe_d" },
+      { shape: "box", size: [0.24,0.08,0.34], pos: [0.15,0.04,0.06], color: "dark", parent: "jambe_d" },
+      { shape: "box", size: [0.14,0.1,0.16], pos: [-0.15,0.72,0], color: "dark", pivot: "jambe_g" },
+      { shape: "box", size: [0.16,0.38,0.2], pos: [-0.15,0.55,0], color: "metal", parent: "jambe_g" },
+      { shape: "box", size: [0.19,0.34,0.25], pos: [-0.15,0.22,0.02], color: "light", parent: "jambe_g" },
+      { shape: "box", size: [0.24,0.08,0.34], pos: [-0.15,0.04,0.06], color: "dark", parent: "jambe_g" },
       { shape: "box", size: [0.42,0.16,0.26], pos: [0,0.76,0], color: "dark" },
-      { shape: "bevel", size: [0.56,0.48,0.36], pos: [0,1.02,0], color: "faction" },
-      { shape: "bevel", size: [0.42,0.26,0.1], pos: [0,1.08,0.19], color: "light" },
-      { shape: "bevel", size: [0.2,0.18,0.3], pos: [0.36,1.2,0], color: "light", mirror: true },
-      { shape: "bevel", size: [0.24,0.2,0.26], pos: [0,1.38,0.03], color: "light" },
-      { shape: "box", size: [0.18,0.05,0.03], pos: [0,1.39,0.17], color: "glow" },
-      { shape: "box", size: [0.12,0.4,0.14], pos: [0.38,0.98,0.05], color: "metal", mirror: true },
-      { shape: "box", size: [0.1,0.12,0.62], pos: [0.38,0.82,0.32], color: "dark" },
-      { shape: "box", size: [0.05,0.05,0.05], pos: [0.38,0.82,0.65], color: "glow" },
-      { shape: "box", size: [0.36,0.3,0.16], pos: [0,1.05,-0.25], color: "dark" },
-      { shape: "box", size: [0.06,0.04,0.03], pos: [0.12,1.15,-0.34], color: "amber" },
+      // haut du corps orientable (pivot torse) : il vise la cible pendant la marche
+      { shape: "bevel", size: [0.56,0.48,0.36], pos: [0,1.02,0], color: "faction", pivot: "torse" },
+      { shape: "bevel", size: [0.42,0.26,0.1], pos: [0,1.08,0.19], color: "light", parent: "torse" },
+      { shape: "bevel", size: [0.2,0.18,0.3], pos: [0.36,1.2,0], color: "light", mirror: true, parent: "torse" },
+      { shape: "bevel", size: [0.24,0.2,0.26], pos: [0,1.38,0.03], color: "light", parent: "torse" },
+      { shape: "box", size: [0.18,0.05,0.03], pos: [0,1.39,0.17], color: "glow", parent: "torse" },
+      { shape: "box", size: [0.12,0.4,0.14], pos: [0.38,0.98,0.05], color: "metal", mirror: true, parent: "torse" },
+      { shape: "box", size: [0.1,0.12,0.62], pos: [0.38,0.82,0.32], color: "dark", parent: "torse" },
+      { shape: "box", size: [0.05,0.05,0.05], pos: [0.38,0.82,0.65], color: "glow", parent: "torse" },
+      { shape: "box", size: [0.36,0.3,0.16], pos: [0,1.05,-0.25], color: "dark", parent: "torse" },
+      { shape: "box", size: [0.06,0.04,0.03], pos: [0.12,1.15,-0.34], color: "amber", parent: "torse" },
     ],
   },
   // moto : glisseur effilé, nez clair, verrière sombre, nacelles latérales à liseré cyan, ailerons (332 triangles)

@@ -27,6 +27,8 @@ pub const O_PATROL: i32 = 17;
 pub const O_TOGGLE: i32 = 18;
 pub const O_CANCEL: i32 = 19;
 pub const O_SURRENDER: i32 = 20;
+/// Part de la sortie de sa source prise par un bras : bâtiment, % (0 : automatique).
+pub const O_SET_SHARE: i32 = 21;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -327,6 +329,16 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             }
         }
         O_SPECIAL => special(w, p, c.next() as u32, c.next(), c.next(), c.next() as u32),
+        O_SET_SHARE => {
+            let r = c.next();
+            let v = c.next().clamp(0, 100) as u8;
+            if let Some(b) = own_building(w, p, r) {
+                if w.buildings[b].def().class == crate::data::BClass::Inserter {
+                    w.buildings[b].share = v;
+                    w.buildings[b].wake = 0;
+                }
+            }
+        }
         O_TOGGLE => {
             if let Some(b) = own_building(w, p, c.next()) {
                 let bb = &mut w.buildings[b];

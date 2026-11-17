@@ -19,7 +19,7 @@ const ANG = (Math.PI * 2) / 65536;
 
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number }[] = [];
   cap = 0;
   n = 0;
   /** hauteur du modèle à l'échelle (pour placer la fumée au sommet) */
@@ -36,7 +36,10 @@ class KindMesh {
     const size = new THREE.Vector3();
     built.box.getSize(size);
     this.height = size.y * scale;
+    this.legs = built.pivots.some((p) => /^jambe/.test(p.name));
   }
+  /** le modèle a des jambes articulées (pivots « jambe… ») */
+  legs = false;
   ensure(need: number): void {
     if (need <= this.cap) return;
     const cap = Math.max(16, this.cap * 2, need);
@@ -48,7 +51,9 @@ class KindMesh {
     this.pivots = this.built.pivots.map((p) => {
       const tm = teamInstancedMesh(p.geometry, cap, this.texPerTile * this.scale);
       this.scene.add(tm.mesh);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name) };
+      // jambe : 1 ou 2 selon la phase (gauche ou arrière décalée d'un demi-pas), 0 sinon
+      const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg };
     });
     this.cap = cap;
   }
@@ -67,6 +72,9 @@ class KindMesh {
     }
   }
 }
+
+/** Bâtiments qui reçoivent des objets (et ont donc des trappes). */
+const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad]);
 
 const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
@@ -139,6 +147,14 @@ export class Entities {
   beamList: { a: THREE.Vector3; b: THREE.Vector3; age: number; life: number; color: THREE.Color }[] = [];
   /** Positions monde interpolées des unités affichées (pour la sélection à la souris). */
   screen: UnitScreen[] = [];
+  /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
+  anim = new Map<number, { phase: number; torso: number; seen: number }>();
+  animFrame = 0;
+  /** trappes des bâtiments qui reçoivent des objets : fermées, ou ouvertes (entrée cyan, sortie ambre) */
+  hatchClosed: THREE.InstancedMesh;
+  hatchFrame: THREE.InstancedMesh;
+  hatchHole: THREE.InstancedMesh;
+  private hatchFor: Frame | null = null;
   playerColor: number[] = [];
 
   constructor(
@@ -206,6 +222,17 @@ export class Entities {
     this.wrecks.count = 0;
     this.wrecks.frustumCulled = false;
     this.wrecks.castShadow = true;
+    // trappes : plaque fermée ; ouverte = cadre lumineux coloré autour d'une ouverture sombre
+    const HATCH_MAX = 6000;
+    this.hatchClosed = new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), new THREE.MeshStandardNodeMaterial({ color: 0x3a434e, roughness: 0.55, metalness: 0.5 }), HATCH_MAX);
+    this.hatchFrame = new THREE.InstancedMesh(new THREE.BoxGeometry(0.64, 0.44, 0.04), new THREE.MeshBasicNodeMaterial({}), HATCH_MAX);
+    this.hatchHole = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.3, 0.05), new THREE.MeshBasicNodeMaterial({ color: 0x06090d }), HATCH_MAX);
+    this.hatchFrame.setColorAt(0, new THREE.Color());
+    for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
     this.wrecks.receiveShadow = true;
     this.group.add(this.wrecks);
     const ring = new THREE.RingGeometry(0.85, 1, 24).rotateX(-Math.PI / 2);
@@ -273,6 +300,8 @@ export class Entities {
    * alpha : interpolation entre le tick précédent et le tick courant (0..1).
    */
   update(f: Frame, alpha: number, me: number, myTeam: number, selected: Set<number>, strategic: boolean, iconScale: number, dt: number, spectator: boolean, viewRect: [number, number, number, number]): void {
+    // nettoyage de l'état d'animation des unités disparues ou longtemps hors de vue
+    if (++this.animFrame % 600 === 0) for (const [k, v] of this.anim) if (this.animFrame - v.seen > 600) this.anim.delete(k);
     const buf = f.buf;
     const vis = f.vis;
     const vw = f.visW;
@@ -342,17 +371,33 @@ export class Entities {
       const turret = ((buf[o + 6] >>> 16) & 0xffff) * ANG;
       let bob = 0;
       if (def.layer === Layer.Air || def.layer === Layer.Hover) bob = Math.sin(performance.now() / 400 + id) * 0.06;
+      // marche : la phase avance avec la distance parcourue, l'amplitude suit la vitesse
+      let st = this.anim.get(id);
+      if (!st) this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+      st.seen = this.animFrame;
+      const per = Math.hypot(buf[o + 2] - buf[o + 4], buf[o + 3] - buf[o + 5]) / TILE; // cases par tick
+      const vmax = Math.max(0.1, def.speed / 10); // cases par seconde
+      const walk = Math.min(1, (per * 20) / vmax);
+      const stride = Math.max(0.4, km.height * 0.7);
+      st.phase += ((per * 20 * dt) / stride) * Math.PI;
+      if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
       const sc = km.scale;
       tmpM.compose(tmpV.set(x, y + bob, z), tmpQ, tmpS.set(sc, sc, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       setTeamColor(km.body!, km.n, col);
+      // haut du corps : il tourne vers sa cible à vitesse limitée (au plus 6 radians par seconde)
+      const aim = flags & UF.IDLE && !(flags & UF.FIRING) && turret === 0 ? 0 : facing - turret;
+      let dA = Math.atan2(Math.sin(aim - st.torso), Math.cos(aim - st.torso));
+      dA = Math.max(-6 * dt, Math.min(6 * dt, dA));
+      st.torso += dA;
       for (const p of km.pivots) {
-        // la tourelle tourne vers sa cible ; les rotors tournent en continu
-        const isRotor = p.spin;
-        const rot = flags & UF.IDLE && !(flags & UF.FIRING) && turret === 0 ? 0 : facing - turret;
+        // la tourelle tourne vers sa cible ; les rotors tournent en continu ; les jambes se balancent
         tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z);
-        tmpM2.multiply(new THREE.Matrix4().makeRotationY(isRotor ? performance.now() / 80 : rot));
+        if (p.leg !== 0) {
+          // jambes opposées (gauche / droite, avant / arrière) : balancement autour de la hanche
+          tmpM2.multiply(new THREE.Matrix4().makeRotationX(Math.sin(st.phase + (p.leg > 1 ? Math.PI : 0)) * 0.55 * walk));
+        } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
         tmpM2.scale(tmpS.set(sc, sc, sc));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
@@ -552,6 +597,7 @@ export class Entities {
     for (const m of this.vehicleMeshes) m.end();
     for (const m of this.unitMeshes) m.end();
     for (const m of this.buildingMeshes) m.end();
+    this.updateHatches(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
       ic.instanceMatrix.needsUpdate = true;
       if (ic.instanceColor) ic.instanceColor.needsUpdate = true;
@@ -664,6 +710,96 @@ export class Entities {
     if (this.shields.instanceColor) this.shields.instanceColor.needsUpdate = true;
     this.updateFx(dt);
     void me;
+  }
+
+  /**
+   * Trappes des bâtiments qui reçoivent des objets : sur chaque case de bord, ouverte si un tapis
+   * ou un bras y entre (cadre cyan) ou en sort (cadre ambre), fermée sinon. Recalculées à chaque
+   * nouvel état de la partie (pas à chaque image).
+   */
+  private updateHatches(f: Frame, strategic: boolean, myTeam: number, spectator: boolean): void {
+    if (strategic) {
+      this.hatchClosed.count = this.hatchFrame.count = this.hatchHole.count = 0;
+      this.hatchFor = null;
+      return;
+    }
+    if (f === this.hatchFor) return;
+    this.hatchFor = f;
+    const buf = f.buf;
+    const W = this.map.w;
+    const DX = [1, 0, -1, 0];
+    const DZ = [0, 1, 0, -1];
+    // tapis et bras : case -> direction (bras : 4 + direction)
+    const links = new Map<number, number>();
+    let o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const cls = this.data.buildings[buf[o + 1] & 0xff].cls;
+      if (cls !== BClass.Belt && cls !== BClass.Inserter) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (cls === BClass.Inserter ? 4 : 0) + dir);
+    }
+    const inCol = new THREE.Color(0.5, 2.2, 2.6);
+    const outCol = new THREE.Color(2.8, 1.7, 0.35);
+    const q = new THREE.Quaternion();
+    const one = new THREE.Vector3(1, 1, 1);
+    let nc = 0;
+    let no = 0;
+    o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const kind = buf[o + 1] & 0xff;
+      const def = this.data.buildings[kind];
+      if (!RECEIVERS.has(def.cls) || buf[o + 4] < 65536) continue;
+      const owner = (buf[o + 1] >> 8) & 0xff;
+      if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      const bx = buf[o + 2] & 0xffff;
+      const bz = (buf[o + 2] >>> 16) & 0xffff;
+      const w = dir & 1 ? def.h : def.w;
+      const h = dir & 1 ? def.w : def.h;
+      const inside = (x: number, z: number) => x >= bx && x < bx + w && z >= bz && z < bz + h;
+      for (let side = 0; side < 4; side++) {
+        const n = side & 1 ? w : h; // cases le long de la face
+        for (let k = 0; k < n; k++) {
+          // case de bord, case voisine à l'extérieur, centre de la trappe sur la face
+          const ex = side === 0 ? bx + w - 1 : side === 2 ? bx : bx + k;
+          const ez = side === 1 ? bz + h - 1 : side === 3 ? bz : bz + k;
+          const ox = ex + DX[side];
+          const oz = ez + DZ[side];
+          const code = links.get(oz * W + ox);
+          let state = 0; // 0 fermée, 1 entrée, 2 sortie
+          if (code !== undefined && code < 4) {
+            if (code === side) state = 2;
+            else if (code === (side + 2) % 4) state = 1;
+          } else if (code !== undefined) {
+            const d = code - 4;
+            if (inside(ox + DX[d], oz + DZ[d])) state = 1;
+            else if (inside(ox - DX[d], oz - DZ[d])) state = 2;
+          }
+          const px = ex + 0.5 + DX[side] * 0.52;
+          const pz = ez + 0.5 + DZ[side] * 0.52;
+          const y = groundHeight(this.map, px, pz) + 0.3;
+          q.setFromAxisAngle(UP, [Math.PI / 2, 0, -Math.PI / 2, Math.PI][side]);
+          if (state === 0) {
+            if (nc >= 6000) continue;
+            tmpM.compose(tmpV.set(px, y, pz), q, one);
+            this.hatchClosed.setMatrixAt(nc++, tmpM);
+          } else {
+            if (no >= 6000) continue;
+            tmpM.compose(tmpV.set(px, y, pz), q, one);
+            this.hatchFrame.setMatrixAt(no, tmpM);
+            this.hatchFrame.setColorAt(no, state === 1 ? inCol : outCol);
+            tmpM.compose(tmpV.set(px + DX[side] * 0.012, y, pz + DZ[side] * 0.012), q, one);
+            this.hatchHole.setMatrixAt(no, tmpM);
+            no++;
+          }
+        }
+      }
+    }
+    this.hatchClosed.count = nc;
+    this.hatchFrame.count = no;
+    this.hatchHole.count = no;
+    for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole]) m.instanceMatrix.needsUpdate = true;
+    if (this.hatchFrame.instanceColor) this.hatchFrame.instanceColor.needsUpdate = true;
   }
 
   /** Maillage des objets d'un type (modèle de assets/models/items.ts, un tiers de case de large). */
