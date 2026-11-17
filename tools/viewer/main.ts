@@ -17,7 +17,7 @@ const defs: { key: string; name: string; size: number; w: number; h: number }[] 
     ? data.units.map((u: { key: string; name: string; radius: number }) => ({ key: u.key, name: u.name, size: Math.max(0.6, (u.radius * 2.4) / 256), w: 0, h: 0 }))
     : set === "items"
       ? data.items.slice(1).map((it: { key: string; name: string }) => ({ key: it.key, name: it.name, size: 1, w: 0, h: 0 }))
-      : data.buildings.map((b: { key: string; name: string; w: number; h: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h), w: b.w, h: b.h }));
+      : data.buildings.map((b: { key: string; name: string; w: number; h: number; reach?: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h) * Math.max(1, b.reach ?? 1), w: b.w, h: b.h }));
 const models = set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
 // variantes de modèles sans définition propre (virages des tapis…) : affichées si demandées par leur clé
 const variants = (only ?? []).filter((k) => models[k] && !defs.some((d) => d.key === k)).map((k) => ({ key: k, name: k, size: 1, w: 1, h: 1 }));

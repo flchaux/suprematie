@@ -14,6 +14,8 @@ export const O = {
   RESEARCH: 10,
   /** file de recherche : ajoute (ou retire si déjà en file) ; 0 vide la file */
   RESEARCH_QUEUE: 22,
+  /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
+  COLLECT: 23,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,

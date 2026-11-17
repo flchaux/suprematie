@@ -78,7 +78,7 @@ export class CommandOverlay {
         mat.depthWrite = false;
         const size = new THREE.Vector3();
         built.box.getSize(size);
-        g = { tm, scale: buildingScale(def.w, size.x, size.z) };
+        g = { tm, scale: buildingScale(def.w, size.x, size.z, def.reach) };
         this.group.add(tm.mesh);
         this.planned.set(kind, g);
       }

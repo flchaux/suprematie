@@ -87,6 +87,9 @@ pub enum Order {
     Enter { target: u32 },
     /// se tourner vers l'angle `a` (16 bits) : fin d'un déplacement en formation orientée
     Face { a: i32 },
+    /// commandant : se poster près d'un de nos tapis et en retirer les objets qui passent sur cette
+    /// case, versés au stock commun (comme un dépôt)
+    Collect { target: u32 },
 }
 
 impl Order {
@@ -106,6 +109,7 @@ impl Order {
             Order::Jump { .. } => 12,
             Order::Enter { .. } => 13,
             Order::Face { .. } => 14,
+            Order::Collect { .. } => 15,
         }
     }
 }
@@ -126,7 +130,7 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::Face { a } => a.ser(w),
             Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } => {
@@ -159,6 +163,7 @@ impl Ser for Order {
             11 => Order::Teleport { x: i(r), y: i(r) },
             12 => Order::Jump { beacon: u(r) },
             14 => Order::Face { a: i(r) },
+            15 => Order::Collect { target: u(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

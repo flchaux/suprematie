@@ -177,6 +177,22 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.16,0.07,0.07], pos: [0,0.44,0.53], color: "dark", parent: "bras" },
     ],
   },
+  // long_inserter : bras long (prise et dépose à 2 cases) ; liseré ambre, colonne haute pour passer
+  // par-dessus un tapis, moyeu au centre (pivot) et flèche de 1,6 case terminée par une pince (≈ 130 triangles)
+  long_inserter: {
+    parts: [
+      { shape: "cylinder", sides: 6, radius: 0.26, height: 0.08, pos: [0,0.04,0], color: "dark" },
+      { shape: "box", size: [0.36,0.02,0.36], pos: [0,0.09,0], color: "amber" },
+      { shape: "box", size: [0.28,0.12,0.28], pos: [0,0.16,0], color: "faction" },
+      { shape: "box", size: [0.1,0.42,0.1], pos: [0,0.43,0], color: "metal" },
+      { shape: "box", size: [0.18,0.1,0.18], pos: [0,0.66,0], color: "light", pivot: "bras" },
+      { shape: "box", size: [0.06,0.06,1.6], pos: [0,0.7,0.72], color: "light", parent: "bras" },
+      { shape: "box", size: [0.03,0.02,1.2], pos: [0,0.74,0.62], color: "amber", parent: "bras" },
+      { shape: "box", size: [0.06,0.06,0.36], pos: [0,0.7,-0.24], color: "dark", parent: "bras" },
+      { shape: "box", size: [0.05,0.2,0.05], pos: [0,0.6,1.5], color: "metal", parent: "bras" },
+      { shape: "box", size: [0.18,0.07,0.08], pos: [0,0.48,1.5], color: "dark", parent: "bras" },
+    ],
+  },
   // furnace : bloc sombre à coins blindés, gueule de feu ambre, cheminée rougeoyante (708 triangles)
   furnace: {
     parts: [

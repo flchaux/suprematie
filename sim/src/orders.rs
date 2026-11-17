@@ -31,6 +31,8 @@ pub const O_SURRENDER: i32 = 20;
 pub const O_SET_SHARE: i32 = 21;
 /// File de recherche : ajoute une technologie (ou la retire si elle y est déjà) ; 0 vide la file.
 pub const O_RESEARCH_QUEUE: i32 = 22;
+/// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
+pub const O_COLLECT: i32 = 23;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -376,6 +378,21 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             }
         }
         O_SPECIAL => special(w, p, c.next() as u32, c.next(), c.next(), c.next() as u32),
+        O_COLLECT => {
+            let q = c.next() & 1 != 0;
+            let target = c.next() as u32;
+            let ok = w.building(target).is_some_and(|b| {
+                let bb = &w.buildings[b];
+                bb.owner == p && bb.def().class == crate::data::BClass::Belt && bb.complete()
+            });
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && w.units.kind[s] == crate::data::U_COMMANDER {
+                        give(w, s, q, Order::Collect { target });
+                    }
+                }
+            }
+        }
         O_SET_SHARE => {
             let r = c.next();
             let v = c.next().clamp(0, 100) as u8;

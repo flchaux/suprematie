@@ -192,7 +192,7 @@ export class Entities {
       const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4));
       const size = new THREE.Vector3();
       built.box.getSize(size);
-      const scale = buildingScale(b.w, size.x, size.z);
+      const scale = buildingScale(b.w, size.x, size.z, b.reach);
       this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
       // tapis : virages (objets entrant par la gauche, par la droite), à l'échelle du tapis droit
       if (b.cls === BClass.Belt) {
@@ -873,14 +873,14 @@ export class Entities {
     const W = this.map.w;
     const DX = [1, 0, -1, 0];
     const DZ = [0, 1, 0, -1];
-    // tapis et bras : case -> direction (bras : 4 + direction)
+    // tapis et bras : case -> direction (bras : 4 * portée + direction)
     const links = new Map<number, number>();
     let o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-      const cls = this.data.buildings[buf[o + 1] & 0xff].cls;
-      if (cls !== BClass.Belt && cls !== BClass.Inserter) continue;
+      const bd = this.data.buildings[buf[o + 1] & 0xff];
+      if (bd.cls !== BClass.Belt && bd.cls !== BClass.Inserter) continue;
       const dir = (buf[o + 1] >> 16) & 3;
-      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (cls === BClass.Inserter ? 4 : 0) + dir);
+      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (bd.cls === BClass.Inserter ? 4 * Math.max(1, bd.reach ?? 1) : 0) + dir);
     }
     const inCol = new THREE.Color(0.5, 2.2, 2.6);
     const outCol = new THREE.Color(2.8, 1.7, 0.35);
@@ -917,9 +917,21 @@ export class Entities {
             if (code === side) state = 2;
             else if (code === (side + 2) % 4) state = 1;
           } else if (code !== undefined) {
-            const d = code - 4;
-            if (inside(ox + DX[d], oz + DZ[d])) state = 1;
-            else if (inside(ox - DX[d], oz - DZ[d])) state = 2;
+            const d = code & 3;
+            const r = code >> 2;
+            if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
+            else if (inside(ox - r * DX[d], oz - r * DZ[d])) state = 2;
+          }
+          // bras long posé à 2 cases de la face (par-dessus la case voisine)
+          if (state === 0) {
+            const lx = ox + DX[side];
+            const lz = oz + DZ[side];
+            const lc = links.get(lz * W + lx);
+            if (lc !== undefined && lc >> 2 === 2) {
+              const d = lc & 3;
+              if (inside(lx + 2 * DX[d], lz + 2 * DZ[d])) state = 1;
+              else if (inside(lx - 2 * DX[d], lz - 2 * DZ[d])) state = 2;
+            }
           }
           const px = ex + 0.5 + DX[side] * face;
           const pz = ez + 0.5 + DZ[side] * face;

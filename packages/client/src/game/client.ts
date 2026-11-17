@@ -1341,6 +1341,7 @@ export class GameClient {
       const def = this.data.buildings[tb.kind];
       if (def.cls === BClass.Gate) return "move";
       if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
+      if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => this.data!.units[u.kind].key === "commander")) return "load";
     }
     if (engs) {
       const f = this.frame;
@@ -1409,6 +1410,17 @@ export class GameClient {
       if (engs.length && (tb.build < 65536 || tb.hp < def.hp)) {
         this.cmd(Ord.target(O.ASSIST, engs, tb.ref, queue));
         if (others.length) this.cmd(Ord.move(others, gx, gy, queue));
+        sfx.confirm();
+        return;
+      }
+      // commandant sur un de nos tapis : il s'y poste et récupère les objets qui passent (stock commun)
+      const cmdrs = units.filter((u) => this.data!.units[u.kind].key === "commander").map((u) => u.id);
+      if (def.cls === BClass.Belt && cmdrs.length) {
+        this.cmd(Ord.target(O.COLLECT, cmdrs, tb.ref, queue));
+        const rest = units.filter((u) => !cmdrs.includes(u.id));
+        if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
+        this.scene?.addMarker(g.x, g.z, 0xffd060);
+        pushMessage("Commandant : récupération des objets du tapis (versés au stock)", "info");
         sfx.confirm();
         return;
       }

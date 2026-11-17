@@ -51,6 +51,7 @@ export const BUILDINGS = {
   belt2: "a short straight segment of a fast conveyor belt with blue side rails",
   belt3: "a short straight segment of an express conveyor belt with glowing cyan side rails",
   inserter: "a small industrial robotic pick-and-place arm on a round base",
+  long_inserter: "a tall industrial robotic pick-and-place arm on a round base with a very long horizontal boom and a gripper at its tip, amber light strips",
   furnace: "a compact square smelting furnace with a glowing orange mouth and a chimney",
   assembler1: "a square automated assembling machine with a hatch and a small robotic arm inside",
   assembler2: "a square fast assembling machine with blue panels and twin robotic arms",

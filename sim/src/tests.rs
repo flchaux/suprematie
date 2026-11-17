@@ -476,3 +476,71 @@ fn output_arm_and_belt_alternate() {
     assert!(picks + on_belt as u32 >= 12, "trop peu de produits : {} + {}", picks, on_belt);
     assert!(picks.abs_diff(on_belt as u32) <= 1, "le bras et le tapis n'alternent pas : {} contre {}", picks, on_belt);
 }
+
+/// Bras long : prend dans l'extracteur à 2 cases et pose dans le dépôt à 2 cases, par-dessus un tapis
+/// qu'il ne touche pas.
+#[test]
+fn long_arm_reaches_over_a_belt() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    spot(&mut w, IRON_ORE, 100, 100);
+    let ext = put(&mut w, B_EXTRACTOR, 100, 100, 3); // sortie vers le nord, sur une case vide
+    let arm = put(&mut w, B_LONG_INSERTER, 103, 100, 0); // prend en (101, 100), pose en (105, 100)
+    let belt = put(&mut w, B_BELT1, 102, 100, 1); // tapis entre l'extracteur et le bras, vers le sud
+    put(&mut w, B_BELT1, 102, 101, 1);
+    put(&mut w, B_DEPOT, 105, 100, 0);
+    put(&mut w, B_GENERATOR, 100, 104, 0);
+    assert_eq!(crate::buildings::takers_of(&w, ext), vec![arm]);
+    let before = w.players[0].stock[IRON_ORE as usize];
+    for _ in 0..3000 {
+        w.step(&[]);
+        let bb = &w.buildings[belt];
+        assert!(w.belts.lines[bb.line as usize].items.is_empty(), "le bras long a posé sur le tapis du milieu");
+    }
+    let got = w.players[0].stock[IRON_ORE as usize] - before;
+    assert!(got > 20, "trop peu de minerai livré au dépôt par le bras long : {}", got);
+}
+
+/// Commandant : posté près d'un tapis, il en retire les objets et les verse au stock ; les autres unités
+/// ignorent l'ordre.
+#[test]
+fn commander_collects_items_from_belt() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    spot(&mut w, IRON_ORE, 94, 100);
+    put(&mut w, B_EXTRACTOR, 94, 100, 0); // sortie vers l'est, sur le tapis
+    let mut belts = Vec::new();
+    for x in 96..104 {
+        belts.push(put(&mut w, B_BELT1, x, 100, 0)); // tapis sans issue : les objets s'y entassent
+    }
+    put(&mut w, B_GENERATOR, 94, 104, 0);
+    for _ in 0..1500 {
+        w.step(&[]);
+    }
+    let line = w.buildings[belts[0]].line as usize;
+    let piled = w.belts.lines[line].items.len();
+    assert!(piled > 10, "le tapis devrait être encombré : {}", piled);
+    let cmd = w.spawn_unit(U_COMMANDER, 0, 110 * TILE, 110 * TILE);
+    let robot = w.spawn_unit(U_LINE_ROBOT, 0, 111 * TILE, 110 * TILE);
+    let target = w.building_ref(belts[7]) as i32;
+    let before = w.players[0].stock[IRON_ORE as usize];
+    w.step(&[7, crate::orders::O_COLLECT, 0, 0, target, 2, cmd as i32, robot as i32]);
+    let rs = w.unit(robot).unwrap();
+    assert!(w.units.cold[rs].orders.is_empty(), "seul le commandant reçoit l'ordre");
+    for _ in 0..1200 {
+        w.step(&[]);
+    }
+    let cs = w.unit(cmd).unwrap();
+    assert!(matches!(w.units.cold[cs].orders.first(), Some(Order::Collect { .. })), "l'ordre reste actif");
+    let got = w.players[0].stock[IRON_ORE as usize] - before;
+    assert!(got > 30, "trop peu d'objets récupérés : {}", got);
+    assert!(w.belts.lines[line].items.len() < piled, "le tapis s'est vidé en partie");
+    // un tapis ennemi ou un autre bâtiment : ordre refusé
+    let depot = put(&mut w, B_DEPOT, 110, 90, 0);
+    let rd = w.building_ref(depot) as i32;
+    w.step(&[6, crate::orders::O_COLLECT, 0, 0, rd, 1, cmd as i32]);
+    let cs = w.unit(cmd).unwrap();
+    assert!(!matches!(w.units.cold[cs].orders.first(), Some(Order::Collect { target }) if *target == rd as u32));
+}

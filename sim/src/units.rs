@@ -7,6 +7,9 @@ use crate::flow::{self, AT_GOAL, NO_DIR};
 use crate::map::{P_HOVER, P_LAND, P_NAVAL};
 use crate::world::*;
 
+/// Distance (sous-unités) à laquelle le commandant récupère les objets d'un tapis.
+const COLLECT_RANGE: i32 = 3 * TILE;
+
 #[inline]
 pub fn move_class(layer: Layer) -> Option<u8> {
     match layer {
@@ -680,6 +683,30 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             };
             if !cont {
                 pop_order(w, s);
+            }
+            NONE
+        }
+        Order::Collect { target } => {
+            // commandant posté près d'un de nos tapis : chaque objet qui passe sur cette case est versé au stock
+            let Some(b) = w.building(target) else {
+                pop_order(w, s);
+                return NONE;
+            };
+            if w.buildings[b].owner != owner || w.buildings[b].def().class != BClass::Belt {
+                pop_order(w, s);
+                return NONE;
+            }
+            let (tx, ty) = w.buildings[b].center();
+            let range = COLLECT_RANGE;
+            if dist(w.units.x[s], w.units.y[s], tx, ty) > range {
+                steer(w, s, tx, ty, tx, ty, range - TILE);
+                return NONE;
+            }
+            clear_goal(w, s);
+            let it = crate::belts::take_from_belt(w, b, &|_| true);
+            if it != 0 {
+                w.players[owner as usize].stock[it as usize] += 1;
+                w.units.cold[s].flags |= UF_WORKING;
             }
             NONE
         }

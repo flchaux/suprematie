@@ -429,14 +429,25 @@ pub fn wake_watchers(w: &mut World, b: usize) {
     }
 }
 
+/// Case de prise et case de dépose d'un bras (à `reach` cases de part et d'autre, selon sa direction).
+pub fn arm_ends(bb: &Building) -> ((i32, i32), (i32, i32)) {
+    let (dx, dy) = DIRS[(bb.dir & 3) as usize];
+    let r = bb.def().reach.max(1) as i32;
+    ((bb.x - dx * r, bb.y - dy * r), (bb.x + dx * r, bb.y + dy * r))
+}
+
+/// Portée maximale des bras (cases) : pourtour à examiner autour d'un bâtiment pour trouver ses bras.
+const ARM_REACH_MAX: i32 = 2;
+
 /// Bras qui se servent au bâtiment `sb` (leur case de prise est dans son emprise), par indice croissant.
 pub fn takers_of(w: &World, sb: usize) -> Vec<usize> {
     let bb = &w.buildings[sb];
     let (bw, bh) = bb.size();
     let inside = |x: i32, y: i32| x >= bb.x && x < bb.x + bw && y >= bb.y && y < bb.y + bh;
     let mut v = Vec::new();
-    for ty in bb.y - 1..=bb.y + bh {
-        for tx in bb.x - 1..=bb.x + bw {
+    let r = ARM_REACH_MAX;
+    for ty in bb.y - r..bb.y + bh + r {
+        for tx in bb.x - r..bb.x + bw + r {
             if inside(tx, ty) || !w.map.inside(tx, ty) {
                 continue;
             }
@@ -449,8 +460,8 @@ pub fn takers_of(w: &World, sb: usize) -> Vec<usize> {
             if !cb.alive || cb.def().class != BClass::Inserter || !cb.complete() {
                 continue;
             }
-            let (dx, dy) = DIRS[cb.dir as usize];
-            if inside(cb.x - dx, cb.y - dy) {
+            let ((sx, sy), _) = arm_ends(cb);
+            if inside(sx, sy) {
                 v.push(c);
             }
         }
@@ -468,8 +479,9 @@ pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
     let belts_too = bb.def().class == BClass::Crafter;
     let inside = |x: i32, y: i32| x >= bb.x && x < bb.x + bw && y >= bb.y && y < bb.y + bh;
     let mut v = Vec::new();
-    for ty in bb.y - 1..=bb.y + bh {
-        for tx in bb.x - 1..=bb.x + bw {
+    let r = ARM_REACH_MAX;
+    for ty in bb.y - r..bb.y + bh + r {
+        for tx in bb.x - r..bb.x + bw + r {
             if inside(tx, ty) || !w.map.inside(tx, ty) {
                 continue;
             }
@@ -484,8 +496,8 @@ pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
             }
             match cb.def().class {
                 BClass::Inserter => {
-                    let (dx, dy) = DIRS[cb.dir as usize];
-                    if inside(cb.x - dx, cb.y - dy) {
+                    let ((sx, sy), _) = arm_ends(cb);
+                    if inside(sx, sy) {
                         v.push(c);
                     }
                 }
@@ -541,8 +553,7 @@ fn taker_ready(w: &World, c: usize, it: u8) -> bool {
     if cb.phase != 0 || cb.hand != 0 {
         return false;
     }
-    let (dx, dy) = DIRS[cb.dir as usize];
-    let (tx, ty) = (cb.x + dx, cb.y + dy);
+    let (_, (tx, ty)) = arm_ends(cb);
     if !w.map.inside(tx, ty) {
         return false;
     }
@@ -623,9 +634,7 @@ fn share_turn(w: &mut World, me: usize, sb: usize) -> Option<u64> {
 /// Part effective d'un bras dans la sortie de sa source (millièmes) et nombre de sorties de cette source
 /// (bras et tapis).
 pub fn share_info(w: &World, b: usize) -> (u64, usize) {
-    let bb = &w.buildings[b];
-    let (dx, dy) = DIRS[bb.dir as usize];
-    let (sx, sy) = (bb.x - dx, bb.y - dy);
+    let ((sx, sy), _) = arm_ends(&w.buildings[b]);
     if !w.map.inside(sx, sy) {
         return (1000, 1);
     }
@@ -1247,14 +1256,12 @@ fn tick_gate(w: &mut World, b: usize) {
 const SWING: u16 = 6;
 
 fn tick_inserter(w: &mut World, b: usize) {
-    let (x, y, dir) = (w.buildings[b].x, w.buildings[b].y, w.buildings[b].dir);
-    let (dx, dy) = DIRS[dir as usize];
-    let (sx, sy, tx, ty) = (x - dx, y - dy, x + dx, y + dy);
+    let ((sx, sy), (tx, ty)) = arm_ends(&w.buildings[b]);
     if !w.map.inside(sx, sy) || !w.map.inside(tx, ty) {
         w.buildings[b].wake = w.tick + SLEEP;
         return;
     }
-    let s = use_power(w, b, bdef(B_INSERTER).power_use);
+    let s = use_power(w, b, w.buildings[b].def().power_use);
     if s < 256 {
         w.buildings[b].wake = w.tick + 10;
         return;

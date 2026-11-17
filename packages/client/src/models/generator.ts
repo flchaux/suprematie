@@ -246,11 +246,12 @@ export const BUILDING_FILL = 0.94;
  * Échelle d'un modèle de bâtiment de `w` cases dont la boîte mesure `sx` x `sz` (unités du modèle).
  * Plusieurs cases : le modèle est ajusté à l'emprise (moins une marge). Une case : les modèles sont
  * dessinés en unités de case et gardent leur taille (un bras fin reste fin), réduits seulement s'ils
- * dépassent la case.
+ * dépassent la case (ou, pour un bras, sa portée).
  */
-export function buildingScale(w: number, sx: number, sz: number): number {
+export function buildingScale(w: number, sx: number, sz: number, reach = 1): number {
   const m = Math.max(sx, sz, 0.01);
-  if (w <= 1) return 0.98 / Math.max(1, m);
+  // un bras long (portée 2) déborde de sa case par construction : il passe au-dessus des voisines
+  if (w <= 1) return 0.98 / Math.max(1, m / Math.max(1, reach));
   return (w * BUILDING_FILL) / m;
 }
 

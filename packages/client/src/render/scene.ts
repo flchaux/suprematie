@@ -312,6 +312,7 @@ export class GameScene {
     let np = 0;
     for (const { kind, cells } of groups) {
       if (kind < 0 || this.data.buildings[kind]?.cls !== BClass.Inserter) continue;
+      const reach = Math.max(1, this.data.buildings[kind].reach ?? 1);
       for (const c of cells.slice(0, 512)) {
         const d = c.dir & 3;
         const cx = c.x + 0.5;
@@ -322,7 +323,7 @@ export class GameScene {
         this.armArrows.setMatrixAt(na, m);
         this.armArrows.setColorAt(na, c.ok ? drop : blocked);
         na++;
-        for (const [k, col] of [[-1, take], [1, drop]] as [number, THREE.Color][]) {
+        for (const [k, col] of [[-reach, take], [reach, drop]] as [number, THREE.Color][]) {
           m.compose(new THREE.Vector3(cx + DX[d] * k, groundHeight(this.map, cx, cz) + 0.08, cz + DZ[d] * k), new THREE.Quaternion(), one);
           this.armPads.setMatrixAt(np, m);
           this.armPads.setColorAt(np, col);
@@ -353,7 +354,7 @@ export class GameScene {
       mat.depthWrite = false;
       const size = new THREE.Vector3();
       built.box.getSize(size);
-      g.mesh.userData.scale = buildingScale(def.w, size.x, size.z);
+      g.mesh.userData.scale = buildingScale(def.w, size.x, size.z, def.reach);
       this.scene.add(g.mesh);
       this.ghostMeshes.set(key, g);
     }
