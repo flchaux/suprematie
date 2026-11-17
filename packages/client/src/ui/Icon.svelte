@@ -52,6 +52,11 @@
     rally: '<path d="M6 21V4"/><path d="M6 4l12 4-12 4"/>',
     keyboard: '<rect x="2" y="6" width="20" height="12"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0.5M6 14h.5M8.5 14h7M18 14h.5"/>',
     repeat: '<path d="M4 11V8a3 3 0 0 1 3-3h11l-3-3"/><path d="M20 13v3a3 3 0 0 1-3 3H6l3 3"/>',
+    // plans : cadre de sélection en pointillés, collage, rouleau de plan
+    copy: '<path d="M3 3h3M9 3h3M15 3h0M3 3v3M3 9v3M3 15h0"/><rect x="8" y="8" width="13" height="13"/><path d="M12 15h5M14.5 12.5v5"/>',
+    paste: '<rect x="4" y="5" width="16" height="16"/><path d="M9 3h6v4H9z"/><path d="M8 12h8M8 16h5"/>',
+    blueprint: '<path d="M3 5h15v14H3z"/><path d="M18 5a3 3 0 0 1 3 3v11h-3"/><path d="M6 9h4v4H6zM10 11h5M13 11v4"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
   };
 </script>
 

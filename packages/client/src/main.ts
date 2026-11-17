@@ -8,4 +8,5 @@ mount(App, { target: document.getElementById("app")! });
 import { client } from "./game/client.ts";
 import { ui } from "./game/state.svelte.ts";
 import { kb, keymap } from "./game/keys.svelte.ts";
-(window as unknown as { __game: unknown }).__game = { client, ui, kb, keymap };
+import { plans } from "./game/plans.svelte.ts";
+(window as unknown as { __game: unknown }).__game = { client, ui, kb, keymap, plans };

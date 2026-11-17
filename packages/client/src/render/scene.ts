@@ -225,8 +225,20 @@ export class GameScene {
 
   /** Fantôme de placement d'un bâtiment (ou d'une ligne de bâtiments). */
   setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[]): void {
-    for (const [k, g] of this.ghostMeshes) g.mesh.visible = k === kind && cells.length > 0;
-    if (kind < 0 || !cells.length) return;
+    this.setGhosts(kind < 0 ? [] : [{ kind, cells }]);
+  }
+
+  /**
+   * Fantômes de plusieurs types à la fois (plans) : vert si la case est libre, rouge sinon,
+   * ou la teinte donnée (aperçu d'une copie). Les types absents de la liste sont cachés.
+   */
+  setGhosts(groups: { kind: number; cells: { x: number; y: number; dir: number; ok: boolean }[]; tint?: number }[]): void {
+    const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind));
+    for (const [k, g] of this.ghostMeshes) g.mesh.visible = shown.has(k);
+    for (const { kind, cells, tint } of groups) if (kind >= 0 && cells.length) this.fillGhost(kind, cells, tint);
+  }
+
+  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[], tint?: number): void {
     let g = this.ghostMeshes.get(kind);
     if (!g || g.mesh.count === undefined) {
       const def = this.data.buildings[kind];
@@ -246,20 +258,69 @@ export class GameScene {
     const def = this.data.buildings[kind];
     const s = g.mesh.userData.scale as number;
     const m = new THREE.Matrix4();
+    const good = tint !== undefined ? new THREE.Color(tint) : new THREE.Color(0.4, 1, 0.5);
+    const bad = tint !== undefined ? good : new THREE.Color(1, 0.3, 0.3);
     let n = 0;
     for (const c of cells.slice(0, 512)) {
-      const cx = c.x + def.w / 2;
-      const cz = c.y + def.h / 2;
+      // empreinte tournée d'un quart de tour : largeur et hauteur échangées
+      const cx = c.x + (c.dir & 1 ? def.h : def.w) / 2;
+      const cz = c.y + (c.dir & 1 ? def.w : def.h) / 2;
       const y = def.water ? this.map.waterLevel * 0.08 : groundHeight(this.map, cx, cz);
       m.compose(new THREE.Vector3(cx, y + 0.05, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
       g.mesh.setMatrixAt(n, m);
-      setTeamColor(g, n, c.ok ? new THREE.Color(0.4, 1, 0.5) : new THREE.Color(1, 0.3, 0.3));
+      setTeamColor(g, n, c.ok ? good : bad);
       n++;
     }
     g.mesh.count = n;
     g.mesh.visible = true;
     g.mesh.instanceMatrix.needsUpdate = true;
     g.team.needsUpdate = true;
+  }
+
+  private area: THREE.Group | null = null;
+  /** Zone au sol (cases [x0, x1] × [y0, y1], bornes comprises) : voile et contour qui suivent le relief ; null la cache. */
+  setArea(r: { x0: number; y0: number; x1: number; y1: number; color?: number; fill?: number } | null): void {
+    if (this.area) {
+      this.scene.remove(this.area);
+      this.area.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      this.area = null;
+    }
+    if (!r || !this.map) return;
+    const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1) + 1;
+    const z0 = Math.min(r.y0, r.y1), z1 = Math.max(r.y0, r.y1) + 1;
+    const h = (x: number, z: number) => Math.max(groundHeight(this.map, x, z), this.map.waterLevel * 0.08) + 0.12;
+    // voile : une grille d'une case (96 × 96 au plus) qui épouse le relief
+    const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, Math.min(96, x1 - x0), Math.min(96, z1 - z0)).rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) + (x0 + x1) / 2;
+      const z = pos.getZ(i) + (z0 + z1) / 2;
+      pos.setXYZ(i, x, h(x, z), z);
+    }
+    const color = r.color ?? 0x3ef0ff;
+    // voile sous les fantômes (test de profondeur), contour toujours visible
+    const fill = new THREE.Mesh(geo, new THREE.MeshBasicNodeMaterial({ color, transparent: true, opacity: r.fill ?? 0.14, depthWrite: false }));
+    // contour : un point par demi-case
+    const pts: THREE.Vector3[] = [];
+    const edge = (ax: number, az: number, bx: number, bz: number) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) * 2));
+      for (let i = 0; i < n; i++) {
+        const x = ax + ((bx - ax) * i) / n;
+        const z = az + ((bz - az) * i) / n;
+        pts.push(new THREE.Vector3(x, h(x, z) + 0.05, z));
+      }
+    };
+    edge(x0, z0, x1, z0);
+    edge(x1, z0, x1, z1);
+    edge(x1, z1, x0, z1);
+    edge(x0, z1, x0, z0);
+    pts.push(pts[0].clone());
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicNodeMaterial({ color, depthTest: false, transparent: true }));
+    fill.renderOrder = 8;
+    line.renderOrder = 9;
+    this.area = new THREE.Group();
+    this.area.add(fill, line);
+    this.scene.add(this.area);
   }
 
   hideGhost(): void {
