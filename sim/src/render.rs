@@ -69,6 +69,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                 Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Jump { beacon: target } => {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
+                Order::Face { .. } => (w.units.x[s], w.units.y[s]),
             };
             ((tx / TILE) & 0xfff) | (((ty / TILE) & 0xfff) << 12) | ((o.code() as i32) << 24)
         }
@@ -452,6 +453,7 @@ fn order_point(w: &World, o: &Order) -> Option<(i32, i32)> {
         }
         Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
+        Order::Face { .. } => None,
     }
 }
 

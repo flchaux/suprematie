@@ -50,7 +50,8 @@
           <tr><td>Maj + ordre</td><td>Mettre l'ordre en file</td></tr>
           <tr><td>Molette</td><td>Zoom continu (vue stratégique avec icônes de loin)</td></tr>
           <tr><td>Clic milieu glissé</td><td>Tourner / incliner la caméra</td></tr>
-          <tr><td>Clic droit glissé, bords</td><td>Déplacer la caméra</td></tr>
+          <tr><td>Clic droit glissé (unités sélectionnées)</td><td>Formation orientée : les unités se placent en lignes autour du point cliqué, face à la direction du glisser (Maj : en file)</td></tr>
+          <tr><td>Clic droit glissé (sans unité), bords</td><td>Déplacer la caméra</td></tr>
         </tbody>
       </table>
     </div>

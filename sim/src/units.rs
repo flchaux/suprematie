@@ -698,6 +698,20 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             pop_order(w, s);
             NONE
         }
+        Order::Face { a } => {
+            // les avions à voilure fixe ne s'arrêtent pas pour s'orienter
+            if fixed_wing(kind) {
+                pop_order(w, s);
+                return NONE;
+            }
+            let a = a as u16;
+            let nf = turn_towards(w.units.facing[s], a, turn_rate(kind));
+            w.units.facing[s] = nf;
+            if nf == a {
+                pop_order(w, s);
+            }
+            NONE
+        }
         Order::Enter { target } => {
             let Some(t) = w.unit(target) else {
                 pop_order(w, s);

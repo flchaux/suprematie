@@ -65,6 +65,71 @@ export function move(units: { id: number; x: number; y: number }[], gx: number, 
   }
   return out;
 }
+/** Unité à placer en formation : position (sous-unités), rayon (sous-unités), rang (0 : première ligne). */
+export interface FormationUnit {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  rank: number;
+}
+
+/**
+ * Places d'une formation orientée (comme le clic droit glissé de Supreme Commander) : lignes
+ * perpendiculaires à la direction `angle` (radians, atan2(dy, dx) dans le repère de la simulation),
+ * centrées sur (gx, gy). Les unités de rang faible (courte portée) vont devant, celles de rang élevé
+ * derrière ; dans une ligne, chaque unité prend la place du même côté qu'elle (pas de croisements).
+ * L'écart entre les unités d'une ligne et entre deux lignes suit la taille des plus grosses unités.
+ */
+export function formationSlots(units: FormationUnit[], gx: number, gy: number, angle: number): { id: number; x: number; y: number }[] {
+  const n = units.length;
+  if (n === 0) return [];
+  if (n === 1) return [{ id: units[0].id, x: gx, y: gy }];
+  const fx = Math.cos(angle);
+  const fy = Math.sin(angle);
+  // vecteur latéral (perpendiculaire à l'avant)
+  const rx = -fy;
+  const ry = fx;
+  const sorted = [...units].sort((a, b) => a.rank - b.rank || b.radius - a.radius || a.id - b.id);
+  const cols = Math.min(n, Math.max(2, Math.ceil(Math.sqrt(n * 2.5))));
+  const rows: FormationUnit[][] = [];
+  for (let i = 0; i < n; i += cols) rows.push(sorted.slice(i, i + cols));
+  const gap = (row: FormationUnit[]) => Math.max(TILE * 1.4, Math.max(...row.map((u) => u.radius)) * 2 + TILE * 0.5);
+  // profondeur de chaque ligne (la première devant), puis centrage sur le point visé
+  const depth: number[] = [0];
+  for (let r = 1; r < rows.length; r++) depth.push(depth[r - 1] - (gap(rows[r - 1]) + gap(rows[r])) / 2);
+  const mid = (depth[0] + depth[depth.length - 1]) / 2;
+  const out: { id: number; x: number; y: number }[] = [];
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    const s = gap(row);
+    const d = depth[r] - mid;
+    // ordre latéral des unités (position actuelle) = ordre des places
+    const byLat = [...row].sort((a, b) => a.x * rx + a.y * ry - (b.x * rx + b.y * ry) || a.id - b.id);
+    for (let j = 0; j < byLat.length; j++) {
+      const l = (j - (byLat.length - 1) / 2) * s;
+      out.push({ id: byLat[j].id, x: Math.round(gx + fx * d + rx * l), y: Math.round(gy + fy * d + ry * l) });
+    }
+  }
+  return out;
+}
+
+/** Angle de la simulation (16 bits, un tour = 65536) d'un angle en radians. */
+export function simAngle(rad: number): number {
+  return Math.round((rad / (2 * Math.PI)) * 65536) & 0xffff;
+}
+
+/**
+ * Déplacement en formation orientée : chaque unité rejoint sa place puis se tourne vers `angle`
+ * (radians, atan2(dy, dx)). Drapeau 4 de l'ordre MOVE : l'orientation suit le but du groupe.
+ */
+export function moveFormation(units: FormationUnit[], gx: number, gy: number, angle: number, queue = false, attack = false): Cmd {
+  const slots = formationSlots(units, gx, gy, angle);
+  const out: Cmd = [O.MOVE, (queue ? 1 : 0) | (attack ? 2 : 0) | 4, gx | 0, gy | 0, simAngle(angle), slots.length];
+  for (const p of slots) out.push(p.id | 0, p.x | 0, p.y | 0);
+  return out;
+}
+
 export function target(type: number, ids: number[], tgt: number, queue = false): Cmd {
   return [type, queue ? 1 : 0, tgt | 0, ids.length, ...ids.map((x) => x | 0)];
 }

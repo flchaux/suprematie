@@ -674,6 +674,55 @@ export class GameClient {
       if (g) this.ghostStart = this.snapBuild(g);
     }
     if (e.button === 0) this.plans.down();
+    // clic droit sur le terrain avec des unités : le glisser oriente la formation (sinon : caméra)
+    this.formStart = null;
+    this.formAngle = null;
+    if (e.button === 2 && !ui.mode && ui.me >= 0 && this.selectedUnits().length > 0) {
+      const g = this.groundAt(x, y);
+      if (g) this.formStart = { x: g.x, z: g.z };
+    }
+  }
+
+  /** Clic droit glissé : point visé et angle choisi (radians, atan2(dz, dx)), null tant que le geste est trop court. */
+  private formStart: { x: number; z: number } | null = null;
+  private formAngle: number | null = null;
+
+  /** Unités sélectionnées prêtes pour une formation : rayon et rang (courte portée devant, soutien derrière). */
+  private formationUnits(): Ord.FormationUnit[] {
+    const data = this.data!;
+    return this.selectedUnits().map((u) => {
+      const d = data.units[u.kind];
+      const range = d.weapons.length ? Math.max(...d.weapons.map((wi) => data.weapons[wi]?.range ?? 0)) : 0;
+      // rang : portée des armes ; sans arme (ingénieurs, transports, boucliers) en dernier
+      const rank = range > 0 ? range : 1000;
+      return { id: u.id, x: u.x, y: u.y, radius: d.radius, rank };
+    });
+  }
+
+  /** Aperçu de la formation pendant le glisser. */
+  private updateFormationPreview(x: number, y: number): void {
+    const sc = this.scene;
+    const start = this.formStart;
+    if (!sc || !start) return;
+    const g = this.groundAt(x, y);
+    if (!g) return;
+    const len = Math.hypot(g.x - start.x, g.z - start.z);
+    if (len < 0.6) {
+      this.formAngle = null;
+      sc.setFormation(null);
+      return;
+    }
+    const angle = Math.atan2(g.z - start.z, g.x - start.x);
+    this.formAngle = angle;
+    const units = this.formationUnits();
+    const slots = Ord.formationSlots(units, start.x * TILE, start.z * TILE, angle);
+    const size = new Map(units.map((u) => [u.id, u.radius / TILE]));
+    sc.setFormation(
+      slots.map((p) => ({ x: p.x / TILE, z: p.y / TILE, size: (size.get(p.id) ?? 0.5) * 0.8 })),
+      angle,
+      start,
+      Math.min(len, 12),
+    );
   }
 
   private onMove(e: PointerEvent): void {
@@ -703,8 +752,10 @@ export class GameClient {
       b.style.width = Math.abs(x - this.mouse.startX) + "px";
       b.style.height = Math.abs(y - this.mouse.startY) + "px";
     }
-    // déplacement de la caméra au clic droit glissé
-    if (this.mouse.down && this.mouse.button === 2 && this.mouse.dragging) {
+    // clic droit glissé : orientation de la formation (unités sélectionnées) ou déplacement de la caméra
+    if (this.mouse.down && this.mouse.button === 2 && this.mouse.dragging && this.formStart) {
+      this.updateFormationPreview(x, y);
+    } else if (this.mouse.down && this.mouse.button === 2 && this.mouse.dragging) {
       const k = sc.distance / (this.canvasEl.clientHeight * 0.6);
       sc.target.x -= e.movementX * k * Math.cos(sc.yaw) + e.movementY * k * Math.sin(sc.yaw);
       sc.target.z -= -e.movementX * k * Math.sin(sc.yaw) + e.movementY * k * Math.cos(sc.yaw);
@@ -743,6 +794,21 @@ export class GameClient {
       if (this.mouse.dragging) this.boxSelect(this.mouse.startX, this.mouse.startY, x, y, e.shiftKey);
       else this.clickSelect(x, y, e.shiftKey, e.ctrlKey);
     } else if (e.button === 2) {
+      const start = this.formStart;
+      const angle = this.formAngle;
+      this.formStart = null;
+      this.formAngle = null;
+      this.scene?.setFormation(null);
+      if (this.mouse.dragging && start && angle !== null && this.data && ui.me >= 0) {
+        // formation orientée : chacun à sa place, puis tourné vers la direction du glisser
+        const units = this.formationUnits();
+        if (units.length) {
+          this.cmd(Ord.moveFormation(units, Math.round(start.x * TILE), Math.round(start.z * TILE), angle, e.shiftKey));
+          this.scene?.addMarker(start.x, start.z, 0x7dff9a);
+          sfx.confirm();
+        }
+        return;
+      }
       if (this.mouse.dragging) return;
       if (ui.mode) {
         this.cancelMode();

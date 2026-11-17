@@ -54,6 +54,8 @@ export class GameScene {
   lineGhost: THREE.InstancedMesh | null = null;
   /** pose d'un bras : flèche de la case de prise vers la case de dépôt, et cadres sur ces deux cases */
   armArrows: THREE.InstancedMesh;
+  /** aperçu d'une formation orientée (clic droit glissé) : une flèche par place, une grande flèche de direction */
+  formArrows: THREE.InstancedMesh;
   armPads: THREE.InstancedMesh;
   markers: THREE.InstancedMesh;
   markerList: { x: number; z: number; age: number; color: THREE.Color }[] = [];
@@ -88,7 +90,8 @@ export class GameScene {
     const overlay = (opacity: number) => new THREE.MeshBasicNodeMaterial({ transparent: true, opacity, depthTest: false, depthWrite: false });
     this.armArrows = new THREE.InstancedMesh(new THREE.ShapeGeometry(arrow).rotateX(-Math.PI / 2), overlay(0.9), 512);
     this.armPads = new THREE.InstancedMesh(new THREE.RingGeometry(0.5, 0.64, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2), overlay(0.95), 1024);
-    for (const m of [this.armArrows, this.armPads]) {
+    this.formArrows = new THREE.InstancedMesh(new THREE.ShapeGeometry(arrow).rotateX(-Math.PI / 2), overlay(0.85), 1024);
+    for (const m of [this.armArrows, this.armPads, this.formArrows]) {
       m.count = 0;
       m.frustumCulled = false;
       m.renderOrder = 9;
@@ -123,6 +126,7 @@ export class GameScene {
     this.buildPost();
     this.scene.add(this.markers);
     this.scene.add(this.armArrows, this.armPads);
+    this.scene.add(this.formArrows);
     this.scene.add(this.rangeRing);
     this.resize();
     addEventListener("resize", () => this.resize());
@@ -430,6 +434,43 @@ export class GameScene {
   addMarker(x: number, z: number, color: number): void {
     this.markerList.push({ x, z, age: 0, color: new THREE.Color(color) });
     if (this.markerList.length > 150) this.markerList.shift();
+  }
+
+  /**
+   * Aperçu d'une formation orientée : une flèche par place (cases du monde) tournée vers `angle`
+   * (radians, atan2(dz, dx)), et une grande flèche du point visé vers le curseur. null : masqué.
+   */
+  setFormation(slots: { x: number; z: number; size: number }[] | null, angle = 0, from?: { x: number; z: number }, len = 0): void {
+    const m = this.formArrows;
+    if (!slots) {
+      m.count = 0;
+      return;
+    }
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -angle);
+    const mat = new THREE.Matrix4();
+    const col = new THREE.Color(0x7dff9a);
+    let n = 0;
+    for (const p of slots) {
+      if (n >= 1023) break;
+      const s = Math.max(0.45, p.size);
+      mat.compose(new THREE.Vector3(p.x, groundHeight(this.map, p.x, p.z) + 0.15, p.z), q, new THREE.Vector3(s, 1, s));
+      m.setMatrixAt(n, mat);
+      m.setColorAt(n, col);
+      n++;
+    }
+    if (from && len > 0.5) {
+      // grande flèche : du centre de la formation dans la direction choisie (la flèche va de -1 à +1)
+      const half = len / 2;
+      const cx = from.x + Math.cos(angle) * half;
+      const cz = from.z + Math.sin(angle) * half;
+      mat.compose(new THREE.Vector3(cx, groundHeight(this.map, cx, cz) + 0.2, cz), q, new THREE.Vector3(half, 1, Math.max(1, half * 0.5)));
+      m.setMatrixAt(n, mat);
+      m.setColorAt(n, new THREE.Color(0xffd060));
+      n++;
+    }
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
   }
 
   showRange(x: number, z: number, r: number): void {
