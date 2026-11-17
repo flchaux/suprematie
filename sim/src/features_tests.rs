@@ -270,3 +270,72 @@ fn belt_replacement_rotates_or_swaps_with_refund() {
     assert!(w.buildings[s].complete());
     assert_eq!(w.players[0].stock[IRON_PLATE as usize], iron + belt_iron - split_iron, "tapis remboursé, répartiteur payé");
 }
+
+#[test]
+fn research_queue_chains_and_respects_prerequisites() {
+    use crate::orders::{apply_orders, O_RESEARCH, O_RESEARCH_QUEUE};
+    let mut w = world(&[0]);
+    w.players[0].researched = 1;
+    let t = |k: &str| TECHS.iter().position(|d| d.key == k).unwrap() as i32;
+    let (auto, land, elec, art) = (t("automation"), t("land_prod"), t("electronics"), t("mobile_artillery"));
+    let order = |w: &mut World, o: i32, tech: i32| apply_orders(w, &[3, o, 0, tech]);
+    // électronique dépend de l'automatisation : refusée seule, acceptée derrière elle
+    order(&mut w, O_RESEARCH_QUEUE, elec);
+    assert!(w.players[0].research_queue.is_empty() && w.players[0].research == 0);
+    order(&mut w, O_RESEARCH_QUEUE, auto);
+    assert_eq!(w.players[0].research, auto as u8, "file vide et aucune recherche : lancée tout de suite");
+    order(&mut w, O_RESEARCH_QUEUE, elec);
+    order(&mut w, O_RESEARCH_QUEUE, land);
+    order(&mut w, O_RESEARCH_QUEUE, art);
+    assert_eq!(w.players[0].research_queue, vec![elec as u8, land as u8, art as u8]);
+    // retirer la production terrestre retire l'artillerie qui en dépend
+    order(&mut w, O_RESEARCH_QUEUE, land);
+    assert_eq!(w.players[0].research_queue, vec![elec as u8]);
+    order(&mut w, O_RESEARCH_QUEUE, land);
+    // fin de la recherche en cours : la suivante démarre
+    let p = &mut w.players[0];
+    p.researched |= 1u64 << auto;
+    p.research = 0;
+    p.start_queued();
+    assert_eq!(p.research, elec as u8);
+    assert_eq!(p.research_queue, vec![land as u8]);
+    // choisir directement une recherche de la file la retire de la file
+    order(&mut w, O_RESEARCH, land);
+    assert_eq!(w.players[0].research, land as u8);
+    assert!(w.players[0].research_queue.is_empty());
+    // 0 : tout annuler
+    order(&mut w, O_RESEARCH_QUEUE, art);
+    order(&mut w, O_RESEARCH, 0);
+    assert!(w.players[0].research == 0 && w.players[0].research_queue.is_empty());
+}
+
+#[test]
+fn attacked_event_is_throttled_and_flags_commander() {
+    let mut w = world(&[0, 1, 0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let u = w.spawn_unit(U_LINE_ROBOT, 0, 100 * TILE, 100 * TILE);
+    let s = w.unit(u).unwrap();
+    let count = |w: &World, cmd: i32| w.events.chunks(5).filter(|e| e[0] == EV_ATTACKED && e[1] == 0 && e[4] == cmd).count();
+    w.events.clear();
+    crate::combat::damage_unit(&mut w, s, 5, 1);
+    crate::combat::damage_unit(&mut w, s, 5, 1);
+    assert_eq!(count(&w, 0), 1, "un seul événement pour deux dégâts rapprochés");
+    // un allié (même équipe) ne déclenche pas d'alerte
+    w.events.clear();
+    w.tick += 100;
+    crate::combat::damage_unit(&mut w, s, 5, 2);
+    assert_eq!(count(&w, 0), 0);
+    // après le délai, l'ennemi déclenche de nouveau ; le commandant a son propre événement
+    crate::combat::damage_unit(&mut w, s, 5, 1);
+    assert_eq!(count(&w, 0), 1);
+    let c = w.players[0].commander;
+    let cs = match w.unit(c) {
+        Some(cs) => cs,
+        None => {
+            let id = w.spawn_unit(U_COMMANDER, 0, 104 * TILE, 100 * TILE);
+            w.unit(id).unwrap()
+        }
+    };
+    crate::combat::damage_unit(&mut w, cs, 5, 1);
+    assert_eq!(count(&w, 1), 1, "commandant attaqué");
+}

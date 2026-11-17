@@ -21,7 +21,8 @@
     <div class="grow"></div>
     {#if d}<span class="dim num">{doneCount}/{d.techs.length - 1} terminées</span>{/if}
   </div>
-  <p class="dim intro">Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.</p>
+  <p class="dim intro">Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.
+    <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite. {#if ui.researchQueue.length}<button class="ghost small linkish" onclick={() => client.clearResearchQueue()}>Vider la file ({ui.researchQueue.length})</button>{/if}</p>
   {#if d}
     <div class="cols">
       {#each tiers as tier}
@@ -31,10 +32,11 @@
             {@const done = hasTechUI(i)}
             {@const avail = !done && t.prereq.every((p) => hasTechUI(p))}
             {@const cur = ui.research === i}
-            <button class="tech" class:done class:cur class:avail disabled={!avail || ui.me < 0} onclick={() => client.research(i)}>
+            {@const qn = ui.researchQueue.indexOf(i) + 1}
+            <button class="tech" class:done class:cur class:avail class:queued={qn > 0} disabled={done || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
               <span class="tt-head">
                 <b>{t.name}</b>
-                {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
+                {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if qn}<span class="qn num" title="Position dans la file">{qn}</span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
               </span>
               <span class="desc">{t.desc}</span>
               <span class="meta num">{t.count} × {t.time} s{#if t.prereq.length}<span class="faint"> · après {t.prereq.map((p) => d.techs[p].name).join(", ")}</span>{/if}</span>
@@ -64,6 +66,9 @@
   .tech.cur { --b-line: var(--amber); --b-bg: rgba(60, 44, 16, 0.75); filter: drop-shadow(0 0 8px rgba(255, 181, 71, 0.35)); opacity: 1; }
   .tech:disabled:not(.done):not(.cur) { opacity: 0.62; }
   .tech:disabled:not(.done):not(.cur) .meta .faint { color: var(--dim); }
+  .tech.queued { --b-line: rgba(255, 181, 71, 0.55); }
+  .qn { min-width: 18px; height: 18px; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--accent-ink, #04121a); background: var(--amber); }
+  .linkish { margin-left: 6px; padding: 1px 6px; font-size: 11px; }
   .bar { width: 100%; margin-top: 3px; }
   .bar > span { display: block; height: 100%; background: var(--amber); box-shadow: 0 0 6px var(--amber); }
 </style>

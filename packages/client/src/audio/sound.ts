@@ -29,6 +29,57 @@ export function audioContext(): AudioContext | null {
   return ac();
 }
 
+/** Volume des effets sonores (0..1), aussi appliqué aux annonces vocales. */
+export function sfxVolume(): number {
+  return volume;
+}
+
+/** Note de cloche : fondamentale et partiel inharmonique (×2,76), attaque nette, longue décroissance. */
+function bell(f: number, delay: number, dur: number, gain: number): void {
+  const c = ac();
+  if (!c || !master || volume <= 0) return;
+  const t = c.currentTime + delay;
+  for (const [mult, g] of [[1, gain], [2.76, gain * 0.25], [5.4, gain * 0.08]] as const) {
+    const o = c.createOscillator();
+    o.type = "sine";
+    o.frequency.value = f * mult;
+    const e = c.createGain();
+    e.gain.setValueAtTime(0.0001, t);
+    e.gain.exponentialRampToValueAtTime(g, t + 0.006);
+    e.gain.exponentialRampToValueAtTime(0.0001, t + dur / mult ** 0.4);
+    o.connect(e).connect(master);
+    o.start(t);
+    o.stop(t + dur + 0.1);
+  }
+}
+
+/** Nappe douce (accord tenu, filtré), attaque lente. */
+function pad(freqs: number[], delay: number, dur: number, gain: number): void {
+  const c = ac();
+  if (!c || !master || volume <= 0) return;
+  const t = c.currentTime + delay;
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.setValueAtTime(900, t);
+  lp.frequency.exponentialRampToValueAtTime(3200, t + dur * 0.4);
+  const e = c.createGain();
+  e.gain.setValueAtTime(0.0001, t);
+  e.gain.exponentialRampToValueAtTime(gain, t + 0.18);
+  e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  lp.connect(e).connect(master);
+  for (const f of freqs) {
+    for (const det of [-6, 6]) {
+      const o = c.createOscillator();
+      o.type = "triangle";
+      o.frequency.value = f;
+      o.detune.value = det;
+      o.connect(lp);
+      o.start(t);
+      o.stop(t + dur + 0.1);
+    }
+  }
+}
+
 export function setVolume(v: number): void {
   volume = v;
   if (master) master.gain.value = v;
@@ -112,10 +163,14 @@ export const sfx = {
     tone(660, 660, 0.09, 0.07, "triangle");
     tone(990, 990, 0.12, 0.07, "triangle", 0.09);
   },
+  /** Recherche terminée : arpège de cloches montant, nappe d'accord majeur et scintillement final. */
   research(): void {
-    tone(523, 523, 0.12, 0.08, "triangle");
-    tone(659, 659, 0.12, 0.08, "triangle", 0.12);
-    tone(784, 784, 0.25, 0.08, "triangle", 0.24);
+    if (!throttle("research", 1500)) return;
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((f, i) => bell(f, i * 0.085, 1.3, 0.07));
+    pad([261.63, 392, 523.25, 659.25], 0.28, 1.9, 0.035);
+    bell(2093, 0.42, 1.6, 0.03);
+    noise(0.5, 7000, 0.025, 0.7, "highpass");
   },
   alert(): void {
     if (!throttle("alert", 2500)) return;

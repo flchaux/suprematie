@@ -396,6 +396,10 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
         }
     }
     w.units.hp[s] -= dmg;
+    if dmg > 0 {
+        let (o, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
+        w.note_attacked(o, attacker, x, y, w.units.kind[s] == U_COMMANDER);
+    }
     if w.shooter != NONE {
         w.units.cold[s].last_hit = w.shooter;
     }
@@ -407,11 +411,15 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     }
 }
 
-pub fn damage_building(w: &mut World, b: usize, dmg: i32, _attacker: u8) {
-    let bb = &mut w.buildings[b];
-    if !bb.alive || bb.hp <= 0 {
+pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
+    if !w.buildings[b].alive || w.buildings[b].hp <= 0 {
         return;
     }
+    if dmg > 0 {
+        let (cx, cy) = w.buildings[b].center();
+        w.note_attacked(w.buildings[b].owner, attacker, cx, cy, false);
+    }
+    let bb = &mut w.buildings[b];
     bb.hp -= dmg;
     if bb.hp <= 0 {
         w.dead_buildings.push(b as u32);

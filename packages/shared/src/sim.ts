@@ -27,6 +27,7 @@ export interface SimExports {
   logistics_demo(): number;
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
+  research_queue(player: number): number;
 }
 
 const dec = new TextDecoder();
@@ -98,6 +99,10 @@ export class Sim {
     return this.outI32(this.ex.unit_orders(this.writeBytes(b)));
   }
   /** Constructions prévues d'un joueur : type, x, y, direction. */
+  /** File de recherche d'un joueur (technologies dans l'ordre). */
+  researchQueue(player: number): Int32Array {
+    return this.outI32(this.ex.research_queue(player));
+  }
   plannedBuilds(player: number): Int32Array {
     return this.outI32(this.ex.planned_builds(player));
   }

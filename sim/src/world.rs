@@ -34,6 +34,8 @@ pub struct Player {
     pub stock: [i32; NUM_ITEMS],
     pub researched: u64,
     pub research: u8,
+    /** recherches en attente, lancées dans l'ordre quand la recherche en cours se termine */
+    pub research_queue: Vec<u8>,
     pub tech_progress: Vec<u16>,
     pub commander: u32,
     pub produced: [u32; NUM_ITEMS],
@@ -44,9 +46,24 @@ pub struct Player {
     pub kills: u32,
     pub losses: u32,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses });
 
 impl Player {
+    /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
+    /// acquises sont retirées) ; ne fait rien si une recherche est en cours.
+    pub fn start_queued(&mut self) {
+        let done = self.researched;
+        let has = |t: u8| t == 0 || done & (1u64 << t) != 0;
+        let mut q = std::mem::take(&mut self.research_queue);
+        q.retain(|&t| !has(t));
+        if self.research == 0 {
+            if let Some(k) = q.iter().position(|&t| TECHS[t as usize].prereq.iter().all(|&r| has(r))) {
+                self.research = q.remove(k);
+            }
+        }
+        self.research_queue = q;
+    }
+
     #[inline]
     pub fn has_tech(&self, t: u8) -> bool {
         t == 0 || self.researched & (1u64 << t) != 0
@@ -348,6 +365,8 @@ pub const EV_GAME_OVER: i32 = 16;
 pub const EV_PROMOTED: i32 = 17;
 /// unité donnée à un allié par un portail : x, y, ancien propriétaire, nouveau propriétaire
 pub const EV_GIFT: i32 = 18;
+/// Attaque subie : joueur visé, x, y, 1 si c'est son commandant (au plus un toutes les 2 s par joueur et par type).
+pub const EV_ATTACKED: i32 = 19;
 
 pub struct World {
     pub params: Vec<i32>,
@@ -385,6 +404,9 @@ pub struct World {
     pub carriers: Vec<crate::logistics::Carrier>,
     /// unité qui tire (pendant la résolution d'un tir ou d'un impact), pour créditer la destruction
     pub shooter: u32,
+    /// prochain tick où un événement « attaque subie » peut être émis, par joueur et par type
+    /// (sortie pour l'interface seulement : ni hachée ni sauvegardée)
+    pub attack_ev: Vec<u32>,
 }
 
 impl World {
@@ -416,6 +438,7 @@ impl World {
                 stock,
                 researched: 1,
                 research: 0,
+                research_queue: Vec::new(),
                 tech_progress: vec![0; TECHS.len()],
                 commander: NONE,
                 produced: [0; NUM_ITEMS],
@@ -460,6 +483,7 @@ impl World {
             team_stock: vec![[0i32; NUM_ITEMS]; 8],
             carriers: Vec::new(),
             shooter: NONE,
+            attack_ev: Vec::new(),
         };
         for p in 0..np {
             let (sx, sy) = w.map.starts[p];
@@ -472,6 +496,23 @@ impl World {
 
     pub fn team_of(&self, p: u8) -> u8 {
         self.players.get(p as usize).map(|x| x.team).unwrap_or(255)
+    }
+
+    /// Signale une attaque subie par `owner` (au plus un événement toutes les 2 s par joueur et par type).
+    pub fn note_attacked(&mut self, owner: u8, attacker: u8, x: i32, y: i32, commander: bool) {
+        let np = self.players.len();
+        if attacker as usize >= np || owner as usize >= np || self.team_of(attacker) == self.team_of(owner) {
+            return;
+        }
+        if self.attack_ev.len() < np * 2 {
+            self.attack_ev.resize(np * 2, 0);
+        }
+        let k = owner as usize * 2 + commander as usize;
+        if self.tick < self.attack_ev[k] {
+            return;
+        }
+        self.attack_ev[k] = self.tick + 40;
+        self.ev(EV_ATTACKED, owner as i32, x, y, commander as i32);
     }
 
     pub fn ev(&mut self, a: i32, b: i32, c: i32, d: i32, e: i32) {
@@ -723,6 +764,9 @@ impl World {
             }
             h.add(p.researched);
             h.add(p.research as u64 | (p.tech_progress.iter().map(|&x| x as u64).sum::<u64>() << 8));
+            for &q in &p.research_queue {
+                h.add(q as u64);
+            }
         }
         for pr in &self.projectiles {
             h.add_i32(pr.tx);

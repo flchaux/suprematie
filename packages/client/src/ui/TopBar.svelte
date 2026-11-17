@@ -50,7 +50,7 @@
             <span class="rn">{tech.name}</span>
             <span class="bar amber"><span style:width={(ui.researchProgress / tech.count) * 100 + "%"}></span></span>
           </span>
-          <span class="num dim">{ui.researchProgress}/{tech.count}</span>
+          <span class="num dim">{ui.researchProgress}/{tech.count}</span>{#if ui.researchQueue.length}<span class="num qn" title="Recherches en file">+{ui.researchQueue.length}</span>{/if}
         {:else}<Icon name="research" size={15} /> <span>Choisir une recherche</span> {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}{/if}
       </button>
     {:else}
@@ -71,6 +71,7 @@
   <div class="gfx panel">
     <div class="kicker">Réglages</div>
     <label class="row"><Icon name="volume" /> <span>Effets sonores</span><input type="range" min="0" max="1" step="0.05" value={ui.volume} oninput={(e) => client.setVolume(Number((e.target as HTMLInputElement).value))} /></label>
+    <label class="row"><Icon name="volume" /> <span>Annonces vocales</span><input type="checkbox" checked={ui.voice} onchange={(e) => client.setVoice((e.target as HTMLInputElement).checked)} /></label>
     <label class="row"><Icon name="music" /> <span>Musique</span><input type="range" min="0" max="1" step="0.05" value={ui.music} oninput={(e) => client.setMusicVolume(Number((e.target as HTMLInputElement).value))} /></label>
     <label class="row" title="Distance de la caméra à partir de laquelle les unités deviennent des icônes"><Icon name="icons" /> <span>Vue stratégique</span><input type="range" min="80" max="600" step="10" value={client.iconDistance()} oninput={(e) => client.setIconDistance(Number((e.target as HTMLInputElement).value))} /></label>
     <div class="kicker sub">Graphismes</div>
@@ -111,6 +112,7 @@
   .stat { display: flex; align-items: center; gap: 6px; color: var(--accent); white-space: nowrap; }
   .stat .num { color: var(--text); font-size: 12.5px; }
   .research { display: flex; align-items: center; gap: 8px; min-width: 120px; max-width: 280px; padding: 4px 10px; text-align: left; flex-shrink: 1; overflow: hidden; }
+  .research .qn { color: var(--amber); font-size: 11px; }
   .research.idle { --b-line: rgba(255, 181, 71, 0.6); color: var(--amber); animation: nudge 2.4s ease-in-out infinite; }
   .rt { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
   .rn { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

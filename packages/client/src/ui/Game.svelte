@@ -37,7 +37,7 @@
   const MODE_LABEL: Record<string, [string, string]> = {
     attackMove: ["attack", "Attaque en mouvement : cliquez une destination"],
     patrol: ["patrol", "Patrouille : cliquez une destination"],
-    reclaim: ["reclaim", "Recyclage : cliquez une épave ou un de vos bâtiments"],
+    reclaim: ["reclaim", "Recyclage : cliquez une épave ou un de vos bâtiments, ou glissez un cadre pour tout recycler dans la zone"],
     assist: ["assist", "Escorte / assistance : cliquez une unité ou un bâtiment"],
     unload: ["unload", "Déchargement : cliquez la destination"],
     teleport: ["teleport", "Téléportation : cliquez la destination"],

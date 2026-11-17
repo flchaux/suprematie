@@ -26,6 +26,8 @@ export const ui = $state({
   powerUse: 0,
   unitCount: 0,
   research: 0,
+  /** recherches en file (dans l'ordre) */
+  researchQueue: [] as number[],
   researchProgress: 0,
   researchedLo: 0,
   researchedHi: 0,
@@ -55,6 +57,8 @@ export const ui = $state({
   chatOpen: false,
   volume: 0.5,
   music: 0.35,
+  /** annonces vocales */
+  voice: true,
   replay: false,
   replaySpeed: 1,
   spectator: false,

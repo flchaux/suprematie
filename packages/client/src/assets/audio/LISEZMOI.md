@@ -16,3 +16,22 @@ Traitement : fondu de sortie final coupé (145 s gardées), volume normalisé à
 
 Lecture : `packages/client/src/audio/music.ts` (boucle avec fondu enchaîné de 6 s entre deux passages, volume réglable
 dans le panneau Réglages, mémorisé dans le navigateur).
+
+# Annonces vocales
+
+`voix/*.mp3` : annonces générées avec ElevenLabs (synthèse vocale, modèle `eleven_v4`, voix « Oscar Doré - News
+Narrator », française, nette et posée), première prise de deux :
+
+| Fichier | Texte |
+|---|---|
+| `commandant.mp3` | « Alerte. Robot de commandement attaqué. » |
+| `attaque.mp3` | « Alerte. Nous sommes attaqués. » |
+| `recherche.mp3` | « Recherche terminée. » |
+| `energie.mp3` | « Énergie insuffisante. » |
+
+Traitement : silences de début et de fin coupés, volume normalisé à −16 LUFS, MP3 mono 64 kb/s :
+
+    ffmpeg -i prise.mp3 -af "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse,loudnorm=I=-16:TP=-1.5:LRA=7" -ac 1 -b:a 64k sortie.mp3
+
+Le timbre légèrement robotique est ajouté à la lecture (`packages/client/src/audio/voice.ts` : modulation en anneau
+discrète à 45 Hz, filtre en peigne de 6 ms, bande 220 Hz – 5,2 kHz), ce qui permet de le doser sans régénérer les voix.

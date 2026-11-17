@@ -12,6 +12,8 @@ export const O = {
   FACTORY_REPEAT: 8,
   SET_RECIPE: 9,
   RESEARCH: 10,
+  /** file de recherche : ajoute (ou retire si déjà en file) ; 0 vide la file */
+  RESEARCH_QUEUE: 22,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -80,6 +82,9 @@ export function factoryRepeat(ref: number, on: boolean): Cmd {
 }
 export function setRecipe(ref: number, recipe: number): Cmd {
   return [O.SET_RECIPE, ref | 0, recipe];
+}
+export function researchQueue(tech: number): Cmd {
+  return [O.RESEARCH_QUEUE, tech];
 }
 export function research(tech: number): Cmd {
   return [O.RESEARCH, tech];

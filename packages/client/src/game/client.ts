@@ -8,7 +8,8 @@ import { GameScene } from "../render/scene.ts";
 import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { PLAYER_COLORS } from "../models/generator.ts";
-import { ui, pushMessage } from "./state.svelte.ts";
+import { ui, pushMessage, hasTechUI } from "./state.svelte.ts";
+import { say, setVoiceEnabled } from "../audio/voice.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
@@ -62,8 +63,6 @@ export class GameClient {
   fpsCount = 0;
   fpsTime = 0;
   lastClick = { time: 0, id: 0 };
-  prevHpCommander = -1;
-  lastAttackAlert = 0;
   running = false;
   alertPos: { x: number; z: number } | null = null;
   pingTimer = 0;
@@ -344,6 +343,12 @@ export class GameClient {
     }
     if (ui.me >= 0 && !ui.spectator && now - this.lastPlannedQuery > 500) {
       this.lastPlannedQuery = now;
+      void this.query<number[] | null>("researchQueue", [ui.me]).then((r) => {
+        const q = r ?? [];
+        // juste après une modification locale, la simulation n'a pas encore exécuté les ordres
+        if (performance.now() - this.researchEdit < 2000) return;
+        if (q.length !== ui.researchQueue.length || q.some((x, i) => x !== ui.researchQueue[i])) ui.researchQueue = q;
+      });
       void this.query<Int32Array | null>("planned", [ui.me]).then((r) => sc.overlay?.setPlanned(r ?? []));
     }
     if (now - this.lastMinimap > 200) {
@@ -433,9 +438,13 @@ export class GameClient {
         case EV.BUILT:
           if (a === ui.me) sfx.built();
           break;
+        case EV.ATTACKED:
+          if (a === ui.me) this.onAttacked(c / TILE, d / TILE, e === 1);
+          break;
         case EV.RESEARCH:
           if (a === ui.me) {
             sfx.research();
+            say("recherche");
             pushMessage(`Recherche terminée : ${this.data!.techs[c].name}`, "good");
           }
           break;
@@ -456,16 +465,7 @@ export class GameClient {
             const def = this.data!.units[d];
             if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(PLAYER_COLORS[owner % 8]), false);
           }
-          if (owner === ui.me && performance.now() - this.lastAttackAlert > 15000) {
-            this.lastAttackAlert = performance.now();
-            const x = a / TILE, z = c / TILE;
-            if (Math.hypot(x - cam.x, z - cam.z) > sc.distance) {
-              const k = keyOf("alert");
-              pushMessage(k ? `Nos unités sont attaquées (${k} pour y aller)` : "Nos unités sont attaquées", "alert");
-              sfx.alert();
-              this.alertPos = { x, z };
-            }
-          }
+          void owner;
           break;
         }
         case EV.BUILDING_DIED:
@@ -518,25 +518,16 @@ export class GameClient {
       }
     }
     void myTeam;
-    // alerte : commandant endommagé
+    // énergie insuffisante : annonce au passage sous la demande (au plus une fois par minute)
     const me = f.players[ui.me];
     if (me) {
-      const cmdId = me.commander;
-      for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
-        if (b[o] >>> 0 === cmdId) {
-          const hp = b[o + 7];
-          if (this.prevHpCommander > 0 && hp < this.prevHpCommander - 50) {
-            if (performance.now() - this.lastAttackAlert > 8000) {
-              this.lastAttackAlert = performance.now();
-              pushMessage("Le robot de commandement est attaqué !", "alert");
-              sfx.alert();
-              this.alertPos = { x: b[o + 2] / TILE, z: b[o + 3] / TILE };
-            }
-          }
-          this.prevHpCommander = hp;
-          break;
-        }
+      const low = me.powerUse > me.powerProd && me.powerUse > 0;
+      if (low && !this.powerWasLow && performance.now() - this.lastPowerAlert > 60000) {
+        this.lastPowerAlert = performance.now();
+        say("energie");
+        pushMessage("Énergie insuffisante : construisez des générateurs", "alert");
       }
+      this.powerWasLow = low;
     }
   }
 
@@ -644,6 +635,8 @@ export class GameClient {
     const mv = Number(localStorage.getItem("supreme.music") ?? "0.35");
     ui.music = mv;
     initMusic(mv);
+    ui.voice = localStorage.getItem("supreme.voice") !== "0";
+    setVoiceEnabled(ui.voice);
   }
 
   private ndc(x: number, y: number): [number, number] {
@@ -734,6 +727,12 @@ export class GameClient {
       }
       if (ui.mode === "copy" || ui.mode === "paste") {
         this.plans.up(e.shiftKey);
+        return;
+      }
+      if (ui.mode === "reclaim" && this.mouse.dragging) {
+        // cadre de recyclage : tous nos bâtiments et les épaves du cadre
+        void this.reclaimArea(this.mouse.startX, this.mouse.startY, x, y, e.shiftKey);
+        if (this.selBox) this.selBox.style.display = "none";
         return;
       }
       if (ui.mode) {
@@ -898,7 +897,7 @@ export class GameClient {
         this.selectIdleEngineer();
         break;
       case "cancelBuilding":
-        if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
+        this.demolishSelected();
         break;
       case "zoomIn":
         if (this.scene) {
@@ -1530,8 +1529,48 @@ export class GameClient {
   setRecipe(r: number): void {
     if (ui.selBuilding) this.cmd(Ord.setRecipe(ui.selBuilding.ref, r));
   }
+  /** dernière modification locale de la file de recherche (l'affichage optimiste prime un instant) */
+  researchEdit = 0;
+  clearResearchQueue(): void {
+    this.researchEdit = performance.now();
+    this.cmd(Ord.researchQueue(0));
+    ui.researchQueue = [];
+    sfx.click();
+  }
+  /** Lance la recherche tout de suite (Maj+clic). */
   research(t: number): void {
+    this.researchEdit = performance.now();
     this.cmd(Ord.research(t));
+    ui.researchQueue = ui.researchQueue.filter((q) => q !== t);
+    sfx.confirm();
+  }
+  /**
+   * Clic sur une recherche : en file (précédée de ses prérequis manquants, dans l'ordre) ; si elle y
+   * est déjà, retirée. Sans recherche en cours, la première démarre aussitôt.
+   */
+  queueResearch(t: number): void {
+    const d = this.data;
+    if (!d || ui.me < 0) return;
+    this.researchEdit = performance.now();
+    if (ui.researchQueue.includes(t)) {
+      this.cmd(Ord.researchQueue(t));
+      ui.researchQueue = ui.researchQueue.filter((q) => q !== t);
+      sfx.click();
+      return;
+    }
+    const have = (q: number) => hasTechUI(q) || ui.research === q || ui.researchQueue.includes(q);
+    const chain: number[] = [];
+    const visit = (q: number) => {
+      if (have(q) || chain.includes(q)) return;
+      for (const r of d.techs[q].prereq) visit(r);
+      chain.push(q);
+    };
+    visit(t);
+    for (const q of chain) this.cmd(Ord.researchQueue(q));
+    // affichage immédiat (la simulation confirme au prochain relevé)
+    const rest = !ui.research ? chain.slice(1) : chain;
+    if (!ui.research && chain.length) ui.research = chain[0];
+    ui.researchQueue = [...ui.researchQueue, ...rest];
     sfx.confirm();
   }
   toggleBuilding(): void {
@@ -1544,8 +1583,177 @@ export class GameClient {
   cancelBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
   }
+
+  /**
+   * Touche Suppr : le bâtiment sélectionné est démonté par nos constructeurs les plus proches (libres
+   * d'abord) ; un chantier est annulé tout de suite. Avec des ingénieurs sélectionnés : recyclage en zone.
+   */
+  demolishSelected(): void {
+    const sb = ui.selBuilding;
+    if (sb && sb.owner === ui.me) {
+      const f = this.frame;
+      let build = 65536;
+      let cx = 0;
+      let cy = 0;
+      const d = this.data!.buildings[sb.kind];
+      if (f) {
+        for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+          if (f.buf[o] >>> 0 !== sb.ref) continue;
+          build = f.buf[o + 4];
+          const dir = (f.buf[o + 1] >> 16) & 3;
+          cx = (f.buf[o + 2] & 0xffff) + (dir & 1 ? d.h : d.w) / 2;
+          cy = ((f.buf[o + 2] >>> 16) & 0xffff) + (dir & 1 ? d.w : d.h) / 2;
+        }
+      }
+      if (build < 65536) {
+        this.cmd(Ord.cancel(sb.ref));
+        sfx.confirm();
+        return;
+      }
+      const builders = this.ownBuilders().sort((a, b) => Number(!a.idle) - Number(!b.idle) || Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+      if (!builders.length) {
+        pushMessage("Aucun constructeur pour démonter ce bâtiment", "alert");
+        sfx.error();
+        return;
+      }
+      for (const b of builders.slice(0, 2)) this.cmd(Ord.target(O.RECLAIM, [b.id], sb.ref, !b.idle));
+      this.scene?.addMarker(cx, cy, 0xffd060);
+      sfx.confirm();
+      return;
+    }
+    if (this.engineers().length) this.setMode("reclaim");
+  }
+
+  /** Nos constructeurs (ingénieurs et commandant) : position en cases, libres ou non. */
+  private ownBuilders(): { id: number; x: number; y: number; idle: boolean }[] {
+    const f = this.frame;
+    const out: { id: number; x: number; y: number; idle: boolean }[] = [];
+    if (!f || !this.data) return out;
+    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
+      const w1 = f.buf[o + 1];
+      if (((w1 >> 8) & 0xff) !== ui.me || !(this.data.units[w1 & 0xff]?.buildPower > 0)) continue;
+      out.push({ id: f.buf[o] >>> 0, x: f.buf[o + 2] / TILE, y: f.buf[o + 3] / TILE, idle: (((w1 >>> 16) & 0xff) & UF.IDLE) !== 0 });
+    }
+    return out;
+  }
+
+  /**
+   * Recyclage en zone (cadre à l'écran) : nos bâtiments (chantiers annulés directement) et les épaves.
+   * Les cibles sont réparties entre les constructeurs sélectionnés (sinon les plus proches), chacun
+   * enchaînant les plus proches de sa position précédente, avec une charge équilibrée.
+   */
+  private async reclaimArea(x0: number, y0: number, x1: number, y1: number, queue: boolean): Promise<void> {
+    const sc = this.scene;
+    const f = this.frame;
+    if (!sc || !f || !this.data || !this.map) return;
+    const [ax, bx] = [Math.min(x0, x1), Math.max(x0, x1)];
+    const [ay, by] = [Math.min(y0, y1), Math.max(y0, y1)];
+    const p = { x: 0, y: 0 };
+    const inBox = (x: number, z: number) => sc.project(x, groundHeight(this.map!, x, z) + 0.3, z, p) && p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by;
+    const targets: { ref: number; x: number; y: number }[] = [];
+    let cancelled = 0;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const w1 = f.buf[o + 1];
+      if (((w1 >> 8) & 0xff) !== ui.me) continue;
+      const d = this.data.buildings[w1 & 0xff];
+      const dir = (w1 >> 16) & 3;
+      const x = (f.buf[o + 2] & 0xffff) + (dir & 1 ? d.h : d.w) / 2;
+      const y = ((f.buf[o + 2] >>> 16) & 0xffff) + (dir & 1 ? d.w : d.h) / 2;
+      if (!inBox(x, y)) continue;
+      if (f.buf[o + 4] < 65536) {
+        this.cmd(Ord.cancel(f.buf[o] >>> 0));
+        cancelled++;
+      } else targets.push({ ref: f.buf[o] >>> 0, x, y });
+    }
+    const wrecks: { x: number; y: number }[] = [];
+    for (let i = 0, o = f.wreckOff; i < f.nWrecks; i++, o += WRECK_WORDS) {
+      const x = f.buf[o] / TILE;
+      const y = f.buf[o + 1] / TILE;
+      if (inBox(x, y)) wrecks.push({ x, y });
+    }
+    for (const wk of wrecks.slice(0, 80)) {
+      const ref = await this.query<number>("wreckAt", [Math.round(wk.x * TILE), Math.round(wk.y * TILE)]);
+      if (ref && !targets.some((t) => t.ref === ref)) targets.push({ ref, x: wk.x, y: wk.y });
+    }
+    if (!targets.length) {
+      if (cancelled) sfx.confirm();
+      else sfx.error();
+      return;
+    }
+    const sel = new Set(this.engineers());
+    let builders = this.ownBuilders().filter((b) => sel.has(b.id));
+    if (!builders.length) {
+      // aucun ingénieur sélectionné : les 3 constructeurs les plus proches de la zone
+      const cx = targets.reduce((s, t) => s + t.x, 0) / targets.length;
+      const cy = targets.reduce((s, t) => s + t.y, 0) / targets.length;
+      builders = this.ownBuilders().sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)).slice(0, 3);
+    }
+    if (!builders.length) {
+      pushMessage("Aucun constructeur pour recycler cette zone", "alert");
+      sfx.error();
+      return;
+    }
+    const plan = builders.map((b) => ({ id: b.id, x: b.x, y: b.y, list: [] as number[] }));
+    const left = targets.slice(0, 300);
+    while (left.length) {
+      // le couple (constructeur, cible) le moins coûteux : trajet depuis sa dernière cible + charge
+      let best = 0;
+      let bi = 0;
+      let bc = Infinity;
+      for (let k = 0; k < plan.length; k++) {
+        const pl = plan[k];
+        for (let i = 0; i < left.length; i++) {
+          const c = Math.hypot(left[i].x - pl.x, left[i].y - pl.y) + pl.list.length * 6;
+          if (c < bc) {
+            bc = c;
+            best = i;
+            bi = k;
+          }
+        }
+      }
+      const t = left.splice(best, 1)[0];
+      const pl = plan[bi];
+      pl.list.push(t.ref);
+      pl.x = t.x;
+      pl.y = t.y;
+    }
+    for (const pl of plan) pl.list.forEach((ref, i) => this.cmd(Ord.target(O.RECLAIM, [pl.id], ref, queue || i > 0)));
+    sfx.confirm();
+    pushMessage(`Recyclage : ${targets.length} cible${targets.length > 1 ? "s" : ""}, ${plan.filter((p) => p.list.length).length} constructeur${plan.length > 1 ? "s" : ""}`, "info");
+  }
   lastPromo = 0;
   lastOrdersQuery = 0;
+  /** dernier dégât subi (base, commandant) : l'annonce ne revient qu'après un répit sans dégât */
+  lastBaseHit = -1e9;
+  lastCmdHit = -1e9;
+  lastPowerAlert = -1e9;
+  powerWasLow = false;
+  /**
+   * Attaque subie (événement de la simulation, au plus toutes les 2 s) : annonce vocale et message,
+   * sauf si une attaque du même type a déjà été signalée sans interruption (délai remis à zéro à
+   * chaque dégât : 20 s pour la base, 12 s pour le commandant).
+   */
+  private onAttacked(x: number, z: number, commander: boolean): void {
+    const now = performance.now();
+    if (commander) {
+      if (now - this.lastCmdHit > 12000) {
+        say("commandant");
+        sfx.alert();
+        pushMessage("Le robot de commandement est attaqué !", "alert");
+        this.alertPos = { x, z };
+      }
+      this.lastCmdHit = now;
+      return;
+    }
+    if (now - this.lastBaseHit > 20000) {
+      const k = keyOf("alert");
+      say("attaque");
+      sfx.alert();
+      pushMessage(k ? `Nous sommes attaqués (${k} pour y aller)` : "Nous sommes attaqués", "alert");
+      this.alertPos = { x, z };
+    }
+    this.lastBaseHit = now;
+  }
   lastPowerShow = 0;
   lastPlannedQuery = 0;
   gifts = new Map<string, number>();
@@ -1719,6 +1927,18 @@ export class GameClient {
     ui.volume = v;
     setVolume(v);
     localStorage.setItem("supreme.volume", String(v));
+  }
+
+  /** Annonces vocales (attaques, recherche, énergie), mémorisé dans le navigateur. */
+  setVoice(on: boolean): void {
+    ui.voice = on;
+    setVoiceEnabled(on);
+    try {
+      localStorage.setItem("supreme.voice", on ? "1" : "0");
+    } catch {
+      // stockage indisponible : le réglage vaut pour cette session
+    }
+    if (on) say("recherche");
   }
 
   /** Volume de la musique de fond (0 : coupée), mémorisé dans le navigateur. */

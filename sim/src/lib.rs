@@ -132,6 +132,13 @@ pub extern "C" fn unit_orders(n_bytes: u32) -> *const u8 {
     set_out_i32(&v)
 }
 
+/// File de recherche d'un joueur (technologies dans l'ordre).
+#[no_mangle]
+pub extern "C" fn research_queue(player: i32) -> *const u8 {
+    let v = with_world(|w| w.players.get(player as usize).map(|p| p.research_queue.iter().map(|&t| t as i32).collect()).unwrap_or_default(), Vec::new());
+    set_out_i32(&v)
+}
+
 /// Constructions prévues d'un joueur (ordres de construction pas encore commencés).
 #[no_mangle]
 pub extern "C" fn planned_builds(player: i32) -> *const u8 {

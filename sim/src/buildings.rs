@@ -1000,6 +1000,7 @@ fn tick_lab(w: &mut World, b: usize) {
             if p.tech_progress[t as usize] >= TECHS[t as usize].count {
                 p.researched |= 1u64 << t;
                 p.research = 0;
+                p.start_queued();
                 w.ev(EV_RESEARCH, owner as i32, t as i32, 0, 0);
                 if t == T_CMD_SHIELD {
                     let c = w.players[owner].commander;

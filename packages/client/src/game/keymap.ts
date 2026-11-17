@@ -56,7 +56,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "planLibrary", label: "Bibliothèque de plans", group: "Interface", ctx: "global" },
   { id: "selectArmy", label: "Toute l'armée visible", group: "Sélection", ctx: "global" },
   { id: "idleEngineer", label: "Ingénieur inactif suivant", group: "Sélection", ctx: "global" },
-  { id: "cancelBuilding", label: "Annuler le chantier sélectionné", group: "Sélection", ctx: "global" },
+  { id: "cancelBuilding", label: "Démolir le bâtiment sélectionné (chantier : annuler ; ingénieurs : recyclage en zone)", group: "Sélection", ctx: "global" },
   { id: "panUp", label: "Défiler vers le haut", group: "Caméra", ctx: "global", held: true, shiftFree: true },
   { id: "panDown", label: "Défiler vers le bas", group: "Caméra", ctx: "global", held: true, shiftFree: true },
   { id: "panLeft", label: "Défiler vers la gauche", group: "Caméra", ctx: "global", held: true, shiftFree: true },

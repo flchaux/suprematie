@@ -29,6 +29,8 @@ pub const O_CANCEL: i32 = 19;
 pub const O_SURRENDER: i32 = 20;
 /// Part de la sortie de sa source prise par un bras : bâtiment, % (0 : automatique).
 pub const O_SET_SHARE: i32 = 21;
+/// File de recherche : ajoute une technologie (ou la retire si elle y est déjà) ; 0 vide la file.
+pub const O_RESEARCH_QUEUE: i32 = 22;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -255,12 +257,51 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let td = &TECHS[t as usize];
             if t == 0 {
                 w.players[p as usize].research = 0;
+                w.players[p as usize].research_queue.clear();
                 return;
             }
             if pl.has_tech(t as u8) || !td.prereq.iter().all(|&q| pl.has_tech(q)) {
                 return;
             }
-            w.players[p as usize].research = t as u8;
+            let pl = &mut w.players[p as usize];
+            pl.research = t as u8;
+            pl.research_queue.retain(|&q| q != t as u8);
+        }
+        O_RESEARCH_QUEUE => {
+            let t = c.next();
+            if t < 0 || t as usize >= TECHS.len() {
+                return;
+            }
+            let pl = &mut w.players[p as usize];
+            if t == 0 {
+                pl.research_queue.clear();
+                return;
+            }
+            let t = t as u8;
+            if let Some(k) = pl.research_queue.iter().position(|&q| q == t) {
+                // déjà en file : retirée, avec les recherches qui en dépendaient plus loin dans la file
+                pl.research_queue.remove(k);
+                let mut avail = pl.researched | if pl.research != 0 { 1u64 << pl.research } else { 0 };
+                let mut keep = Vec::new();
+                for &q in &pl.research_queue {
+                    if TECHS[q as usize].prereq.iter().all(|&r| avail & (1u64 << r) != 0) {
+                        avail |= 1u64 << q;
+                        keep.push(q);
+                    }
+                }
+                pl.research_queue = keep;
+                return;
+            }
+            if pl.has_tech(t) || pl.research == t || pl.research_queue.len() >= 16 {
+                return;
+            }
+            // prérequis acquis, en cours ou plus tôt dans la file
+            let avail = pl.researched | if pl.research != 0 { 1u64 << pl.research } else { 0 } | pl.research_queue.iter().fold(0u64, |a, &q| a | 1u64 << q);
+            if !TECHS[t as usize].prereq.iter().all(|&r| avail & (1u64 << r) != 0) {
+                return;
+            }
+            pl.research_queue.push(t);
+            pl.start_queued();
         }
         O_RALLY => {
             let (b, x, y) = (c.next(), c.next(), c.next());
