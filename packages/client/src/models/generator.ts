@@ -3,6 +3,7 @@
 // avec la couleur du joueur. L'attribut `mat` donne la couche de texture (matière) de chaque pièce. Les pièces mobiles (pivot) forment des géométries séparées.
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import type { Model, Part, ColorName } from "../../../../assets/models/types.ts";
 import { KIT } from "../../../../assets/models/kit.ts";
 
@@ -12,6 +13,7 @@ export const PALETTE: Record<ColorName, number> = {
   dark: 0x3a4049,
   light: 0xc9d0d8,
   glow: 0x6ff6ff,
+  amber: 0xffa531,
   hazard: 0xe0b030,
   glass: 0x27496b,
   red: 0xc84040,
@@ -19,7 +21,7 @@ export const PALETTE: Record<ColorName, number> = {
 };
 
 /** Couche de texture de chaque couleur de pièce (voir render/textures.ts ; 5 = pas de texture). */
-export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5 };
+export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -48,6 +50,35 @@ function wedgeGeometry(sx: number, sy: number, sz: number): THREE.BufferGeometry
   return g;
 }
 
+/**
+ * Boîte dont toutes les arêtes sont chanfreinées (enveloppe convexe de 24 points) : 44 triangles.
+ * Les facettes des chanfreins accrochent la lumière et donnent l'aspect de plaques de blindage.
+ */
+const bevelCache = new Map<string, THREE.BufferGeometry>();
+function bevelGeometry(sx: number, sy: number, sz: number, c: number): THREE.BufferGeometry {
+  const key = `${sx},${sy},${sz},${c}`;
+  const hit = bevelCache.get(key);
+  if (hit) return hit.clone();
+  const hx = sx / 2;
+  const hy = sy / 2;
+  const hz = sz / 2;
+  const cx = Math.min(c, hx * 0.95);
+  const cy = Math.min(c, hy * 0.95);
+  const cz = Math.min(c, hz * 0.95);
+  const pts: THREE.Vector3[] = [];
+  for (const a of [-1, 1]) {
+    for (const b of [-1, 1]) {
+      // points des faces x, y et z, rentrés du chanfrein sur les deux autres axes
+      pts.push(new THREE.Vector3(a * hx, b * (hy - cy), hz - cz), new THREE.Vector3(a * hx, b * (hy - cy), -(hz - cz)));
+      pts.push(new THREE.Vector3(a * (hx - cx), b * hy, hz - cz), new THREE.Vector3(a * (hx - cx), b * hy, -(hz - cz)));
+      pts.push(new THREE.Vector3(a * (hx - cx), b * (hy - cy), hz), new THREE.Vector3(a * (hx - cx), b * (hy - cy), -hz));
+    }
+  }
+  const g = new ConvexGeometry(pts);
+  bevelCache.set(key, g);
+  return g.clone();
+}
+
 function shapeGeometry(part: Part): THREE.BufferGeometry {
   const sides = part.sides ?? 6;
   switch (part.shape) {
@@ -62,7 +93,11 @@ function shapeGeometry(part: Part): THREE.BufferGeometry {
       return wedgeGeometry(s[0], s[1], s[2]);
     }
     case "sphere":
-      return new THREE.IcosahedronGeometry(part.radius ?? 0.5, 0);
+      return new THREE.IcosahedronGeometry(part.radius ?? 0.5, Math.max(0, Math.min(1, part.detail ?? 0)));
+    case "bevel": {
+      const s = part.size ?? [1, 1, 1];
+      return bevelGeometry(s[0], s[1], s[2], part.bevel ?? Math.min(s[0], s[1], s[2]) * 0.18);
+    }
     case "box":
     default: {
       const s = part.size ?? [1, 1, 1];
@@ -79,15 +114,22 @@ interface Flat {
   pivotPos?: THREE.Vector3;
 }
 
+/** Symétrie par rapport au plan x = 0 (copie `mirror`). */
+const MIRROR_X = new THREE.Matrix4().makeScale(-1, 1, 1);
+
+/**
+ * Matrice d'une pièce dans le repère de son parent. La copie `mirror` est une vraie réflexion :
+ * les sous-ensembles du kit (ailes, pattes…) sont donc eux aussi réfléchis.
+ */
 function partMatrix(part: Part, mirror: boolean): THREE.Matrix4 {
   const pos = part.pos ?? [0, 0, 0];
   const rot = part.rot ?? [0, 0, 0];
   const sc = part.scale ?? 1;
   const s = typeof sc === "number" ? [sc, sc, sc] : sc;
   const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rot[0] * DEG, (mirror ? -rot[1] : rot[1]) * DEG, (mirror ? -rot[2] : rot[2]) * DEG, "XYZ"));
-  m.compose(new THREE.Vector3(mirror ? -pos[0] : pos[0], pos[1], pos[2]), q, new THREE.Vector3(s[0], s[1], s[2]));
-  return m;
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rot[0] * DEG, rot[1] * DEG, rot[2] * DEG, "XYZ"));
+  m.compose(new THREE.Vector3(pos[0], pos[1], pos[2]), q, new THREE.Vector3(s[0], s[1], s[2]));
+  return mirror ? m.premultiply(MIRROR_X) : m;
 }
 
 function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inherit: { pivot?: string; parent?: string; color?: ColorName }, depth = 0): void {
@@ -111,8 +153,8 @@ function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inheri
       let g = shapeGeometry(part);
       g.applyMatrix4(m);
       if (g.index) g = g.toNonIndexed();
-      if (mirror) {
-        // la symétrie inverse l'orientation des faces : on échange deux sommets par triangle
+      if (m.determinant() < 0) {
+        // une réflexion (nombre impair de symétries) inverse l'orientation des faces : on échange deux sommets par triangle
         const p = g.getAttribute("position");
         for (let i = 0; i < p.count; i += 3) {
           const x = p.getX(i + 1), y = p.getY(i + 1), z = p.getZ(i + 1);
@@ -137,7 +179,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
   const mask = new Float32Array(n);
   const mat = new Float32Array(n).fill(MATERIAL_LAYER[color] ?? 1);
   const isFaction = color === "faction" ? 1 : 0;
-  const glow = color === "glow" ? 1 : 0;
+  const glow = color === "glow" || color === "amber" ? 1 : 0;
   for (let i = 0; i < n; i++) {
     col[i * 3] = c.r;
     col[i * 3 + 1] = c.g;

@@ -1,478 +1,966 @@
 // Descriptions des bâtiments. Clé = clé du bâtiment dans les données du jeu (sim/src/data.rs).
 // Le modèle est redimensionné pour couvrir son emprise au sol (w x h cases) ; +z = avant (sortie).
-import type { Model } from "./types.ts";
+// Style (comme les unités refaites) : volumes à arêtes chanfreinées (bevel), blindage clair et acier,
+// couleur d'équipe sur le dessus (toits, bandeaux), filets cyan (glow) et voyants ambre.
+import type { Model, Part } from "./types.ts";
+
+/** Socle chanfreiné de w x d cases (dessus à y = 0.25), sans dépasser de l'emprise. 88 triangles. */
+function socle(w: number, d = w): Part[] {
+  return [
+    { shape: "bevel", size: [w, 0.16, d], pos: [0, 0.08, 0], bevel: 0.06, color: "dark" },
+    { shape: "bevel", size: [w - 0.16, 0.1, d - 0.16], pos: [0, 0.2, 0], bevel: 0.04, color: "metal" },
+  ];
+}
+
+/** Filets lumineux sur le chant du socle : avant et côtés (48 triangles), ou avant seul (24). */
+function filets(w: number, d = w, cotes = true): Part[] {
+  const l = Math.min(w, d) * 0.28;
+  const out: Part[] = [{ shape: "box", size: [l, 0.04, 0.03], pos: [w * 0.27, 0.09, d / 2 - 0.016], color: "glow", mirror: true }];
+  if (cotes) out.push({ shape: "box", size: [0.03, 0.04, l], pos: [w / 2 - 0.016, 0.09, -d * 0.2], color: "glow", mirror: true });
+  return out;
+}
+
+/** Tapis roulant (au plus 100 triangles) : surface plate, rebords clairs, flèche de sens. */
+function tapis(surface: Part["color"], fleche: Part["color"], filet: Part["color"], lf: number): Model {
+  return {
+    parts: [
+      { shape: "box", size: [0.92, 0.07, 1], pos: [0, 0.035, 0], color: "dark" },
+      { shape: "box", size: [0.78, 0.03, 0.98], pos: [0, 0.085, 0], color: surface },
+      { shape: "box", size: [0.08, 0.14, 1], pos: [0.46, 0.07, 0], color: "light", mirror: true },
+      { shape: "box", size: [0.035, 0.02, lf], pos: [0.46, 0.15, 0], color: filet, mirror: true },
+      { shape: "wedge", size: [0.03, 0.3, 0.36], pos: [0.15, 0.115, 0.02], color: fleche, rot: [0, 0, -90], mirror: true },
+    ],
+  };
+}
+
+/** Caisson commun des assembleurs (3 x 3) : coins blindés clairs, cadre supérieur aux couleurs de l'équipe. */
+function assembleur(): Part[] {
+  return [
+    ...socle(3),
+    ...filets(3),
+    { shape: "bevel", size: [2.7,0.72,2.7], pos: [0,0.6,0], color: "dark" },
+    { shape: "bevel", size: [0.62,0.92,0.62], pos: [1.1,0.7,1.1], color: "light", mirror: true },
+    { shape: "bevel", size: [0.62,0.92,0.62], pos: [1.1,0.7,-1.1], color: "light", mirror: true },
+    { shape: "bevel", size: [1.0,0.42,0.1], pos: [0,0.52,1.35], bevel: 0.03, color: "black" },
+    { shape: "box", size: [0.9,0.04,0.03], pos: [0,0.83,1.36], color: "glow" },
+    { shape: "box", size: [0.1,0.06,0.03], pos: [0.62,0.5,1.36], color: "amber", mirror: true },
+    { shape: "box", size: [0.04,0.36,1.0], pos: [1.35,0.6,0], color: "metal", mirror: true },
+    { shape: "box", size: [0.03,0.04,0.8], pos: [1.37,0.86,0], color: "glow", mirror: true },
+    { shape: "bevel", size: [2.4,0.16,0.4], pos: [0,1.04,1.05], color: "faction" },
+    { shape: "bevel", size: [2.4,0.16,0.4], pos: [0,1.04,-1.05], color: "faction" },
+    { shape: "bevel", size: [0.4,0.16,1.7], pos: [1.05,1.04,0], color: "faction", mirror: true },
+    { shape: "box", size: [1.8,0.04,1.8], pos: [0,0.97,0], color: "metal" },
+  ];
+}
+
+/** Bras robotisé posé dans le caisson ; avec `pivot`, c'est le bras animé « bras ». */
+function brasRobot(x: number, z: number, pivot: boolean): Part[] {
+  const p = pivot ? { parent: "bras" } : {};
+  return [
+    { shape: "cylinder", sides: 8, radius: 0.2, height: 0.3, pos: [x,1.12,z], color: "metal" },
+    { shape: "bevel", size: [0.3,0.26,0.3], pos: [x,1.38,z], color: "light", ...(pivot ? { pivot: "bras" } : {}) },
+    { shape: "bevel", size: [0.16,0.16,0.8], pos: [x,1.5,z + 0.35], rot: [-10,0,0], color: "light", ...p },
+    { shape: "box", size: [0.12,0.36,0.12], pos: [x,1.32,z + 0.72], color: "metal", ...p },
+    { shape: "box", size: [0.3,0.08,0.16], pos: [x,1.12,z + 0.72], color: "dark", ...p },
+    { shape: "box", size: [0.05,0.05,0.03], pos: [x,1.5,z + 0.18], color: "amber", ...p },
+  ];
+}
 
 export const BUILDING_MODELS: Record<string, Model> = {
-  // extractor (144 triangles)
+  // extractor : tour de forage centrale, foret hélicoïdal au sol, deux cuves (828 triangles)
   extractor: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "box", size: [1.2,0.8,1.2], pos: [0,0.65,0], color: "faction" },
-      { shape: "cylinder", sides: 6, radius: 0.35, height: 1.2, pos: [0,1.4,0], color: "metal" },
-      { shape: "box", size: [0.15,1.6,0.15], pos: [0.55,1,0.55], color: "hazard", mirror: true },
-      { shape: "box", size: [0.15,1.6,0.15], pos: [0.55,1,-0.55], color: "hazard", mirror: true },
-      { shape: "cylinder", sides: 6, radius: 0.5, height: 0.15, pos: [0,2.1,0], color: "dark", pivot: "foret" },
-      { shape: "wedge", size: [0.5,0.3,0.5], pos: [0,0.45,0.85], color: "metal" },
+      ...socle(2),
+      ...filets(2),
+      // puits : cratère sombre, anneau lumineux
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.04, pos: [0,0.26,0.3], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.04, pos: [0,0.28,0.3], color: "dark" },
+      // foret (tourne en continu) : cône vers le bas et filets d'hélice
+      { shape: "cone", sides: 8, radius: 0.3, height: 0.88, pos: [0,0.74,0.3], rot: [180,0,0], color: "metal", pivot: "foret" },
+      { shape: "box", size: [0.56,0.06,0.08], pos: [0,0.95,0.3], rot: [0,0,12], color: "dark", parent: "foret" },
+      { shape: "box", size: [0.08,0.06,0.42], pos: [0,0.72,0.3], rot: [12,0,0], color: "dark", parent: "foret" },
+      { shape: "box", size: [0.3,0.06,0.07], pos: [0,0.5,0.3], rot: [0,0,-12], color: "dark", parent: "foret" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.14, pos: [0,1.25,0.3], color: "dark" },
+      { shape: "bevel", size: [0.44,0.28,0.44], pos: [0,1.42,0.12], color: "light" },
+      // tour de forage
+      { shape: "bevel", size: [0.62,1.8,0.5], pos: [0,1.15,-0.4], color: "dark" },
+      { shape: "bevel", size: [0.18,1.1,0.46], pos: [0.38,1.3,-0.38], color: "light", mirror: true },
+      { shape: "box", size: [0.06,0.4,0.03], pos: [0,1.8,-0.14], color: "glow" },
+      { shape: "bevel", size: [0.68,0.22,0.56], pos: [0,2.12,-0.4], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 0.3, pos: [0,2.35,-0.45], color: "metal" },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.2,2.12,-0.11], color: "amber", mirror: true },
+      // cuve gauche : bandes sombres, voyant ambre
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.8, pos: [-0.66,0.65,-0.1], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.29, height: 0.14, pos: [-0.66,0.55,-0.1], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.12, pos: [-0.66,1.1,-0.1], color: "faction" },
+      { shape: "sphere", radius: 0.09, pos: [-0.66,1.2,-0.1], color: "amber" },
+      // cuve droite : dôme et filet cyan
+      { shape: "cylinder", sides: 8, radius: 0.25, height: 0.55, pos: [0.66,0.52,-0.5], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.06, pos: [0.66,0.62,-0.5], color: "glow" },
+      { shape: "sphere", radius: 0.25, pos: [0.66,0.8,-0.5], color: "metal" },
+      // conduite vers l'avant
+      { shape: "box", size: [0.12,0.12,0.8], pos: [0.66,0.36,0.1], color: "dark" },
+      { shape: "bevel", size: [0.3,0.22,0.3], pos: [0.66,0.36,0.62], color: "metal" },
     ],
   },
-  // belt1 (84 triangles)
-  belt1: {
-    parts: [
-      { shape: "box", size: [0.9,0.1,1], pos: [0,0.05,0], color: "metal" },
-      { shape: "box", size: [0.08,0.15,1], pos: [0.46,0.075,0], color: "light", mirror: true },
-      { shape: "wedge", size: [0.2,0.3,0.4], pos: [0.15,0.13,0.25], color: "dark", rot: [0,0,-90], mirror: true },
-      { shape: "wedge", size: [0.2,0.3,0.4], pos: [0.15,0.13,-0.25], color: "dark", rot: [0,0,-90], mirror: true },
-    ],
-  },
-  // belt2 (84 triangles)
-  belt2: {
-    parts: [
-      { shape: "box", size: [0.9,0.1,1], pos: [0,0.05,0], color: "dark" },
-      { shape: "box", size: [0.08,0.15,1], pos: [0.46,0.075,0], color: "light", mirror: true },
-      { shape: "wedge", size: [0.2,0.3,0.4], pos: [0.15,0.13,0.25], color: "hazard", rot: [0,0,-90], mirror: true },
-      { shape: "wedge", size: [0.2,0.3,0.4], pos: [0.15,0.13,-0.25], color: "hazard", rot: [0,0,-90], mirror: true },
-    ],
-  },
-  // belt3 (84 triangles)
-  belt3: {
-    parts: [
-      { shape: "box", size: [0.9,0.1,1], pos: [0,0.05,0], color: "dark" },
-      { shape: "box", size: [0.08,0.15,1], pos: [0.46,0.075,0], color: "light", mirror: true },
-      { shape: "wedge", size: [0.2,0.3,0.4], pos: [0.15,0.13,0.25], color: "glow", rot: [0,0,-90], mirror: true },
-      { shape: "wedge", size: [0.2,0.3,0.4], pos: [0.15,0.13,-0.25], color: "glow", rot: [0,0,-90], mirror: true },
-    ],
-  },
-  // inserter (72 triangles)
+  // belt1 : rebords clairs, flèche sombre, voyants ambre (96 triangles)
+  belt1: tapis("metal", "dark", "amber", 0.3),
+  // belt2 : tapis sombre, flèche jaune, filets cyan (96 triangles)
+  belt2: tapis("dark", "hazard", "glow", 0.4),
+  // belt3 : tapis sombre, flèche et longs filets cyan (96 triangles)
+  belt3: tapis("dark", "glow", "glow", 0.8),
+  // inserter : socle rond à liseré cyan, colonne, bras et pince (84 triangles)
   inserter: {
     parts: [
-      { shape: "box", size: [0.8,0.12,0.8], pos: [0,0.06,0], color: "dark" },
-      { shape: "box", size: [0.5,0.2,0.5], pos: [0,0.22,-0.1], color: "faction" },
-      { shape: "cylinder", sides: 6, radius: 0.12, height: 0.2, pos: [0,0.4,-0.1], color: "metal" },
-      { shape: "box", size: [0.1,0.1,0.7], pos: [0,0.55,0.2], color: "hazard", pivot: "bras" },
-      { shape: "box", size: [0.25,0.1,0.1], pos: [0,0.5,0.58], color: "metal", parent: "bras" },
+      { shape: "cylinder", sides: 6, radius: 0.4, height: 0.1, pos: [0,0.05,0], color: "dark" },
+      { shape: "box", size: [0.56,0.02,0.56], pos: [0,0.11,-0.08], color: "glow" },
+      { shape: "box", size: [0.46,0.16,0.46], pos: [0,0.2,-0.08], color: "faction" },
+      { shape: "box", size: [0.18,0.28,0.18], pos: [0,0.4,-0.08], color: "metal" },
+      { shape: "box", size: [0.1,0.1,0.7], pos: [0,0.55,0.2], color: "light", pivot: "bras" },
+      { shape: "box", size: [0.25,0.1,0.1], pos: [0,0.5,0.58], color: "dark", parent: "bras" },
     ],
   },
-  // furnace (96 triangles)
+  // furnace : bloc sombre à coins blindés, gueule de feu ambre, cheminée rougeoyante (708 triangles)
   furnace: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "box", size: [1.6,1.1,1.6], pos: [0,0.8,0], color: "metal" },
-      { shape: "box", size: [0.8,0.4,0.1], pos: [0,0.6,0.81], color: "glow" },
-      { shape: "cylinder", sides: 6, radius: 0.22, height: 0.9, pos: [0.45,1.8,-0.45], color: "dark" },
-      { shape: "box", size: [1.65,0.15,1.65], pos: [0,1.4,0], color: "faction" },
-      { shape: "box", size: [0.4,0.2,0.4], pos: [-0.4,1.55,0.3], color: "hazard" },
+      ...socle(2),
+      ...filets(2, 2, false),
+      { shape: "bevel", size: [1.66,1.2,1.56], pos: [0,0.85,-0.06], color: "dark" },
+      { shape: "bevel", size: [0.36,1.04,0.36], pos: [0.7,0.78,0.62], color: "light", mirror: true },
+      { shape: "bevel", size: [0.36,1.04,0.36], pos: [0.7,0.78,-0.66], color: "light", mirror: true },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.7,1.12,0.81], color: "amber", mirror: true },
+      // gueule du four
+      { shape: "bevel", size: [0.98,0.74,0.12], pos: [0,0.74,0.74], bevel: 0.04, color: "black" },
+      { shape: "box", size: [0.8,0.54,0.06], pos: [0,0.7,0.79], color: "amber" },
+      { shape: "bevel", size: [1.06,0.16,0.22], pos: [0,1.17,0.72], color: "light" },
+      { shape: "box", size: [0.04,0.04,0.9], pos: [0.85,1.3,-0.1], color: "glow", mirror: true },
+      // toit aux couleurs de l'équipe
+      { shape: "bevel", size: [1.5,0.14,1.4], pos: [0,1.52,-0.08], color: "faction" },
+      { shape: "bevel", size: [0.5,0.12,0.4], pos: [-0.4,1.64,0.2], color: "metal" },
+      // cheminée
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.24, pos: [0.4,1.7,-0.4], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.26, height: 0.75, pos: [0.4,2.05,-0.4], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.31, height: 0.12, pos: [0.4,2.42,-0.4], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.02, pos: [0.4,2.48,-0.4], color: "amber" },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.4,1.98,-0.14], color: "amber" },
     ],
   },
-  // assembler1 (96 triangles)
+  // assembler1 : caisson à coins clairs, couvercle ouvert à l'arrière, bras robotisé (940 triangles)
   assembler1: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.4,0.6,2.4], pos: [0,0.55,0], color: "metal" },
-      { shape: "box", size: [2,0.6,2], pos: [0,1.15,0], color: "faction" },
-      { shape: "box", size: [0.6,0.2,0.3], pos: [0,0.5,1.25], color: "hazard" },
-      { shape: "box", size: [0.5,0.35,0.5], pos: [0.7,1.6,0.4], color: "dark" },
-      { shape: "box", size: [0.12,0.12,0.9], pos: [0,1.9,0.2], color: "light", pivot: "bras" },
-      { shape: "box", size: [0.3,0.1,0.2], pos: [0,1.9,0.75], color: "hazard", parent: "bras" },
+      ...assembleur(),
+      ...brasRobot(0, -0.35, true),
+      { shape: "bevel", size: [1.9,0.08,0.9], pos: [0,1.47,-1.1], rot: [70,0,0], color: "light" },
+      { shape: "box", size: [1.4,0.03,0.05], pos: [0,1.75,-1.12], rot: [70,0,0], color: "glow" },
+      { shape: "bevel", size: [0.5,0.3,0.4], pos: [-0.55,1.12,0.35], color: "metal" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [-0.55,1.15,0.56], color: "amber" },
     ],
   },
-  // assembler2 (132 triangles)
+  // assembler2 : plateau vitré à croix lumineuse, deux bras de part et d'autre (1064 triangles)
   assembler2: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.4,0.6,2.4], pos: [0,0.55,0], color: "metal" },
-      { shape: "box", size: [2,0.6,2], pos: [0,1.15,0], color: "faction" },
-      { shape: "box", size: [0.6,0.2,0.3], pos: [0,0.5,1.25], color: "glow" },
-      { shape: "box", size: [0.5,0.35,0.5], pos: [0.7,1.6,0.4], color: "dark" },
-      { shape: "box", size: [0.12,0.12,0.9], pos: [0,1.9,0.2], color: "light", pivot: "bras" },
-      { shape: "box", size: [0.3,0.1,0.2], pos: [0,1.9,0.75], color: "hazard", parent: "bras" },
-      { shape: "box", size: [0.3,0.9,0.3], pos: [-0.9,1.7,-0.7], color: "dark" },
-      { shape: "box", size: [0.5,0.1,0.5], pos: [-0.9,2.2,-0.7], color: "glow" },
-      { shape: "box", size: [0.2,0.5,2.2], pos: [1.1,1,0], color: "light" },
+      ...assembleur(),
+      { shape: "bevel", size: [1.2,0.1,1.2], pos: [0,1.02,0.1], bevel: 0.04, color: "black" },
+      { shape: "box", size: [1.0,0.04,1.0], pos: [0,1.08,0.1], color: "glass" },
+      { shape: "box", size: [1.0,0.03,0.06], pos: [0,1.1,0.1], color: "glow" },
+      { shape: "box", size: [0.06,0.03,1.0], pos: [0,1.1,0.1], color: "glow" },
+      ...brasRobot(0.82, -0.45, true),
+      ...brasRobot(-0.82, -0.45, false),
     ],
   },
-  // assembler3 (196 triangles)
+  // assembler3 : disque holographique à cubes lumineux, écran à l'arrière, bras (984 triangles)
   assembler3: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.4,0.6,2.4], pos: [0,0.55,0], color: "metal" },
-      { shape: "box", size: [2,0.6,2], pos: [0,1.15,0], color: "faction" },
-      { shape: "box", size: [0.6,0.2,0.3], pos: [0,0.5,1.25], color: "glow" },
-      { shape: "box", size: [0.5,0.35,0.5], pos: [0.7,1.6,0.4], color: "dark" },
-      { shape: "box", size: [0.12,0.12,0.9], pos: [0,1.9,0.2], color: "light", pivot: "bras" },
-      { shape: "box", size: [0.3,0.1,0.2], pos: [0,1.9,0.75], color: "hazard", parent: "bras" },
-      { shape: "box", size: [0.3,0.9,0.3], pos: [-0.9,1.7,-0.7], color: "dark" },
-      { shape: "box", size: [0.5,0.1,0.5], pos: [-0.9,2.2,-0.7], color: "glow" },
-      { shape: "box", size: [0.2,0.5,2.2], pos: [1.1,1,0], color: "light" },
-      { shape: "box", size: [2.2,0.15,2.2], pos: [0,1.5,0], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.4, pos: [0.7,1.8,-0.7], color: "light" },
-      { shape: "sphere", radius: 0.3, pos: [0.7,2.1,-0.7], color: "glow" },
+      ...assembleur(),
+      { shape: "cylinder", sides: 8, radius: 0.62, height: 0.1, pos: [0,1.02,0.2], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.04, pos: [0,1.08,0.2], color: "glow" },
+      { shape: "box", size: [0.18,0.18,0.18], pos: [0.1,1.25,0.2], rot: [0,30,0], color: "glow" },
+      { shape: "box", size: [0.14,0.14,0.14], pos: [-0.16,1.2,0.3], rot: [0,15,0], color: "glow" },
+      { shape: "box", size: [0.12,0.12,0.12], pos: [-0.02,1.42,0.12], rot: [20,40,0], color: "glow" },
+      { shape: "bevel", size: [1.3,0.7,0.1], pos: [0.1,1.45,-0.85], bevel: 0.03, color: "dark" },
+      { shape: "box", size: [1.14,0.56,0.03], pos: [0.1,1.45,-0.79], color: "glow" },
+      ...brasRobot(-0.85, -0.3, true),
     ],
   },
-  // refinery (172 triangles)
+  // refinery : colonnes de distillation à dômes, cuve couchée, conduites, pupitre (792 triangles)
   refinery: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "cylinder", sides: 6, radius: 0.55, height: 1.6, pos: [-0.7,1,-0.7], color: "faction" },
-      { shape: "cylinder", sides: 6, radius: 0.55, height: 1.6, pos: [0.7,1,-0.7], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.3, height: 2.4, pos: [0,1.4,0.2], color: "dark" },
-      { shape: "box", size: [2.2,0.3,0.5], pos: [0,0.55,0.9], color: "hazard" },
-      { shape: "box", size: [0.15,0.15,1.8], pos: [-0.7,1.9,0], color: "light" },
-      { shape: "box", size: [0.15,0.15,1.8], pos: [0.7,1.9,0], color: "light" },
-      { shape: "sphere", radius: 0.2, pos: [0,2.7,0.2], color: "glow" },
-      { shape: "box", size: [1,0.5,0.8], pos: [0.8,0.55,0.5], color: "metal" },
+      ...socle(3),
+      ...filets(3),
+      // grande colonne
+      { shape: "cylinder", sides: 8, radius: 0.42, height: 2.0, pos: [-0.62,1.25,-0.62], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.3, pos: [-0.62,0.6,-0.62], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.34, pos: [-0.62,1.85,-0.62], color: "faction" },
+      { shape: "sphere", radius: 0.42, detail: 1, pos: [-0.62,2.25,-0.62], scale: [1,0.7,1], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 0.16, pos: [-0.62,2.6,-0.62], color: "metal" },
+      { shape: "box", size: [0.05,0.9,0.03], pos: [-0.62,1.25,-0.19], color: "glow" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [-0.62,2.15,-0.22], color: "amber" },
+      // colonne claire
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 1.5, pos: [0.55,1.0,-0.75], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.28, pos: [0.55,1.25,-0.75], color: "dark" },
+      { shape: "box", size: [0.04,0.24,0.03], pos: [0.55,1.25,-0.41], color: "glow" },
+      { shape: "sphere", radius: 0.32, pos: [0.55,1.75,-0.75], scale: [1,0.7,1], color: "faction" },
+      { shape: "sphere", radius: 0.08, pos: [0.55,2.0,-0.75], color: "amber" },
+      // petite colonne
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.7, pos: [0.15,0.6,0.15], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.22, height: 0.12, pos: [0.15,0.97,0.15], color: "dark" },
+      { shape: "sphere", radius: 0.07, pos: [0.15,1.07,0.15], color: "amber" },
+      // cuve couchée
+      { shape: "cylinder", sides: 8, radius: 0.33, height: 1.1, pos: [-0.75,0.6,0.62], rot: [0,0,90], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.35, height: 0.12, pos: [-0.45,0.6,0.62], rot: [0,0,90], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.05, pos: [-1.31,0.6,0.62], rot: [0,0,90], color: "glow" },
+      { shape: "box", size: [0.5,0.2,0.4], pos: [-0.75,0.3,0.62], color: "dark" },
+      // conduites
+      { shape: "box", size: [0.12,0.12,1.1], pos: [0.15,0.42,-0.4], color: "metal" },
+      { shape: "box", size: [1.1,0.12,0.12], pos: [-0.05,1.45,-0.7], color: "metal" },
+      { shape: "box", size: [0.12,0.12,0.9], pos: [1.05,0.4,0.0], color: "dark" },
+      { shape: "box", size: [0.9,0.12,0.12], pos: [0.6,0.4,-0.4], color: "dark" },
+      // pupitre de commande
+      { shape: "bevel", size: [0.9,0.3,0.6], pos: [0.55,0.4,0.85], color: "light" },
+      { shape: "box", size: [0.4,0.03,0.3], pos: [0.45,0.56,0.85], color: "dark" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.85,0.42,1.16], color: "amber" },
     ],
   },
-  // chemical (148 triangles)
+  // chemical : deux cuves ouvertes au liquide lumineux, réservoir à dôme, cheminées (896 triangles)
   chemical: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "sphere", radius: 0.7, pos: [-0.7,1,-0.6], color: "faction" },
-      { shape: "sphere", radius: 0.7, pos: [0.7,1,-0.6], color: "light" },
-      { shape: "cylinder", sides: 6, radius: 0.45, height: 1.4, pos: [0,0.95,0.7], color: "metal" },
-      { shape: "cylinder", sides: 6, radius: 0.12, height: 1.2, pos: [-0.7,1.9,0.6], color: "dark" },
-      { shape: "box", size: [0.15,0.15,1.6], pos: [0,1.6,-0.6], color: "hazard" },
-      { shape: "box", size: [2.2,0.4,0.4], pos: [0,0.5,1.2], color: "dark" },
-      { shape: "box", size: [0.4,0.2,0.4], pos: [0.9,1.75,0.8], color: "glow" },
+      ...socle(3),
+      ...filets(3),
+      // bloc arrière aux couleurs de l'équipe, deux cheminées
+      { shape: "bevel", size: [1.2,0.6,0.7], pos: [-0.5,0.55,-0.85], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.17, height: 1.4, pos: [-0.75,1.4,-0.85], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.19, height: 0.12, pos: [-0.75,1.6,-0.85], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.2, pos: [-0.75,2.18,-0.85], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.15, height: 1.1, pos: [-0.3,1.25,-0.9], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.09, height: 0.2, pos: [-0.3,1.88,-0.9], color: "dark" },
+      // réservoir sombre
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 1.0, pos: [-1.08,0.75,-0.25], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.06, pos: [-1.08,1.0,-0.25], color: "glow" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [-1.08,0.6,0.07], color: "amber" },
+      // réservoir clair à dôme
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.6, pos: [-0.5,0.55,0.3], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.47, height: 0.1, pos: [-0.5,0.45,0.3], color: "dark" },
+      { shape: "sphere", radius: 0.45, detail: 1, pos: [-0.5,0.85,0.3], scale: [1,0.7,1], color: "light" },
+      // fiole vitrée
+      { shape: "cylinder", sides: 8, radius: 0.15, height: 0.4, pos: [-0.85,0.45,0.95], color: "glass" },
+      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.3, pos: [-0.85,0.45,0.95], color: "glow" },
+      // cuves ouvertes
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.6, pos: [0.55,0.55,0.55], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.52, height: 0.08, pos: [0.55,0.86,0.55], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.42, height: 0.04, pos: [0.55,0.91,0.55], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.51, height: 0.05, pos: [0.55,0.5,0.55], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.46, height: 0.55, pos: [0.75,0.55,-0.6], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.48, height: 0.08, pos: [0.75,0.84,-0.6], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.38, height: 0.04, pos: [0.75,0.89,-0.6], color: "glow" },
+      // conduites
+      { shape: "box", size: [0.12,0.12,0.7], pos: [0.1,0.4,-0.05], color: "light" },
+      { shape: "box", size: [1.5,0.12,0.12], pos: [-0.25,0.35,1.2], color: "metal" },
+      { shape: "box", size: [0.12,0.4,0.12], pos: [0.1,0.55,-0.4], color: "metal" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [1.1,0.4,1.21], color: "amber" },
     ],
   },
-  // lab (132 triangles)
+  // lab : dôme vitré sur anneau clair, liseré cyan, pupitre holographique (600 triangles)
   lab: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.4,0.7,2.4], pos: [0,0.6,0], color: "faction" },
-      { shape: "box", size: [1.6,0.1,0.1], pos: [0,1,1.21], color: "glow" },
-      { shape: "sphere", radius: 0.85, pos: [0,1.5,0], color: "light" },
-      { shape: "box", size: [0.7,0.4,0.5], pos: [0,1.4,0.55], color: "glass" },
-      { use: "antenne", pos: [0.9,0.9,-0.9], scale: 1.4 },
-      { shape: "box", size: [0.5,0.3,0.5], pos: [-0.9,1.1,0.9], color: "dark" },
+      ...socle(3),
+      ...filets(3),
+      { shape: "cylinder", sides: 8, radius: 1.3, radiusTop: 1.2, height: 0.42, pos: [0,0.46,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 1.32, height: 0.06, pos: [0,0.4,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 1.21, height: 0.08, pos: [0,0.68,0], color: "faction" },
+      { shape: "bevel", size: [0.6,0.32,0.2], pos: [0,0.44,1.2], color: "dark" },
+      { shape: "box", size: [0.4,0.04,0.03], pos: [0,0.5,1.31], color: "glow" },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.55,0.5,1.2], rot: [0,22,0], color: "amber", mirror: true },
+      // dôme vitré et ses nervures
+      { shape: "sphere", radius: 1.0, detail: 1, pos: [0,0.72,0], scale: [1,0.72,1], color: "glass" },
+      { shape: "cylinder", sides: 8, radius: 0.93, height: 0.05, pos: [0,1.0,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.66, height: 0.05, pos: [0,1.27,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.1, pos: [0,1.48,0], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.04, pos: [0,1.54,0], color: "glow" },
+      // pupitre holographique
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.5, pos: [1.05,0.5,-1.05], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.08, pos: [1.05,0.76,-1.05], color: "dark" },
+      { shape: "cone", sides: 8, radius: 0.32, height: 0.6, pos: [1.05,1.1,-1.05], rot: [180,0,0], color: "glow" },
     ],
   },
-  // depot (84 triangles)
+  // depot : conteneur blindé sombre, rideau à lames à l'avant, coins clairs, toit d'équipe (620 triangles)
   depot: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "box", size: [1.7,0.9,1.7], pos: [0,0.7,0], color: "metal" },
-      { shape: "box", size: [1.8,0.2,1.8], pos: [0,1.2,0], color: "faction" },
-      { shape: "box", size: [1,0.7,0.1], pos: [0,0.6,0.86], color: "dark" },
-      { shape: "box", size: [1,0.1,0.12], pos: [0,0.98,0.88], color: "hazard" },
-      { shape: "box", size: [0.3,0.3,0.3], pos: [-0.5,1.45,-0.4], color: "hazard" },
+      ...socle(2),
+      ...filets(2),
+      { shape: "bevel", size: [1.76,0.95,1.6], pos: [0,0.72,-0.05], color: "dark" },
+      // rideau à lames
+      { shape: "bevel", size: [1.04,0.78,0.1], pos: [0,0.66,0.77], bevel: 0.03, color: "black" },
+      { shape: "box", size: [0.92,0.04,0.04], pos: [0,0.42,0.82], color: "dark" },
+      { shape: "box", size: [0.92,0.04,0.04], pos: [0,0.58,0.82], color: "dark" },
+      { shape: "box", size: [0.92,0.04,0.04], pos: [0,0.74,0.82], color: "dark" },
+      { shape: "box", size: [1.0,0.04,0.03], pos: [0,1.09,0.77], color: "glow" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.62,0.4,0.77], color: "amber", mirror: true },
+      // blindage clair aux coins supérieurs
+      { shape: "bevel", size: [0.4,0.5,0.4], pos: [0.7,1.0,0.6], color: "light", mirror: true },
+      { shape: "bevel", size: [0.4,0.5,0.4], pos: [0.7,1.0,-0.66], color: "light", mirror: true },
+      { shape: "box", size: [0.04,0.36,0.7], pos: [0.88,0.62,-0.05], color: "metal", mirror: true },
+      { shape: "box", size: [0.03,0.04,0.6], pos: [0.9,0.86,-0.05], color: "glow", mirror: true },
+      // toit et poignée de levage
+      { shape: "bevel", size: [1.1,0.14,1.3], pos: [0,1.26,-0.05], color: "faction" },
+      { shape: "bevel", size: [0.56,0.14,0.34], pos: [0,1.38,-0.05], color: "light" },
+      { shape: "box", size: [0.3,0.08,0.36], pos: [0,1.45,-0.05], color: "dark" },
     ],
   },
-  // generator (168 triangles)
+  // generator : turbine couchée à hélice, deux bobines à anneaux lumineux (720 triangles)
   generator: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 1, pos: [0,0.8,0], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.3, pos: [0,1.45,0], color: "dark" },
-      { shape: "sphere", radius: 0.3, pos: [0,1.75,0], color: "glow" },
-      { shape: "box", size: [0.12,0.8,0.5], pos: [0.8,0.8,0], color: "metal", mirror: true },
-      { shape: "box", size: [0.5,0.8,0.12], pos: [0,0.8,0.8], color: "metal" },
-      { shape: "box", size: [0.5,0.8,0.12], pos: [0,0.8,-0.8], color: "metal" },
-      { shape: "box", size: [0.6,0.3,0.1], pos: [0,0.4,0.75], color: "hazard" },
+      ...socle(2),
+      ...filets(2),
+      // turbine (axe avant-arrière)
+      { shape: "bevel", size: [1.0,0.3,1.3], pos: [-0.38,0.4,0.05], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 1.2, pos: [-0.38,0.95,0.05], rot: [90,0,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.53, height: 0.4, pos: [-0.38,0.95,-0.15], rot: [90,0,0], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.54, height: 0.08, pos: [-0.38,0.95,0.15], rot: [90,0,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.43, height: 0.04, pos: [-0.38,0.95,0.65], rot: [90,0,0], color: "black" },
+      { shape: "box", size: [0.78,0.09,0.02], pos: [-0.38,0.95,0.68], rot: [0,0,20], color: "metal" },
+      { shape: "box", size: [0.78,0.09,0.02], pos: [-0.38,0.95,0.68], rot: [0,0,80], color: "metal" },
+      { shape: "box", size: [0.78,0.09,0.02], pos: [-0.38,0.95,0.68], rot: [0,0,140], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.09, height: 0.08, pos: [-0.38,0.95,0.7], rot: [90,0,0], color: "amber" },
+      // bobines
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.9, pos: [0.55,0.75,-0.45], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.07, pos: [0.55,0.55,-0.45], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.07, pos: [0.55,0.75,-0.45], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.07, pos: [0.55,0.95,-0.45], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.36, height: 0.14, pos: [0.55,1.25,-0.45], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.06, pos: [0.55,1.34,-0.45], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.7, pos: [0.6,0.65,0.4], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.07, pos: [0.6,0.55,0.4], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.07, pos: [0.6,0.75,0.4], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.12, pos: [0.6,1.04,0.4], color: "light" },
+      // liaison et voyants
+      { shape: "box", size: [0.4,0.14,0.14], pos: [0.1,0.95,-0.35], color: "metal" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.1,0.42,0.71], color: "amber" },
     ],
   },
-  // pylon (116 triangles)
+  // pylon : mât effilé sur pied d'équipe, traverse et isolateurs lumineux (126 triangles)
   pylon: {
     parts: [
-      { shape: "box", size: [0.7,0.12,0.7], pos: [0,0.06,0], color: "dark" },
-      { shape: "cylinder", sides: 5, radius: 0.12, height: 1.6, pos: [0,0.9,0], color: "metal", radiusTop: 0.06 },
-      { shape: "box", size: [0.7,0.08,0.08], pos: [0,1.4,0], color: "light" },
-      { shape: "cylinder", sides: 5, radius: 0.07, height: 0.2, pos: [0.3,1.3,0], color: "faction", mirror: true },
-      { shape: "sphere", radius: 0.12, pos: [0,1.75,0], color: "glow" },
-      { shape: "box", size: [0.4,0.06,0.06], pos: [0,1.1,0], color: "light" },
+      { shape: "box", size: [0.6,0.12,0.6], pos: [0,0.06,0], color: "dark" },
+      { shape: "box", size: [0.32,0.26,0.32], pos: [0,0.25,0], color: "faction" },
+      { shape: "cylinder", sides: 6, radius: 0.14, height: 1.5, pos: [0,1.0,0], color: "metal", radiusTop: 0.05 },
+      { shape: "box", size: [0.74,0.07,0.08], pos: [0,1.4,0], color: "light" },
+      { shape: "box", size: [0.08,0.16,0.08], pos: [0.32,1.29,0], color: "glow", mirror: true },
+      { shape: "box", size: [0.42,0.06,0.06], pos: [0,1.12,0], color: "light" },
+      { shape: "cone", sides: 5, radius: 0.08, height: 0.22, pos: [0,1.85,0], color: "faction" },
+      { shape: "sphere", radius: 0.07, pos: [0,1.98,0], color: "amber" },
     ],
   },
-  // hydro_plant (180 triangles)
+  // hydro_plant : deux tours de refroidissement fumantes, cheminée, conduites, petit dôme (924 triangles)
   hydro_plant: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 1.5, pos: [-0.7,1,-0.6], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 1.5, pos: [0.7,1,-0.6], color: "metal" },
-      { shape: "box", size: [2.4,0.9,1], pos: [0,0.65,0.8], color: "dark" },
-      { shape: "cylinder", sides: 6, radius: 0.25, height: 2.2, pos: [0,1.35,-0.1], color: "dark", radiusTop: 0.35 },
-      { shape: "box", size: [1.8,0.2,0.7], pos: [0,0.95,0.8], color: "faction" },
-      { shape: "box", size: [1.2,0.35,0.1], pos: [0,0.6,1.31], color: "glow" },
-      { shape: "box", size: [0.15,0.15,1.4], pos: [0,1.9,-0.6], color: "hazard" },
-      { shape: "sphere", radius: 0.22, pos: [0,2.6,-0.1], color: "glow" },
+      ...socle(3),
+      ...filets(3),
+      // tour de refroidissement arrière gauche
+      { shape: "cylinder", sides: 8, radius: 0.55, radiusTop: 0.42, height: 0.8, pos: [-0.3,0.65,-0.6], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.47, height: 0.16, pos: [-0.3,1.1,-0.6], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.48, height: 0.05, pos: [-0.3,0.9,-0.6], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.42, radiusTop: 0.48, height: 0.5, pos: [-0.3,1.43,-0.6], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.02, pos: [-0.3,1.68,-0.6], color: "black" },
+      { shape: "sphere", radius: 0.32, pos: [-0.3,1.78,-0.6], scale: [1,0.45,1], color: "light" },
+      // tour de refroidissement droite
+      { shape: "cylinder", sides: 8, radius: 0.6, radiusTop: 0.46, height: 0.7, pos: [0.72,0.6,-0.3], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.16, pos: [0.72,1.02,-0.3], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.51, height: 0.05, pos: [0.72,0.82,-0.3], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.46, radiusTop: 0.52, height: 0.45, pos: [0.72,1.32,-0.3], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.44, height: 0.02, pos: [0.72,1.55,-0.3], color: "black" },
+      { shape: "sphere", radius: 0.36, pos: [0.72,1.65,-0.3], scale: [1,0.45,1], color: "light" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.72,1.02,0.2], color: "amber" },
+      // cheminée
+      { shape: "cylinder", sides: 8, radius: 0.18, height: 1.3, pos: [-1.08,0.9,-1.0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.05, pos: [-1.08,1.3,-1.0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.22, height: 0.1, pos: [-1.08,1.58,-1.0], color: "metal" },
+      // conduites à bagues
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 1.4, pos: [-0.6,0.42,0.45], rot: [0,0,90], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 1.4, pos: [-0.6,0.42,0.8], rot: [0,0,90], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 1.4, pos: [-0.6,0.42,1.15], rot: [0,0,90], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.17, height: 0.25, pos: [-0.45,0.42,0.45], rot: [0,0,90], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.17, height: 0.25, pos: [-0.85,0.42,0.8], rot: [0,0,90], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.17, height: 0.25, pos: [-0.45,0.42,1.15], rot: [0,0,90], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.16, height: 0.04, pos: [-1.05,0.42,0.8], rot: [0,0,90], color: "glow" },
+      // petit dôme avant droit
+      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.25, pos: [0.85,0.37,0.8], color: "dark" },
+      { shape: "sphere", radius: 0.32, pos: [0.85,0.5,0.8], scale: [1,0.75,1], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.05, pos: [0.85,0.52,0.8], color: "glow" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.85,0.36,1.13], color: "amber" },
     ],
   },
-  // land_factory (180 triangles)
+  // land_factory : hangar à toit voûté, grande porte éclairée à l'avant, modules latéraux, cheminée (1020 triangles)
   land_factory: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [5,1,5] },
-      { shape: "box", size: [4.4,1.3,0.6], pos: [0,0.8500000000000001,-1.9], color: "metal" },
-      { shape: "box", size: [0.6,1.3,3.8], pos: [1.9000000000000001,0.8500000000000001,-0.1], color: "metal", mirror: true },
-      { shape: "box", size: [4.4,0.45,4], pos: [0,1.7000000000000002,-0.4], color: "faction" },
-      { shape: "box", size: [4.4,0.4,0.5], pos: [0,1.5,2], color: "faction" },
-      { shape: "box", size: [3.2,0.9,0.1], pos: [0,0.8500000000000001,1.9], color: "black" },
-      { shape: "box", size: [3.2,0.08,0.7], pos: [0,0.26,2.25], color: "hazard" },
-      { shape: "box", size: [0.4,1,0.4], pos: [-1.9,2,-1.7], color: "dark" },
-      { shape: "box", size: [0.9,0.5,0.9], pos: [1.5,2.1,-1.2], color: "light" },
-      { shape: "box", size: [0.9,0.12,0.12], pos: [0,1.15,2], color: "glow" },
-      { shape: "box", size: [1,0.3,0.1], pos: [1,1,2.05], color: "hazard" },
-      { shape: "cylinder", sides: 6, radius: 0.2, height: 1, pos: [1.9,2.1,-1.8], color: "dark" },
+      ...socle(5),
+      ...filets(5),
+      // hall
+      { shape: "bevel", size: [3.8,1.1,3.6], pos: [0,0.8,-0.35], color: "dark" },
+      { shape: "box", size: [0.04,0.06,3.0], pos: [1.92,1.0,-0.4], color: "glow", mirror: true },
+      { shape: "box", size: [0.14,0.14,2.6], pos: [-1.98,0.5,-0.6], color: "metal" },
+      // toit voûté : faîte clair, pans aux couleurs de l'équipe
+      { shape: "bevel", size: [1.8,0.75,3.0], pos: [0,1.7,0], color: "dark" },
+      { shape: "bevel", size: [1.5,0.22,3.1], pos: [0,2.15,0], color: "light" },
+      { shape: "bevel", size: [1.25,0.22,3.1], pos: [1.24,1.735,0], rot: [0,0,-38], color: "faction", mirror: true },
+      { shape: "box", size: [0.06,0.03,2.8], pos: [0,2.27,0], color: "glow" },
+      // portail avant
+      { shape: "bevel", size: [2.7,2.0,0.4], pos: [0,1.25,1.55], color: "light" },
+      { shape: "bevel", size: [2.0,1.45,0.1], pos: [0,0.98,1.76], bevel: 0.04, color: "black" },
+      { shape: "box", size: [1.8,0.05,0.03], pos: [0,1.62,1.82], color: "glow" },
+      { shape: "box", size: [0.05,1.3,0.03], pos: [0.88,0.95,1.82], color: "glow", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [1.15,1.9,1.76], color: "amber", mirror: true },
+      { shape: "box", size: [2.0,0.03,0.6], pos: [0,0.265,2.1], color: "hazard" },
+      // module avant gauche
+      { shape: "bevel", size: [0.75,1.1,1.5], pos: [-2.0,0.8,1.3], color: "light" },
+      { shape: "bevel", size: [0.6,0.12,1.3], pos: [-2.0,1.4,1.3], color: "faction" },
+      { shape: "box", size: [0.03,0.05,1.1], pos: [-2.38,0.9,1.3], color: "glow" },
+      { shape: "box", size: [0.4,0.5,0.04], pos: [-2.0,0.6,2.06], color: "dark" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [-1.75,0.95,2.06], color: "amber" },
+      // module avant droit
+      { shape: "bevel", size: [0.75,0.9,1.7], pos: [2.0,0.7,1.1], color: "dark" },
+      { shape: "bevel", size: [0.7,0.3,1.0], pos: [2.0,1.3,1.2], color: "light" },
+      { shape: "box", size: [0.03,0.05,1.3], pos: [2.38,0.75,1.1], color: "glow" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [2.0,1.0,1.96], color: "amber" },
+      // machinerie arrière, cheminée, antenne
+      { shape: "bevel", size: [1.2,0.5,0.6], pos: [1.0,1.6,-1.85], color: "metal" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [1.0,1.65,-1.54], color: "amber" },
+      { shape: "bevel", size: [1.0,0.3,0.6], pos: [-0.4,1.5,-1.85], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.22, height: 1.2, pos: [-1.5,1.95,-1.85], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.24, height: 0.05, pos: [-1.5,2.2,-1.85], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.26, height: 0.1, pos: [-1.5,2.55,-1.85], color: "metal" },
+      { shape: "box", size: [0.04,0.8,0.04], pos: [1.5,2.25,-1.85], color: "dark" },
+      { shape: "box", size: [0.07,0.07,0.07], pos: [1.5,2.66,-1.85], color: "amber" },
     ],
   },
-  // air_factory (156 triangles)
+  // air_factory : piste et avion à l'avant gauche, hangar, tour de contrôle à parabole (1104 triangles)
   air_factory: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [5,1,5] },
-      { shape: "box", size: [4.4,0.9,3], pos: [0,0.65,-1], color: "metal" },
-      { shape: "wedge", size: [4.4,1,3], pos: [0,1.6,-1], color: "faction", rot: [0,180,0] },
-      { shape: "box", size: [3.4,0.9,0.2], pos: [0,0.65,0.55], color: "black" },
-      { shape: "box", size: [2.4,0.1,2], pos: [0,0.27,1.5], color: "dark" },
-      { shape: "box", size: [0.3,0.1,1.8], pos: [0,0.34,1.5], color: "hazard" },
-      { shape: "box", size: [0.12,0.1,1.8], pos: [0.9,0.34,1.5], color: "light", mirror: true },
-      { shape: "box", size: [0.6,1.8,0.6], pos: [-2,1.1,0.6], color: "light" },
-      { shape: "box", size: [0.9,0.4,0.9], pos: [-2,2.2,0.6], color: "glass" },
-      { shape: "box", size: [0.15,0.15,3.4], pos: [2,0.4,1.7], color: "glow", rot: [0,0,0] },
-      { shape: "box", size: [0.15,0.15,3.4], pos: [-1.5,0.4,1], color: "glow" },
+      ...socle(5),
+      ...filets(5),
+      // piste
+      { shape: "bevel", size: [2.3,0.1,4.7], pos: [-1.0,0.3,0], bevel: 0.04, color: "dark" },
+      { shape: "box", size: [0.04,0.03,4.3], pos: [-2.0,0.36,0], color: "glow" },
+      { shape: "box", size: [0.04,0.03,4.3], pos: [0.0,0.36,0], color: "glow" },
+      { shape: "box", size: [0.12,0.02,0.4], pos: [-1.0,0.36,2.0], color: "light" },
+      { shape: "box", size: [0.12,0.02,0.4], pos: [-1.0,0.36,-1.3], color: "light" },
+      { shape: "wedge", size: [1.8,0.5,0.4], pos: [-1.0,0.6,-2.0], color: "metal" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [-1.6,0.5,-1.79], color: "amber" },
+      // avion (ailes aux couleurs de l'équipe)
+      { shape: "bevel", size: [0.38,0.28,1.7], pos: [-1.0,0.62,0.2], color: "light" },
+      { shape: "cone", sides: 6, radius: 0.17, height: 0.55, pos: [-1.0,0.62,1.32], rot: [90,0,0], color: "light" },
+      { shape: "bevel", size: [0.22,0.14,0.45], pos: [-1.0,0.8,0.75], color: "glass" },
+      { shape: "bevel", size: [0.85,0.05,0.42], pos: [-0.55,0.58,0.0], rot: [0,25,0], color: "faction" },
+      { shape: "bevel", size: [0.85,0.05,0.42], pos: [-1.45,0.58,0.0], rot: [0,-25,0], color: "faction" },
+      { shape: "bevel", size: [0.9,0.04,0.25], pos: [-1.0,0.64,-0.55], color: "light" },
+      { shape: "box", size: [0.04,0.3,0.3], pos: [-0.9,0.85,-0.55], rot: [0,0,-15], color: "light" },
+      { shape: "box", size: [0.04,0.3,0.3], pos: [-1.1,0.85,-0.55], rot: [0,0,15], color: "light" },
+      { shape: "box", size: [0.24,0.14,0.04], pos: [-1.0,0.62,-0.66], color: "glow" },
+      { shape: "box", size: [0.05,0.2,0.05], pos: [-1.0,0.42,0.9], color: "dark" },
+      // hangar
+      { shape: "bevel", size: [2.0,0.95,2.1], pos: [1.3,0.72,0.95], color: "dark" },
+      { shape: "bevel", size: [1.8,0.14,1.9], pos: [1.3,1.24,0.95], color: "faction" },
+      { shape: "bevel", size: [1.3,0.7,0.1], pos: [1.3,0.6,2.02], bevel: 0.03, color: "black" },
+      { shape: "box", size: [1.3,0.04,0.03], pos: [1.3,1.0,2.03], color: "glow" },
+      { shape: "box", size: [0.03,0.05,1.6], pos: [2.31,0.85,0.95], color: "glow" },
+      { shape: "bevel", size: [0.45,0.5,0.45], pos: [2.05,1.0,1.8], color: "light" },
+      { shape: "bevel", size: [0.45,0.5,0.45], pos: [0.55,1.0,1.8], color: "light" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [2.05,0.8,2.04], color: "amber" },
+      // tour de contrôle
+      { shape: "bevel", size: [1.5,0.4,1.5], pos: [1.4,0.45,-1.4], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 1.8, pos: [1.4,1.5,-1.4], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.52, height: 0.06, pos: [1.4,1.1,-1.4], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.52, height: 0.06, pos: [1.4,1.7,-1.4], color: "glow" },
+      { shape: "box", size: [0.2,1.3,0.06], pos: [1.4,1.45,-0.9], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.7, radiusTop: 0.6, height: 0.4, pos: [1.4,2.6,-1.4], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.71, height: 0.14, pos: [1.4,2.6,-1.4], color: "glass" },
+      { shape: "cylinder", sides: 8, radius: 0.62, height: 0.1, pos: [1.4,2.85,-1.4], color: "faction" },
+      { shape: "box", size: [0.05,0.3,0.05], pos: [1.25,3.0,-1.45], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.08, radiusTop: 0.35, height: 0.12, pos: [1.25,3.15,-1.45], rot: [30,0,0], color: "light" },
+      { shape: "box", size: [0.03,0.6,0.03], pos: [1.75,3.2,-1.6], color: "dark" },
+      { shape: "box", size: [0.06,0.06,0.06], pos: [1.75,3.5,-1.6], color: "amber" },
     ],
   },
-  // naval_factory (204 triangles)
+  // naval_factory : cale sèche en U sur l'eau, quais à bandeaux d'équipe, deux grues, coque en chantier (1088 triangles)
   naval_factory: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [5,1,5] },
-      { shape: "box", size: [1,0.9,4.4], pos: [1.9,0.65,0], color: "metal", mirror: true },
-      { shape: "box", size: [2.9,0.9,1], pos: [0,0.65,-1.95], color: "metal" },
-      { shape: "box", size: [2.9,0.05,3.4], pos: [0,0.27,0.6], color: "glass" },
-      { shape: "box", size: [2.9,0.05,3.4], pos: [0,0.31,0.6], color: "glass" },
-      { shape: "box", size: [1,0.15,4.5], pos: [1.9,1.15,0], color: "faction", mirror: true },
-      { shape: "box", size: [3,0.25,0.4], pos: [0,1.5,-0.8], color: "faction" },
-      { shape: "box", size: [0.25,0.9,0.25], pos: [1.5,1.45,-0.8], color: "light", mirror: true },
-      { shape: "box", size: [0.15,0.15,1.4], pos: [0,1.4,-0.3], color: "dark" },
-      { shape: "box", size: [0.12,0.6,0.12], pos: [0,1.1,0.3], color: "hazard" },
-      { shape: "box", size: [0.2,0.3,0.2], pos: [1.5,1.2,1.5], color: "glow", mirror: true },
-      { shape: "wedge", size: [2.9,0.1,0.4], pos: [0,0.26,2.3], color: "hazard" },
+      ...socle(5),
+      ...filets(5),
+      // bassin et coque en chantier
+      { shape: "box", size: [2.9,0.04,3.9], pos: [0,0.27,0.45], color: "glass" },
+      { shape: "bevel", size: [0.8,0.3,1.8], pos: [0,0.42,0.5], color: "metal" },
+      { shape: "wedge", size: [0.8,0.3,0.5], pos: [0,0.42,1.65], color: "metal" },
+      { shape: "bevel", size: [0.4,0.25,0.5], pos: [0,0.68,0.2], color: "light" },
+      // quais latéraux
+      { shape: "bevel", size: [0.95,0.85,4.8], pos: [1.95,0.67,0], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.85,0.14,4.6], pos: [1.95,1.14,0], color: "faction", mirror: true },
+      { shape: "box", size: [0.03,0.06,4.0], pos: [1.46,0.9,0.2], color: "glow", mirror: true },
+      { shape: "box", size: [0.03,0.06,0.1], pos: [1.46,0.6,1.2], color: "amber", mirror: true },
+      { shape: "bevel", size: [0.9,0.3,0.7], pos: [1.95,1.3,1.9], color: "light", mirror: true },
+      { shape: "box", size: [0.95,0.25,0.04], pos: [1.95,0.6,2.41], color: "hazard", mirror: true },
+      // fond du bassin, poste de commande
+      { shape: "bevel", size: [3.0,0.85,0.95], pos: [0,0.67,-1.95], color: "dark" },
+      { shape: "bevel", size: [2.8,0.14,0.85], pos: [0,1.14,-1.95], color: "light" },
+      { shape: "bevel", size: [1.2,0.5,0.6], pos: [0,1.45,-2.0], color: "metal" },
+      { shape: "box", size: [0.8,0.12,0.03], pos: [0,1.5,-1.69], color: "glow" },
+      // grues
+      { shape: "bevel", size: [0.35,1.1,0.35], pos: [1.95,1.75,-0.8], color: "light", mirror: true },
+      { shape: "bevel", size: [1.5,0.2,0.26], pos: [1.4,2.35,-0.8], color: "dark", mirror: true },
+      { shape: "box", size: [1.2,0.03,0.03], pos: [1.4,2.35,-0.66], color: "glow", mirror: true },
+      { shape: "bevel", size: [0.4,0.3,0.4], pos: [2.15,2.35,-0.8], color: "metal", mirror: true },
+      { shape: "box", size: [0.03,0.6,0.03], pos: [0.8,1.95,-0.8], color: "dark", mirror: true },
+      { shape: "box", size: [0.16,0.12,0.16], pos: [0.8,1.6,-0.8], color: "hazard", mirror: true },
+      { shape: "box", size: [0.06,0.06,0.03], pos: [1.95,2.0,-0.62], color: "amber", mirror: true },
     ],
   },
-  // gantry (204 triangles)
+  // gantry : portique géant sur quatre pieds, poutres d'équipe, chariot mobile (bras), aire de montage (1488 triangles)
   gantry: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [7,1,7] },
-      { shape: "box", size: [0.9,3.2,0.9], pos: [3,1.8,3], color: "faction", mirror: true },
-      { shape: "box", size: [0.9,3.2,0.9], pos: [3,1.8,-3], color: "faction", mirror: true },
-      { shape: "box", size: [0.6,0.6,6], pos: [3,3.6,0], color: "metal", mirror: true },
-      { shape: "box", size: [6,0.6,0.6], pos: [0,3.6,-3], color: "metal" },
-      { shape: "box", size: [6,0.6,0.6], pos: [0,3.6,3], color: "metal" },
-      { shape: "box", size: [6,0.5,0.7], pos: [0,3.1,-0.5], color: "hazard", pivot: "bras" },
-      { shape: "box", size: [0.8,0.8,0.8], pos: [0,2.6,-0.5], color: "dark", parent: "bras" },
-      { shape: "box", size: [0.15,1.2,0.15], pos: [0,2,-0.5], color: "light", parent: "bras" },
-      { shape: "box", size: [3.6,0.1,4], pos: [0,0.27,0.5], color: "dark" },
-      { shape: "box", size: [2.6,0.08,2.6], pos: [0,0.3,0.5], color: "glow" },
-      { shape: "box", size: [1,0.1,1], pos: [2,0.3,2.8], color: "hazard" },
-      { shape: "box", size: [0.4,3.2,0.4], pos: [-2.4,1.8,-2.4], color: "light" },
+      ...socle(7),
+      ...filets(7),
+      // aire de montage
+      { shape: "bevel", size: [4.2,0.12,4.6], pos: [0,0.31,0.3], bevel: 0.05, color: "dark" },
+      { shape: "box", size: [3.6,0.03,0.06], pos: [0,0.38,2.3], color: "glow" },
+      { shape: "box", size: [3.6,0.03,0.06], pos: [0,0.38,-1.7], color: "glow" },
+      { shape: "box", size: [0.06,0.03,4.0], pos: [1.8,0.38,0.3], color: "glow", mirror: true },
+      { shape: "box", size: [3.0,0.02,0.4], pos: [0,0.27,2.95], color: "hazard" },
+      // pieds
+      { shape: "bevel", size: [0.95,0.4,1.1], pos: [3.0,0.45,2.7], color: "metal", mirror: true },
+      { shape: "bevel", size: [0.95,0.4,1.1], pos: [3.0,0.45,-2.7], color: "metal", mirror: true },
+      { shape: "bevel", size: [0.7,3.1,0.7], pos: [3.0,1.8,2.7], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.7,3.1,0.7], pos: [3.0,1.8,-2.7], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.78,1.0,0.78], pos: [3.0,1.4,2.7], color: "light", mirror: true },
+      { shape: "bevel", size: [0.78,1.0,0.78], pos: [3.0,1.4,-2.7], color: "light", mirror: true },
+      { shape: "box", size: [0.04,1.3,0.04], pos: [2.64,2.5,2.7], color: "glow", mirror: true },
+      { shape: "box", size: [0.04,1.3,0.04], pos: [2.64,2.5,-2.7], color: "glow", mirror: true },
+      { shape: "box", size: [0.1,0.08,0.03], pos: [3.0,0.5,3.26], color: "amber", mirror: true },
+      // machines latérales
+      { shape: "bevel", size: [0.8,0.8,1.8], pos: [3.0,0.65,0], color: "light", mirror: true },
+      { shape: "bevel", size: [0.6,0.12,1.4], pos: [3.0,1.1,0], color: "faction", mirror: true },
+      { shape: "box", size: [0.03,0.05,1.4], pos: [3.41,0.8,0], color: "glow", mirror: true },
+      // poutres
+      { shape: "bevel", size: [0.75,0.6,6.3], pos: [3.0,3.6,0], color: "faction", mirror: true },
+      { shape: "box", size: [0.03,0.06,5.2], pos: [2.61,3.6,0], color: "glow", mirror: true },
+      { shape: "bevel", size: [5.3,0.5,0.6], pos: [0,3.6,2.7], color: "metal" },
+      { shape: "bevel", size: [5.3,0.5,0.6], pos: [0,3.6,-2.7], color: "metal" },
+      { shape: "box", size: [4.4,0.05,0.03], pos: [0,3.6,3.01], color: "glow" },
+      // cabine de commande
+      { shape: "bevel", size: [0.8,0.55,0.7], pos: [-3.0,2.6,1.9], color: "light" },
+      { shape: "box", size: [0.6,0.22,0.03], pos: [-3.0,2.65,2.26], color: "glass" },
+      // portique mobile (bras) : poutre, chariot, câble et crochet
+      { shape: "bevel", size: [5.0,0.4,0.6], pos: [0,3.05,-0.3], color: "light", pivot: "bras" },
+      { shape: "box", size: [4.2,0.04,0.03], pos: [0,3.05,0.01], color: "glow", parent: "bras" },
+      { shape: "bevel", size: [0.8,0.55,0.8], pos: [0,2.6,-0.3], color: "dark", parent: "bras" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.2,2.65,0.11], color: "amber", mirror: true, parent: "bras" },
+      { shape: "box", size: [0.08,1.0,0.08], pos: [0,1.85,-0.3], color: "metal", parent: "bras" },
+      { shape: "bevel", size: [0.5,0.24,0.4], pos: [0,1.25,-0.3], color: "hazard", parent: "bras" },
     ],
   },
-  // radar (132 triangles)
+  // radar : grande parabole inclinée tournante (pivot radar), socle à anneau cyan, antennes (584 triangles)
   radar: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "box", size: [1,0.7,1], pos: [0,0.6,0], color: "faction" },
-      { shape: "cylinder", sides: 5, radius: 0.15, height: 1, pos: [0,1.4,0], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.9, height: 0.2, pos: [0,2,0], color: "light", radiusTop: 0.2, pivot: "radar" },
-      { shape: "box", size: [0.08,0.5,0.08], pos: [0,2.35,0.1], color: "light", parent: "radar" },
-      { shape: "sphere", radius: 0.1, pos: [0,2.65,0.1], color: "glow", parent: "radar" },
-      { shape: "box", size: [0.4,0.3,0.3], pos: [0.5,0.5,0.6], color: "dark" },
+      ...socle(2),
+      ...filets(2),
+      { shape: "bevel", size: [1.3,0.32,1.3], pos: [0,0.4,0], color: "light" },
+      { shape: "bevel", size: [1.0,0.1,1.0], pos: [0,0.6,0], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.42, height: 0.3, pos: [0,0.8,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.44, height: 0.05, pos: [0,0.72,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 0.5, pos: [0,1.15,0], color: "metal" },
+      // parabole (tourne en continu)
+      { shape: "cylinder", sides: 8, radius: 0.28, radiusTop: 0.78, height: 0.24, pos: [0,1.62,0], rot: [40,0,0], color: "light", pivot: "radar" },
+      { shape: "cylinder", sides: 8, radius: 0.6, height: 0.02, pos: [0,1.72,0.084], rot: [40,0,0], color: "metal", parent: "radar" },
+      { shape: "box", size: [0.5,0.24,0.24], pos: [0,1.42,-0.05], color: "dark", parent: "radar" },
+      { shape: "cylinder", sides: 8, radius: 0.05, height: 0.6, pos: [0,1.94,0.27], rot: [40,0,0], color: "dark", parent: "radar" },
+      { shape: "cylinder", sides: 8, radius: 0.08, height: 0.06, pos: [0,1.89,0.23], rot: [40,0,0], color: "glow", parent: "radar" },
+      { shape: "sphere", radius: 0.07, pos: [0,2.14,0.44], color: "glow", parent: "radar" },
+      // antennes et boîtier
+      { shape: "box", size: [0.03,0.45,0.03], pos: [0.72,0.48,-0.62], color: "dark" },
+      { shape: "box", size: [0.05,0.08,0.05], pos: [0.72,0.72,-0.62], color: "amber" },
+      { shape: "box", size: [0.03,0.32,0.03], pos: [0.82,0.42,-0.48], color: "dark" },
+      { shape: "box", size: [0.05,0.08,0.05], pos: [0.82,0.6,-0.48], color: "amber" },
+      { shape: "bevel", size: [0.36,0.24,0.3], pos: [-0.7,0.38,0.68], color: "dark" },
+      { shape: "box", size: [0.2,0.04,0.03], pos: [-0.7,0.42,0.84], color: "glow" },
     ],
   },
-  // wall (96 triangles)
+  // wall : bloc sombre à toit d'équipe, deux créneaux clairs, filet cyan et voyants (108 triangles)
   wall: {
     parts: [
       { shape: "box", size: [1,0.2,1], pos: [0,0.1,0], color: "dark" },
-      { shape: "box", size: [0.95,0.7,0.95], pos: [0,0.55,0], color: "metal" },
-      { shape: "box", size: [0.95,0.15,0.95], pos: [0,1,0], color: "faction" },
-      { shape: "box", size: [0.25,0.25,0.25], pos: [0.3,1.2,0.3], color: "light", mirror: true },
-      { shape: "box", size: [0.25,0.25,0.25], pos: [0.3,1.2,-0.3], color: "light", mirror: true },
-      { shape: "box", size: [0.6,0.12,0.05], pos: [0,0.6,0.49], color: "hazard" },
+      { shape: "box", size: [0.94,0.72,0.94], pos: [0,0.56,0], color: "dark" },
+      { shape: "box", size: [0.96,0.14,0.96], pos: [0,0.96,0], color: "faction" },
+      { shape: "box", size: [0.36,0.26,0.8], pos: [0.26,1.15,0], color: "light", mirror: true },
+      { shape: "box", size: [0.52,0.42,0.05], pos: [0,0.52,0.475], color: "light" },
+      { shape: "box", size: [0.7,0.05,0.03], pos: [0,0.82,0.485], color: "glow" },
+      { shape: "box", size: [0.08,0.12,0.03], pos: [0.36,0.52,0.485], color: "amber", mirror: true },
     ],
   },
-  // light_turret (144 triangles)
+  // light_turret : socle rond à segments clairs et anneau cyan, tourelle à deux paires de canons (772 triangles)
   light_turret: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.3, pos: [0,0.5,0], color: "metal" },
-      { shape: "cylinder", sides: 6, radius: 0.5, height: 0.3, pos: [0,0.8,0], color: "faction", pivot: "tourelle" },
-      { shape: "box", size: [0.6,0.35,0.6], pos: [0,1.05,-0.05], color: "faction", parent: "tourelle" },
-      { use: "canon", pos: [0,1.05,0.25], scale: 0.8, parent: "tourelle" },
-      { shape: "box", size: [0.3,0.1,0.3], pos: [0.7,0.3,0.7], color: "hazard" },
+      ...socle(2),
+      { shape: "cylinder", sides: 8, radius: 0.9, height: 0.25, pos: [0,0.37,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.92, height: 0.05, pos: [0,0.42,0], color: "glow" },
+      { shape: "bevel", size: [0.5,0.2,0.24], pos: [0,0.45,0.72], color: "light" },
+      { shape: "bevel", size: [0.5,0.2,0.24], pos: [0,0.45,-0.72], color: "light" },
+      { shape: "bevel", size: [0.24,0.2,0.5], pos: [0.72,0.45,0], color: "light", mirror: true },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.5,0.42,0.6], rot: [0,45,0], color: "amber", mirror: true },
+      // tourelle
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.2, pos: [0,0.6,0], color: "metal", pivot: "tourelle" },
+      { shape: "bevel", size: [0.62,0.42,0.8], pos: [0,0.92,-0.12], color: "light", parent: "tourelle" },
+      { shape: "bevel", size: [0.5,0.1,0.6], pos: [0,1.16,-0.16], color: "faction", parent: "tourelle" },
+      { shape: "box", size: [0.16,0.12,0.03], pos: [0,0.95,0.29], color: "glow", parent: "tourelle" },
+      { shape: "box", size: [0.06,0.05,0.03], pos: [0.2,1.04,0.29], color: "amber", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [0.26,0.36,0.6], pos: [0.42,0.9,0.05], color: "dark", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.03,0.04,0.4], pos: [0.56,0.98,0.05], color: "glow", mirror: true, parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.065, height: 0.6, pos: [0.42,0.98,0.6], rot: [90,0,0], color: "dark", mirror: true, parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.065, height: 0.6, pos: [0.42,0.82,0.6], rot: [90,0,0], color: "dark", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.2,0.32,0.08], pos: [0.42,0.9,0.86], color: "metal", mirror: true, parent: "tourelle" },
     ],
   },
-  // aa_turret (272 triangles)
+  // aa_turret : base octogonale blindée, tourelle claire à deux nacelles de canons dressés (752 triangles)
   aa_turret: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.3, pos: [0,0.5,0], color: "metal" },
-      { shape: "cylinder", sides: 6, radius: 0.5, height: 0.25, pos: [0,0.8,0], color: "faction", pivot: "tourelle" },
-      { shape: "box", size: [0.9,0.4,0.6], pos: [0,1.1,0], color: "faction", parent: "tourelle" },
-      { use: "canon", pos: [0.3,1.2,0.2], rot: [-45,0,0], scale: 0.9, mirror: true, parent: "tourelle" },
-      { use: "canon", pos: [0.15,1.2,0.2], rot: [-45,0,0], scale: 0.9, mirror: true, parent: "tourelle" },
-      { shape: "sphere", radius: 0.15, pos: [0,1.4,-0.3], color: "glow", parent: "tourelle" },
+      ...socle(2),
+      { shape: "cylinder", sides: 8, radius: 0.85, height: 0.25, pos: [0,0.37,0], rot: [0,22.5,0], color: "dark" },
+      { shape: "bevel", size: [0.4,0.2,0.3], pos: [0.55,0.45,0.55], rot: [0,45,0], color: "light", mirror: true },
+      { shape: "bevel", size: [0.4,0.2,0.3], pos: [0.55,0.45,-0.55], rot: [0,-45,0], color: "light", mirror: true },
+      { shape: "box", size: [0.3,0.04,0.03], pos: [0.5,0.4,0.68], rot: [0,45,0], color: "glow", mirror: true },
+      { shape: "box", size: [0.1,0.05,0.03], pos: [0,0.42,0.79], color: "amber" },
+      // tourelle
+      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.2, pos: [0,0.6,0], color: "metal", pivot: "tourelle" },
+      { shape: "bevel", size: [0.7,0.55,0.7], pos: [0,0.97,-0.05], color: "light", parent: "tourelle" },
+      { shape: "bevel", size: [0.5,0.1,0.5], pos: [0,1.27,-0.08], color: "faction", parent: "tourelle" },
+      { shape: "box", size: [0.36,0.06,0.03], pos: [0,1.04,0.31], color: "glow", parent: "tourelle" },
+      { shape: "box", size: [0.06,0.05,0.03], pos: [0.22,0.86,0.31], color: "amber", mirror: true, parent: "tourelle" },
+      // nacelles et canons dressés à 45°
+      { shape: "bevel", size: [0.3,0.45,0.6], pos: [0.5,1.0,0], color: "dark", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.03,0.04,0.35], pos: [0.66,1.08,0], color: "glow", mirror: true, parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.055, height: 0.8, pos: [0.43,1.38,0.38], rot: [45,0,0], color: "metal", mirror: true, parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.055, height: 0.8, pos: [0.57,1.38,0.38], rot: [45,0,0], color: "metal", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.26,0.12,0.12], pos: [0.5,1.62,0.62], rot: [45,0,0], color: "dark", mirror: true, parent: "tourelle" },
     ],
   },
-  // heavy_turret (244 triangles)
+  // heavy_turret : base trapue à plaques claires, grosse tourelle à canon unique épais (752 triangles)
   heavy_turret: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.8, height: 0.4, pos: [0,0.55,0], color: "metal" },
-      { shape: "box", size: [1.7,0.2,1.7], pos: [0,0.35,0], color: "hazard" },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 0.3, pos: [0,0.95,0], color: "faction", pivot: "tourelle" },
-      { shape: "box", size: [1,0.5,1], pos: [0,1.3,-0.1], color: "faction", parent: "tourelle" },
-      { use: "canon_lourd", pos: [0.3,1.3,0.4], scale: 0.9, mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.4,0.2,0.3], pos: [0,1.65,-0.5], color: "glow", parent: "tourelle" },
+      ...socle(2),
+      { shape: "bevel", size: [1.7,0.3,1.7], pos: [0,0.4,0], color: "dark" },
+      { shape: "bevel", size: [0.55,0.24,0.3], pos: [0.55,0.5,0.7], color: "light", mirror: true },
+      { shape: "bevel", size: [0.3,0.24,0.55], pos: [0.7,0.5,-0.45], color: "light", mirror: true },
+      { shape: "box", size: [0.1,0.05,0.03], pos: [0.55,0.42,0.86], color: "amber", mirror: true },
+      { shape: "box", size: [0.03,0.04,0.4], pos: [0.86,0.42,0.1], color: "glow", mirror: true },
+      // tourelle
+      { shape: "cylinder", sides: 8, radius: 0.68, height: 0.2, pos: [0,0.65,0], color: "metal", pivot: "tourelle" },
+      { shape: "bevel", size: [1.0,0.55,1.0], pos: [0,1.0,-0.33], color: "light", parent: "tourelle" },
+      { shape: "bevel", size: [0.2,0.45,0.8], pos: [0.56,0.97,-0.33], color: "dark", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [0.8,0.12,0.8], pos: [0,1.31,-0.36], color: "faction", parent: "tourelle" },
+      { shape: "box", size: [0.04,0.25,0.03], pos: [0.32,1.0,0.18], color: "glow", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.06,0.05,0.03], pos: [0.56,1.1,0.08], color: "amber", mirror: true, parent: "tourelle" },
+      // canon
+      { shape: "bevel", size: [0.46,0.42,0.3], pos: [0,0.98,0.26], color: "dark", parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 0.62, pos: [0,0.98,0.6], rot: [90,0,0], color: "metal", parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.15, height: 0.04, pos: [0,0.98,0.5], rot: [90,0,0], color: "glow", parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.17, height: 0.14, pos: [0,0.98,0.9], rot: [90,0,0], color: "dark", parent: "tourelle" },
     ],
   },
-  // fixed_artillery (208 triangles)
+  // fixed_artillery : long tube relevé à 20° sur tourelle claire, base à coins blindés (844 triangles)
   fixed_artillery: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.4,0.5,2.4], pos: [0,0.5,0], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 1, height: 0.3, pos: [0,0.95,0], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.9, height: 0.3, pos: [0,1.25,0], color: "faction", pivot: "tourelle" },
-      { shape: "box", size: [1.3,0.8,1.4], pos: [0,1.8,-0.2], color: "faction", parent: "tourelle" },
-      { use: "canon_lourd", pos: [0,1.9,0.4], rot: [-30,0,0], scale: [1.6,1.6,2.4], parent: "tourelle" },
-      { shape: "box", size: [0.6,0.25,0.5], pos: [0,2.3,-0.6], color: "hazard", parent: "tourelle" },
-      { shape: "box", size: [0.5,0.4,0.5], pos: [1,0.8,1], color: "hazard", mirror: true },
+      ...socle(3),
+      ...filets(3),
+      { shape: "bevel", size: [2.4,0.4,2.4], pos: [0,0.45,0], color: "metal" },
+      { shape: "bevel", size: [0.6,0.5,0.6], pos: [1.0,0.6,1.0], color: "light", mirror: true },
+      { shape: "bevel", size: [0.6,0.5,0.6], pos: [1.0,0.6,-1.0], color: "light", mirror: true },
+      { shape: "box", size: [0.12,0.06,0.03], pos: [1.0,0.6,1.31], color: "amber", mirror: true },
+      { shape: "box", size: [0.03,0.05,0.8], pos: [1.21,0.5,0], color: "glow", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 1.0, height: 0.25, pos: [0,0.77,0], color: "dark" },
+      // tourelle
+      { shape: "cylinder", sides: 8, radius: 0.9, height: 0.25, pos: [0,0.95,0], color: "metal", pivot: "tourelle" },
+      { shape: "bevel", size: [1.2,0.75,1.4], pos: [0,1.4,-0.35], color: "light", parent: "tourelle" },
+      { shape: "bevel", size: [0.2,0.6,1.2], pos: [0.68,1.35,-0.35], color: "dark", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [1.0,0.12,1.1], pos: [0,1.82,-0.4], color: "faction", parent: "tourelle" },
+      { shape: "box", size: [0.03,0.04,0.8], pos: [0.79,1.45,-0.35], color: "glow", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.4,1.2,0.36], color: "amber", mirror: true, parent: "tourelle" },
+      // tube relevé à 20°
+      { shape: "bevel", size: [0.5,0.45,0.35], pos: [0,1.42,0.3], color: "dark", parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.16, height: 0.4, pos: [0,1.518,0.488], rot: [70,0,0], color: "dark", parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.1, height: 1.2, pos: [0,1.655,0.864], rot: [70,0,0], color: "metal", parent: "tourelle" },
+      { shape: "box", size: [0.03,0.04,0.8], pos: [0,1.74,0.78], rot: [-20,0,0], color: "glow", parent: "tourelle" },
+      { shape: "cylinder", sides: 8, radius: 0.15, height: 0.16, pos: [0,1.826,1.334], rot: [70,0,0], color: "dark", parent: "tourelle" },
     ],
   },
-  // shield_gen (168 triangles)
+  // shield_gen : générateur étagé à émetteur tournant, anneau lumineux au sol (664 triangles)
   shield_gen: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.8, pos: [0,0.7,0], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 0.15, pos: [0,1.2,0], color: "light", radiusTop: 0.2 },
-      { shape: "sphere", radius: 0.4, pos: [0,1.6,0], color: "glow", pivot: "emetteur" },
-      { shape: "box", size: [0.12,0.9,0.12], pos: [0.65,0.8,0.65], color: "metal", mirror: true },
-      { shape: "box", size: [0.12,0.9,0.12], pos: [0.65,0.8,-0.65], color: "metal", mirror: true },
-      { shape: "box", size: [0.6,0.15,0.15], pos: [0,0.35,0.8], color: "hazard" },
+      ...socle(2),
+      { shape: "cylinder", sides: 8, radius: 0.95, height: 0.04, pos: [0,0.26,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.86, height: 0.06, pos: [0,0.28,0], color: "dark" },
+      { shape: "bevel", size: [1.3,0.4,1.3], pos: [0,0.48,0], color: "dark" },
+      { shape: "bevel", size: [0.5,0.34,0.24], pos: [0,0.56,0.62], color: "light" },
+      { shape: "bevel", size: [0.5,0.34,0.24], pos: [0,0.56,-0.62], color: "light" },
+      { shape: "bevel", size: [0.24,0.34,0.5], pos: [0.62,0.56,0], color: "light", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.45,0.45,0.66], color: "amber", mirror: true },
+      { shape: "bevel", size: [0.9,0.35,0.9], pos: [0,0.83,0], color: "light" },
+      { shape: "bevel", size: [0.7,0.1,0.7], pos: [0,1.03,0], color: "faction" },
+      { shape: "box", size: [0.5,0.05,0.03], pos: [0,0.85,0.46], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.2, pos: [0,1.15,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.04, pos: [0,1.24,0], color: "glow" },
+      // émetteur (tourne)
+      { shape: "sphere", radius: 0.24, detail: 1, pos: [0,1.42,0], color: "glow", pivot: "emetteur" },
+      { shape: "box", size: [0.7,0.05,0.08], pos: [0,1.42,0], color: "light", parent: "emetteur" },
+      { shape: "box", size: [0.08,0.05,0.7], pos: [0,1.42,0], color: "light", parent: "emetteur" },
     ],
   },
-  // transfer (188 triangles)
+  // transfer : plateforme ronde praticable, couronne de segments, anneaux lumineux, trois bornes vitrées (892 triangles)
   transfer: {
     parts: [
-      { shape: "cylinder", sides: 8, radius: 1.5, height: 0.15, pos: [0,0.08,0], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 1.3, height: 0.12, pos: [0,0.2,0], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 1, height: 0.1, pos: [0,0.3,0], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 0.08, pos: [0,0.38,0], color: "glow" },
-      { shape: "box", size: [0.3,0.3,0.3], pos: [1.1,0.35,1.1], color: "hazard", mirror: true },
-      { shape: "box", size: [0.3,0.3,0.3], pos: [1.1,0.35,-1.1], color: "hazard", mirror: true },
-      { shape: "box", size: [0.8,0.12,0.3], pos: [0,0.35,1.35], color: "hazard" },
+      { shape: "cylinder", sides: 8, radius: 1.5, height: 0.15, pos: [0,0.075,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 1.05, height: 0.12, pos: [0,0.2,0], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.92, height: 0.03, pos: [0,0.27,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.76, height: 0.03, pos: [0,0.28,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.6, height: 0.03, pos: [0,0.29,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.03, pos: [0,0.3,0], color: "glass" },
+      // couronne : segments clairs et segments aux couleurs de l'équipe
+      { shape: "bevel", size: [0.9,0.2,0.36], pos: [0,0.25,1.25], color: "light" },
+      { shape: "bevel", size: [0.9,0.2,0.36], pos: [0,0.25,-1.25], color: "light" },
+      { shape: "bevel", size: [0.9,0.2,0.36], pos: [1.25,0.25,0], rot: [0,90,0], color: "light", mirror: true },
+      { shape: "bevel", size: [0.9,0.2,0.36], pos: [0.884,0.25,0.884], rot: [0,45,0], color: "faction", mirror: true },
+      { shape: "bevel", size: [0.9,0.2,0.36], pos: [0.884,0.25,-0.884], rot: [0,135,0], color: "faction", mirror: true },
+      { shape: "box", size: [0.12,0.05,0.03], pos: [0.25,0.25,1.44], color: "amber", mirror: true },
+      { shape: "box", size: [0.03,0.04,0.5], pos: [1.44,0.25,0], color: "glow", mirror: true },
+      // bornes vitrées à l'arrière
+      { shape: "bevel", size: [0.32,0.9,0.22], pos: [0,0.65,-1.32], color: "dark" },
+      { shape: "bevel", size: [0.32,0.9,0.22], pos: [1.143,0.65,-0.66], rot: [0,120,0], color: "dark", mirror: true },
+      { shape: "box", size: [0.18,0.5,0.03], pos: [0,0.7,-1.2], color: "glass" },
+      { shape: "box", size: [0.18,0.5,0.03], pos: [1.039,0.7,-0.6], rot: [0,120,0], color: "glass", mirror: true },
+      { shape: "bevel", size: [0.34,0.08,0.24], pos: [0,1.13,-1.32], color: "faction" },
+      { shape: "bevel", size: [0.34,0.08,0.24], pos: [1.143,1.13,-0.66], rot: [0,120,0], color: "faction", mirror: true },
     ],
   },
-  // gate (176 triangles)
+  // gate : grand anneau vertical à segments, portail lumineux concentrique, pieds blindés (864 triangles)
   gate: {
     parts: [
-      { shape: "box", size: [3.6,0.2,1.2], pos: [0,0.1,0], color: "dark" },
-      { shape: "box", size: [0.8,0.4,1], pos: [-1.4,0.4,0], color: "metal" },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [1.5,2.1,0], color: "faction", rot: [0,0,0] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [1.061,3.161,0], color: "metal", rot: [0,0,45] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [0,3.6,0], color: "faction", rot: [0,0,90] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [-1.061,3.161,0], color: "metal", rot: [0,0,135] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [-1.5,2.1,0], color: "faction", rot: [0,0,180] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [-1.061,1.039,0], color: "metal", rot: [0,0,225] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [0,0.6,0], color: "faction", rot: [0,0,270] },
-      { shape: "box", size: [0.45,0.9,0.5], pos: [1.061,1.039,0], color: "metal", rot: [0,0,315] },
-      { shape: "cylinder", sides: 8, radius: 1.15, height: 0.06, pos: [0,2.1,0], color: "glow", rot: [90,0,0] },
-      { shape: "box", size: [0.5,0.4,0.5], pos: [1.4,0.4,0], color: "metal" },
-      { shape: "box", size: [1,0.1,0.3], pos: [0,0.25,1.4], color: "hazard" },
+      { shape: "bevel", size: [3.6,0.2,1.4], pos: [0,0.1,0], bevel: 0.06, color: "dark" },
+      { shape: "bevel", size: [2.6,0.12,1.8], pos: [0,0.26,0], bevel: 0.04, color: "metal" },
+      { shape: "box", size: [1.2,0.03,0.2], pos: [0,0.33,0.75], color: "hazard" },
+      { shape: "box", size: [0.03,0.04,0.8], pos: [1.79,0.1,0], color: "glow", mirror: true },
+      // pieds latéraux
+      { shape: "bevel", size: [0.7,0.6,1.3], pos: [1.45,0.45,0], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.5,0.4,0.9], pos: [1.45,0.9,0], color: "light", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [1.45,0.5,0.66], color: "amber", mirror: true },
+      // anneau
+      { shape: "bevel", size: [0.45,1.15,0.6], pos: [1.5,2.1,0], color: "faction", mirror: true },
+      { shape: "bevel", size: [0.45,1.15,0.6], pos: [1.061,3.161,0], rot: [0,0,45], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.45,1.15,0.6], pos: [0,3.6,0], rot: [0,0,90], color: "faction" },
+      { shape: "bevel", size: [0.45,1.15,0.6], pos: [1.061,1.039,0], rot: [0,0,-45], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.45,1.15,0.6], pos: [0,0.6,0], rot: [0,0,90], color: "dark" },
+      { shape: "bevel", size: [0.9,0.3,0.7], pos: [0,3.85,0], color: "light" },
+      { shape: "box", size: [0.06,0.12,0.03], pos: [1.5,2.1,0.31], color: "amber", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [1.13,3.23,0.31], rot: [0,0,45], color: "amber", mirror: true },
+      // portail lumineux
+      { shape: "cylinder", sides: 8, radius: 1.3, height: 0.06, pos: [0,2.1,0], rot: [90,0,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.95, height: 0.08, pos: [0,2.1,0], rot: [90,22.5,0], color: "glass" },
+      { shape: "cylinder", sides: 8, radius: 0.6, height: 0.1, pos: [0,2.1,0], rot: [90,0,0], color: "glow" },
     ],
   },
-  // area_shield (208 triangles)
+  // area_shield : colonne d'émission à coupe lumineuse (emetteur), deux pylônes à anneaux, base étagée (1108 triangles)
   area_shield: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 1.4, pos: [0,1,0], color: "faction", radiusTop: 0.45 },
-      { shape: "cylinder", sides: 8, radius: 1.1, height: 0.2, pos: [0,1.8,0], color: "light", radiusTop: 1.3 },
-      { shape: "sphere", radius: 0.6, pos: [0,2.4,0], color: "glow", pivot: "emetteur" },
-      { shape: "box", size: [0.2,1.4,0.2], pos: [1,1,1], color: "metal", mirror: true },
-      { shape: "box", size: [0.2,1.4,0.2], pos: [1,1,-1], color: "metal", mirror: true },
-      { shape: "sphere", radius: 0.15, pos: [1,1.8,1], color: "glow", mirror: true },
-      { shape: "box", size: [1.2,0.2,0.3], pos: [0,0.45,1.2], color: "hazard" },
+      ...socle(3),
+      ...filets(3),
+      { shape: "bevel", size: [2.4,0.35,2.4], pos: [0,0.42,0], color: "dark" },
+      { shape: "bevel", size: [2.0,0.1,2.0], pos: [0,0.64,0], color: "faction" },
+      { shape: "bevel", size: [0.8,0.3,0.4], pos: [0,0.5,1.12], color: "light" },
+      { shape: "bevel", size: [0.4,0.3,0.8], pos: [1.12,0.5,0.3], color: "light", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.3,0.5,1.33], color: "amber", mirror: true },
+      // colonne centrale et noyau lumineux
+      { shape: "bevel", size: [0.9,1.2,0.9], pos: [0,1.25,0], color: "dark" },
+      { shape: "bevel", size: [0.2,1.0,0.7], pos: [0.5,1.2,0], color: "light", mirror: true },
+      { shape: "bevel", size: [0.5,0.64,0.08], pos: [0,1.2,0.46], bevel: 0.03, color: "black" },
+      { shape: "box", size: [0.36,0.5,0.03], pos: [0,1.2,0.5], color: "glow" },
+      // coupe émettrice
+      { shape: "cylinder", sides: 8, radius: 0.35, radiusTop: 0.85, height: 0.4, pos: [0,2.05,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.72, height: 0.02, pos: [0,2.26,0], color: "glow" },
+      { shape: "sphere", radius: 0.3, detail: 1, pos: [0,2.45,0], color: "glow", pivot: "emetteur" },
+      { shape: "box", size: [0.9,0.05,0.08], pos: [0,2.45,0], color: "dark", parent: "emetteur" },
+      // pylônes à anneaux
+      { shape: "cylinder", sides: 8, radius: 0.25, height: 1.3, pos: [1.0,1.05,-0.6], color: "dark", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.06, pos: [1.0,0.95,-0.6], color: "glow", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.06, pos: [1.0,1.15,-0.6], color: "glow", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.06, pos: [1.0,1.35,-0.6], color: "glow", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.28, height: 0.12, pos: [1.0,1.76,-0.6], color: "light", mirror: true },
+      { shape: "box", size: [0.04,0.2,0.04], pos: [1.0,1.92,-0.6], color: "metal", mirror: true },
+      { shape: "sphere", radius: 0.07, pos: [1.0,2.05,-0.6], color: "amber", mirror: true },
     ],
   },
-  // crystal_reactor (176 triangles)
+  // crystal_reactor : cristal cyan géant (cristal) dans une couronne de segments clairs et sombres (1082 triangles)
   crystal_reactor: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [4,1,4] },
-      { shape: "cylinder", sides: 8, radius: 1.5, height: 0.3, pos: [0,0.4,0], color: "metal" },
-      { shape: "box", size: [0.5,1.6,0.5], pos: [1.3,1.2,1.3], color: "faction", mirror: true },
-      { shape: "box", size: [0.5,1.6,0.5], pos: [1.3,1.2,-1.3], color: "faction", mirror: true },
-      { shape: "cone", sides: 6, radius: 0.9, height: 1.6, pos: [0,2,0], color: "glow", pivot: "cristal" },
-      { shape: "cone", sides: 6, radius: 0.9, height: 1.6, pos: [0,0.8,0], color: "glow", rot: [180,0,0], pivot: "cristal" },
-      { shape: "box", size: [2.6,0.2,0.3], pos: [0,2.1,1.3], color: "light" },
-      { shape: "box", size: [0.3,0.2,2.6], pos: [1.3,2.1,0], color: "light", mirror: true },
-      { shape: "box", size: [1,0.3,0.5], pos: [0,0.6,1.8], color: "hazard" },
+      ...socle(4),
+      ...filets(4),
+      { shape: "cylinder", sides: 8, radius: 1.9, height: 0.3, pos: [0,0.4,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 1.92, height: 0.05, pos: [0,0.45,0], color: "glow" },
+      // couronne : segments clairs (dessus d'équipe) et segments sombres
+      { shape: "bevel", size: [1.0,0.8,0.5], pos: [0,0.95,1.5], color: "light" },
+      { shape: "bevel", size: [1.0,0.8,0.5], pos: [0,0.95,-1.5], color: "light" },
+      { shape: "bevel", size: [1.0,0.8,0.5], pos: [1.5,0.95,0], rot: [0,90,0], color: "light", mirror: true },
+      { shape: "bevel", size: [0.9,0.12,0.45], pos: [0,1.41,1.5], color: "faction" },
+      { shape: "bevel", size: [0.9,0.12,0.45], pos: [0,1.41,-1.5], color: "faction" },
+      { shape: "bevel", size: [0.9,0.12,0.45], pos: [1.5,1.41,0], rot: [0,90,0], color: "faction", mirror: true },
+      { shape: "box", size: [0.6,0.05,0.03], pos: [0,1.1,1.24], color: "glow" },
+      { shape: "box", size: [0.03,0.05,0.6], pos: [1.24,1.1,0], color: "glow", mirror: true },
+      { shape: "bevel", size: [0.8,0.6,0.5], pos: [1.06,0.85,1.06], rot: [0,45,0], color: "dark", mirror: true },
+      { shape: "bevel", size: [0.8,0.6,0.5], pos: [1.06,0.85,-1.06], rot: [0,135,0], color: "dark", mirror: true },
+      { shape: "box", size: [0.12,0.06,0.03], pos: [1.24,0.9,1.24], rot: [0,45,0], color: "amber", mirror: true },
+      // cœur et griffes
+      { shape: "cylinder", sides: 8, radius: 1.0, height: 0.5, pos: [0,0.8,0], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.85, height: 0.06, pos: [0,1.06,0], color: "glow" },
+      { shape: "bevel", size: [0.2,0.9,0.3], pos: [0.75,1.45,0], rot: [0,0,20], color: "light", mirror: true },
+      { shape: "bevel", size: [0.3,0.9,0.2], pos: [0,1.45,0.75], rot: [-20,0,0], color: "light" },
+      { shape: "bevel", size: [0.3,0.9,0.2], pos: [0,1.45,-0.75], rot: [20,0,0], color: "light" },
+      // cristal (tourne)
+      { shape: "cone", sides: 6, radius: 0.62, height: 1.8, pos: [0,2.3,0], color: "glow", pivot: "cristal" },
+      { shape: "cone", sides: 6, radius: 0.62, height: 0.7, pos: [0,1.05,0], rot: [180,0,0], color: "glow", parent: "cristal" },
+      { shape: "cone", sides: 5, radius: 0.25, height: 1.1, pos: [0.42,1.85,0.15], rot: [0,0,-25], color: "glow", parent: "cristal" },
+      { shape: "cone", sides: 5, radius: 0.22, height: 0.9, pos: [-0.4,1.75,-0.2], rot: [10,0,25], color: "glow", parent: "cristal" },
+      { shape: "cone", sides: 5, radius: 0.2, height: 0.8, pos: [0.05,1.7,0.45], rot: [25,0,0], color: "glow", parent: "cristal" },
     ],
   },
-  // missile_silo (160 triangles)
+  // missile_silo : ogive dressée dans un puits, quatre portes blindées ouvertes, anneau cyan (900 triangles)
   missile_silo: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "cylinder", sides: 8, radius: 1.2, height: 0.3, pos: [0,0.45,0], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 1, height: 0.2, pos: [0,0.7,0], color: "hazard" },
-      { shape: "box", size: [0.9,0.2,1.8], pos: [0.45,0.88,0], color: "faction", mirror: true },
-      { shape: "box", size: [0.06,0.1,1.5], pos: [0,0.88,0], color: "glow" },
-      { shape: "box", size: [0.5,0.5,0.5], pos: [1.3,0.55,-1.2], color: "dark", mirror: true },
-      { shape: "cone", sides: 6, radius: 0.3, height: 0.7, pos: [0,1,0], color: "red" },
+      ...socle(3),
+      ...filets(3),
+      { shape: "cylinder", sides: 8, radius: 1.4, height: 0.4, pos: [0,0.45,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 1.42, height: 0.06, pos: [0,0.4,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.72, height: 0.04, pos: [0,0.66,0], color: "black" },
+      // missile
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.9, pos: [0,1.1,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.1, pos: [0,1.2,0], color: "red" },
+      { shape: "cone", sides: 8, radius: 0.32, height: 0.75, pos: [0,1.92,0], color: "light" },
+      // portes ouvertes (dessus aux couleurs de l'équipe)
+      { shape: "bevel", size: [0.9,1.1,0.22], pos: [0,1.1,0.95], rot: [20,0,0], color: "light" },
+      { shape: "bevel", size: [0.9,1.1,0.22], pos: [0,1.1,-0.95], rot: [-20,0,0], color: "light" },
+      { shape: "bevel", size: [0.22,1.1,0.9], pos: [0.95,1.1,0], rot: [0,0,-20], color: "light", mirror: true },
+      { shape: "bevel", size: [0.92,0.1,0.26], pos: [0,1.62,1.14], rot: [20,0,0], color: "faction" },
+      { shape: "bevel", size: [0.92,0.1,0.26], pos: [0,1.62,-1.14], rot: [-20,0,0], color: "faction" },
+      { shape: "bevel", size: [0.26,0.1,0.92], pos: [1.14,1.62,0], rot: [0,0,-20], color: "faction", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0,0.95,1.08], rot: [20,0,0], color: "amber" },
+      { shape: "box", size: [0.03,0.06,0.1], pos: [1.08,0.95,0], rot: [0,0,-20], color: "amber", mirror: true },
+      // blocs d'angle
+      { shape: "bevel", size: [0.5,0.55,0.5], pos: [0.98,0.7,0.98], rot: [0,45,0], color: "metal", mirror: true },
+      { shape: "bevel", size: [0.5,0.55,0.5], pos: [0.98,0.7,-0.98], rot: [0,45,0], color: "metal", mirror: true },
+      { shape: "box", size: [0.25,0.04,0.03], pos: [1.15,0.8,1.15], rot: [0,45,0], color: "glow", mirror: true },
     ],
   },
-  // antimissile (220 triangles)
+  // antimissile : quatre tubes de lancement verticaux sur affût tournant, base à nacelles (784 triangles)
   antimissile: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.3, pos: [0,0.5,0], color: "metal" },
-      { shape: "box", size: [1.2,0.2,1], pos: [0,0.8,0], color: "faction", pivot: "tourelle" },
-      { shape: "cylinder", sides: 5, radius: 0.16, height: 0.9, pos: [0.3,1.3,0.2], color: "dark", mirror: true, parent: "tourelle" },
-      { shape: "cylinder", sides: 5, radius: 0.16, height: 0.9, pos: [0.3,1.3,-0.2], color: "dark", mirror: true, parent: "tourelle" },
-      { shape: "cone", sides: 5, radius: 0.12, height: 0.3, pos: [0.3,1.9,0.2], color: "red", mirror: true, parent: "tourelle" },
-      { shape: "sphere", radius: 0.12, pos: [0,1,-0.4], color: "glow", parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.1, pos: [0,1.3,-0.5], color: "light", radiusTop: 0.1, parent: "tourelle" },
+      ...socle(2),
+      ...filets(2, 2, false),
+      { shape: "bevel", size: [1.6,0.3,1.4], pos: [0,0.4,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 0.4, pos: [0.75,0.55,0.35], rot: [90,0,0], color: "dark", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.03, pos: [0.75,0.55,0.56], rot: [90,0,0], color: "amber", mirror: true },
+      // affût tournant
+      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.2, pos: [0,0.65,0], color: "metal", pivot: "tourelle" },
+      { shape: "bevel", size: [1.0,0.25,0.9], pos: [0,0.85,0], color: "dark", parent: "tourelle" },
+      { shape: "bevel", size: [0.36,1.3,0.36], pos: [0.21,1.6,0.2], color: "light", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [0.36,1.3,0.36], pos: [0.21,1.6,-0.2], color: "light", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [0.32,0.1,0.32], pos: [0.21,2.28,0.2], color: "faction", mirror: true, parent: "tourelle" },
+      { shape: "bevel", size: [0.32,0.1,0.32], pos: [0.21,2.28,-0.2], color: "faction", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.05,0.8,0.03], pos: [0.21,1.55,0.39], color: "glow", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.06,0.05,0.03], pos: [0.21,2.1,0.39], color: "amber", mirror: true, parent: "tourelle" },
+      { shape: "box", size: [0.05,1.1,0.05], pos: [0.4,1.55,0.4], color: "dark", mirror: true, parent: "tourelle" },
     ],
   },
-  // beacon (220 triangles)
+  // beacon : socle étagé à ailettes claires, colonne sombre, grand disque lumineux et faisceau (feu) (788 triangles)
   beacon: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [2,1,2] },
-      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.3, pos: [0,0.45,0], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.3, height: 2, pos: [0,1.5,0], color: "faction", radiusTop: 0.15 },
-      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.1, pos: [0,1.2,0], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.1, pos: [0,1.8,0], color: "light" },
-      { shape: "sphere", radius: 0.35, pos: [0,2.7,0], color: "glow", pivot: "feu" },
-      { shape: "box", size: [0.12,0.8,0.12], pos: [0.7,0.7,0.7], color: "metal", mirror: true, rot: [0,0,0] },
-      { shape: "box", size: [0.12,0.8,0.12], pos: [0.7,0.7,-0.7], color: "metal", mirror: true },
+      ...socle(2),
+      { shape: "cylinder", sides: 8, radius: 0.9, height: 0.2, pos: [0,0.35,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.77, height: 0.04, pos: [0,0.47,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.75, height: 0.2, pos: [0,0.55,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.2, pos: [0,0.75,0], color: "dark" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.35,0.35,0.85], color: "amber", mirror: true },
+      // ailettes
+      { shape: "bevel", size: [0.14,0.8,0.35], pos: [0.6,1.0,0], rot: [0,0,15], color: "light", mirror: true },
+      { shape: "bevel", size: [0.35,0.8,0.14], pos: [0,1.0,0.6], rot: [-15,0,0], color: "light" },
+      { shape: "bevel", size: [0.35,0.8,0.14], pos: [0,1.0,-0.6], rot: [15,0,0], color: "light" },
+      // colonne
+      { shape: "cylinder", sides: 8, radius: 0.26, radiusTop: 0.2, height: 1.4, pos: [0,1.45,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.15, pos: [0,1.2,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.25, height: 0.22, pos: [0,1.9,0], color: "faction" },
+      { shape: "box", size: [0.04,0.6,0.03], pos: [0,1.5,0.24], color: "glow" },
+      { shape: "box", size: [0.06,0.05,0.03], pos: [0.12,1.6,0.21], color: "amber", mirror: true },
+      // disque lumineux et faisceau (tourne)
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.1, pos: [0,2.2,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.66, height: 0.03, pos: [0,2.3,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.03, pos: [0,2.32,0], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.03, pos: [0,2.34,0], color: "glow" },
+      { shape: "sphere", radius: 0.16, detail: 1, pos: [0,2.45,0], color: "glow", pivot: "feu" },
+      { shape: "cylinder", sides: 8, radius: 0.04, radiusTop: 0.01, height: 0.7, pos: [0,2.85,0], color: "glow", parent: "feu" },
     ],
   },
-  // orbital (288 triangles)
+  // orbital : canon géant incliné sur tourelle tournante (canon), base à coins clairs, antennes (1240 triangles)
   orbital: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [5,1,5] },
-      { shape: "cylinder", sides: 8, radius: 2, height: 0.4, pos: [0,0.5,0], color: "metal" },
-      { shape: "box", size: [0.8,1.5,0.8], pos: [1.9,1,1.9], color: "faction", mirror: true },
-      { shape: "box", size: [0.8,1.5,0.8], pos: [1.9,1,-1.9], color: "faction", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 1.2, height: 0.8, pos: [0,1.1,0], color: "dark", radiusTop: 0.9 },
-      { shape: "cylinder", sides: 8, radius: 0.7, height: 3.2, pos: [0,3,0], color: "light", radiusTop: 0.45, pivot: "canon" },
-      { shape: "cylinder", sides: 8, radius: 0.8, height: 0.2, pos: [0,2,0], color: "glow", parent: "canon" },
-      { shape: "cylinder", sides: 8, radius: 0.6, height: 0.2, pos: [0,3,0], color: "glow", parent: "canon" },
-      { shape: "cylinder", sides: 8, radius: 0.55, height: 0.25, pos: [0,4.7,0], color: "dark", parent: "canon" },
-      { shape: "box", size: [0.2,0.2,3.4], pos: [0,1.6,0], color: "hazard", parent: "canon" },
-      { shape: "box", size: [3.4,0.2,0.2], pos: [0,1.6,0], color: "hazard", parent: "canon" },
+      ...socle(5),
+      ...filets(5),
+      { shape: "cylinder", sides: 8, radius: 2.0, height: 0.35, pos: [0,0.42,0], color: "metal" },
+      { shape: "bevel", size: [0.9,0.8,0.9], pos: [1.9,0.65,1.9], color: "light", mirror: true },
+      { shape: "bevel", size: [0.9,0.8,0.9], pos: [1.9,0.65,-1.9], color: "light", mirror: true },
+      { shape: "bevel", size: [0.7,0.12,0.7], pos: [1.9,1.1,1.9], color: "faction", mirror: true },
+      { shape: "sphere", radius: 0.3, pos: [1.9,1.1,-1.9], scale: [1,0.6,1], color: "dark", mirror: true },
+      { shape: "box", size: [0.5,0.05,0.03], pos: [1.9,0.75,2.36], color: "glow", mirror: true },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [1.9,0.5,2.36], color: "amber", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 1.65, height: 0.08, pos: [0,0.62,0], color: "dark" },
+      { shape: "bevel", size: [0.6,0.5,1.1], pos: [1.95,0.6,0], color: "dark", mirror: true },
+      { shape: "box", size: [0.03,0.05,0.8], pos: [2.26,0.65,0], color: "glow", mirror: true },
+      { shape: "bevel", size: [1.1,0.4,0.5], pos: [0,0.55,-2.05], color: "light" },
+      { shape: "cone", sides: 5, radius: 0.08, height: 0.9, pos: [0.9,0.7,-2.1], color: "dark" },
+      { shape: "cone", sides: 5, radius: 0.06, height: 0.6, pos: [1.15,0.55,-2.15], color: "dark" },
+      // tourelle (pivot canon)
+      { shape: "cylinder", sides: 8, radius: 1.3, height: 0.3, pos: [0,0.75,0], color: "dark", pivot: "canon" },
+      { shape: "cylinder", sides: 8, radius: 1.32, height: 0.05, pos: [0,0.82,0], color: "glow", parent: "canon" },
+      { shape: "bevel", size: [1.4,1.1,1.5], pos: [0,1.45,-0.35], color: "faction", parent: "canon" },
+      { shape: "bevel", size: [0.3,0.9,1.3], pos: [0.78,1.4,-0.35], color: "light", mirror: true, parent: "canon" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.4,1.7,0.41], color: "amber", mirror: true, parent: "canon" },
+      // fût incliné de 20° vers l'avant
+      { shape: "cylinder", sides: 8, radius: 0.5, radiusTop: 0.34, height: 3.4, pos: [0,3.4,0.38], rot: [20,0,0], color: "light", parent: "canon" },
+      { shape: "cylinder", sides: 8, radius: 0.47, height: 0.1, pos: [0,2.74,0.142], rot: [20,0,0], color: "glow", parent: "canon" },
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.3, pos: [0,3.304,0.347], rot: [20,0,0], color: "dark", parent: "canon" },
+      { shape: "cylinder", sides: 8, radius: 0.41, height: 0.1, pos: [0,3.868,0.552], rot: [20,0,0], color: "glow", parent: "canon" },
+      { shape: "cylinder", sides: 8, radius: 0.42, radiusTop: 0.38, height: 0.35, pos: [0,4.9,0.929], rot: [20,0,0], color: "dark", parent: "canon" },
+      { shape: "cylinder", sides: 8, radius: 0.25, height: 0.04, pos: [0,5.08,0.994], rot: [20,0,0], color: "glow", parent: "canon" },
+      { shape: "box", size: [0.05,2.2,0.04], pos: [0,3.44,0.854], rot: [20,0,0], color: "glow", parent: "canon" },
+      { shape: "bevel", size: [0.14,1.8,0.5], pos: [0.42,2.928,0.21], rot: [20,0,0], color: "dark", mirror: true, parent: "canon" },
     ],
   },
-  // warehouse : entrepôt d'équipe (3 x 3) — silos et bandes aux couleurs de l'équipe
+  // warehouse : entrepôt d'équipe (3 x 3) — hall à toit d'équipe, rideau à lames, deux silos clairs (688 triangles)
   warehouse: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.6,1.1,1.6], pos: [0,0.75,-0.55], color: "metal" },
-      { shape: "wedge", size: [2.7,0.5,1.7], pos: [0,1.55,-0.55], color: "faction" },
-      { shape: "box", size: [1.1,0.8,0.08], pos: [0,0.6,0.27], color: "dark" },
-      { shape: "box", size: [1.1,0.1,0.1], pos: [0,1.05,0.3], color: "hazard" },
-      { shape: "cylinder", sides: 8, radius: 0.38, height: 1.6, pos: [0.9,1.0,0.85], color: "light", mirror: true },
-      { shape: "cone", sides: 8, radius: 0.4, height: 0.35, pos: [0.9,1.98,0.85], color: "faction", mirror: true },
-      { shape: "box", size: [0.5,0.3,0.5], pos: [0,0.35,0.95], color: "hazard" },
-      { shape: "box", size: [0.12,0.12,0.12], pos: [1.2,1.7,-1.2], color: "glow", mirror: true },
+      ...socle(3),
+      ...filets(3),
+      { shape: "bevel", size: [2.6,1.1,1.6], pos: [0,0.8,-0.55], color: "dark" },
+      { shape: "bevel", size: [0.4,1.0,0.4], pos: [1.12,0.75,0.08], color: "light", mirror: true },
+      { shape: "wedge", size: [2.7,0.5,1.7], pos: [0,1.6,-0.55], color: "faction" },
+      { shape: "box", size: [2.2,0.04,0.03], pos: [0,1.28,0.26], color: "glow" },
+      { shape: "bevel", size: [1.1,0.8,0.1], pos: [0,0.66,0.27], bevel: 0.03, color: "black" },
+      { shape: "box", size: [1.0,0.04,0.04], pos: [0,0.45,0.32], color: "dark" },
+      { shape: "box", size: [1.0,0.04,0.04], pos: [0,0.65,0.32], color: "dark" },
+      { shape: "box", size: [1.0,0.04,0.04], pos: [0,0.85,0.32], color: "dark" },
+      { shape: "box", size: [1.1,0.1,0.1], pos: [0,1.1,0.3], color: "hazard" },
+      // silos
+      { shape: "cylinder", sides: 8, radius: 0.38, height: 1.5, pos: [0.9,1.0,0.85], color: "light", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.12, pos: [0.9,0.6,0.85], color: "dark", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.05, pos: [0.9,1.3,0.85], color: "glow", mirror: true },
+      { shape: "cone", sides: 8, radius: 0.4, height: 0.35, pos: [0.9,1.93,0.85], color: "faction", mirror: true },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.9,0.85,1.24], color: "amber", mirror: true },
+      // caisses
+      { shape: "bevel", size: [0.45,0.3,0.45], pos: [0,0.4,0.95], color: "metal" },
+      { shape: "box", size: [0.3,0.06,0.3], pos: [0,0.58,0.95], color: "hazard" },
     ],
   },
-  // rail (1 x 1) : traverses et deux rails dans l'axe (+z)
+  // rail (1 x 1) : traverses et deux rails dans l'axe (+z) (60 triangles)
   rail: {
     parts: [
       { shape: "box", size: [0.9,0.05,0.98], pos: [0,0.025,0], color: "dark" },
@@ -481,34 +969,48 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.07,0.09,1], pos: [0.22,0.15,0], color: "light", mirror: true },
     ],
   },
-  // station : gare (3 x 3) — quai, auvent, portique de chargement
+  // station : gare (3 x 3) — quai clair, auvent d'équipe sur poteaux, bâtiment et conteneurs (600 triangles)
   station: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
-      { shape: "box", size: [2.8,0.35,1.2], pos: [0,0.35,0.7], color: "light" },
+      ...socle(3),
+      { shape: "bevel", size: [2.8,0.35,1.2], pos: [0,0.35,0.7], color: "light" },
       { shape: "box", size: [2.8,0.06,0.15], pos: [0,0.55,1.28], color: "hazard" },
-      { shape: "box", size: [0.12,1.4,0.12], pos: [1.25,1.1,0.3], color: "metal", mirror: true },
-      { shape: "box", size: [0.12,1.4,0.12], pos: [1.25,1.1,1.15], color: "metal", mirror: true },
+      { shape: "box", size: [2.4,0.04,0.03], pos: [0,0.38,1.31], color: "glow" },
+      { shape: "bevel", size: [0.14,1.4,0.14], pos: [1.25,1.1,0.3], color: "metal", mirror: true },
+      { shape: "bevel", size: [0.14,1.4,0.14], pos: [1.25,1.1,1.15], color: "metal", mirror: true },
       { shape: "wedge", size: [2.9,0.25,1.2], pos: [0,1.9,0.72], color: "faction" },
-      { shape: "box", size: [2.2,1.0,1.0], pos: [0,0.65,-0.75], color: "metal" },
-      { shape: "box", size: [0.7,0.55,0.55], pos: [-0.6,1.42,-0.8], color: "hazard" },
-      { shape: "box", size: [0.7,0.55,0.55], pos: [0.4,1.42,-0.8], color: "faction" },
-      { shape: "box", size: [0.3,0.15,0.08], pos: [1.0,1.25,-0.24], color: "glow" },
+      { shape: "box", size: [2.6,0.04,0.03], pos: [0,1.76,1.3], color: "glow" },
+      // bâtiment et conteneurs
+      { shape: "bevel", size: [2.2,1.0,1.0], pos: [0,0.75,-0.75], color: "dark" },
+      { shape: "bevel", size: [0.36,0.9,0.36], pos: [0.95,0.75,-0.4], color: "light", mirror: true },
+      { shape: "bevel", size: [0.7,0.55,0.55], pos: [-0.6,1.52,-0.8], color: "hazard" },
+      { shape: "bevel", size: [0.7,0.55,0.55], pos: [0.4,1.52,-0.8], color: "faction" },
+      { shape: "box", size: [0.3,0.15,0.04], pos: [0.45,0.95,-0.24], color: "glow" },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [-0.45,0.95,-0.24], color: "amber" },
     ],
   },
-  // cargo_pad : héliport de fret (3 x 3) — aire marquée, balises, petite tour
+  // cargo_pad : héliport de fret (3 x 3) — aire marquée à anneau cyan, balises, petite tour vitrée (536 triangles)
   cargo_pad: {
     parts: [
-      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
+      ...socle(3),
+      ...filets(3),
       { shape: "cylinder", sides: 8, radius: 1.25, height: 0.12, pos: [0,0.3,0.1], color: "dark" },
-      { shape: "box", size: [0.15,0.04,1.1], pos: [-0.35,0.38,0.1], color: "light" },
-      { shape: "box", size: [0.15,0.04,1.1], pos: [0.35,0.38,0.1], color: "light" },
-      { shape: "box", size: [0.7,0.04,0.15], pos: [0,0.38,0.1], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 1.12, height: 0.02, pos: [0,0.37,0.1], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 1.02, height: 0.03, pos: [0,0.375,0.1], color: "dark" },
+      { shape: "box", size: [0.15,0.04,1.1], pos: [-0.35,0.4,0.1], color: "light" },
+      { shape: "box", size: [0.15,0.04,1.1], pos: [0.35,0.4,0.1], color: "light" },
+      { shape: "box", size: [0.7,0.04,0.15], pos: [0,0.4,0.1], color: "light" },
       { shape: "box", size: [0.14,0.14,0.14], pos: [1.1,0.42,1.1], color: "glow", mirror: true },
       { shape: "box", size: [0.14,0.14,0.14], pos: [1.1,0.42,-0.9], color: "glow", mirror: true },
-      { shape: "box", size: [0.5,1.3,0.5], pos: [1.1,0.85,-1.15], color: "metal" },
-      { shape: "box", size: [0.6,0.3,0.6], pos: [1.1,1.6,-1.15], color: "glass" },
-      { shape: "box", size: [0.5,0.12,0.5], pos: [1.1,1.8,-1.15], color: "faction" },
+      // tour
+      { shape: "bevel", size: [0.5,1.3,0.5], pos: [1.1,0.85,-1.15], color: "metal" },
+      { shape: "bevel", size: [0.62,0.3,0.62], pos: [1.1,1.6,-1.15], color: "glass" },
+      { shape: "bevel", size: [0.56,0.1,0.56], pos: [1.1,1.8,-1.15], color: "faction" },
+      { shape: "box", size: [0.03,0.4,0.03], pos: [1.25,2.05,-1.25], color: "dark" },
+      { shape: "box", size: [0.06,0.06,0.06], pos: [1.25,2.27,-1.25], color: "amber" },
+      // réservoir de carburant
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.7, pos: [-1.0,0.47,-1.15], rot: [0,0,90], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.21, height: 0.06, pos: [-1.0,0.47,-1.15], rot: [0,0,90], color: "faction" },
     ],
   },
 };
