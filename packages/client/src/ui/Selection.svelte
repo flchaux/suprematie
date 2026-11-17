@@ -1,9 +1,12 @@
 <script lang="ts">
   import { ui, hasTechUI } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
-  import { BClass, Layer, RECIPE_NONE, PACK1 } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, PACK1 } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
+  import Icon from "./Icon.svelte";
+  import { sprite } from "./sprites.ts";
+  import { PLAYER_COLORS } from "../models/generator.ts";
 
   const d = $derived(ui.data);
   const sb = $derived(ui.selBuilding);
@@ -20,28 +23,35 @@
   const total = $derived(ui.selUnits.reduce((s, g) => s + g.count, 0));
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   const status = $derived.by(() => {
-    if (!info) return "";
-    if (info.build < 65536) return `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " (stock insuffisant)" : "");
-    if (bdef && (bdef.powerUse > 0) && (!info.net || info.sat < 512)) return "Hors réseau électrique ou sous-alimenté";
-    return info.working ? "En marche" : "En attente";
+    if (!info) return { text: "", kind: "" };
+    if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
+    if (bdef && bdef.powerUse > 0 && (!info.net || info.sat < 512)) return { text: "Hors réseau électrique ou sous-alimenté", kind: "warn" };
+    return info.working ? { text: "En marche", kind: "good" } : { text: "En attente", kind: "idle" };
   });
+  const hpf = $derived(info && bdef ? info.hp / bdef.hp : 1);
+  const owner = $derived(sb ? "#" + PLAYER_COLORS[sb.owner % 8].toString(16).padStart(6, "0") : "");
 </script>
 
 {#if sb && bdef && d}
   <div class="panel sel">
-    <div class="head">
-      <b>{bdef.name}</b>
-      <span class="dim">{ui.names[sb.owner] ?? ""}</span>
-      {#if info}<span class="dim">PV {info.hp}/{bdef.hp}</span>{/if}
+    <div class="head" style:--pc={owner}>
+      <div class="thumb">{#if sprite("buildings", bdef.key)}<img src={sprite("buildings", bdef.key)} alt="" />{/if}</div>
+      <div class="ht">
+        <div class="kicker">{ui.names[sb.owner] ?? ""}</div>
+        <b class="title">{bdef.name}</b>
+        {#if info}
+          <div class="hpline"><span class="hp" class:mid={hpf < 0.6} class:low={hpf < 0.3}><span style:width={hpf * 100 + "%"}></span></span><span class="num small">{info.hp}/{bdef.hp}</span></div>
+        {/if}
+      </div>
     </div>
-    <div class:warn={status.startsWith("Hors") || status.includes("insuffisant")} class="dim">{status}</div>
+    {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
     {#if mine && info}
       {#if info.build < 65536}
-        <button onclick={() => client.cancelBuilding()}>Annuler le chantier (Suppr)</button>
+        <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier <span class="key">Suppr</span></button>
       {/if}
       {#if bdef.cls === BClass.Crafter}
         <div class="row">
-          <span>Recette :</span>
+          <span class="kicker">Recette</span>
           <select value={info.recipe} onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value))}>
             <option value={RECIPE_NONE}>{bdef.crafter === 1 ? "— choisir —" : "automatique"}</option>
             {#each recipes as { r, i }}
@@ -51,55 +61,58 @@
         </div>
         {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe]}
           {@const r = d.recipes[info.recipe]}
-          <div class="row">
-            {#each r.inputs as [it, n], j}<span class="tip"><Item id={it} n={info.inv[j]} need={n} /><span class="tt">{d.items[it].name} : {info.inv[j]} (recette : {n})</span></span>{/each}
-            → <span class="tip"><Item id={r.output[0]} n={info.out} /><span class="tt">{d.items[r.output[0]].name} ×{r.output[1]} en {(r.time / 20 / (bdef.speed / 100)).toFixed(1)} s</span></span>
+          <div class="flow">
+            {#each r.inputs as [it, n], j}<span class="tip slot"><Item id={it} n={info.inv[j]} need={n} size={22} /><span class="tt">{d.items[it].name} : {info.inv[j]} (recette : {n})</span></span>{/each}
+            <span class="arrow">▸▸</span>
+            <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">{d.items[r.output[0]].name} ×{r.output[1]} en {(r.time / 20 / (bdef.speed / 100)).toFixed(1)} s</span></span>
           </div>
         {/if}
       {:else if bdef.cls === BClass.Factory}
         <div class="units">
           {#each factoryUnits as { u, i }}
             {@const ok = hasTechUI(u.tech)}
+            {@const q = info.queue.find((e: [number, number]) => e[0] === i)}
             <div class="tip">
-              <button class="ub" disabled={!ok} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
-                {u.name}
+              <button class="ub" class:locked={!ok} disabled={!ok} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
+                {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
+                {#if q}<span class="qn num">{q[1]}</span>{/if}
+                {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
               </button>
-              <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad">Recherche : {d.techs[u.tech].name}</span><br />{/if}
-                PV {u.hp} · vitesse {(u.speed / 10).toFixed(1)} c/s · {u.build} s<br /><Cost cost={u.cost} />
-                <span class="dim">Clic : +1, Maj+clic : +5, clic droit : retirer. Les composants arrivent par bras.</span></div>
+              <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
+                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br /><Cost cost={u.cost} />
+                <span class="dim">Clic : +1 · Maj+clic : +5 · clic droit : retirer. Les composants arrivent par bras.</span></div>
             </div>
           {/each}
         </div>
         <div class="row">
-          <label><input type="checkbox" checked={info.repeat} onchange={(e) => client.toggleRepeat((e.target as HTMLInputElement).checked)} /> Répéter</label>
-          <span class="dim">File :</span>
-          {#each info.queue as [k, n]}<span>{d.units[k].name} ×{n}</span>{:else}<span class="dim">vide</span>{/each}
+          <label class="rep"><input type="checkbox" checked={info.repeat} onchange={(e) => client.toggleRepeat((e.target as HTMLInputElement).checked)} /> <Icon name="repeat" size={14} /> Répéter</label>
+          {#if !info.queue.length}<span class="dim small">File vide</span>{/if}
         </div>
         {#if info.queue.length}
           {@const cur = d.units[info.queue[0][0]]}
-          <div class="row"><span class="dim">Composants :</span>{#each cur.cost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} />{/each}</div>
+          <div class="row"><span class="kicker">En cours · {cur.name}</span>{#each cur.cost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} size={16} />{/each}</div>
         {/if}
-        <span class="dim small">Clic droit sur le terrain : point de ralliement.</span>
+        <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
-        <div class="row">Recherche : {ui.research ? d.techs[ui.research].name : "aucune"} <button onclick={() => (ui.showResearch = true)}>Choisir (T)</button></div>
-        <div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} />{/each}</div>
+        <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir <span class="key">T</span></button></div>
+        <div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} size={20} />{/each}</div>
       {:else if bdef.cls === BClass.Silo}
-        <div class="row">Missiles prêts : {info.ammo} <button disabled={!info.ammo} onclick={() => client.setMode("launch")}>Lancer</button></div>
-        <div class="row"><span class="dim">Composants :</span>{#each d.missileCost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} />{/each}</div>
+        <div class="row">Missiles prêts : <b class="num">{info.ammo}</b> <button class="icon-btn primary" disabled={!info.ammo} onclick={() => client.setMode("launch")}><Icon name="target" size={14} /> Lancer</button></div>
+        <div class="row"><span class="kicker">Composants</span>{#each d.missileCost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} size={16} />{/each}</div>
       {:else if bdef.cls === BClass.AntiMissile}
-        <div class="row">Intercepteurs : {info.ammo}/3</div>
-        <div class="row"><span class="dim">Composants :</span>{#each d.interceptorCost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} />{/each}</div>
+        <div class="row">Intercepteurs : <b class="num">{info.ammo}/3</b></div>
+        <div class="row"><span class="kicker">Composants</span>{#each d.interceptorCost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} size={16} />{/each}</div>
       {:else if bdef.cls === BClass.Orbital}
-        <div class="row">Charge : {Math.floor((info.charge / (60 * 20 * 1024)) * 100)} % <button disabled={info.charge < 60 * 20 * 1024} onclick={() => client.setMode("fire")}>Tirer</button></div>
+        <div class="row">Charge : <b class="num">{Math.floor((info.charge / (60 * 20 * 1024)) * 100)} %</b> <button class="icon-btn primary" disabled={info.charge < 60 * 20 * 1024} onclick={() => client.setMode("fire")}><Icon name="target" size={14} /> Tirer</button></div>
       {:else if bdef.cls === BClass.Transfer}
-        <div class="row"><button disabled={info.cooldown > 0} onclick={() => client.setMode("transfer")}>Transférer les unités proches</button>{#if info.cooldown > 0}<span class="dim">{Math.ceil(info.cooldown / 20)} s</span>{/if}</div>
+        <div class="row"><button class="icon-btn" disabled={info.cooldown > 0} onclick={() => client.setMode("transfer")}><Icon name="teleport" size={14} /> Transférer les unités proches</button>{#if info.cooldown > 0}<span class="dim num">{Math.ceil(info.cooldown / 20)} s</span>{/if}</div>
       {:else if bdef.cls === BClass.Gate}
-        <div class="row"><button onclick={() => client.setMode("link")}>Relier à une autre porte</button><button onclick={() => client.toggleBuilding()}>{info.enabled ? "Fermer" : "Ouvrir"}</button></div>
+        <div class="row"><button class="icon-btn" onclick={() => client.setMode("link")}><Icon name="link" size={14} /> Relier à une autre porte</button><button onclick={() => client.toggleBuilding()}>{info.enabled ? "Fermer" : "Ouvrir"}</button></div>
         <span class="dim small">{info.link >= 0 ? (info.working ? "Ouverte" : "Ouverture… (forte consommation)") : "Non reliée"}</span>
       {:else if bdef.cls === BClass.Shield}
-        <div class="row">Bouclier : {info.shield} <button onclick={() => client.toggleBuilding()}>{info.enabled ? "Couper" : "Activer"}</button></div>
+        <div class="row">Bouclier : <b class="num">{info.shield}</b> <button onclick={() => client.toggleBuilding()}>{info.enabled ? "Couper" : "Activer"}</button></div>
       {:else if bdef.cls === BClass.Extractor}
-        <div class="row">Extrait : <Item id={info.recipe} /> {d.items[info.recipe]?.name}</div>
+        <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
       {:else if bdef.cls === BClass.Depot}
         <span class="dim">Tout ce qui entre ici rejoint le stock commun utilisé par les ingénieurs.</span>
       {/if}
@@ -107,28 +120,32 @@
   </div>
 {:else if ui.selUnits.length && d}
   <div class="panel sel">
-    <div class="head"><b>{total} unité{total > 1 ? "s" : ""}</b></div>
+    <div class="uhead">
+      <span class="kicker">Sélection</span>
+      <b class="title num">{total}</b>
+      <span class="dim">unité{total > 1 ? "s" : ""}{#if ui.selUnits.length === 1} · {d.units[ui.selUnits[0].kind].name}{/if}</span>
+    </div>
     <div class="groups">
       {#each ui.selUnits as g}
-        <button class="grp tip" onclick={() => client.selectIds(g.ids)} title={d.units[g.kind].name}>
-          <span class="ab">{abbrev(d.units[g.kind].name)}</span><span class="cnt">{g.count}</span>
-          <span class="tt"><b>{d.units[g.kind].name}</b><br />PV {d.units[g.kind].hp} · {client.unitLayerName(d.units[g.kind].layer)}</span>
+        <button class="grp tip" onclick={() => client.selectIds(g.ids)}>
+          {#if sprite("units", d.units[g.kind].key)}<img src={sprite("units", d.units[g.kind].key)} alt="" />{:else}<span class="ab">{abbrev(d.units[g.kind].name)}</span>{/if}
+          <span class="cnt num">{g.count}</span>
+          <span class="tt"><b>{d.units[g.kind].name}</b><br /><span class="num">PV {d.units[g.kind].hp}</span> · {client.unitLayerName(d.units[g.kind].layer)}<br /><span class="dim">Clic : ne garder que ce type</span></span>
         </button>
       {/each}
     </div>
-    {#if ui.selUnits.length === 1}<div class="dim">{d.units[ui.selUnits[0].kind].name}</div>{/if}
-    {#if ui.me >= 0 && ui.selUnits.every((g) => true)}
+    {#if ui.me >= 0}
       <div class="cmds">
-        <button onclick={() => client.stopSelected()}>Arrêt (X)</button>
-        <button onclick={() => client.setMode("attackMove")}>Attaque (A)</button>
-        <button onclick={() => client.setMode("patrol")}>Patrouille (P)</button>
-        <button onclick={() => client.setMode("assist")}>Escorter (G)</button>
-        <button onclick={() => client.setMode("attackGround")}>Tir au sol</button>
-        {#if anyEng}<button onclick={() => client.setMode("reclaim")}>Recycler (E)</button>{/if}
-        {#if deployable}<button onclick={() => client.deploySelected()}>Déployer (F)</button>{/if}
-        {#if anyCarrier}<button onclick={() => client.setMode("unload")}>Décharger (U)</button>{/if}
-        {#if has("commander") && hasTechUI(35)}<button onclick={() => client.setMode("teleport")}>Téléportation</button>{/if}
-        {#if has("hyper_cruiser")}<button onclick={() => client.setMode("jump")}>Saut hyperespace</button>{/if}
+        <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">X</span></button>
+        <button class="cmd" onclick={() => client.setMode("attackMove")} title="Attaque en mouvement"><Icon name="attack" size={17} /><span class="key">A</span></button>
+        <button class="cmd" onclick={() => client.setMode("patrol")} title="Patrouille"><Icon name="patrol" size={17} /><span class="key">P</span></button>
+        <button class="cmd" onclick={() => client.setMode("assist")} title="Escorter / assister"><Icon name="assist" size={17} /><span class="key">G</span></button>
+        <button class="cmd" onclick={() => client.setMode("attackGround")} title="Tir au sol"><Icon name="ground" size={17} /></button>
+        {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">E</span></button>{/if}
+        {#if deployable}<button class="cmd" onclick={() => client.deploySelected()} title="Déployer"><Icon name="deploy" size={17} /><span class="key">F</span></button>{/if}
+        {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">U</span></button>{/if}
+        {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
+        {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
       </div>
     {/if}
     {#if anyEng}<span class="dim small">Choisissez un bâtiment à droite. Clic droit sur une épave : recycler.</span>{/if}
@@ -136,16 +153,47 @@
 {/if}
 
 <style>
-  .sel { padding: 7px 9px; min-width: 260px; max-width: 520px; display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow: auto; }
-  .head { display: flex; gap: 8px; align-items: baseline; }
-  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .units { display: flex; flex-wrap: wrap; gap: 3px; }
-  .ub { font-size: 11px; padding: 3px 6px; }
-  .groups { display: flex; flex-wrap: wrap; gap: 3px; }
-  .grp { display: flex; flex-direction: column; align-items: center; width: 44px; padding: 3px; }
-  .ab { font-weight: bold; font-size: 12px; }
-  .cnt { font-size: 11px; color: var(--dim); }
-  .cmds { display: flex; flex-wrap: wrap; gap: 3px; }
-  .cmds button { font-size: 12px; padding: 3px 6px; }
-  .small { font-size: 11px; }
+  /* pas de défilement : les infobulles doivent pouvoir sortir du panneau */
+  .sel { padding: 11px 13px; min-width: 280px; max-width: 520px; display: flex; flex-direction: column; gap: 8px; }
+  .head { display: flex; gap: 11px; align-items: center; }
+  .thumb { width: 56px; height: 56px; flex-shrink: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--pc) 30%, transparent), transparent 70%); border: 1px solid var(--line); }
+  .thumb img { width: 52px; height: 52px; object-fit: contain; }
+  .ht { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .title { font-size: 15px; font-weight: 600; letter-spacing: 0.04em; }
+  .hpline { display: flex; align-items: center; gap: 8px; }
+  .hpline .hp { flex: 1; display: block; }
+  .hpline .hp > span { display: block; height: 100%; background: linear-gradient(90deg, var(--good), #a8ffd8); box-shadow: 0 0 6px rgba(77, 255, 176, 0.5); }
+  .hpline .hp.mid > span { background: linear-gradient(90deg, var(--amber), #ffd28a); }
+  .hpline .hp.low > span { background: linear-gradient(90deg, var(--bad), #ff8a95); }
+  .status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+  .led { width: 7px; height: 7px; background: var(--dim); }
+  .status.good { color: var(--good); }
+  .status.good .led { background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .status.warn { color: var(--warn); }
+  .status.warn .led { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: blink 1s infinite; }
+  .status.build { color: var(--accent); }
+  .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
+  .arrow { color: var(--accent); letter-spacing: -2px; }
+  .units { display: grid; grid-template-columns: repeat(auto-fill, 52px); gap: 4px; }
+  .ub { position: relative; width: 52px; height: 52px; padding: 2px; display: grid; place-items: center; }
+  .ub img { width: 44px; height: 44px; object-fit: contain; }
+  .ub.locked img { filter: grayscale(1) brightness(0.5); }
+  .qn { position: absolute; right: 3px; bottom: 2px; font-size: 11px; color: var(--accent-ink); background: var(--accent); padding: 0 3px; font-weight: 600; }
+  .lk { position: absolute; left: 3px; top: 3px; color: var(--amber); }
+  .rep { display: inline-flex; align-items: center; gap: 6px; }
+  .uhead { display: flex; align-items: baseline; gap: 8px; }
+  .uhead .title { font-size: 20px; color: var(--accent); }
+  .groups { display: flex; flex-wrap: wrap; gap: 4px; }
+  .grp { position: relative; width: 50px; height: 50px; padding: 2px; display: grid; place-items: center; }
+  .grp img { width: 42px; height: 42px; object-fit: contain; }
+  .ab { font-weight: 700; font-size: 12px; }
+  .cnt { position: absolute; right: 3px; bottom: 1px; font-size: 11px; color: #fff; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+  .cmds { display: flex; flex-wrap: wrap; gap: 4px; }
+  .cmd { position: relative; width: 40px; height: 36px; display: grid; place-items: center; padding: 0; color: var(--accent); }
+  .cmd:hover:not(:disabled) { color: #fff; }
+  .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
+  .sel :global(.tip .tt) { bottom: calc(100% + 8px); }
+  @keyframes blink { 50% { opacity: 0.3; } }
 </style>

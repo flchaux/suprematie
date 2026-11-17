@@ -1,10 +1,17 @@
 <script lang="ts">
   import { ui } from "../game/state.svelte.ts";
+  import Icon from "./Icon.svelte";
 </script>
 
 <div class="modal panel">
-  <button class="close" onclick={() => (ui.showHelp = false)}>Fermer (F1)</button>
-  <h2>Aide</h2>
+  <button class="close ghost icon-btn" onclick={() => (ui.showHelp = false)} title="Fermer (F1)"><Icon name="close" /></button>
+  <div class="modal-head">
+    <Icon name="help" size={26} />
+    <div>
+      <div class="kicker">Manuel du commandant</div>
+      <h2>Aide</h2>
+    </div>
+  </div>
   <div class="two">
     <div>
       <h3>But</h3>
@@ -47,10 +54,16 @@
 </div>
 
 <style>
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  h3 { margin: 8px 0 4px; font-size: 14px; }
-  td { padding: 2px 8px 2px 0; vertical-align: top; }
-  td:first-child { color: var(--accent); white-space: nowrap; }
-  ul { padding-left: 18px; margin: 4px 0; }
-  li { margin: 2px 0; }
+  .modal-head :global(.ic) { color: var(--accent); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  h3 { margin: 12px 0 6px; font-size: 13px; color: var(--accent); }
+  h3:first-child { margin-top: 0; }
+  p { margin: 0 0 6px; }
+  td { padding: 4px 12px 4px 0; vertical-align: top; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+  td:first-child { color: var(--accent); white-space: nowrap; font-family: var(--font-num); font-size: 11.5px; }
+  ul { padding-left: 0; margin: 4px 0; list-style: none; }
+  li { margin: 4px 0; padding-left: 16px; position: relative; }
+  li::before { content: ""; position: absolute; left: 2px; top: 0.55em; width: 5px; height: 5px; background: var(--accent); transform: rotate(45deg); box-shadow: 0 0 6px var(--accent); }
+  b { color: #fff; font-weight: 600; }
+  @media (max-width: 1000px) { .two { grid-template-columns: 1fr; } }
 </style>
