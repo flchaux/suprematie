@@ -1,10 +1,23 @@
 <script lang="ts">
   import { ui } from "../game/state.svelte.ts";
+  import { kb, keymap, keyOf } from "../game/keys.svelte.ts";
+  import { helpRows, GROUPS } from "../game/keymap.ts";
   import Icon from "./Icon.svelte";
+
+  // raccourcis lus dans le module (ils suivent la disposition du clavier et la personnalisation)
+  const rows = $derived.by(() => {
+    void kb.version;
+    return helpRows(keymap);
+  });
+  const helpKey = $derived(keyOf("help"));
+  function customize() {
+    ui.showHelp = false;
+    kb.showKeys = true;
+  }
 </script>
 
 <div class="modal panel">
-  <button class="close ghost icon-btn" onclick={() => (ui.showHelp = false)} title="Fermer (F1)"><Icon name="close" /></button>
+  <button class="close ghost icon-btn" onclick={() => (ui.showHelp = false)} title={helpKey ? `Fermer (${helpKey})` : "Fermer"}><Icon name="close" /></button>
   <div class="modal-head">
     <Icon name="help" size={26} />
     <div>
@@ -27,9 +40,7 @@
         <li>Les <b>usines</b> reçoivent les composants des unités par des bras. Les <b>laboratoires</b> consomment les lots de recherche.</li>
         <li>Les épaves se recyclent en plaques de fer et en acier.</li>
       </ul>
-    </div>
-    <div>
-      <h3>Commandes</h3>
+      <h3>Souris</h3>
       <table>
         <tbody>
           <tr><td>Clic gauche / glisser</td><td>Sélectionner / sélection par cadre (Maj : ajouter)</td></tr>
@@ -38,16 +49,25 @@
           <tr><td>Maj + ordre</td><td>Mettre l'ordre en file</td></tr>
           <tr><td>Molette</td><td>Zoom continu (vue stratégique avec icônes de loin)</td></tr>
           <tr><td>Clic milieu glissé</td><td>Tourner / incliner la caméra</td></tr>
-          <tr><td>Clic droit glissé, ZQSD, flèches, bords</td><td>Déplacer la caméra</td></tr>
-          <tr><td>A / P / X / G / E / F / U</td><td>Attaque en mouvement, patrouille, arrêt, escorte, recycler, déployer, décharger</td></tr>
-          <tr><td>B</td><td>Catégorie suivante de construction</td></tr>
-          <tr><td>R</td><td>Tourner le bâtiment à poser</td></tr>
-          <tr><td>Ctrl + 1-9 / 1-9</td><td>Créer / rappeler un groupe (deux fois : centrer)</td></tr>
-          <tr><td>Ctrl + A</td><td>Toute l'armée visible</td></tr>
-          <tr><td>C / Espace</td><td>Centrer sur le commandant / sur la dernière alerte</td></tr>
-          <tr><td>T / Tab / Entrée</td><td>Recherche / statistiques / discussion</td></tr>
-          <tr><td>Suppr</td><td>Annuler le chantier sélectionné</td></tr>
+          <tr><td>Clic droit glissé, bords</td><td>Déplacer la caméra</td></tr>
         </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="kh">
+        <h3>Clavier</h3>
+        <button class="icon-btn" onclick={customize}><Icon name="settings" size={14} /> Personnaliser les raccourcis</button>
+      </div>
+      <table class="keys">
+        {#each GROUPS as g}
+          {@const list = rows.filter((r) => r.group === g)}
+          {#if list.length}
+            <tbody>
+              <tr class="gh"><th colspan="2">{g}</th></tr>
+              {#each list as r}<tr><td>{r.keys}</td><td>{r.label}</td></tr>{/each}
+            </tbody>
+          {/if}
+        {/each}
       </table>
     </div>
   </div>
@@ -58,9 +78,13 @@
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
   h3 { margin: 12px 0 6px; font-size: 13px; color: var(--accent); }
   h3:first-child { margin-top: 0; }
+  .kh { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .kh h3 { margin: 0; }
   p { margin: 0 0 6px; }
   td { padding: 4px 12px 4px 0; vertical-align: top; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
   td:first-child { color: var(--accent); white-space: nowrap; font-family: var(--font-num); font-size: 11.5px; }
+  .keys td:first-child { white-space: normal; min-width: 110px; max-width: 200px; }
+  .gh th { padding: 10px 0 3px; }
   ul { padding-left: 0; margin: 4px 0; list-style: none; }
   li { margin: 4px 0; padding-left: 16px; position: relative; }
   li::before { content: ""; position: absolute; left: 2px; top: 0.55em; width: 5px; height: 5px; background: var(--accent); transform: rotate(45deg); box-shadow: 0 0 6px var(--accent); }

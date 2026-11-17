@@ -10,6 +10,9 @@ import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../ren
 import { PLAYER_COLORS } from "../models/generator.ts";
 import { ui, pushMessage } from "./state.svelte.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
+import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
+import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
+import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -39,6 +42,7 @@ export class GameClient {
   start: GameStart | null = null;
   selected = new Set<number>();
   groups = new Map<number, number[]>();
+  /** Touches physiques enfoncées (KeyboardEvent.code). */
   keys = new Set<string>();
   mouse = { x: 0, y: 0, down: false, button: -1, startX: 0, startY: 0, dragging: false, inside: false };
   middle = { active: false, x: 0, y: 0 };
@@ -63,6 +67,9 @@ export class GameClient {
   pingTimer = 0;
   lastGroupKey = { k: -1, t: 0 };
   autoSelect = false;
+  /** Marque-pages de caméra (F2..F4 ; Maj pour enregistrer). */
+  bookmarks: ({ x: number; z: number; distance: number } | null)[] = [null, null, null];
+  lastIdleEngineer = 0;
 
   // ---------- réseau ----------
   connect(name: string): void {
@@ -301,10 +308,14 @@ export class GameClient {
     const speed = sc.distance * 1.4 * dt;
     let dx = 0;
     let dz = 0;
-    if (this.keys.has("arrowleft") || this.keys.has("q")) dx -= 1;
-    if (this.keys.has("arrowright") || this.keys.has("d")) dx += 1;
-    if (this.keys.has("arrowup") || this.keys.has("z")) dz -= 1;
-    if (this.keys.has("arrowdown") || this.keys.has("s") && !this.keys.has("control")) dz += 1;
+    // pas de défilement pendant un raccourci avec Ctrl ou Alt (Ctrl+S…)
+    const mod = this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.keys.has("AltLeft") || this.keys.has("AltRight");
+    if (!mod && !kb.capturing) {
+      if (keymap.held("panLeft", this.keys)) dx -= 1;
+      if (keymap.held("panRight", this.keys)) dx += 1;
+      if (keymap.held("panUp", this.keys)) dz -= 1;
+      if (keymap.held("panDown", this.keys)) dz += 1;
+    }
     const el = this.canvasEl!;
     if (this.mouse.inside && document.hasFocus() && !this.mouse.down) {
       const m = 6;
@@ -399,7 +410,8 @@ export class GameClient {
             this.lastAttackAlert = performance.now();
             const x = a / TILE, z = c / TILE;
             if (Math.hypot(x - cam.x, z - cam.z) > sc.distance) {
-              pushMessage("Nos unités sont attaquées (Espace pour y aller)", "alert");
+              const k = keyOf("alert");
+              pushMessage(k ? `Nos unités sont attaquées (${k} pour y aller)` : "Nos unités sont attaquées", "alert");
               sfx.alert();
               this.alertPos = { x, z };
             }
@@ -493,6 +505,7 @@ export class GameClient {
     ui.selUnits = [...groups.entries()].map(([kind, ids]) => ({ kind, count: ids.length, ids })).sort((a, b) => a.kind - b.kind);
     ui.selBuilding = selB;
     ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0;
+    if (!ui.canBuild && kb.buildStep) kb.buildStep = "";
     if (selB) {
       void this.query<Record<string, unknown> | null>("building", [selB.ref]).then((r) => (ui.buildingInfo = r));
     } else ui.buildingInfo = null;
@@ -541,6 +554,7 @@ export class GameClient {
     addEventListener("keydown", (e) => this.onKey(e, true));
     addEventListener("keyup", (e) => this.onKey(e, false));
     addEventListener("blur", () => this.keys.clear());
+    void initLayout();
     const v = Number(localStorage.getItem("supreme.volume") ?? "0.5");
     ui.volume = v;
     setVolume(v);
@@ -664,21 +678,41 @@ export class GameClient {
     }
   }
 
+  /** Champ de saisie de texte : le clavier lui appartient (discussion, pseudo…). */
+  private static typing(t: EventTarget | null): boolean {
+    const el = t as HTMLElement | null;
+    if (!el || !el.tagName) return false;
+    if (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+    if (el.tagName !== "INPUT") return false;
+    const type = (el as HTMLInputElement).type;
+    return !["checkbox", "radio", "range", "button", "submit", "color"].includes(type);
+  }
+
   private onKey(e: KeyboardEvent, down: boolean): void {
-    if ((e.target as HTMLElement)?.tagName === "INPUT" || (e.target as HTMLElement)?.tagName === "TEXTAREA") return;
-    const k = e.key.toLowerCase();
     if (!down) {
-      this.keys.delete(k);
-      if (k === "control") this.keys.delete("control");
+      // relâchement toujours pris en compte (même si un champ a pris le focus entre-temps)
+      this.keys.delete(e.code);
       return;
     }
-    if (ui.screen !== "game") return;
-    this.keys.add(k);
-    if (e.ctrlKey) this.keys.add("control");
-    // groupes
-    if (/^[0-9]$/.test(k)) {
-      const n = Number(k);
-      if (e.ctrlKey) {
+    if (kb.capturing || GameClient.typing(e.target)) return;
+    if (keymap.observe(e)) keysChanged();
+    if (ui.screen !== "game" || e.metaKey) return;
+    this.keys.add(e.code);
+    if (isModifierCode(e.code)) return;
+    // menu de construction au clavier : B, puis la catégorie, puis le bâtiment
+    if (kb.buildStep) {
+      if (this.buildMenuKey(e)) {
+        e.preventDefault();
+        return;
+      }
+    }
+    // groupes de contrôle (touche physique : « 1 » même si elle donne « & »)
+    const grp = groupKey(e);
+    if (grp) {
+      e.preventDefault();
+      if (e.repeat) return;
+      const n = grp.n;
+      if (grp.create) {
         this.groups.set(n, [...this.selected]);
         pushMessage(`Groupe ${n} : ${this.selected.size} unités`);
       } else {
@@ -691,90 +725,228 @@ export class GameClient {
           this.updateUi();
         }
       }
-      e.preventDefault();
       return;
     }
-    if (e.ctrlKey && k === "a") {
-      this.selectAllArmy();
-      e.preventDefault();
+    if (e.code === "Escape" && !e.ctrlKey && !e.altKey) {
+      if (kb.buildStep) kb.buildStep = "";
+      else if (ui.mode) this.cancelMode();
+      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = false;
+      else {
+        this.selected.clear();
+        this.updateUi();
+      }
       return;
     }
-    if (e.ctrlKey) return;
-    switch (k) {
-      case "escape":
-        if (ui.mode) this.cancelMode();
-        else if (ui.showResearch || ui.showStats || ui.showHelp) ui.showResearch = ui.showStats = ui.showHelp = false;
-        else this.selected.clear();
-        break;
-      case "a":
+    const units = ui.me >= 0 && this.selectedUnits().length > 0;
+    const m = keymap.match(e, { units, build: ui.mode === "build", factory: !units && this.myFactory() !== null });
+    if (!m) return;
+    e.preventDefault();
+    if (e.repeat && !actionDef(m.id)?.repeat) return;
+    this.runAction(m.id, m.shift);
+  }
+
+  /** Exécute une action nommée du module de raccourcis. */
+  runAction(id: string, shift = false): void {
+    if (id.startsWith("factory")) {
+      this.queueSlot(Number(id.slice(7)) - 1, shift ? 5 : 1);
+      return;
+    }
+    if (id.startsWith("camGo")) return this.recallBookmark(Number(id.slice(5)) - 1);
+    if (id.startsWith("camSave")) return this.saveBookmark(Number(id.slice(7)) - 1);
+    switch (id) {
+      case "attackMove":
         if (this.selected.size) this.setMode("attackMove");
         break;
-      case "p":
+      case "patrol":
         if (this.selected.size) this.setMode("patrol");
         break;
-      case "x":
+      case "stop":
         this.stopSelected();
         break;
-      case "e":
+      case "reclaim":
         if (ui.canBuild) this.setMode("reclaim");
         break;
-      case "g":
+      case "assist":
         if (this.selected.size) this.setMode("assist");
         break;
-      case "f":
+      case "deploy":
         this.deploySelected();
         break;
-      case "u":
+      case "unload":
         this.setMode("unload");
         break;
-      case "r":
+      case "buildMenu":
+        if (ui.canBuild) {
+          kb.buildStep = "cat";
+          sfx.click();
+        }
+        break;
+      case "rotate":
         if (ui.mode === "build") {
           ui.buildDir = (ui.buildDir + 1) % 4;
           this.updateGhost();
         }
         break;
-      case "t":
-        ui.showResearch = !ui.showResearch;
+      case "selectArmy":
+        this.selectAllArmy();
         break;
-      case "tab":
-        ui.showStats = !ui.showStats;
-        e.preventDefault();
+      case "idleEngineer":
+        this.selectIdleEngineer();
         break;
-      case "f3":
-        ui.showPerf = !ui.showPerf;
-        e.preventDefault();
+      case "cancelBuilding":
+        if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
         break;
-      case "f1":
-      case "h":
-        ui.showHelp = !ui.showHelp;
-        e.preventDefault();
+      case "zoomIn":
+        if (this.scene) {
+          this.scene.distance /= 1.3;
+          this.scene.clampCamera();
+        }
         break;
-      case "enter":
-        ui.chatOpen = true;
-        e.preventDefault();
+      case "zoomOut":
+        if (this.scene) {
+          this.scene.distance *= 1.3;
+          this.scene.clampCamera();
+        }
         break;
-      case " ":
+      case "commander":
+        this.centerOnCommander();
+        break;
+      case "alert":
         if (this.alertPos && this.scene) {
           this.scene.target.x = this.alertPos.x;
           this.scene.target.z = this.alertPos.z;
         }
-        e.preventDefault();
         break;
-      case "c":
-        this.centerOnCommander();
+      case "research":
+        ui.showResearch = !ui.showResearch;
         break;
-      case "delete":
-        if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
+      case "stats":
+        ui.showStats = !ui.showStats;
         break;
-      case "+":
-      case "pageup":
-        if (this.scene) this.scene.distance /= 1.3;
+      case "help":
+        ui.showHelp = !ui.showHelp;
         break;
-      case "-":
-      case "pagedown":
-        if (this.scene) this.scene.distance *= 1.3;
+      case "chat":
+        ui.chatOpen = true;
+        break;
+      case "perf":
+        ui.showPerf = !ui.showPerf;
         break;
     }
+  }
+
+  /** Appui pendant le menu de construction ; vrai si l'appui est consommé. */
+  private buildMenuKey(e: KeyboardEvent): boolean {
+    if (!ui.canBuild) {
+      kb.buildStep = "";
+      return false;
+    }
+    const n = e.ctrlKey || e.altKey ? null : digitOf(e.code);
+    if (n === null) {
+      // Échap ou la touche du menu referment le menu ; toute autre touche le referme et agit
+      const again = keymap.match(e, { units: true })?.id === "buildMenu";
+      kb.buildStep = "";
+      return e.code === "Escape" || again;
+    }
+    if (e.repeat) return true;
+    if (kb.buildStep === "cat") {
+      if (n <= BUILD_CATS.length) {
+        kb.buildCat = n - 1;
+        kb.buildStep = "item";
+        sfx.click();
+      } else sfx.error();
+      return true;
+    }
+    const key = BUILD_CATS[kb.buildCat]?.[2][n - 1];
+    const idx = key && this.data ? this.data.buildings.findIndex((b) => b.key === key) : -1;
+    if (idx < 0) {
+      sfx.error();
+      return true;
+    }
+    const me = this.frame?.players[ui.me];
+    if (me && !hasTech(me, this.data!.buildings[idx].tech)) {
+      pushMessage(`${this.data!.buildings[idx].name} : recherche requise (${this.data!.techs[this.data!.buildings[idx].tech].name})`, "alert");
+      sfx.error();
+      return true;
+    }
+    kb.buildStep = "";
+    this.startBuild(idx);
+    return true;
+  }
+
+  /** Mon usine sélectionnée (seule, sans unités), ou null. */
+  myFactory(): { ref: number; factory: number } | null {
+    const b = ui.selBuilding;
+    if (!b || b.owner !== ui.me || !this.data) return null;
+    const def = this.data.buildings[b.kind];
+    return def.cls === BClass.Factory ? { ref: b.ref, factory: def.factory } : null;
+  }
+
+  /** Touche n de la rangée de l'usine : met en file la n-ième unité du panneau. */
+  private queueSlot(slot: number, delta: number): void {
+    const fac = this.myFactory();
+    if (!fac || !this.data) return;
+    const kind = factoryUnitKinds(this.data, fac.factory)[slot];
+    if (kind === undefined) return;
+    const me = this.frame?.players[ui.me];
+    const u = this.data.units[kind];
+    if (me && !hasTech(me, u.tech)) {
+      pushMessage(`${u.name} : recherche requise (${this.data.techs[u.tech].name})`, "alert");
+      sfx.error();
+      return;
+    }
+    this.queueUnit(kind, delta);
+    sfx.click();
+  }
+
+  /** Ingénieur sans ordre suivant (identifiant croissant, en boucle), hors commandant ; centre la caméra. */
+  selectIdleEngineer(): void {
+    const f = this.frame;
+    if (!f || !this.data || ui.me < 0) return;
+    const idle: { id: number; x: number; y: number }[] = [];
+    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
+      const w = f.buf[o + 1];
+      if (((w >> 8) & 0xff) !== ui.me || !(((w >> 16) & 0xff) & UF.IDLE)) continue;
+      const def = this.data.units[w & 0xff];
+      if (def.buildPower <= 0 || def.key === "commander") continue;
+      idle.push({ id: f.buf[o] >>> 0, x: f.buf[o + 2], y: f.buf[o + 3] });
+    }
+    if (!idle.length) {
+      pushMessage("Aucun ingénieur inactif");
+      sfx.error();
+      return;
+    }
+    idle.sort((a, b) => a.id - b.id);
+    const next = idle.find((u) => u.id > this.lastIdleEngineer) ?? idle[0];
+    this.lastIdleEngineer = next.id;
+    this.selected = new Set([next.id]);
+    if (this.scene) {
+      this.scene.target.x = next.x / TILE;
+      this.scene.target.z = next.y / TILE;
+    }
+    sfx.click();
+    this.updateUi();
+  }
+
+  saveBookmark(i: number): void {
+    const sc = this.scene;
+    if (!sc) return;
+    this.bookmarks[i] = { x: sc.target.x, z: sc.target.z, distance: sc.distance };
+    pushMessage(`Marque-page ${i + 1} enregistré (${keyOf(`camGo${i + 1}`) || "touche libre"} pour y revenir)`, "good");
+  }
+  recallBookmark(i: number): void {
+    const b = this.bookmarks[i];
+    const sc = this.scene;
+    if (!sc) return;
+    if (!b) {
+      const k = keyOf(`camSave${i + 1}`);
+      pushMessage(`Marque-page ${i + 1} vide${k ? ` (${k} pour l'enregistrer)` : ""}`);
+      return;
+    }
+    sc.target.x = b.x;
+    sc.target.z = b.z;
+    sc.distance = b.distance;
+    sc.clampCamera();
   }
 
   setMode(mode: string): void {

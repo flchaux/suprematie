@@ -4,13 +4,14 @@
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
   import { PACK1 } from "@supreme/shared";
+  import { keyOf } from "../game/keys.svelte.ts";
   const d = $derived(ui.data);
   const tiers = [1, 2, 3, 4, 5, 6];
   const doneCount = $derived(d ? d.techs.filter((_, i) => i > 0 && hasTechUI(i)).length : 0);
 </script>
 
 <div class="modal panel">
-  <button class="close ghost icon-btn" onclick={() => (ui.showResearch = false)} title="Fermer (T)"><Icon name="close" /></button>
+  <button class="close ghost icon-btn" onclick={() => (ui.showResearch = false)} title={keyOf("research") ? `Fermer (${keyOf("research")})` : "Fermer"}><Icon name="close" /></button>
   <div class="modal-head">
     <Icon name="research" size={26} />
     <div>
