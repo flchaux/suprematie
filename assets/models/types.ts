@@ -4,14 +4,19 @@
 
 export type Vec3 = [number, number, number];
 
-export type ColorName = "faction" | "metal" | "dark" | "light" | "glow" | "hazard" | "glass" | "red" | "black";
+export type ColorName = "faction" | "metal" | "dark" | "light" | "glow" | "amber" | "hazard" | "glass" | "red" | "black";
+// glow (cyan) et amber (voyants) sont lumineux : ils nourrissent le halo du rendu.
 
 export interface Part {
   /** Forme de base. */
-  shape?: "box" | "cylinder" | "cone" | "wedge" | "sphere";
+  shape?: "box" | "bevel" | "cylinder" | "cone" | "wedge" | "sphere";
   /** Ou un sous-ensemble réutilisable du kit (voir kit.ts). */
   use?: string;
-  size?: Vec3; // box, wedge
+  size?: Vec3; // box, bevel, wedge
+  /** bevel : largeur du chanfrein de toutes les arêtes (défaut : 18 % de la plus petite dimension) */
+  bevel?: number;
+  /** sphere : finesse (0 : 20 faces, 1 : 80 faces) */
+  detail?: number;
   radius?: number; // cylinder (bas), cone, sphere
   radiusTop?: number; // cylinder (haut), par défaut = radius
   height?: number; // cylinder, cone
