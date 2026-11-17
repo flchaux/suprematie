@@ -289,6 +289,14 @@ pub enum BClass {
     AntiMissile,
     Beacon,
     Orbital,
+    /// Entrepôt d'équipe : alimente le stock partagé par l'équipe ; peut ressortir un objet choisi.
+    Warehouse,
+    /// Rail (voie ferrée) : relie les gares.
+    Rail,
+    /// Gare : chargement et déchargement des trains (grande capacité, sur rails).
+    Station,
+    /// Héliport de fret : drones de transport (rapides, petite capacité, en ligne droite).
+    CargoPad,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -385,8 +393,12 @@ pub const B_SILO: u16 = 31;
 pub const B_ANTIMISSILE: u16 = 32;
 pub const B_BEACON: u16 = 33;
 pub const B_ORBITAL: u16 = 34;
+pub const B_WAREHOUSE: u16 = 35;
+pub const B_RAIL: u16 = 36;
+pub const B_STATION: u16 = 37;
+pub const B_CARGO_PAD: u16 = 38;
 
-pub const BUILDINGS: [BuildingDef; 35] = [
+pub const BUILDINGS: [BuildingDef; 39] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -422,6 +434,29 @@ pub const BUILDINGS: [BuildingDef; 35] = [
     BuildingDef { key: "antimissile", name: "Défense antimissile", size: (2, 2), hp: 2500, power_use: 200, cost: &[(STEEL, 20), (PROCESSOR, 15)], build: 20, tech: 29, class: BClass::AntiMissile, ..BD },
     BuildingDef { key: "beacon", name: "Balise d'hyperespace", size: (2, 2), hp: 1500, power_use: 100, cost: &[(STEEL, 10), (PROCESSOR, 10), (ENERGY_CELL, 5)], build: 10, tech: 41, class: BClass::Beacon, ..BD },
     BuildingDef { key: "orbital", name: "Canon orbital", size: (5, 5), hp: 12000, power_use: 3000, cost: &[(STEEL, 100), (ENERGY_CELL, 40), (COMPOSITE, 50)], build: 90, tech: 42, class: BClass::Orbital, ..BD },
+    // logistique et entraide (voir logistics.rs)
+    BuildingDef { key: "warehouse", name: "Entrepôt d'équipe", size: (3, 3), hp: 1500, cost: &[(IRON_PLATE, 30), (COPPER_PLATE, 10)], build: 6, class: BClass::Warehouse, ..BD },
+    BuildingDef { key: "rail", name: "Rail", size: (1, 1), hp: 150, cost: &[(IRON_PLATE, 3)], build: 1, tech: 1, class: BClass::Rail, passable: true, ..BD },
+    BuildingDef { key: "station", name: "Gare", size: (3, 3), hp: 2500, power_use: 100, cost: &[(IRON_PLATE, 40), (GEAR, 10), (CIRCUIT, 5)], build: 10, tech: 1, class: BClass::Station, ..BD },
+    BuildingDef { key: "cargo_pad", name: "Héliport de fret", size: (3, 3), hp: 1500, power_use: 150, cost: &[(STEEL, 15), (CIRCUIT, 10)], build: 10, tech: 4, class: BClass::CargoPad, ..BD },
+];
+
+/// Véhicules de transport : 0 = train (rails, grande capacité), 1 = drone de fret (vol direct, rapide).
+pub struct CarrierDef {
+    pub capacity: u16,
+    /// vitesse en sous-unités par tick
+    pub speed: i32,
+    /// durée d'un arrêt (chargement / déchargement), en ticks
+    pub dock: u16,
+    /// tampon d'une gare / d'un héliport (objets à envoyer, objets reçus : chacun)
+    pub buffer: u16,
+    pub cost: &'static [(u8, u16)],
+    /// véhicules au plus par gare / héliport de départ
+    pub max_per_station: usize,
+}
+pub const CARRIERS: [CarrierDef; 2] = [
+    CarrierDef { capacity: 400, speed: 8 * 256 / 20, dock: 60, buffer: 1600, cost: &[(IRON_PLATE, 40), (GEAR, 20), (STEEL, 10)], max_per_station: 4 },
+    CarrierDef { capacity: 25, speed: 24 * 256 / 20, dock: 20, buffer: 200, cost: &[(STEEL, 6), (CIRCUIT, 8)], max_per_station: 6 },
 ];
 
 /// Missile stratégique : composants livrés au silo par des bras.
@@ -646,10 +681,12 @@ pub fn data_json() -> String {
             u.factory as u8, u.build_power, u.carry, u.shield_r, u.tier, u.altitude
         ));
     }
+    let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}]}}",
         cost_js(MISSILE_COST),
-        cost_js(INTERCEPTOR_COST)
+        cost_js(INTERCEPTOR_COST),
+        carriers.join(",")
     ));
     s
 }

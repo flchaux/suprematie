@@ -29,6 +29,8 @@ pub fn snapshot(w: &World) -> Vec<u8> {
     w.power_dirty.ser(&mut o);
     w.winner.ser(&mut o);
     w.vis.ser(&mut o);
+    w.team_stock.ser(&mut o);
+    w.carriers.ser(&mut o);
     o.buf
 }
 
@@ -54,6 +56,8 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
     w.power_dirty = Ser::de(&mut r);
     w.winner = Ser::de(&mut r);
     w.vis = Ser::de(&mut r);
+    w.team_stock = Ser::de(&mut r);
+    w.carriers = Ser::de(&mut r);
     w.events.clear();
     // reconstruire l'occupation, la passabilité, la grille des bâtiments
     for i in 0..w.map.occ.len() {

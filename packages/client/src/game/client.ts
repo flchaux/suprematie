@@ -193,8 +193,11 @@ export class GameClient {
     this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (e) => this.onWorker(e.data);
     // ?demo=eau : carte avec de l'eau, sans les armées (aperçu du terrain)
-    const water = new URLSearchParams(location.search).get("demo") === "eau";
-    this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water });
+    // ?demo=logistique : trains, drones et entrepôt d'équipe (vu comme le joueur 1, brouillard coupé)
+    const scene = new URLSearchParams(location.search).get("demo") ?? "";
+    const water = scene === "eau";
+    if (scene === "logistique") ui.me = 0;
+    this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
 
   setReplaySpeed(s: number): void {
@@ -457,6 +460,7 @@ export class GameClient {
     const me = f.players[Math.max(0, ui.me)];
     if (me && ui.me >= 0) {
       ui.stock = Array.from(me.stock);
+      ui.teamStock = Array.from(me.teamStock);
       ui.produced = Array.from(me.produced);
       ui.consumed = Array.from(me.consumed);
       ui.powerProd = me.powerProd;
@@ -1178,6 +1182,12 @@ export class GameClient {
   cancelBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
   }
+  /** Gare ou héliport sélectionné : retire ses véhicules (relier le bâtiment à lui-même). */
+  removeCarriers(): void {
+    const sb = ui.selBuilding;
+    if (sb) this.cmd(Ord.special(sb.ref, 0, 0, sb.ref));
+  }
+
   /** Sauvegarde de la partie sur le serveur (reprise ensuite depuis le salon). */
   saveGame(): void {
     if (ui.replay || ui.spectator) return;

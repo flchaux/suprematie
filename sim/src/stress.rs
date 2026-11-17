@@ -202,3 +202,80 @@ fn stress_profile() {
         println!("  dont séparation {:.2} ms, ordres {:.2} ms, armes {:.2} ms", p[0] / 800.0, p[1] / 800.0, p[2] / 800.0);
     });
 }
+
+/// Scène de démonstration de la logistique (?demo=logistique) : deux alliés, deux trains sur un rail
+/// coudé, trois drones de fret, un entrepôt d'équipe, et quelques bâtiments en difficulté (icônes).
+pub fn logistics_demo() -> World {
+    let mut w = World::new(&[7, 512, 0, 2, 0, 0, 100, 100, 0, 0, 100, 100]);
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx - 10).clamp(4, 400), (sy - 20).clamp(4, 400));
+    flat(&mut w, x0 - 4, y0 - 6, x0 + 100, y0 + 70);
+    let put = |w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8| -> usize {
+        let b = place_building(w, owner, kind, x, y, dir).unwrap_or(usize::MAX);
+        if b != usize::MAX {
+            complete_building(w, b);
+        }
+        b
+    };
+    // gares : la vôtre (joueur 0) et celle d'un allié (joueur 1), reliées par un rail coudé
+    put(&mut w, 0, B_GENERATOR, x0, y0 - 3, 0);
+    let a = put(&mut w, 0, B_STATION, x0, y0, 0);
+    put(&mut w, 1, B_GENERATOR, x0 + 70, y0 + 37, 0);
+    let b = put(&mut w, 1, B_STATION, x0 + 70, y0 + 40, 0);
+    for x in x0 + 3..x0 + 50 {
+        put(&mut w, 0, B_RAIL, x, y0 + 1, 0);
+    }
+    for y in y0 + 1..y0 + 42 {
+        put(&mut w, 0, B_RAIL, x0 + 50, y, 1);
+    }
+    for x in x0 + 50..x0 + 70 {
+        put(&mut w, 0, B_RAIL, x, y0 + 41, 0);
+    }
+    // héliports de fret
+    put(&mut w, 0, B_GENERATOR, x0, y0 + 57, 0);
+    let pa = put(&mut w, 0, B_CARGO_PAD, x0, y0 + 60, 0);
+    put(&mut w, 1, B_GENERATOR, x0 + 85, y0 + 2, 0);
+    let pb = put(&mut w, 1, B_CARGO_PAD, x0 + 85, y0 + 5, 0);
+    // entrepôt d'équipe
+    let wh = put(&mut w, 0, B_WAREHOUSE, x0 + 10, y0 + 10, 0);
+    for p in w.players.iter_mut() {
+        p.stock[IRON_PLATE as usize] = 2000;
+        p.stock[GEAR as usize] = 500;
+        p.stock[STEEL as usize] = 500;
+        p.stock[CIRCUIT as usize] = 500;
+    }
+    if a != usize::MAX && b != usize::MAX && pa != usize::MAX && pb != usize::MAX {
+        w.buildings[a].stash[IRON_PLATE as usize] = 1500;
+        w.buildings[b].stash[COPPER_PLATE as usize] = 800;
+        w.buildings[pa].stash[CIRCUIT as usize] = 200;
+        let (rb, rpb) = (w.building_ref(b), w.building_ref(pb));
+        for _ in 0..2 {
+            crate::logistics::link(&mut w, 0, a, rb);
+        }
+        for _ in 0..3 {
+            crate::logistics::link(&mut w, 0, pa, rpb);
+        }
+    }
+    if wh != usize::MAX {
+        w.team_stock[0][IRON_PLATE as usize] = 750;
+        w.team_stock[0][STEEL as usize] = 120;
+        w.buildings[wh].recipe = STEEL;
+    }
+    // diagnostics : fonderie sans minerai (entrée manquante), assembleur hors réseau
+    put(&mut w, 0, B_GENERATOR, x0 + 20, y0 + 20, 0);
+    let f = put(&mut w, 0, B_FURNACE, x0 + 23, y0 + 20, 0);
+    if f != usize::MAX {
+        w.buildings[f].recipe = 0;
+    }
+    let asm = put(&mut w, 0, B_ASSEMBLER1, x0 + 34, y0 + 26, 0);
+    if asm != usize::MAX {
+        w.buildings[asm].recipe = 4;
+    }
+    for _ in 0..20 {
+        w.step(&[]);
+    }
+    w
+}

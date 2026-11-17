@@ -22,12 +22,40 @@
   const recipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
   const total = $derived(ui.selUnits.reduce((s, g) => s + g.count, 0));
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
+  // diagnostic : ce qui bloque le bâtiment, en clair
   const status = $derived.by(() => {
-    if (!info) return { text: "", kind: "" };
+    if (!info || !bdef || !d) return { text: "", kind: "" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
-    if (bdef && bdef.powerUse > 0 && (!info.net || info.sat < 512)) return { text: "Hors réseau électrique ou sous-alimenté", kind: "warn" };
-    return info.working ? { text: "En marche", kind: "good" } : { text: "En attente", kind: "idle" };
+    if (bdef.powerUse > 0 && !info.net) return { text: "Hors réseau électrique : reliez-le à un générateur (pylônes)", kind: "warn" };
+    if (bdef.powerUse > 0 && info.sat < 512) return { text: `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : il manque des générateurs`, kind: "warn" };
+    if (bdef.cls === BClass.Crafter && info.recipe !== RECIPE_NONE && !info.working) {
+      const r = d.recipes[info.recipe];
+      if (info.out + r.output[1] > Math.max(4, r.output[1] * 3)) return { text: `Sortie bloquée : ${d.items[r.output[0]].name} n'est pas emporté (bras ou tapis de sortie)`, kind: "warn" };
+      const miss = r.inputs.filter(([, n], j) => info.inv[j] < n).map(([it]) => d.items[it].name);
+      if (miss.length) return { text: `En attente de : ${miss.join(", ")}`, kind: "warn" };
+    }
+    if (bdef.cls === BClass.Extractor && info.out >= 5) return { text: "Sortie bloquée : le minerai n'est pas emporté", kind: "warn" };
+    if (bdef.cls === BClass.Factory && info.queue.length && !info.working) {
+      const u = d.units[info.queue[0][0]];
+      const miss = u.cost.filter(([, n], j) => info.inv[j] < n).map(([it]) => d.items[it].name);
+      if (miss.length) return { text: `En attente de composants : ${miss.join(", ")} (par bras)`, kind: "warn" };
+    }
+    if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
+    const low = bdef.powerUse > 0 && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
+    return info.working ? { text: "En marche" + low, kind: low ? "warn" : "good" } : { text: "En attente" + low, kind: "idle" };
   });
+  /** Débit d'un fabricant : objets par minute à pleine vitesse, et au niveau d'énergie actuel. */
+  const rate = $derived.by(() => {
+    if (!info || !bdef || !d || bdef.cls !== BClass.Crafter || info.recipe === RECIPE_NONE) return null;
+    const r = d.recipes[info.recipe];
+    const ticks = (r.time * 100) / Math.max(1, bdef.speed);
+    const max = (1200 / ticks) * r.output[1];
+    return { max, now: info.working ? max * Math.min(1, (info.sat ?? 1024) / 1024) : 0, item: r.output[0] };
+  });
+  const STATE = ["à quai", "en route vers la destination", "à quai à destination", "en retour"];
+  const isStation = $derived(!!bdef && (bdef.cls === BClass.Station || bdef.cls === BClass.CargoPad));
+  const NI = $derived(d?.items.length ?? 27);
+  const stashList = (recv: boolean) => (info?.stash?.length ? (info.stash as number[]).slice(recv ? NI : 0, recv ? 2 * NI : NI).map((n, i) => ({ i, n })).filter((x) => x.i > 0 && x.n > 0) : []);
   const hpf = $derived(info && bdef ? info.hp / bdef.hp : 1);
   const owner = $derived(sb ? "#" + PLAYER_COLORS[sb.owner % 8].toString(16).padStart(6, "0") : "");
 </script>
@@ -48,6 +76,9 @@
     {#if mine && info}
       {#if info.build < 65536}
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier <span class="key">Suppr</span></button>
+      {/if}
+      {#if rate}
+        <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
       {/if}
       {#if bdef.cls === BClass.Crafter}
         <div class="row">
@@ -114,7 +145,27 @@
       {:else if bdef.cls === BClass.Extractor}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
       {:else if bdef.cls === BClass.Depot}
-        <span class="dim">Tout ce qui entre ici rejoint le stock commun utilisé par les ingénieurs.</span>
+        <span class="dim">Tout ce qui entre ici rejoint votre stock personnel, utilisé par vos ingénieurs.</span>
+      {:else if bdef.cls === BClass.Warehouse}
+        <span class="dim small">Ce qui entre ici rejoint le stock de l'équipe : chaque allié peut s'en servir pour construire (après son propre stock).</span>
+        <div class="row"><span class="kicker">Sortie</span>
+          <select value={info.recipe === 255 ? 0 : info.recipe} title="Objet qu'un bras peut prendre dans l'entrepôt" onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value) || RECIPE_NONE)}>
+            <option value={0}>— aucune —</option>
+            {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({ui.teamStock[i] ?? 0})</option>{/if}{/each}
+          </select></div>
+        <div class="row wrap">{#each ui.teamStock as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>
+      {:else if isStation}
+        {@const air = bdef.cls === BClass.CargoPad}
+        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage." : "Trains : sur les rails de l'équipe, 400 objets par voyage."} Les bras déposent dans « À envoyer » et prennent dans « Reçus ». Une gare alliée peut être la destination.</span>
+        <div class="row wrap"><span class="kicker">À envoyer</span>{#each stashList(false) as x}<Item id={x.i} n={x.n} size={16} />{:else}<span class="dim small">vide</span>{/each}</div>
+        <div class="row wrap"><span class="kicker">Reçus</span>{#each stashList(true) as x}<Item id={x.i} n={x.n} size={16} />{:else}<span class="dim small">vide</span>{/each}</div>
+        <div class="row wrap"><span class="kicker">{air ? "Drones" : "Trains"}</span>
+          {#each info.carriers ?? [] as c}<span class="chip small" title={ui.names[c.owner] ?? ""}>{c.out ? "→" : "←"} {STATE[c.state] ?? ""} · <span class="num">{c.load}</span></span>{:else}<span class="dim small">aucun</span>{/each}</div>
+        <div class="row">
+          <button class="icon-btn" onclick={() => client.setMode("link")}><Icon name="link" size={14} /> {air ? "Ajouter un drone vers…" : "Ajouter un train vers…"}</button>
+          {#if (info.carriers ?? []).some((c: { out: number }) => c.out)}<button class="ghost danger icon-btn" title="Retirer les véhicules partant d'ici" onclick={() => client.removeCarriers()}><Icon name="trash" size={14} /></button>{/if}
+        </div>
+        {#if d.carriers?.[air ? 1 : 0]}<span class="dim small">Coût d'un {air ? "drone" : "train"} : <Cost cost={d.carriers[air ? 1 : 0].cost} /></span>{/if}
       {/if}
     {/if}
   </div>

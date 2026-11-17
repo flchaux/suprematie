@@ -231,10 +231,12 @@ pub struct Building {
     pub watchers: Vec<u32>,
     pub stalled: bool,
     pub tech: u8,
+    /// gare / héliport : objets à envoyer [0..NUM_ITEMS] puis objets reçus [NUM_ITEMS..2*NUM_ITEMS]
+    pub stash: Vec<u16>,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
-    queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech
+    queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash
 });
 
 impl Building {
@@ -351,6 +353,10 @@ pub struct World {
     pub dead_buildings: Vec<u32>,
     pub buildings_version: u32,
     pub n_teams: u8,
+    /// stock commun de chaque équipe (alimenté par les entrepôts d'équipe)
+    pub team_stock: Vec<[i32; NUM_ITEMS]>,
+    /// trains et drones de fret
+    pub carriers: Vec<crate::logistics::Carrier>,
 }
 
 impl World {
@@ -423,6 +429,8 @@ impl World {
             dead_buildings: Vec::new(),
             buildings_version: 0,
             n_teams,
+            team_stock: vec![[0i32; NUM_ITEMS]; 8],
+            carriers: Vec::new(),
         };
         for p in 0..np {
             let (sx, sy) = w.map.starts[p];
@@ -577,6 +585,7 @@ impl World {
         crate::belts::update_belts(self);
         crate::units::update_units(self);
         crate::combat::update_projectiles(self);
+        crate::logistics::update_carriers(self);
         crate::combat::cleanup_dead(self);
         crate::flow::process_dirty(self);
         if self.tick.is_multiple_of(10) {
@@ -588,6 +597,25 @@ impl World {
 
     pub fn update_vis_all(&mut self) {
         crate::combat::update_visibility(self);
+    }
+
+    /// Quantité disponible pour un joueur : son stock puis le stock commun de son équipe.
+    #[inline]
+    pub fn avail(&self, p: usize, item: u8) -> i32 {
+        let t = self.players[p].team as usize;
+        self.players[p].stock[item as usize] + self.team_stock.get(t).map(|s| s[item as usize]).unwrap_or(0)
+    }
+    /// Paie `n` objets : d'abord le stock du joueur, puis le stock commun de son équipe.
+    pub fn pay(&mut self, p: usize, item: u8, n: i32) {
+        let own = self.players[p].stock[item as usize].clamp(0, n);
+        self.players[p].stock[item as usize] -= own;
+        let rest = n - own;
+        if rest > 0 {
+            let t = self.players[p].team as usize;
+            if let Some(ts) = self.team_stock.get_mut(t) {
+                ts[item as usize] -= rest;
+            }
+        }
     }
 
     pub fn hash(&self) -> u32 {
@@ -638,6 +666,16 @@ impl World {
             if wk.alive {
                 h.add_i32(wk.iron + wk.steel * 7);
             }
+        }
+        for ts in &self.team_stock {
+            for &s in ts {
+                h.add_i32(s);
+            }
+        }
+        for c in &self.carriers {
+            h.add(c.alive as u64 | (c.state as u64) << 8 | (c.load as u64) << 16);
+            h.add_i32(c.x);
+            h.add_i32(c.y);
         }
         h.finish32()
     }

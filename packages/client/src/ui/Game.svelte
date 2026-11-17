@@ -42,7 +42,7 @@
     launch: ["target", "Missile stratégique : cliquez la cible"],
     fire: ["target", "Canon orbital : cliquez la cible"],
     transfer: ["teleport", "Transfert : cliquez la plateforme d'arrivée"],
-    link: ["link", "Liaison : cliquez l'autre porte"],
+    link: ["link", "Liaison : cliquez la destination (porte, gare ou héliport, le vôtre ou celui d'un allié)"],
     attackGround: ["ground", "Tir au sol : cliquez la cible"],
     build: ["production", "Construction : clic gauche pour poser (glisser pour une ligne), R pour tourner, clic droit pour annuler"],
   };

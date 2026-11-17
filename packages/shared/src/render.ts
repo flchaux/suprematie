@@ -2,7 +2,7 @@
 
 export const HEADER = 16;
 export const NUM_ITEMS = 27;
-export const PLAYER_WORDS = 13 + 3 * NUM_ITEMS;
+export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS;
 export const UNIT_WORDS = 9;
 export const BUILDING_WORDS = 8;
 export const ITEM_WORDS = 3;
@@ -10,6 +10,7 @@ export const PROJ_WORDS = 6;
 export const EVENT_WORDS = 5;
 export const WRECK_WORDS = 3;
 export const SHIELD_WORDS = 4;
+export const CARRIER_WORDS = 5;
 
 export const EV = {
   BEAM: 2, EXPLOSION: 3, UNIT_DIED: 4, BUILDING_DIED: 5, BUILT: 6, RESEARCH: 7, NUKE: 8, ELIMINATED: 9,
@@ -17,12 +18,14 @@ export const EV = {
 } as const;
 
 export const UF = { FIRING: 1, WORKING: 2, CHARGING: 4, STUNNED: 8, DEPLOYED: 16, SHIELD: 32, IDLE: 64, CARGO: 128 } as const;
-export const BF = { WORKING: 1, UNPOWERED: 2, STALLED: 4, ENABLED: 8, STUNNED: 16 } as const;
+export const BF = { WORKING: 1, UNPOWERED: 2, STALLED: 4, ENABLED: 8, STUNNED: 16, NO_INPUT: 32, OUT_BLOCKED: 64, LOW_POWER: 128 } as const;
 
 export interface PlayerView {
   alive: boolean; team: number; researchedLo: number; researchedHi: number; research: number; researchProgress: number;
   powerProd: number; powerUse: number; unitCount: number; commander: number; kills: number; losses: number; bot: boolean;
   stock: Int32Array; produced: Int32Array; consumed: Int32Array;
+  /** stock commun de l'équipe (entrepôts d'équipe) */
+  teamStock: Int32Array;
 }
 
 export interface Frame {
@@ -36,6 +39,8 @@ export interface Frame {
   nEvents: number; eventOff: number;
   nWrecks: number; wreckOff: number;
   nShields: number; shieldOff: number;
+  /** trains et drones de fret : index, x, y, type | joueur << 8 | en route << 16 | chargé << 17, angle */
+  nCarriers: number; carrierOff: number;
   buildingsVersion: number;
   winner: number;
   vis: Uint8Array | null;
@@ -59,6 +64,7 @@ export function parseFrame(buf: Int32Array): Frame {
       stock: buf.subarray(o + 13, o + 13 + NUM_ITEMS),
       produced: buf.subarray(o + 13 + NUM_ITEMS, o + 13 + 2 * NUM_ITEMS),
       consumed: buf.subarray(o + 13 + 2 * NUM_ITEMS, o + 13 + 3 * NUM_ITEMS),
+      teamStock: buf.subarray(o + 13 + 3 * NUM_ITEMS, o + 13 + 4 * NUM_ITEMS),
     });
     o += PLAYER_WORDS;
   }
@@ -71,6 +77,7 @@ export function parseFrame(buf: Int32Array): Frame {
     nEvents: buf[7], eventOff: 0,
     nWrecks: buf[8], wreckOff: 0,
     nShields: buf[13], shieldOff: 0,
+    nCarriers: buf[14], carrierOff: 0,
     buildingsVersion: buf[9], winner: buf[10], vis: null, visW: buf[12],
   };
   o += f.nUnits * UNIT_WORDS;
@@ -86,6 +93,8 @@ export function parseFrame(buf: Int32Array): Frame {
   o += f.nWrecks * WRECK_WORDS;
   f.shieldOff = o;
   o += f.nShields * SHIELD_WORDS;
+  f.carrierOff = o;
+  o += f.nCarriers * CARRIER_WORDS;
   if (buf[11]) {
     f.vis = new Uint8Array(buf.buffer, buf.byteOffset + o * 4, f.visW * f.visW);
   }
@@ -109,6 +118,7 @@ export function parseBotDump(buf: Int32Array): BotView {
       stock: buf.subarray(o + 13, o + 13 + NUM_ITEMS),
       produced: buf.subarray(o + 13 + NUM_ITEMS, o + 13 + 2 * NUM_ITEMS),
       consumed: buf.subarray(o + 13 + 2 * NUM_ITEMS, o + 13 + 3 * NUM_ITEMS),
+      teamStock: buf.subarray(o + 13 + 3 * NUM_ITEMS, o + 13 + 4 * NUM_ITEMS),
     });
     o += PLAYER_WORDS;
   }

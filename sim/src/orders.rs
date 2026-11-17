@@ -205,6 +205,14 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let (b, r) = (c.next(), c.next());
             let Some(b) = own_building(w, p, b) else { return };
             let bb = &w.buildings[b];
+            // entrepôt d'équipe : choix de l'objet qui en ressort (0 ou RECIPE_NONE : aucun)
+            if bb.def().class == BClass::Warehouse {
+                if r == RECIPE_NONE as i32 || (0..NUM_ITEMS as i32).contains(&r) {
+                    w.buildings[b].recipe = if r == RECIPE_NONE as i32 { 0 } else { r as u8 };
+                    crate::buildings::wake_watchers(w, b);
+                }
+                return;
+            }
             if bb.def().class != BClass::Crafter {
                 return;
             }
@@ -376,6 +384,7 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
         return;
     }
     match w.buildings[b].def().class {
+        BClass::Station | BClass::CargoPad => crate::logistics::link(w, p, b, target),
         BClass::Silo => {
             if w.buildings[b].ammo == 0 {
                 return;

@@ -6,7 +6,8 @@ use crate::fixed::TILE;
 use crate::world::*;
 
 pub const HEADER: usize = 16;
-pub const PLAYER_WORDS: usize = 13 + 3 * NUM_ITEMS;
+pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS;
+pub const CARRIER_WORDS: usize = 5;
 pub const UNIT_WORDS: usize = 9;
 pub const BUILDING_WORDS: usize = 8;
 
@@ -31,6 +32,11 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
         out.extend(p.stock.iter().copied());
         out.extend(p.produced.iter().map(|&x| x as i32));
         out.extend(p.consumed.iter().map(|&x| x as i32));
+        // stock commun de l'équipe (entrepôts)
+        match w.team_stock.get(p.team as usize) {
+            Some(ts) => out.extend(ts.iter().copied()),
+            None => out.extend(std::iter::repeat_n(0, NUM_ITEMS)),
+        }
     }
 }
 
@@ -100,6 +106,28 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
     }
     if bb.stun > 0 {
         flags |= 16;
+    }
+    // diagnostics pour l'interface : 32 entrée manquante, 64 sortie bloquée, 128 énergie insuffisante
+    if bb.complete() {
+        match def.class {
+            BClass::Crafter if bb.recipe != RECIPE_NONE && !bb.working => {
+                let rec = &RECIPES[bb.recipe as usize];
+                let on = rec.output.1 as u16;
+                let has = rec.inputs.iter().enumerate().all(|(j, x)| bb.inv[j] >= x.1 as u16);
+                if bb.out + on > (on * 3).max(4) {
+                    flags |= 64;
+                } else if !has {
+                    flags |= 32;
+                }
+            }
+            BClass::Extractor if bb.out >= 5 => flags |= 64,
+            BClass::Lab if !bb.working && w.players.get(bb.owner as usize).is_some_and(|p| p.research != 0) => flags |= 32,
+            BClass::Factory if !bb.working && !bb.queue.is_empty() => flags |= 32,
+            _ => {}
+        }
+        if def.power_use > 0 && net_ok && w.nets.get(bb.net as usize).is_some_and(|n| n.sat < 900) {
+            flags |= 128;
+        }
     }
     let (aux1, aux2) = match def.class {
         BClass::Crafter => {
@@ -245,6 +273,17 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
         ns += 1;
     }
     out[13] = ns;
+    // trains et drones de fret dans la zone
+    let mut nc = 0;
+    for (ci, c) in w.carriers.iter().enumerate() {
+        if !c.alive || c.x / TILE < mx0 || c.x / TILE > mx1 || c.y / TILE < my0 || c.y / TILE > my1 {
+            continue;
+        }
+        let moving = (c.state & 1) as i32;
+        out.extend_from_slice(&[ci as i32, c.x, c.y, c.kind as i32 | (c.owner as i32) << 8 | moving << 16 | ((c.load > 0) as i32) << 17, c.angle as i32]);
+        nc += 1;
+    }
+    out[14] = nc;
     // vision de l'équipe du joueur
     out[12] = w.vis_w;
     if with_vis && player >= 0 && (player as usize) < w.players.len() {
@@ -336,9 +375,16 @@ pub fn info_building(w: &World, r: u32) -> String {
     let bb = &w.buildings[b];
     let sat = w.nets.get(bb.net as usize).map(|n| n.sat).unwrap_or(0);
     let q = js_list(bb.queue.iter().map(|q| format!("[{},{}]", q.0, q.1)));
+    // logistique : tampons de gare (à envoyer, reçus), véhicules au départ de ce bâtiment ou y arrivant
+    let me = w.building_ref(b);
+    let carriers = js_list(w.carriers.iter().filter(|c| c.alive && (c.a == me || c.b == me)).map(|c| {
+        let other = if c.a == me { c.b } else { c.a };
+        format!("{{\"kind\":{},\"owner\":{},\"state\":{},\"load\":{},\"out\":{},\"other\":{}}}", c.kind, c.owner, c.state, c.load, (c.a == me) as i32, other as i32)
+    }));
+    let stash = if bb.stash.is_empty() { "[]".to_string() } else { js_list(bb.stash.iter()) };
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{}}}",
-        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter())
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{}}}",
+        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers
     )
 }
 

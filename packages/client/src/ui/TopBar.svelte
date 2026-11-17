@@ -21,7 +21,7 @@
       <div class="stock">
         {#each SHOWN as id}
           {#if id <= 12 || (ui.stock[id] ?? 0) > 0}
-            <span class="tip res"><Item {id} n={ui.stock[id] ?? 0} size={20} /><span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{ui.stock[id] ?? 0}</span> dans le stock commun</span></span>
+            <span class="tip res"><Item {id} n={ui.stock[id] ?? 0} size={20} />{#if (ui.teamStock[id] ?? 0) > 0}<span class="team num">+{(ui.teamStock[id] ?? 0) >= 10000 ? Math.floor((ui.teamStock[id] ?? 0) / 1000) + "k" : ui.teamStock[id]}</span>{/if}<span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{ui.stock[id] ?? 0}</span> dans votre stock (dépôts)<br /><span class="num">{ui.teamStock[id] ?? 0}</span> dans le stock de l'équipe (entrepôts)<br /><span class="dim">La construction puise d'abord dans votre stock.</span></span></span>
           {/if}
         {/each}
       </div>
@@ -88,6 +88,7 @@
   .grow { flex: 1; }
   .stock { display: flex; gap: 11px; }
   .res :global(.num) { font-size: 12.5px; }
+  .res .team { font-size: 10.5px; color: var(--accent); margin-left: 1px; opacity: 0.9; }
   .sep { width: 1px; height: 24px; background: linear-gradient(180deg, transparent, var(--line-hi), transparent); flex-shrink: 0; }
   .gauge { display: flex; align-items: center; gap: 7px; color: var(--accent); white-space: nowrap; }
   .gauge.bad { color: var(--bad); }

@@ -24,6 +24,7 @@ export interface SimExports {
   game_winner(): number;
   wreck_at(x: number, y: number): number;
   bench_reference(): number;
+  logistics_demo(): number;
 }
 
 const dec = new TextDecoder();
@@ -118,6 +119,9 @@ export class Sim {
   }
   wreckAt(x: number, y: number): number {
     return this.ex.wreck_at(x, y) >>> 0;
+  }
+  logisticsDemo(): number {
+    return this.ex.logistics_demo() >>> 0;
   }
   benchReference(): number {
     return this.ex.bench_reference() >>> 0;

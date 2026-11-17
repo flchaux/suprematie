@@ -15,7 +15,7 @@ pub const RECIPE_SCALE: u32 = 100 * 1024;
 fn needs_tick(c: BClass) -> bool {
     matches!(
         c,
-        BClass::Extractor | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon
+        BClass::Extractor | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad
     )
 }
 
@@ -122,6 +122,7 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         link: NONE,
         rally: (fx * TILE + TILE / 2 + DIRS[(dir & 3) as usize].0 * TILE * 3, fy * TILE + TILE / 2 + DIRS[(dir & 3) as usize].1 * TILE * 3),
         enabled: true,
+        stash: if crate::logistics::carrier_kind(def.class).is_some() { vec![0; 2 * NUM_ITEMS] } else { Vec::new() },
         ..Building::default()
     };
     for ty in y..y + bh {
@@ -340,7 +341,7 @@ pub fn use_power(w: &mut World, b: usize, amount: i32) -> i32 {
 }
 
 #[inline]
-fn wake_watchers(w: &mut World, b: usize) {
+pub fn wake_watchers(w: &mut World, b: usize) {
     let ws = std::mem::take(&mut w.buildings[b].watchers);
     for i in ws {
         if let Some(x) = w.buildings.get_mut(i as usize) {
@@ -380,6 +381,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
     }
     match bb.def().class {
         BClass::Depot => true,
+        BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::accepts(w, b, item),
         BClass::Crafter => {
             if bb.recipe == RECIPE_NONE {
                 bb.def().crafter != Crafter::Assembler && recipe_for(w, bb, item) != RECIPE_NONE
@@ -417,6 +419,7 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
             let o = w.buildings[b].owner as usize;
             w.players[o].stock[item as usize] += 1;
         }
+        BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::insert(w, b, item),
         BClass::Crafter => {
             let need_switch = {
                 let bb = &w.buildings[b];
@@ -469,6 +472,9 @@ fn output_of(b: &Building) -> u8 {
 }
 
 fn take_output(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
+    if matches!(w.buildings[b].def().class, BClass::Warehouse | BClass::Station | BClass::CargoPad) {
+        return crate::logistics::take(w, b, want);
+    }
     let it = output_of(&w.buildings[b]);
     if it != 0 && want[it as usize] {
         w.buildings[b].out -= 1;
@@ -543,6 +549,7 @@ pub fn update_buildings(w: &mut World) {
                 bb.working = s > 0;
             }
             BClass::Gate => tick_gate(w, b),
+            BClass::Station | BClass::CargoPad => crate::logistics::tick_station(w, b),
             BClass::Transfer | BClass::Radar | BClass::Beacon => {
                 let need = bb.def().power_use;
                 let s = use_power(w, b, need);

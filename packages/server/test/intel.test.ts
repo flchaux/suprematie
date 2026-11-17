@@ -20,7 +20,7 @@ beforeAll(async () => {
 const TILE = 256;
 function player(team: number): PlayerView {
   const z = new Int32Array(27);
-  return { alive: true, team, researchedLo: 1, researchedHi: 0, research: 0, researchProgress: 0, powerProd: 0, powerUse: 0, unitCount: 0, commander: 0, kills: 0, losses: 0, bot: true, stock: z, produced: z, consumed: z };
+  return { alive: true, team, researchedLo: 1, researchedHi: 0, research: 0, researchProgress: 0, powerProd: 0, powerUse: 0, unitCount: 0, commander: 0, kills: 0, losses: 0, bot: true, stock: z, produced: z, consumed: z, teamStock: z };
 }
 function unit(id: number, kind: number, owner: number, x: number, y: number) {
   return { id, kind, owner, x: x * TILE, y: y * TILE, hp: data.units[kind].hp, order: 0, nOrders: 0, carried: false, cargo: 0 };

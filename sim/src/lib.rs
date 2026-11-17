@@ -9,6 +9,7 @@ pub mod data;
 pub mod fixed;
 pub mod flow;
 pub mod grid;
+pub mod logistics;
 pub mod map;
 pub mod orders;
 pub mod render;
@@ -245,6 +246,15 @@ pub extern "C" fn bench_reference() -> u32 {
     h
 }
 
+/// Scène de démonstration de la logistique (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn logistics_demo() -> u32 {
+    let w = stress::logistics_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Équipe gagnante (-1 : partie en cours, -2 : aucune).
 #[no_mangle]
 pub extern "C" fn game_winner() -> i32 {
@@ -253,4 +263,6 @@ pub extern "C" fn game_winner() -> i32 {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod logistics_tests;
 pub mod stress;

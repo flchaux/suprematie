@@ -3,11 +3,13 @@
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
-import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, UF, BF, BClass, Layer } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer } from "@supreme/shared";
+import { texture as tslTexture, uv, vec2, instancedBufferAttribute } from "three/tsl";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
+import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
 import { Effects } from "./effects.ts";
 
@@ -89,6 +91,18 @@ export class Entities {
   proj: THREE.InstancedMesh;
   effects: Effects;
   camera: THREE.Camera | null = null;
+  /** trains (0) et drones de fret (1) */
+  vehicleMeshes: KindMesh[] = [];
+  /** positions des véhicules au tick précédent et au tick courant (interpolation), altitude des drones */
+  carPrev = new Map<number, [number, number]>();
+  carCur = new Map<number, [number, number]>();
+  carTick = -1;
+  carAlt = new Map<number, number>();
+  /** icônes de diagnostic au-dessus des bâtiments (sans énergie, entrée manquante, sortie bloquée, énergie faible) */
+  diag: THREE.InstancedMesh;
+  diagIcon: THREE.InstancedBufferAttribute;
+  diagSince = new Map<number, { icon: number; since: number; seen: number }>();
+  frameN = 0;
   lastFxTick = -1;
   shields: THREE.InstancedMesh;
   wrecks: THREE.InstancedMesh;
@@ -137,6 +151,27 @@ export class Entities {
     this.group.add(this.proj);
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
+    for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1]] as const) {
+      const built = buildModel(VEHICLE_MODELS[key] ?? fallbackModel(0.5));
+      const size = new THREE.Vector3();
+      built.box.getSize(size);
+      this.vehicleMeshes.push(new KindMesh(this.group, built, len / Math.max(size.x, size.z, 0.01), TEX_PER_TILE_UNIT));
+    }
+    // icônes de diagnostic : atlas dessiné à la volée (4 icônes de 64 px), panneaux tournés vers la caméra
+    this.diagIcon = new THREE.InstancedBufferAttribute(new Float32Array(2000), 1);
+    this.diagIcon.setUsage(THREE.DynamicDrawUsage);
+    const dmat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false });
+    const atlas = tslTexture(diagAtlas());
+    const icon = instancedBufferAttribute(this.diagIcon, "float");
+    const t = atlas.sample(vec2(uv().x.add(icon).div(4), uv().y));
+    dmat.colorNode = t.rgb;
+    dmat.opacityNode = t.a;
+    this.diag = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dmat, 2000);
+    this.diag.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.diag.frustumCulled = false;
+    this.diag.renderOrder = 9;
+    this.diag.count = 0;
+    this.group.add(this.diag);
     this.shields = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), basic({ transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }), 400);
     this.shields.count = 0;
     this.shields.frustumCulled = false;
@@ -225,6 +260,11 @@ export class Entities {
     const teamOf = (p: number) => f.players[p]?.team ?? p;
     for (const m of this.unitMeshes) m.begin();
     for (const m of this.buildingMeshes) m.begin();
+    for (const m of this.vehicleMeshes) m.begin();
+    this.frameN++;
+    let nd = 0;
+    const now = performance.now();
+    const camQ = this.camera?.quaternion ?? tmpQ.identity();
     for (const ic of this.icons) ic.count = 0;
     let rings = 0;
     let bars = 0;
@@ -389,6 +429,24 @@ export class Entities {
       }
       const hp = buf[o + 3];
       const frac = Math.max(0, Math.min(1, hp / def.hp));
+      // diagnostic (nos bâtiments) : icône si le problème dure plus de 2 s
+      if (owner === me && build >= 1 && DIAG_CLASSES.has(def.cls)) {
+        const icon = bflags & BF.UNPOWERED ? 0 : bflags & BF.NO_INPUT ? 1 : bflags & BF.OUT_BLOCKED ? 2 : bflags & BF.LOW_POWER ? 3 : -1;
+        const ref = buf[o] >>> 0;
+        if (icon < 0) this.diagSince.delete(ref);
+        else {
+          let st = this.diagSince.get(ref);
+          if (!st || st.icon !== icon) this.diagSince.set(ref, (st = { icon, since: now, seen: 0 }));
+          st.seen = this.frameN;
+          if (now - st.since > 2000 && nd < 2000) {
+            const s = Math.max(0.9, Math.min(3, iconScale * 0.9));
+            tmpM.compose(tmpV.set(cx, y + km.height + 0.9 * s, cz), camQ, tmpS.set(s, s, s));
+            this.diag.setMatrixAt(nd, tmpM);
+            (this.diagIcon.array as Float32Array)[nd] = icon;
+            nd++;
+          }
+        }
+      }
       // bâtiment endommagé : fumée, puis flammes
       if (frac < 0.6 && build >= 1 && def.cls !== BClass.Belt && def.cls !== BClass.Inserter && (!enemy || seen(cx, cz, 1))) {
         fx.burning(cx, y + km.height * 0.85, cz, (0.6 - frac) / 0.6, Math.max(def.w, def.h) * 0.45, dt);
@@ -405,6 +463,51 @@ export class Entities {
         bars++;
       }
     }
+    this.diag.count = nd;
+    this.diag.instanceMatrix.needsUpdate = true;
+    this.diagIcon.needsUpdate = true;
+    if (this.frameN % 120 === 0) for (const [k, st] of this.diagSince) if (this.frameN - st.seen > 120) this.diagSince.delete(k);
+    // ----- trains et drones de fret -----
+    if (f.tick !== this.carTick) {
+      this.carPrev = this.carCur;
+      this.carCur = new Map();
+      for (let i = 0, o = f.carrierOff; i < f.nCarriers; i++, o += CARRIER_WORDS) this.carCur.set(buf[o], [buf[o + 1], buf[o + 2]]);
+      this.carTick = f.tick;
+    }
+    if (!strategic) {
+      for (let i = 0, o = f.carrierOff; i < f.nCarriers; i++, o += CARRIER_WORDS) {
+        const idx = buf[o];
+        const kind = buf[o + 3] & 0xff;
+        const owner = (buf[o + 3] >> 8) & 0xff;
+        const moving = (buf[o + 3] >> 16) & 1;
+        const cur = this.carCur.get(idx) ?? [buf[o + 1], buf[o + 2]];
+        const prev = this.carPrev.get(idx) ?? cur;
+        const x = (prev[0] + (cur[0] - prev[0]) * alpha) / TILE;
+        const z = (prev[1] + (cur[1] - prev[1]) * alpha) / TILE;
+        if (teamOf(owner) !== myTeam && !seen(x, z, 1)) continue;
+        const km = this.vehicleMeshes[kind];
+        if (!km) continue;
+        km.ensure(km.n + 1);
+        const g = groundHeight(this.map, x, z);
+        let y = g + 0.05;
+        if (kind === 1) {
+          // drone : vol à 5 cases au-dessus du sol (ou de l'eau), posé sur l'héliport à l'arrêt
+          const target = moving ? Math.max(g, this.map.waterLevel * HSCALE) + 5 : g + 0.45;
+          const a = this.carAlt.get(idx) ?? target;
+          const na = a + (target - a) * Math.min(1, dt * 2.5);
+          this.carAlt.set(idx, na);
+          y = na;
+        }
+        const ang = (buf[o + 4] & 0xffff) * ANG;
+        tmpQ.setFromAxisAngle(UP, Math.PI / 2 - ang);
+        const sc = km.scale;
+        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(sc, sc, sc));
+        km.body!.mesh.setMatrixAt(km.n, tmpM);
+        setTeamColor(km.body!, km.n, this.teamColors[owner % 8]);
+        km.n++;
+      }
+    }
+    for (const m of this.vehicleMeshes) m.end();
     for (const m of this.unitMeshes) m.end();
     for (const m of this.buildingMeshes) m.end();
     for (const ic of this.icons) {
@@ -538,6 +641,81 @@ export class Entities {
     (this.beams.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
     (this.beams.geometry.getAttribute("color") as THREE.BufferAttribute).needsUpdate = true;
   }
+}
+
+/** Bâtiments qui affichent une icône de diagnostic. */
+const DIAG_CLASSES = new Set<number>([BClass.Crafter, BClass.Extractor, BClass.Lab, BClass.Factory, BClass.Station, BClass.CargoPad, BClass.Turret, BClass.Radar, BClass.Shield]);
+
+/** Atlas des icônes de diagnostic : sans énergie, entrée manquante, sortie bloquée, énergie faible. */
+function diagAtlas(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 64;
+  const g = c.getContext("2d");
+  if (g) {
+    const disc = (i: number, color: string) => {
+      g.beginPath();
+      g.arc(i * 64 + 32, 32, 27, 0, Math.PI * 2);
+      g.fillStyle = "rgba(10,14,20,0.85)";
+      g.fill();
+      g.lineWidth = 4;
+      g.strokeStyle = color;
+      g.stroke();
+    };
+    const bolt = (i: number, color: string) => {
+      const x = i * 64;
+      g.beginPath();
+      g.moveTo(x + 36, 12);
+      g.lineTo(x + 22, 35);
+      g.lineTo(x + 31, 35);
+      g.lineTo(x + 27, 52);
+      g.lineTo(x + 43, 27);
+      g.lineTo(x + 34, 27);
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+    };
+    disc(0, "#ff4d4d");
+    bolt(0, "#ff4d4d");
+    g.strokeStyle = "#ff4d4d";
+    g.lineWidth = 4;
+    g.beginPath();
+    g.moveTo(16, 48);
+    g.lineTo(48, 16);
+    g.stroke();
+    // entrée manquante : flèche vers un bac vide
+    disc(1, "#ffb547");
+    g.strokeStyle = "#ffb547";
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(96, 14);
+    g.lineTo(96, 36);
+    g.moveTo(87, 28);
+    g.lineTo(96, 37);
+    g.lineTo(105, 28);
+    g.moveTo(80, 42);
+    g.lineTo(80, 49);
+    g.lineTo(112, 49);
+    g.lineTo(112, 42);
+    g.stroke();
+    // sortie bloquée : caisse barrée
+    disc(2, "#ffb547");
+    g.strokeStyle = "#ffb547";
+    g.lineWidth = 4;
+    g.strokeRect(146, 18, 28, 28);
+    g.beginPath();
+    g.moveTo(146, 18);
+    g.lineTo(174, 46);
+    g.moveTo(174, 18);
+    g.lineTo(146, 46);
+    g.stroke();
+    // énergie faible
+    disc(3, "#ffe066");
+    bolt(3, "#ffe066");
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050 };

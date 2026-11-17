@@ -211,13 +211,14 @@ pub fn construct(w: &mut World, s: usize, b: usize) -> bool {
     for (k, &(it, n)) in def.cost.iter().enumerate() {
         let total = (n as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as i32;
         need[k] = total - bb.paid[k] as i32;
-        if w.players[owner].stock[it as usize] < need[k] {
+        // le stock du joueur d'abord, puis le stock commun de son équipe (entrepôts)
+        if w.avail(owner, it) < need[k] {
             w.buildings[b].stalled = true;
             return true;
         }
     }
     for (k, &(it, _)) in def.cost.iter().enumerate() {
-        w.players[owner].stock[it as usize] -= need[k];
+        w.pay(owner, it, need[k]);
         w.players[owner].consumed[it as usize] += need[k] as u32;
         w.buildings[b].paid[k] += need[k] as u16;
     }
@@ -836,9 +837,9 @@ fn special(w: &mut World, s: usize) {
             c.timer += 1;
             if c.timer >= period && c.children < 12 && w.players[owner].unit_count < UNIT_CAP {
                 let cost = udef(child).cost;
-                if cost.iter().all(|&(it, n)| w.players[owner].stock[it as usize] >= n as i32) {
+                if cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
                     for &(it, n) in cost {
-                        w.players[owner].stock[it as usize] -= n as i32;
+                        w.pay(owner, it, n as i32);
                     }
                     w.units.cold[s].timer = 0;
                     w.units.cold[s].children += 1;

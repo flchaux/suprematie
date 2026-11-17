@@ -7,7 +7,7 @@
 
   const CATS: [string, string, string[]][] = [
     ["Production", "production", ["extractor", "furnace", "assembler1", "assembler2", "assembler3", "refinery", "chemical", "lab", "depot"]],
-    ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "pylon"]],
+    ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "pylon", "warehouse", "rail", "station", "cargo_pad"]],
     ["Énergie", "energy", ["generator", "hydro_plant", "crystal_reactor"]],
     ["Usines", "factory", ["land_factory", "air_factory", "naval_factory", "gantry"]],
     ["Défense", "defense", ["radar", "wall", "light_turret", "aa_turret", "heavy_turret", "fixed_artillery", "shield_gen", "antimissile"]],

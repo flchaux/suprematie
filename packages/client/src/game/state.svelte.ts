@@ -18,6 +18,8 @@ export const ui = $state({
   tick: 0,
   // joueur local
   stock: [] as number[],
+  /** stock commun de l'équipe (entrepôts d'équipe) */
+  teamStock: [] as number[],
   produced: [] as number[],
   consumed: [] as number[],
   powerProd: 0,
