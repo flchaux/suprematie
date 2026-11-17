@@ -117,9 +117,14 @@ export class GameClient {
         break;
       case "start":
         void this.begin(m.start, null);
+        ui.stats = [];
         break;
       case "snapshot":
         void this.begin(m.start, { tick: m.tick, data: Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0)) });
+        ui.stats = m.stats ?? [];
+        break;
+      case "stats":
+        ui.stats = [...ui.stats, m.sample];
         break;
       case "tick":
         this.worker?.postMessage({ type: "tick", tick: m.tick, orders: m.orders });
@@ -137,6 +142,8 @@ export class GameClient {
         const me = this.frame?.players[ui.me];
         const won = !!me && me.team === m.winner;
         ui.gameOver = { winner: m.winner, replay: m.replay, won };
+        ui.ended = true;
+        if (m.stats) ui.stats = m.stats;
         break;
       }
       case "saved":
@@ -158,6 +165,7 @@ export class GameClient {
     ui.spectator = start.you < 0;
     ui.names = start.names;
     ui.gameOver = null;
+    ui.ended = false;
     ui.screen = "loading";
     this.selected.clear();
     this.autoSelect = !snap;
@@ -175,6 +183,7 @@ export class GameClient {
     ui.me = -1;
     ui.spectator = true;
     ui.names = rep.names;
+    ui.stats = Array.isArray(rep.stats) ? rep.stats : [];
     ui.screen = "loading";
     this.start = { params: rep.params, names: rep.names, you: -1, startTick: 0 };
     this.worker?.terminate();

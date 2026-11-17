@@ -2,9 +2,10 @@
 // sauvegardes (à la demande et automatiques) et reprise d'une sauvegarde.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { Sim, pack, validCmd, parseBotDump, ORDER_DELAY, HASH_EVERY, simParams } from "@supreme/shared";
-import type { LobbyState, GameStart, GameData, Cmd, SaveMeta } from "@supreme/shared";
+import type { LobbyState, GameStart, GameData, Cmd, SaveMeta, BotView, StatSample } from "@supreme/shared";
 import { createBot, type Bot, type MapInfo } from "./bots/index.ts";
 import { writeSave, pruneAutosaves, type SaveData } from "./saves.ts";
+import { StatsCalc, STATS_EVERY, visibleSample } from "./stats.ts";
 
 export interface Peer {
   slot: number; // -1 = spectateur
@@ -51,6 +52,9 @@ export class Game {
   /** identifiant de la sauvegarde automatique de cette partie (une seule, remplacée à chaque fois) */
   autoId = "auto-" + new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
   lastSave = 0;
+  /** relevés statistiques (toutes les STATS_EVERY ticks, plus un relevé final) */
+  history: StatSample[] = [];
+  statsCalc!: StatsCalc;
 
   constructor(lobby: LobbyState, hooks: GameHooks, wasmPath: string, dataDir: string) {
     this.lobby = JSON.parse(JSON.stringify(lobby));
@@ -70,10 +74,12 @@ export class Game {
       this.tick = this.sim.tick();
       this.replay = save.replay;
       this.pending = save.pending.filter((p) => validCmd(p.cmd));
+      this.history = save.stats ?? [];
     } else {
       this.sim.init(this.params);
     }
     this.data = JSON.parse(this.sim.dataJson());
+    this.statsCalc = new StatsCalc(this.data);
     const info = this.sim.mapInfo();
     const heights = this.sim.mapHeights();
     const map: MapInfo = { w: info[0], h: info[1], waterLevel: info[2], starts: [], spots: [], heights };
@@ -136,7 +142,22 @@ export class Game {
   sendSnapshot(peer: Peer): void {
     const data = Buffer.from(this.sim.snapshot()).toString("base64");
     peer.ackTick = this.tick - 1;
-    peer.send({ t: "snapshot", tick: this.tick - 1, data, start: this.startInfo(peer.slot) });
+    peer.send({ t: "snapshot", tick: this.tick - 1, data, start: this.startInfo(peer.slot), stats: this.history.map((s) => this.visibleTo(s, peer.slot)) });
+  }
+
+  /** Relevé tel qu'un participant peut le voir : son équipe seulement pendant la partie, tout pour un spectateur. */
+  visibleTo(s: StatSample, slot: number): StatSample {
+    return this.ended ? s : visibleSample(s, this.lobby.players.map((p) => p.team), slot);
+  }
+
+  /** Ajoute un relevé à l'historique et l'envoie à chacun (filtré selon son équipe). */
+  recordStats(view: BotView, send: boolean): void {
+    const last = this.history[this.history.length - 1];
+    if (last && last.tick >= view.tick) return;
+    const sample = this.statsCalc.sample(view);
+    this.history.push(sample);
+    if (!send) return;
+    for (const p of this.hooks.peers()) if (p.connected) p.send({ t: "stats", sample: this.visibleTo(sample, p.slot) });
   }
 
   private loop(): void {
@@ -168,10 +189,15 @@ export class Game {
 
   private produceTick(): void {
     const t = this.tick;
+    let view: BotView | null = null;
+    if (t % STATS_EVERY === 0) {
+      view = parseBotDump(this.sim.botDump());
+      this.recordStats(view, true);
+    }
     // bots
     if (t % BOT_EVERY === 0 && this.bots.length) {
       const t0 = performance.now();
-      const view = parseBotDump(this.sim.botDump());
+      view ??= parseBotDump(this.sim.botDump());
       for (const b of this.bots) {
         if (!view.players[b.slot]?.alive) continue;
         const b0 = performance.now();
@@ -210,6 +236,7 @@ export class Game {
 
   finish(winner: number): void {
     if (this.ended) return;
+    this.recordStats(parseBotDump(this.sim.botDump()), false);
     this.ended = true;
     if (this.timer) clearInterval(this.timer);
     const dir = this.dataDir + "/replays";
@@ -240,7 +267,7 @@ export class Game {
         players: this.lobby.players.map((p) => ({ name: p.name, bot: p.bot, team: p.team, personality: p.personality, aix: p.aix, level: p.level })),
       };
       const bots = this.bots.filter((b) => b.bot.save).map((b) => ({ slot: b.slot, state: Buffer.from(b.bot.save!()).toString("base64") }));
-      const data: SaveData = { version: 1, meta, params: this.params, snapshot: Buffer.from(this.sim.snapshot()).toString("base64"), bots, pending: this.pending, replay: this.replay };
+      const data: SaveData = { version: 1, meta, params: this.params, snapshot: Buffer.from(this.sim.snapshot()).toString("base64"), bots, pending: this.pending, replay: this.replay, stats: this.history };
       const dir = this.dataDir + "/saves";
       writeSave(dir, data);
       if (auto) pruneAutosaves(dir, AUTOSAVES_KEPT);
@@ -255,7 +282,7 @@ export class Game {
   }
 
   replayData(): unknown {
-    return { version: 1, params: this.params, names: this.names, ticks: this.tick, orders: this.replay };
+    return { version: 1, params: this.params, names: this.names, ticks: this.tick, orders: this.replay, stats: this.history };
   }
 
   stop(): void {

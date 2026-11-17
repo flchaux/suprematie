@@ -83,7 +83,8 @@ describe("sauvegarde de partie", () => {
     const dir = mkdtempSync(join(tmpdir(), "saves-"));
     try {
       const meta = (id: string, auto: boolean, savedAt: string): SaveMeta => ({ id, name: id, savedAt, tick: 100, auto, mapSize: 512, water: false, seed: 1, players: [{ name: "A", bot: false, team: 0 }] });
-      const data = (m: SaveMeta): SaveData => ({ version: 1, meta: m, params: [1, 512, 0, 1, 0, 0, 100, 100], snapshot: "AAAA", bots: [], pending: [], replay: [[3, [1, 2, 3]]] });
+      const stats = [{ tick: 0, players: [{ alive: true, units: 1, army: 0, armyValue: 0, ore: 0, powerProd: 0, powerUse: 0, research: 0, buildings: 0, kills: 0, losses: 0 }] }];
+      const data = (m: SaveMeta): SaveData => ({ version: 1, meta: m, params: [1, 512, 0, 1, 0, 0, 100, 100], snapshot: "AAAA", bots: [], pending: [], replay: [[3, [1, 2, 3]]], stats });
       writeSave(dir, data(meta("s-1", false, "2026-01-01T00:00:00Z")));
       for (let i = 0; i < 7; i++) writeSave(dir, data(meta(`auto-${i}`, true, `2026-01-0${i + 2}T00:00:00Z`)));
       expect(listSaves(dir).map((m) => m.id)[0]).toBe("auto-6");
@@ -93,6 +94,7 @@ describe("sauvegarde de partie", () => {
       expect(ids).toContain("s-1");
       expect(ids).not.toContain("auto-0");
       expect(readSave(dir, "s-1")?.replay).toEqual([[3, [1, 2, 3]]]);
+      expect(readSave(dir, "s-1")?.stats).toEqual(stats);
       deleteSave(dir, "s-1");
       expect(readSave(dir, "s-1")).toBeNull();
       // identifiants refusés (chemins)

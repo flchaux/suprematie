@@ -276,7 +276,7 @@ async function startGame(): Promise<void> {
     peers: () => [...clients],
     log,
     onEnd: (winner, replay) => {
-      broadcast({ t: "end", winner, replay: `/replays/${replay}` });
+      broadcast({ t: "end", winner, replay: `/replays/${replay}`, stats: game?.history });
       endTimer = setTimeout(resetLobby, 30000);
     },
     onSaved: (meta, by) => broadcast({ t: "saved", name: meta.name, by, auto: meta.auto }),

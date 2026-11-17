@@ -3,7 +3,8 @@
   import { client } from "../game/client.ts";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
-  import { PLAYER_COLORS } from "../models/generator.ts";
+  import Charts from "./Charts.svelte";
+  import { playerColor as color, visiblePlayers, shownSamples, seesAll } from "./stats.ts";
   // historique pour calculer des débits par minute
   let hist: { t: number; p: number[]; c: number[] }[] = [];
   let rates = $state<{ p: number[]; c: number[] }>({ p: [], c: [] });
@@ -16,7 +17,16 @@
     const dt = Math.max(1, t - old.t) / 1200;
     rates = { p: ui.produced.map((v, i) => Math.round((v - old.p[i]) / dt)), c: ui.consumed.map((v, i) => Math.round((v - old.c[i]) / dt)) };
   });
-  const color = (i: number) => "#" + PLAYER_COLORS[i % 8].toString(16).padStart(6, "0");
+  // onglet affiché (gardé d'une ouverture à l'autre)
+  let tab = $state<"production" | "curves">(lastTab);
+  $effect(() => {
+    lastTab = tab;
+  });
+  const shown = $derived(visiblePlayers());
+</script>
+
+<script lang="ts" module>
+  let lastTab: "production" | "curves" = "production";
 </script>
 
 <div class="modal panel">
@@ -27,7 +37,14 @@
       <div class="kicker">Rapport</div>
       <h2>Statistiques</h2>
     </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" class="icon-btn" class:on={tab === "production"} aria-selected={tab === "production"} onclick={() => (tab = "production")}><Icon name="production" size={14} /> Production</button>
+      <button role="tab" class="icon-btn" class:on={tab === "curves"} aria-selected={tab === "curves"} onclick={() => (tab = "curves")}><Icon name="stats" size={14} /> Courbes</button>
+    </div>
   </div>
+  {#if tab === "curves"}
+    <Charts samples={shownSamples()} players={shown} note={seesAll() ? "Relevé toutes les 30 s" : "Votre équipe uniquement · relevé toutes les 30 s"} />
+  {:else}
   <div class="two">
     <section>
       <h3>Production <span class="dim">· par minute</span></h3>
@@ -54,7 +71,8 @@
       <table>
         <thead><tr><th>Joueur</th><th class="r">Équipe</th><th class="r">Unités</th><th class="r">Énergie</th><th class="r">Destr.</th><th class="r">Pertes</th></tr></thead>
         <tbody>
-          {#each ui.players as p, i}
+          {#each shown as i (i)}
+            {@const p = ui.players[i]}
             <tr class:out={!p.alive}>
               <td><span class="pc" style:background={color(i)}></span>{p.name}{#if p.bot} <Icon name="bot" size={12} />{/if}</td>
               <td class="r num">{p.team + 1}</td><td class="r num">{p.units}</td><td class="r num">{p.power} kW</td><td class="r num good">{p.kills}</td><td class="r num bad">{p.losses}</td>
@@ -68,10 +86,12 @@
       </p>{/if}
     </section>
   </div>
+  {/if}
 </div>
 
 <style>
-  .modal-head :global(.ic) { color: var(--accent); }
+  .modal-head > :global(.ic) { color: var(--accent); }
+  .tabs { margin-left: auto; margin-right: 34px; display: flex; gap: 6px; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
   h3 { margin: 0 0 8px; font-size: 13px; }
   table { width: 100%; }

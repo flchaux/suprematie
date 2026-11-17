@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, renameSync } from "node:fs";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { join } from "node:path";
-import type { SaveMeta } from "@supreme/shared";
+import type { SaveMeta, StatSample } from "@supreme/shared";
 
 export interface SaveData {
   version: 1;
@@ -19,6 +19,8 @@ export interface SaveData {
   pending: { tick: number; player: number; cmd: number[] }[];
   /** ordres passés (replay) */
   replay: [number, number[]][];
+  /** relevés statistiques (absent des sauvegardes plus anciennes) */
+  stats?: StatSample[];
 }
 
 const ID_RE = /^[a-z0-9-]{1,80}$/;
