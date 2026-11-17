@@ -50,7 +50,6 @@ export interface Slot {
 
 export interface CellComp {
   key: string; // clé du bâtiment
-  du: number;
   busIn: boolean; // bras d'entrée depuis le tapis principal
   busOut?: boolean; // bras de sortie vers le tapis principal (case du + 1)
   recipe?: string;
@@ -59,12 +58,23 @@ export interface CellComp {
 }
 export interface CellDef {
   name: string;
+  /** bâtiments côte à côte le long du tapis principal, séparés d'une colonne (bras de liaison, pylône) */
   comps: CellComp[];
-  links: { du: number; row: number; dir: number }[]; // bras entre bâtiments (sens ±u)
-  pylons: number[]; // positions des pylônes sur la rangée des bras
-  width: number;
+  /**
+   * Bras de liaison entre deux bâtiments voisins (un par intervalle) : +1 du bâtiment k vers k + 1,
+   * -1 de k + 1 vers k, 0 aucun. Les positions sont calculées d'après la taille des bâtiments.
+   */
+  chain: number[];
   /** Cellule productrice (pose sur le tapis) : placée depuis la tête, comme les producteurs. */
   producer?: boolean;
+}
+
+/** Géométrie d'une cellule, calculée d'après la taille réelle des bâtiments (voir Planner.cellGeom). */
+export interface CellGeom {
+  du: number[];
+  links: { du: number; row: number; dir: number }[];
+  pylons: number[];
+  width: number;
 }
 export interface CellSlot {
   side: number;
@@ -78,34 +88,23 @@ export interface CellSlot {
 export const CELL_ROBOT: CellDef = {
   name: "robot",
   comps: [
-    { key: "assembler1", du: 0, busIn: true, recipe: "cable", type: "A:cable" },
-    { key: "assembler1", du: 4, busIn: true, recipe: "circuit", type: "A:circuit" },
-    { key: "land_factory", du: 8, busIn: true, faceOut: true, type: "factory:land_factory" },
-    { key: "assembler1", du: 14, busIn: true, recipe: "gear", type: "A:gear" },
+    { key: "assembler1", busIn: true, recipe: "cable", type: "A:cable" },
+    { key: "assembler1", busIn: true, recipe: "circuit", type: "A:circuit" },
+    { key: "land_factory", busIn: true, faceOut: true, type: "factory:land_factory" },
+    { key: "assembler1", busIn: true, recipe: "gear", type: "A:gear" },
   ],
-  links: [
-    { du: 3, row: 3, dir: 1 },
-    { du: 7, row: 3, dir: 1 },
-    { du: 13, row: 3, dir: -1 },
-  ],
-  pylons: [3, 7, 13, 17],
-  width: 18,
+  chain: [1, 1, -1],
 };
 
 /** Cellule « science » : engrenages -> lots 1 -> laboratoire (qui prend aussi les lots du tapis). */
 export const CELL_SCIENCE: CellDef = {
   name: "science",
   comps: [
-    { key: "assembler1", du: 0, busIn: true, recipe: "gear", type: "A:gear" },
-    { key: "assembler1", du: 4, busIn: true, recipe: "pack1", type: "A:pack1" },
-    { key: "lab", du: 8, busIn: true, type: "lab" },
+    { key: "assembler1", busIn: true, recipe: "gear", type: "A:gear" },
+    { key: "assembler1", busIn: true, recipe: "pack1", type: "A:pack1" },
+    { key: "lab", busIn: true, type: "lab" },
   ],
-  links: [
-    { du: 3, row: 3, dir: 1 },
-    { du: 7, row: 3, dir: 1 },
-  ],
-  pylons: [3, 7, 11],
-  width: 11,
+  chain: [1, 1],
 };
 
 /**
@@ -115,44 +114,33 @@ export const CELL_SCIENCE: CellDef = {
 export const CELL_SCIENCE2: CellDef = {
   name: "science2",
   comps: [
-    { key: "assembler1", du: 0, busIn: true, recipe: "gear", type: "A:gear" },
-    { key: "assembler1", du: 4, busIn: true, recipe: "pack1", type: "A:pack1" },
-    { key: "lab", du: 8, busIn: true, type: "lab" },
-    { key: "assembler1", du: 12, busIn: true, recipe: "pack2", type: "A:pack2" },
-    { key: "assembler1", du: 16, busIn: true, recipe: "arm_part", type: "A:arm_part" },
+    { key: "assembler1", busIn: true, recipe: "gear", type: "A:gear" },
+    { key: "assembler1", busIn: true, recipe: "pack1", type: "A:pack1" },
+    { key: "lab", busIn: true, type: "lab" },
+    { key: "assembler1", busIn: true, recipe: "pack2", type: "A:pack2" },
+    { key: "assembler1", busIn: true, recipe: "arm_part", type: "A:arm_part" },
   ],
-  links: [
-    { du: 3, row: 3, dir: 1 },
-    { du: 7, row: 3, dir: 1 },
-    { du: 11, row: 3, dir: -1 },
-    { du: 15, row: 3, dir: -1 },
-  ],
-  pylons: [3, 7, 11, 15, 19],
-  width: 20,
+  chain: [1, 1, -1, -1],
 };
 
 /** Cellule « science sur tapis » : lots 1 (engrenages et cuivre pris sur le tapis) -> laboratoire. */
 export const CELL_SCIENCE_BUS: CellDef = {
   name: "sciencebus",
   comps: [
-    { key: "assembler1", du: 0, busIn: true, recipe: "pack1", type: "A:pack1" },
-    { key: "lab", du: 4, busIn: true, type: "lab" },
+    { key: "assembler1", busIn: true, recipe: "pack1", type: "A:pack1" },
+    { key: "lab", busIn: true, type: "lab" },
   ],
-  links: [{ du: 3, row: 3, dir: 1 }],
-  pylons: [3, 7],
-  width: 8,
+  chain: [1],
 };
 
 /** Cellule productrice de circuits : câbles -> circuits -> tapis. */
 export const CELL_CIRCUITS: CellDef = {
   name: "circuits",
   comps: [
-    { key: "assembler1", du: 0, busIn: true, recipe: "cable", type: "A:cable" },
-    { key: "assembler1", du: 4, busIn: true, busOut: true, recipe: "circuit", type: "A:circuit" },
+    { key: "assembler1", busIn: true, recipe: "cable", type: "A:cable" },
+    { key: "assembler1", busIn: true, busOut: true, recipe: "circuit", type: "A:circuit" },
   ],
-  links: [{ du: 3, row: 3, dir: 1 }],
-  pylons: [3, 7],
-  width: 8,
+  chain: [1],
   producer: true,
 };
 
@@ -160,12 +148,10 @@ export const CELL_CIRCUITS: CellDef = {
 export const CELL_PACK2: CellDef = {
   name: "pack2",
   comps: [
-    { key: "assembler1", du: 0, busIn: true, recipe: "arm_part", type: "A:arm_part" },
-    { key: "assembler1", du: 4, busIn: true, busOut: true, recipe: "pack2", type: "A:pack2" },
+    { key: "assembler1", busIn: true, recipe: "arm_part", type: "A:arm_part" },
+    { key: "assembler1", busIn: true, busOut: true, recipe: "pack2", type: "A:pack2" },
   ],
-  links: [{ du: 3, row: 3, dir: 1 }],
-  pylons: [3, 7],
-  width: 8,
+  chain: [1],
   producer: true,
 };
 
@@ -650,13 +636,41 @@ export class Planner {
   }
 
   /**
+   * Géométrie d'une cellule d'après la taille des bâtiments : bâtiments séparés d'une colonne libre
+   * (bras de liaison sur la rangée médiane des deux bâtiments, pylône sur la rangée des bras du tapis),
+   * un pylône après le dernier bâtiment.
+   */
+  cellGeom(cell: CellDef): CellGeom {
+    const ws = cell.comps.map((c) => this.ids.data.buildings[this.ids.b[c.key]].w);
+    const du: number[] = [];
+    let u = 0;
+    for (const w of ws) {
+      du.push(u);
+      u += w + 1;
+    }
+    const links: CellGeom["links"] = [];
+    const pylons: number[] = [];
+    for (let k = 0; k + 1 < ws.length; k++) {
+      const gap = du[k] + ws[k];
+      pylons.push(gap);
+      const dir = cell.chain[k] ?? 0;
+      // rangée commune aux deux bâtiments (ils commencent à la rangée 2)
+      if (dir !== 0) links.push({ du: gap, row: 2 + ((Math.min(ws[k], ws[k + 1]) - 1) >> 1), dir });
+    }
+    const end = du[ws.length - 1] + ws[ws.length - 1];
+    pylons.push(end);
+    return { du, links, pylons, width: end + 1 };
+  }
+
+  /**
    * Réserve une cellule (bâtiments reliés par des bras, sans passer par le tapis principal) du côté
    * consommateurs du module (depuis le dépôt).
    */
   allocCell(m: Module, cell: CellDef): CellSlot | null {
     const ins = this.ids.b.inserter;
     const pyl = this.ids.b.pylon;
-    const W = cell.width;
+    const g = this.cellGeom(cell);
+    const W = g.width;
     const tries: { side: number; u0: number }[] = [];
     for (const side of [-1, 1]) {
       const si = side < 0 ? 0 : 1;
@@ -669,42 +683,42 @@ export class Planner {
     tries.sort((a, b) => (cell.producer ? a.u0 - b.u0 : b.u0 - a.u0));
     for (const { side, u0 } of tries) {
       const si = side < 0 ? 0 : 1;
-      const comps: { kind: number; x: number; y: number; dir: number; w: number; c: CellComp }[] = [];
+      const comps: { kind: number; x: number; y: number; dir: number; w: number; c: CellComp; du: number }[] = [];
       let ok = true;
-      for (const c of cell.comps) {
+      for (const [ci, c] of cell.comps.entries()) {
         const kind = this.ids.b[c.key];
         const w = this.ids.data.buildings[kind].w;
         const v0 = side > 0 ? 2 : -(1 + w);
-        const [bx, by] = this.sq(m, u0 + c.du, v0, w);
+        const [bx, by] = this.sq(m, u0 + g.du[ci], v0, w);
         const dir = c.faceOut ? this.ldir(m, 0, side) : 0;
         if (!this.rectFree(kind, bx, by, dir, w, true)) {
           ok = false;
           break;
         }
-        comps.push({ kind, x: bx, y: by, dir, w, c });
+        comps.push({ kind, x: bx, y: by, dir, w, c, du: g.du[ci] });
       }
       if (!ok) continue;
       const inserters: Placement[] = [];
       let lastOut = -1;
       for (const c of comps) {
         if (c.c.busIn) {
-          const x = this.wx(m, u0 + c.c.du, side);
-          const y = this.wy(m, u0 + c.c.du, side);
+          const x = this.wx(m, u0 + c.du, side);
+          const y = this.wy(m, u0 + c.du, side);
           inserters.push({ kind: ins, x, y, dir: this.ldir(m, 0, side), tag: "in" });
         }
         if (c.c.busOut) {
-          const x = this.wx(m, u0 + c.c.du + 1, side);
-          const y = this.wy(m, u0 + c.c.du + 1, side);
+          const x = this.wx(m, u0 + c.du + 1, side);
+          const y = this.wy(m, u0 + c.du + 1, side);
           inserters.push({ kind: ins, x, y, dir: this.ldir(m, 0, -side), tag: "out" });
-          lastOut = Math.max(lastOut, u0 + c.c.du + 1);
+          lastOut = Math.max(lastOut, u0 + c.du + 1);
         }
       }
-      for (const l of cell.links) {
+      for (const l of g.links) {
         const x = this.wx(m, u0 + l.du, side * l.row);
         const y = this.wy(m, u0 + l.du, side * l.row);
         inserters.push({ kind: ins, x, y, dir: this.ldir(m, l.dir, 0), tag: "link" });
       }
-      const pylons: [number, number][] = cell.pylons.map((du) => [this.wx(m, u0 + du, side), this.wy(m, u0 + du, side)]);
+      const pylons: [number, number][] = g.pylons.map((du) => [this.wx(m, u0 + du, side), this.wy(m, u0 + du, side)]);
       for (const p of inserters) if (!this.rectFree(ins, p.x, p.y, 0, 1, true)) ok = false;
       for (const [x, y] of pylons) if (!this.rectFree(pyl, x, y, 0, 1, true)) ok = false;
       if (!ok) continue;
@@ -714,7 +728,7 @@ export class Planner {
         const recipe = c.c.recipe !== undefined ? this.ids.r[c.c.recipe] : undefined;
         places.push({ kind: c.kind, x: c.x, y: c.y, dir: c.dir, recipe, tag: c.c.type });
         this.mark(c.x, c.y, c.w, P_BLD);
-        slots.push({ side, u0: u0 + c.c.du, w: c.w, kind: c.kind, x: c.x, y: c.y, dir: c.dir, type: c.c.type, places: [places[places.length - 1]], cell: true, busOut: c.c.busOut === true });
+        slots.push({ side, u0: u0 + c.du, w: c.w, kind: c.kind, x: c.x, y: c.y, dir: c.dir, type: c.c.type, places: [places[places.length - 1]], cell: true, busOut: c.c.busOut === true });
       }
       for (const p of inserters) {
         places.push(p);
@@ -742,8 +756,8 @@ export class Planner {
       for (const c of comps) {
         if (!c.c.faceOut) continue;
         for (let k = 1; k <= 4; k++) {
-          const ex = this.wx(m, u0 + c.c.du + (c.w >> 1), side * (1 + c.w + k));
-          const ey = this.wy(m, u0 + c.c.du + (c.w >> 1), side * (1 + c.w + k));
+          const ex = this.wx(m, u0 + c.du + (c.w >> 1), side * (1 + c.w + k));
+          const ey = this.wy(m, u0 + c.du + (c.w >> 1), side * (1 + c.w + k));
           if (this.inside(ex, ey) && (this.plan[this.idx(ex, ey)] === P_FREE || this.plan[this.idx(ex, ey)] === P_RES)) this.plan[this.idx(ex, ey)] = P_LANE;
         }
       }

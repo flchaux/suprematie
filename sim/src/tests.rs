@@ -87,7 +87,7 @@ fn production_chain_reaches_tier3_packs() {
     furnace(&mut w, 138, "copper_plate");
     furnace(&mut w, 141, "iron_plate");
     let mut asm = |w: &mut World, x: i32, recipe: &str| {
-        let b = put(w, B_ASSEMBLER1, x, y - 4, 0);
+        let b = put(w, B_ASSEMBLER1, x, y - 3, 0);
         put(w, B_INSERTER, x, y - 1, 3);
         put(w, B_INSERTER, x + 1, y - 1, 1);
         set_recipe(w, b, recipe);

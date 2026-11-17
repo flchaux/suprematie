@@ -70,13 +70,13 @@ fn warehouse_feeds_team_stock_used_by_allies() {
     assert_eq!(w.team_stock[0][IRON_PLATE as usize], 29);
 }
 
-/// Deux gares reliées par 68 cases de rail ; 500 plaques à livrer (capacité du train : 400).
+/// Deux gares reliées par 69 cases de rail ; 500 plaques à livrer (capacité du train : 400).
 fn rail_world() -> (World, usize, usize) {
     let mut w = allies();
     flatten(&mut w, 25, 90, 120, 110);
     let a = station(&mut w, 0, B_STATION, 30, 100);
     let b = station(&mut w, 1, B_STATION, 101, 100);
-    for x in 33..101 {
+    for x in 32..101 {
         put(&mut w, 0, B_RAIL, x, 101);
     }
     run(&mut w, 10); // réseaux électriques
