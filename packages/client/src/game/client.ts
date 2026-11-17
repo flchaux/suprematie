@@ -1758,6 +1758,13 @@ export class GameClient {
     if (ui.selBuilding) this.cmd(Ord.toggle(ui.selBuilding.ref));
   }
   /** Part de la sortie de sa source prise par le bras sélectionné (%, 0 : automatique). */
+  /** Améliore le bâtiment sélectionné d'un niveau (extracteur). */
+  upgradeBuilding(): void {
+    if (ui.selBuilding) {
+      this.cmd(Ord.upgrade(ui.selBuilding.ref));
+      sfx.confirm();
+    }
+  }
   setShare(pct: number): void {
     if (ui.selBuilding) this.cmd(Ord.setShare(ui.selBuilding.ref, pct));
   }

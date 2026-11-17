@@ -14,6 +14,8 @@ export const O = {
   RESEARCH: 10,
   /** file de recherche : ajoute (ou retire si déjà en file) ; 0 vide la file */
   RESEARCH_QUEUE: 22,
+  /** améliorer un bâtiment (extracteur) d'un niveau */
+  UPGRADE: 40,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   RALLY: 11,
@@ -172,6 +174,9 @@ export function special(src: number, x: number, y: number, tgt: number): Cmd {
   return [O.SPECIAL, src | 0, x | 0, y | 0, tgt | 0];
 }
 /** Part de la sortie de sa source prise par un bras, en % (0 : automatique). */
+export function upgrade(ref: number): Cmd {
+  return [O.UPGRADE, ref | 0];
+}
 export function setShare(ref: number, pct: number): Cmd {
   return [O.SET_SHARE, ref | 0, Math.max(0, Math.min(100, Math.round(pct)))];
 }

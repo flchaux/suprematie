@@ -220,7 +220,19 @@
           <span class="dim small">Les bras qui se servent au même bâtiment alternent. En automatique, ils se partagent à égalité ce que les parts réglées laissent.</span>
         </div>
       {:else if bdef.cls === BClass.Extractor}
+        {@const levels = d.extractorLevels ?? []}
+        {@const lvl = info.level ?? 0}
+        {@const next = levels[lvl + 1]}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
+        <div class="row"><span class="kicker">Niveau</span> <span class="num">{lvl + 1} / {levels.length || 1}</span>{#if levels[lvl]}<span class="dim small num">· vitesse ×{(levels[lvl].speed / 100).toFixed(1)} · énergie ×{(levels[lvl].power / 100).toFixed(1)}</span>{/if}</div>
+        {#if next && info.owner === ui.me && info.build >= 65536}
+          {@const ok = hasTechUI(next.tech)}
+          <div class="upgrade">
+            <button class="icon-btn" disabled={!ok || next.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name="plus" size={14} /> Améliorer au niveau {lvl + 2}</button>
+            <span class="dim small num">vitesse ×{(next.speed / 100).toFixed(1)}, énergie ×{(next.power / 100).toFixed(1)}</span>
+            {#if ok}<Cost cost={next.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[next.tech]?.name}</span>{/if}
+          </div>
+        {/if}
       {:else if bdef.cls === BClass.Depot}
         <span class="dim">Tout ce qui entre ici rejoint votre stock personnel, utilisé par vos ingénieurs.</span>
       {:else if bdef.cls === BClass.Warehouse}
@@ -321,6 +333,7 @@
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .upgrade { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .rlock { margin-top: 6px; font-size: 11px; opacity: 0.75; }
   .rhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .rhead .icon-btn { font-size: 11px; padding: 3px 8px; }

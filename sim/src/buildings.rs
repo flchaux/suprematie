@@ -918,6 +918,29 @@ fn tick_router(w: &mut World, b: usize) {
     bb.wake = w.tick + 4;
 }
 
+/**
+ * Améliore l'extracteur `b` d'un niveau (ordre UPGRADE) : il doit être terminé, sous le niveau
+ * maximal, la recherche du niveau suivant faite et son coût disponible (payé aussitôt).
+ */
+pub fn upgrade(w: &mut World, b: usize) -> bool {
+    let bb = &w.buildings[b];
+    if !bb.alive || bb.def().class != BClass::Extractor || !bb.complete() {
+        return false;
+    }
+    let next = bb.level as usize + 1;
+    let Some(lvl) = EXTRACTOR_LEVELS.get(next) else { return false };
+    let owner = bb.owner as usize;
+    if !w.players[owner].has_tech(lvl.tech) || !lvl.cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
+        return false;
+    }
+    for &(it, n) in lvl.cost {
+        w.pay(owner, it, n as i32);
+    }
+    w.buildings[b].level = next as u8;
+    w.buildings[b].wake = 0;
+    true
+}
+
 fn tick_extractor(w: &mut World, b: usize) {
     let owner = w.buildings[b].owner as usize;
     if w.buildings[b].out > 0 {
@@ -939,11 +962,13 @@ fn tick_extractor(w: &mut World, b: usize) {
             }
         }
     }
-    let s = use_power(w, b, bdef(B_EXTRACTOR).power_use);
+    let lvl = &EXTRACTOR_LEVELS[(w.buildings[b].level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
+    let s = use_power(w, b, bdef(B_EXTRACTOR).power_use * lvl.power / 100);
     let mult = w.players[owner].res_mult as u32;
     let bb = &mut w.buildings[b];
     bb.working = s > 0;
-    bb.progress += s as u32 * mult;
+    // niveau d'amélioration : vitesse en % du niveau 0
+    bb.progress += s as u32 * mult * lvl.speed / 100;
     if bb.progress >= 30 * RECIPE_SCALE {
         bb.progress -= 30 * RECIPE_SCALE;
         bb.out += 1;

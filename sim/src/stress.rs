@@ -282,6 +282,22 @@ pub fn logistics_demo() -> World {
     if asm != usize::MAX {
         w.buildings[asm].recipe = 4;
     }
+    // extracteurs améliorés (niveaux 2 et 3) sur un gisement de démonstration
+    put(&mut w, 0, B_GENERATOR, x0 + 44, y0 + 34, 0);
+    for (k, x) in [x0 + 40, x0 + 47].into_iter().enumerate() {
+        let y = y0 + 37;
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.map.idx(x + dx, y + dy);
+                w.map.deposit[i] = COPPER_ORE;
+            }
+        }
+        w.map.spots.push(crate::map::Spot { kind: COPPER_ORE, x, y });
+        let e = put(&mut w, 0, B_EXTRACTOR, x, y, 1);
+        if e != usize::MAX {
+            w.buildings[e].level = k as u8 + 1;
+        }
+    }
     for _ in 0..20 {
         w.step(&[]);
     }

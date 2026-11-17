@@ -83,6 +83,7 @@ const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
 const tmpQ2 = new THREE.Quaternion();
+const tmpV2 = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const tmpC = new THREE.Color();
@@ -121,6 +122,8 @@ export class Entities {
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
   wallSeg: KindMesh | null = null;
+  /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
+  levelPips: THREE.InstancedMesh;
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
@@ -228,6 +231,10 @@ export class Entities {
       m.setColorAt(0, new THREE.Color());
       this.group.add(m);
     }
+    this.levelPips = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.08, 0.06), new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0xffb547).multiplyScalar(1.8) }), 2000);
+    this.levelPips.count = 0;
+    this.levelPips.frustumCulled = false;
+    this.group.add(this.levelPips);
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
     for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
@@ -507,6 +514,7 @@ export class Entities {
       }
     }
     // ----- bâtiments -----
+    let npip = 0;
     // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
     const walls = new Map<number, number>();
     o = f.buildingOff;
@@ -552,6 +560,18 @@ export class Entities {
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
+      // extracteur amélioré : barres de niveau sur la façade avant (repère du bâtiment)
+      const lvl = def.cls === BClass.Extractor ? (buf[o + 5] >>> 24) & 3 : 0;
+      if (lvl > 0 && build >= 1 && npip + lvl <= 2000) {
+        const bw = dir & 1 ? def.h : def.w;
+        const bh = dir & 1 ? def.w : def.h;
+        for (let k = 0; k < lvl; k++) {
+          // avant du modèle = +z local ; décalage latéral centré
+          tmpV2.set((k - (lvl - 1) / 2) * 0.42, 0.34, Math.max(bw, bh) / 2 - 0.02).applyQuaternion(tmpQ);
+          tmpM2.compose(tmpV.set(cx + tmpV2.x, y + tmpV2.y, cz + tmpV2.z), tmpQ, tmpS.set(1, 1, 1));
+          this.levelPips.setMatrixAt(npip++, tmpM2);
+        }
+      }
       const seg = this.wallSeg;
       if (def.cls === BClass.Wall && seg) {
         // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
@@ -712,6 +732,8 @@ export class Entities {
       d.end();
     }
     this.wallSeg?.end();
+    this.levelPips.count = npip;
+    this.levelPips.instanceMatrix.needsUpdate = true;
     this.updateHatches(f, strategic, myTeam, spectator);
     this.updateLogos(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {

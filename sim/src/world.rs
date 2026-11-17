@@ -277,11 +277,13 @@ pub struct Building {
     pub pass: u64,
     /// source servie par plusieurs bras : temps virtuel du dernier service
     pub vpass: u64,
+    /// niveau d'amélioration (extracteur : voir EXTRACTOR_LEVELS)
+    pub level: u8,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass
+    share, pass, vpass, level
 });
 
 impl Building {

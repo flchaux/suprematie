@@ -505,3 +505,58 @@ fn turrets_lead_moving_targets() {
     assert!(shots >= 10, "la tourelle tire : {}", shots);
     assert!(hits * 10 >= shots as i32 * 8, "au moins 80 % de tirs au but : {} sur {}", hits, shots);
 }
+
+/// Amélioration d'un extracteur : recherche et coût exigés, niveau maximal, extraction plus rapide.
+#[test]
+fn extractor_upgrade_speeds_up_extraction() {
+    use crate::orders::O_UPGRADE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    w.players[0].researched = 1;
+    // deux gisements identiques, deux extracteurs qui déversent dans un dépôt chacun
+    let mut ext = Vec::new();
+    for x in [96, 108].iter() {
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.map.idx(*x + dx, 100 + dy);
+                w.map.deposit[i] = IRON_ORE;
+            }
+        }
+        w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: *x, y: 100 });
+        ext.push(put(&mut w, 0, B_EXTRACTOR, *x, 100, 1));
+        put(&mut w, 0, B_DEPOT, *x, 102, 0);
+    }
+    put(&mut w, 0, B_GENERATOR, 102, 96, 0);
+    let order = |w: &mut World, b: usize| {
+        let r = w.building_ref(b) as i32;
+        w.step(&[3, O_UPGRADE, 0, r]);
+    };
+    // sans la recherche : refusé
+    w.players[0].stock[STEEL as usize] = 100;
+    w.players[0].stock[GEAR as usize] = 100;
+    w.players[0].stock[CIRCUIT as usize] = 100;
+    order(&mut w, ext[1]);
+    assert_eq!(w.buildings[ext[1]].level, 0, "automatisation non faite");
+    w.players[0].researched |= 1 << T_AUTOMATION;
+    order(&mut w, ext[1]);
+    assert_eq!(w.buildings[ext[1]].level, 1);
+    assert_eq!(w.players[0].stock[STEEL as usize], 90, "coût payé");
+    // niveau 2 : électronique manquante
+    order(&mut w, ext[1]);
+    assert_eq!(w.buildings[ext[1]].level, 1);
+    // production comparée sur la même durée : un objet chaque fois que la progression repart
+    let mut made = [0i64; 2];
+    for _ in 0..1200 {
+        let before = [w.buildings[ext[0]].progress, w.buildings[ext[1]].progress];
+        w.step(&[]);
+        for k in 0..2 {
+            if w.buildings[ext[k]].progress < before[k] {
+                made[k] += 1;
+            }
+        }
+    }
+    println!("produits : niveau 0 {} niveau 1 {}", made[0], made[1]);
+    assert!(made[0] > 5);
+    let ratio = made[1] as f64 / made[0] as f64;
+    assert!((ratio - 1.6).abs() < 0.2, "vitesse niveau 1 : ×{:.2}", ratio);
+}

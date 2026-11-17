@@ -16,6 +16,8 @@ export interface UnitDef {
 export interface GameData {
   items: ItemDef[]; recipes: RecipeDef[]; weapons: WeaponDef[]; techs: TechDef[]; buildings: BuildingDef[]; units: UnitDef[];
   missileCost: [number, number][]; interceptorCost: [number, number][];
+  /** niveaux d'un extracteur : vitesse et consommation en % du niveau 0, coût et recherche du passage à ce niveau */
+  extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number }[];
   /** véhicules de transport : 0 train, 1 drone de fret (speed : sous-unités par tick) */
   carriers: { capacity: number; speed: number; buffer: number; cost: [number, number][] }[];
 }

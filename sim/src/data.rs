@@ -120,6 +120,20 @@ pub const RECIPES: [RecipeDef; 21] = [
 ];
 pub const RECIPE_NONE: u8 = 255;
 
+/// Niveaux d'un extracteur (amélioration sur place) : vitesse et consommation en % du niveau 0,
+/// coût de passage à ce niveau et recherche requise.
+pub struct ExtractorLevel {
+    pub speed: u32,
+    pub power: i32,
+    pub cost: &'static [(u8, u16)],
+    pub tech: u8,
+}
+pub const EXTRACTOR_LEVELS: [ExtractorLevel; 3] = [
+    ExtractorLevel { speed: 100, power: 100, cost: &[], tech: 0 },
+    ExtractorLevel { speed: 160, power: 140, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], tech: T_AUTOMATION },
+    ExtractorLevel { speed: 230, power: 190, cost: &[(STEEL, 20), (ENGINE, 4), (PROCESSOR, 2)], tech: T_ELECTRONICS },
+];
+
 // ---------- Armes ----------
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Proj {
@@ -744,11 +758,13 @@ pub fn data_json() -> String {
         ));
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();
+    let levels: Vec<String> = EXTRACTOR_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}]}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}]}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
-        carriers.join(",")
+        carriers.join(","),
+        levels.join(",")
     ));
     s
 }
