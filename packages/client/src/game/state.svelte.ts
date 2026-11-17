@@ -54,6 +54,7 @@ export const ui = $state({
   showHelp: false,
   chatOpen: false,
   volume: 0.5,
+  music: 0.35,
   replay: false,
   replaySpeed: 1,
   spectator: false,

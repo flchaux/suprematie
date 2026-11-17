@@ -24,6 +24,11 @@ function ac(): AudioContext | null {
   return ctx;
 }
 
+/** Contexte audio partagé avec la musique (créé et relancé à la demande). */
+export function audioContext(): AudioContext | null {
+  return ac();
+}
+
 export function setVolume(v: number): void {
   volume = v;
   if (master) master.gain.value = v;

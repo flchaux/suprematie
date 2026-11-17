@@ -10,6 +10,7 @@ import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../ren
 import { PLAYER_COLORS } from "../models/generator.ts";
 import { ui, pushMessage } from "./state.svelte.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
+import { initMusic, setMusicVolume } from "../audio/music.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
@@ -618,6 +619,9 @@ export class GameClient {
     const v = Number(localStorage.getItem("supreme.volume") ?? "0.5");
     ui.volume = v;
     setVolume(v);
+    const mv = Number(localStorage.getItem("supreme.music") ?? "0.35");
+    ui.music = mv;
+    initMusic(mv);
   }
 
   private ndc(x: number, y: number): [number, number] {
@@ -1602,6 +1606,17 @@ export class GameClient {
     ui.volume = v;
     setVolume(v);
     localStorage.setItem("supreme.volume", String(v));
+  }
+
+  /** Volume de la musique de fond (0 : coupée), mémorisé dans le navigateur. */
+  setMusicVolume(v: number): void {
+    ui.music = v;
+    setMusicVolume(v);
+    try {
+      localStorage.setItem("supreme.music", String(v));
+    } catch {
+      // stockage indisponible : le réglage vaut pour cette session
+    }
   }
 
   // utilitaires pour l'interface
