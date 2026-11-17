@@ -1,0 +1,188 @@
+//! Tests : tapis de contrôle, portail de don, vétérance, robots logistiques, débris.
+
+use crate::buildings::{complete_building, insert_item, place_building};
+use crate::data::*;
+use crate::fixed::TILE;
+use crate::world::*;
+
+fn world(teams: &[i32]) -> World {
+    let mut p = vec![4242, 512, 0, teams.len() as i32];
+    for &t in teams {
+        p.extend_from_slice(&[t, 0, 100, 100]);
+    }
+    let mut w = World::new(&p);
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    w
+}
+
+fn flatten(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
+    w.map.spots.retain(|s| !(s.x >= x0 - 2 && s.x <= x1 && s.y >= y0 - 2 && s.y <= y1));
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let i = w.map.idx(x, y);
+            w.map.height[i] = 150;
+            w.map.cliff[i] = 0;
+            w.map.deposit[i] = 0;
+            w.map.update_pass(x, y);
+        }
+    }
+}
+
+fn put(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> usize {
+    let b = place_building(w, owner, kind, x, y, dir).unwrap_or_else(|| panic!("pose impossible {} en {},{}", bdef(kind).key, x, y));
+    complete_building(w, b);
+    b
+}
+
+fn run(w: &mut World, n: u32) {
+    for _ in 0..n {
+        w.step(&[]);
+    }
+}
+
+/// Un tapis de contrôle tourné vers l'est en (100, 100), avec un dépôt à chaque sortie.
+fn router(kind: u16) -> (World, usize, [usize; 3]) {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let r = put(&mut w, 0, kind, 100, 100, 0);
+    // gauche (nord), avant (est), droite (sud) : des dépôts 2 x 2
+    let left = put(&mut w, 0, B_DEPOT, 100, 98, 0);
+    let front = put(&mut w, 0, B_DEPOT, 101, 100, 0);
+    let right = put(&mut w, 0, B_DEPOT, 99, 101, 0);
+    (w, r, [left, front, right])
+}
+
+fn feed(w: &mut World, r: usize, item: u8, n: usize) {
+    for _ in 0..n {
+        while !crate::buildings::accepts(w, r, item) {
+            w.step(&[]);
+        }
+        insert_item(w, r, item);
+    }
+    run(w, 20);
+}
+
+#[test]
+fn splitter_alternates_outputs() {
+    let (mut w, r, _) = router(B_SPLITTER);
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    feed(&mut w, r, IRON_PLATE, 30);
+    // toutes les sorties sont des dépôts du joueur : le total arrive au stock
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize] - before, 30);
+    assert!(w.buildings[r].stash.is_empty());
+}
+
+#[test]
+fn sorter_sends_chosen_item_left_only() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let r = put(&mut w, 0, B_SORTER, 100, 100, 0);
+    w.buildings[r].recipe = COPPER_PLATE;
+    // gauche : un tapis vers le nord qui finit dans un dépôt ; avant : un fabricant qui n'accepte que le fer
+    let left_belt = put(&mut w, 0, B_BELT1, 100, 99, 3);
+    let _ = left_belt;
+    put(&mut w, 0, B_DEPOT, 100, 97, 0);
+    let f = put(&mut w, 0, B_FURNACE, 101, 100, 0);
+    w.buildings[f].recipe = 0; // fonderie : minerai de fer -> plaque
+    let before = w.players[0].stock[COPPER_PLATE as usize];
+    feed(&mut w, r, COPPER_PLATE, 5);
+    feed(&mut w, r, IRON_ORE, 2);
+    run(&mut w, 100);
+    assert_eq!(w.players[0].stock[COPPER_PLATE as usize] - before, 5, "le cuivre part à gauche");
+    assert!(w.buildings[f].inv[0] > 0 || w.buildings[f].working || w.buildings[f].out > 0, "le minerai continue tout droit");
+}
+
+#[test]
+fn overflow_prefers_front_then_sides() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let r = put(&mut w, 0, B_OVERFLOW, 100, 100, 0);
+    let f = put(&mut w, 0, B_FURNACE, 101, 100, 0);
+    w.buildings[f].recipe = 0;
+    put(&mut w, 0, B_DEPOT, 100, 98, 0);
+    let before = w.players[0].stock[IRON_ORE as usize];
+    feed(&mut w, r, IRON_ORE, 12);
+    // la fonderie n'en garde qu'une petite réserve : le reste déborde à gauche (dépôt)
+    let overflowed = w.players[0].stock[IRON_ORE as usize] - before;
+    assert!(overflowed > 0 && overflowed < 12, "débordement partiel : {overflowed}");
+}
+
+#[test]
+fn gift_portal_transfers_ally_units_only() {
+    // joueurs 0 et 1 alliés, joueur 2 adversaire
+    let mut w = world(&[0, 0, 1]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let portal = put(&mut w, 1, B_PORTAL, 100, 100, 0);
+    let (cx, cy) = w.buildings[portal].center();
+    let gift = w.spawn_unit(U_LINE_ROBOT, 0, cx, cy);
+    let enemy = w.spawn_unit(U_LINE_ROBOT, 2, cx + 64, cy);
+    let n0 = w.players[0].unit_count;
+    run(&mut w, 15);
+    let g = w.unit(gift).expect("unité donnée");
+    assert_eq!(w.units.owner[g], 1, "l'unité alliée change de propriétaire");
+    assert_eq!(w.players[0].unit_count, n0 - 1);
+    let e = w.unit(enemy).expect("ennemi");
+    assert_eq!(w.units.owner[e], 2, "un ennemi n'est pas donné");
+    let _ = TILE;
+}
+
+#[test]
+fn veterancy_levels_up_from_kills() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 90, 90, 140, 140);
+    let tank = w.spawn_unit(U_LIGHT_TANK, 0, 110 * TILE, 110 * TILE);
+    // des cibles faibles, une à la fois ; le char est réparé entre deux combats
+    for k in 0..8 {
+        let v = w.spawn_unit(U_LINE_ROBOT, 1, 114 * TILE, (108 + k % 4) * TILE);
+        for _ in 0..600 {
+            w.step(&[]);
+            if w.unit(v).is_none() {
+                break;
+            }
+        }
+        let t = w.unit(tank).expect("le char survit");
+        w.units.hp[t] = w.max_hp(t);
+    }
+    let t = w.unit(tank).unwrap();
+    // 8 robots de 200 PV = 1600 points ; un niveau tous les 2 x 550 PV
+    assert_eq!(w.units.cold[t].xp, 1600);
+    assert_eq!(w.units.cold[t].lvl, 1);
+    assert_eq!(w.max_hp(t), udef(U_LIGHT_TANK).hp * 110 / 100);
+}
+
+#[test]
+fn robots_feed_and_evacuate_nearby_buildings() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 140, 140);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    put(&mut w, 0, B_GENERATOR, 103, 96, 0);
+    let port = put(&mut w, 0, B_ROBOPORT, 100, 100, 0);
+    put(&mut w, 0, B_GENERATOR, 114, 106, 0);
+    let f = put(&mut w, 0, B_FURNACE, 114, 110, 0);
+    w.buildings[f].recipe = 0;
+    w.players[0].stock[IRON_ORE as usize] = 40;
+    run(&mut w, 1200);
+    assert!(w.buildings[port].working, "la base de robots est alimentée");
+    // la fonderie a reçu du minerai par robot, et ses plaques (sortie sans bras) ont été évacuées
+    assert!(w.players[0].stock[IRON_ORE as usize] < 40, "minerai livré");
+    assert!(w.players[0].produced[IRON_PLATE as usize] >= 4, "la fonderie a produit");
+    assert!(w.carriers.iter().filter(|c| c.alive && c.kind == 2).count() == ROBOTS_PER_PORT);
+}
+
+#[test]
+fn wrecks_merge_are_capped_and_expire() {
+    let mut w = world(&[0]);
+    let cost = udef(U_LIGHT_TANK).cost;
+    w.spawn_wreck(100 * TILE, 100 * TILE, cost, 1);
+    w.spawn_wreck(100 * TILE + 100, 100 * TILE, cost, 1);
+    assert_eq!(w.wrecks.iter().filter(|k| k.alive).count(), 1, "deux débris voisins fusionnent");
+    for i in 0..(MAX_WRECKS as i32 + 50) {
+        w.spawn_wreck((10 + (i % 40) * 5) * TILE, (10 + (i / 40) * 5) * TILE, cost, 1);
+    }
+    assert!(w.wrecks.iter().filter(|k| k.alive).count() <= MAX_WRECKS);
+    run(&mut w, WRECK_LIFE + 200);
+    assert_eq!(w.wrecks.iter().filter(|k| k.alive).count(), 0, "les débris disparaissent avec le temps");
+}
+

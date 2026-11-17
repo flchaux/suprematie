@@ -511,4 +511,65 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.5,0.12,0.5], pos: [1.1,1.8,-1.15], color: "faction" },
     ],
   },
+  // splitter : répartiteur (1 x 1) — entrée à l'arrière (-z), sorties : avant (+z), gauche (-x), droite (+x)
+  splitter: {
+    parts: [
+      { shape: "box", size: [0.95,0.12,0.95], pos: [0,0.06,0], color: "metal" },
+      { shape: "box", size: [0.7,0.2,0.7], pos: [0,0.2,0], color: "faction" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0,0.33,0.3], color: "glow" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [-0.3,0.33,0], rot: [0,-90,0], color: "glow" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0.3,0.33,0], rot: [0,90,0], color: "glow" },
+      { shape: "box", size: [0.08,0.18,0.95], pos: [0.47,0.1,0], color: "light", mirror: true },
+    ],
+  },
+  // sorter : trieur (1 x 1) — entrée à l'arrière (-z), sorties : avant (+z), gauche (-x), droite (+x)
+  sorter: {
+    parts: [
+      { shape: "box", size: [0.95,0.12,0.95], pos: [0,0.06,0], color: "metal" },
+      { shape: "box", size: [0.7,0.2,0.7], pos: [0,0.2,0], color: "hazard" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0,0.33,0.3], color: "glow" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [-0.3,0.33,0], rot: [0,-90,0], color: "glow" },
+      { shape: "box", size: [0.25,0.1,0.25], pos: [0,0.36,-0.15], color: "glass" },
+      { shape: "box", size: [0.08,0.18,0.95], pos: [0.47,0.1,0], color: "light", mirror: true },
+    ],
+  },
+  // overflow : débordement (1 x 1) — entrée à l'arrière (-z), sorties : avant (+z), gauche (-x), droite (+x)
+  overflow: {
+    parts: [
+      { shape: "box", size: [0.95,0.12,0.95], pos: [0,0.06,0], color: "metal" },
+      { shape: "box", size: [0.7,0.2,0.7], pos: [0,0.2,0], color: "dark" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0,0.33,0.3], color: "glow" },
+      { shape: "wedge", size: [0.16,0.05,0.18], pos: [-0.3,0.33,0], rot: [0,-90,0], color: "light" },
+      { shape: "wedge", size: [0.16,0.05,0.18], pos: [0.3,0.33,0], rot: [0,90,0], color: "light" },
+      { shape: "box", size: [0.08,0.18,0.95], pos: [0.47,0.1,0], color: "light", mirror: true },
+    ],
+  },
+  // gift_portal : portail de don (3 x 3) — arche lumineuse au-dessus d'une plateforme
+  gift_portal: {
+    parts: [
+      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
+      { shape: "cylinder", sides: 8, radius: 1.2, height: 0.1, pos: [0,0.3,0], color: "glass" },
+      { shape: "cylinder", sides: 8, radius: 0.35, height: 0.04, pos: [0,0.37,0], color: "glow" },
+      { shape: "box", size: [0.3,2.3,0.4], pos: [1.25,1.35,0], color: "faction", mirror: true },
+      { shape: "box", size: [2.8,0.3,0.4], pos: [0,2.55,0], color: "faction" },
+      { shape: "box", size: [2.2,0.1,0.15], pos: [0,2.3,0], color: "glow" },
+      { shape: "box", size: [0.12,1.9,0.12], pos: [1.08,1.3,0], color: "glow", mirror: true },
+      { shape: "box", size: [0.5,0.5,0.5], pos: [1.25,2.9,0], color: "light", mirror: true },
+    ],
+  },
+  // roboport : base de robots logistiques (3 x 3) — tour, aire d'appontage, antenne
+  roboport: {
+    parts: [
+      { use: "socle", pos: [0,0,0], scale: [3,1,3] },
+      { shape: "box", size: [2.4,1.2,2.4], pos: [0,0.85,0], color: "metal" },
+      { shape: "box", size: [2.7,0.15,2.7], pos: [0,1.5,0], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.8, height: 0.08, pos: [0,1.6,0], color: "dark" },
+      { shape: "box", size: [0.12,0.03,0.9], pos: [0,1.66,0], color: "hazard" },
+      { shape: "box", size: [0.9,0.03,0.12], pos: [0,1.66,0], color: "hazard" },
+      { shape: "box", size: [0.15,0.15,0.15], pos: [1.2,1.62,1.2], color: "glow", mirror: true },
+      { shape: "box", size: [0.15,0.15,0.15], pos: [1.2,1.62,-1.2], color: "glow", mirror: true },
+      { shape: "cylinder", sides: 6, radius: 0.06, height: 1.2, pos: [-1.0,2.2,-1.0], color: "light" },
+      { shape: "sphere", radius: 0.14, pos: [-1.0,2.85,-1.0], color: "glow" },
+    ],
+  },
 };

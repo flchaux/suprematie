@@ -177,7 +177,7 @@ fn target_point(w: &World, t: u32) -> Option<(i32, i32)> {
 }
 
 /// Tire avec l'arme `wi` depuis (x, y) sur la cible `t`.
-fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i32) {
+fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i32, src: u32) {
     let Some((tx, ty)) = target_point(w, t) else { return };
     let wd = &WEAPONS[wi];
     let dmg = wd.dmg * dmg_mult / 100;
@@ -188,11 +188,13 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         if shield_absorb(w, team, x, y, tx, ty, dmg) {
             return;
         }
+        w.shooter = src;
         if wd.aoe > 0 {
             area_damage(w, tx, ty, wd.aoe, dmg, owner, wd.mask, false);
         } else {
             hit_ref(w, t, dmg, owner, wd.stun);
         }
+        w.shooter = NONE;
         return;
     }
     let per_tick = (wd.speed * TILE / 20).max(1);
@@ -218,6 +220,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
             dmg,
             aoe: wd.aoe,
             special: 0,
+            src,
         });
     }
     w.ev(EV_FIRE, wi as i32, x, y, owner as i32);
@@ -266,7 +269,10 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
         if w.units.cold[s].cooldown[i] == 0 {
             w.units.cold[s].cooldown[i] = WEAPONS[wi].cooldown;
             w.units.cold[s].flags |= UF_FIRING;
-            fire(w, owner, wi, x, y, t, 100);
+            // vétérance : +5 % de dégâts par niveau
+            let mult = 100 + 5 * w.units.cold[s].lvl as i32;
+            let me = w.unit_id(s);
+            fire(w, owner, wi, x, y, t, mult, me);
         }
     }
 }
@@ -302,7 +308,7 @@ pub fn building_weapon(w: &mut World, b: usize) {
     }
     if w.buildings[b].cooldown == 0 {
         w.buildings[b].cooldown = WEAPONS[wi].cooldown;
-        fire(w, owner, wi, x, y, t, 100);
+        fire(w, owner, wi, x, y, t, 100, NONE);
     }
 }
 
@@ -390,6 +396,9 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
         }
     }
     w.units.hp[s] -= dmg;
+    if w.shooter != NONE {
+        w.units.cold[s].last_hit = w.shooter;
+    }
     if w.units.hp[s] <= 0 {
         w.dead_units.push(s as u32);
         if (attacker as usize) < w.players.len() {
@@ -525,7 +534,9 @@ pub fn update_projectiles(w: &mut World) {
             continue;
         }
         w.projectiles.swap_remove(i);
+        w.shooter = p.src;
         impact(w, &p);
+        w.shooter = NONE;
     }
 }
 
@@ -654,7 +665,30 @@ pub fn cleanup_dead(w: &mut World) {
     check_victory(w);
 }
 
+/// Expérience : l'unité qui a porté le dernier coup gagne les points de vie de sa victime ;
+/// un niveau tous les deux fois ses propres points de vie détruits (5 niveaux au plus).
+fn credit_kill(w: &mut World, victim: usize) {
+    let Some(k) = w.unit(w.units.cold[victim].last_hit) else { return };
+    if w.team_of(w.units.owner[k]) == w.team_of(w.units.owner[victim]) {
+        return;
+    }
+    let gain = udef(w.units.kind[victim]).hp.max(1) as u32;
+    let own = udef(w.units.kind[k]).hp.max(1) as u32;
+    let c = &mut w.units.cold[k];
+    c.xp = c.xp.saturating_add(gain);
+    let lvl = ((c.xp / (2 * own)) as u8).min(MAX_LVL);
+    if lvl > c.lvl {
+        c.lvl = lvl;
+        // montée de niveau : points de vie maximum relevés et soin partiel
+        let max = w.max_hp(k);
+        w.units.hp[k] = (w.units.hp[k] + max / 4).min(max);
+        let (x, y) = (w.units.x[k], w.units.y[k]);
+        w.ev(EV_PROMOTED, x, y, lvl as i32, w.units.owner[k] as i32);
+    }
+}
+
 fn kill_unit(w: &mut World, s: usize) {
+    credit_kill(w, s);
     let kind = w.units.kind[s];
     let owner = w.units.owner[s];
     let (x, y) = (w.units.x[s], w.units.y[s]);

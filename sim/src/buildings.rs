@@ -15,7 +15,7 @@ pub const RECIPE_SCALE: u32 = 100 * 1024;
 fn needs_tick(c: BClass) -> bool {
     matches!(
         c,
-        BClass::Extractor | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad
+        BClass::Extractor | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport
     )
 }
 
@@ -382,6 +382,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
     match bb.def().class {
         BClass::Depot => true,
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::accepts(w, b, item),
+        BClass::Router => bb.stash.len() < 4,
         BClass::Crafter => {
             if bb.recipe == RECIPE_NONE {
                 bb.def().crafter != Crafter::Assembler && recipe_for(w, bb, item) != RECIPE_NONE
@@ -420,6 +421,11 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
             w.players[o].stock[item as usize] += 1;
         }
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::insert(w, b, item),
+        BClass::Router => {
+            let bb = &mut w.buildings[b];
+            bb.stash.push(item as u16);
+            bb.wake = 0;
+        }
         BClass::Crafter => {
             let need_switch = {
                 let bb = &w.buildings[b];
@@ -550,6 +556,9 @@ pub fn update_buildings(w: &mut World) {
             }
             BClass::Gate => tick_gate(w, b),
             BClass::Station | BClass::CargoPad => crate::logistics::tick_station(w, b),
+            BClass::Router => tick_router(w, b),
+            BClass::Portal => crate::logistics::tick_portal(w, b),
+            BClass::Roboport => crate::logistics::tick_roboport(w, b),
             BClass::Transfer | BClass::Radar | BClass::Beacon => {
                 let need = bb.def().power_use;
                 let s = use_power(w, b, need);
@@ -562,6 +571,52 @@ pub fn update_buildings(w: &mut World) {
             _ => {}
         }
     }
+}
+
+/// Tapis de contrôle : un objet par tick, de la mémoire tampon (4 objets) vers les sorties.
+/// Répartiteur : gauche, avant, droite à tour de rôle. Trieur : l'objet choisi à gauche, le reste
+/// devant. Débordement : devant d'abord, sur les côtés quand l'avant est bloqué.
+fn tick_router(w: &mut World, b: usize) {
+    if w.buildings[b].stash.is_empty() {
+        w.buildings[b].working = false;
+        w.buildings[b].wake = w.tick + SLEEP;
+        return;
+    }
+    let bb = &w.buildings[b];
+    let (x, y, d, kind, filter, turn) = (bb.x, bb.y, bb.dir as usize, bb.kind, bb.recipe, bb.hand as usize);
+    let item = bb.stash[0] as u8;
+    let outs = [(d + 3) % 4, d, (d + 1) % 4]; // gauche, avant, droite
+    let order: &[usize] = match kind {
+        B_SPLITTER => match turn % 3 {
+            0 => &[0, 1, 2],
+            1 => &[1, 2, 0],
+            _ => &[2, 0, 1],
+        },
+        B_SORTER => {
+            if filter != 0 && filter != RECIPE_NONE && item == filter {
+                &[0]
+            } else {
+                &[1]
+            }
+        }
+        _ => &[1, 0, 2],
+    };
+    for &k in order {
+        let (dx, dy) = DIRS[outs[k]];
+        if push_to(w, x + dx, y + dy, item) {
+            let bb = &mut w.buildings[b];
+            bb.stash.remove(0);
+            bb.working = true;
+            if kind == B_SPLITTER {
+                bb.hand = ((k + 1) % 3) as u8;
+            }
+            wake_watchers(w, b);
+            return;
+        }
+    }
+    let bb = &mut w.buildings[b];
+    bb.working = false;
+    bb.wake = w.tick + 4;
 }
 
 fn tick_extractor(w: &mut World, b: usize) {

@@ -159,6 +159,23 @@
             {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({ui.teamStock[i] ?? 0})</option>{/if}{/each}
           </select></div>
         <div class="row wrap">{#each ui.teamStock as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>
+      {:else if bdef.cls === BClass.Router}
+        {#if bdef.key === "splitter"}<span class="dim small">Répartit les objets à tour de rôle à gauche, devant et à droite. Entrée par l'arrière ; R pour tourner à la pose.</span>
+        {:else if bdef.key === "overflow"}<span class="dim small">Envoie devant ; quand l'avant est bloqué, déborde à gauche puis à droite.</span>
+        {:else}
+          <span class="dim small">L'objet choisi part à gauche, tout le reste continue devant.</span>
+          <div class="row"><span class="kicker">Objet trié</span>
+            <select value={info.recipe === 255 ? 0 : info.recipe} onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value) || RECIPE_NONE)}>
+              <option value={0}>— aucun —</option>
+              {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name}</option>{/if}{/each}
+            </select></div>
+        {/if}
+      {:else if bdef.cls === BClass.Portal}
+        <span class="dim small">Les unités d'un allié qui entrent dans ce portail deviennent les vôtres. Pour donner des troupes à un allié, envoyez-les dans SON portail.</span>
+      {:else if bdef.cls === BClass.Roboport}
+        {@const flying = (info.carriers ?? []).filter((c: { state: number }) => c.state === 1 || c.state === 3).length}
+        <span class="dim small">8 robots apportent depuis le stock (le vôtre puis celui de l'équipe) ce qui manque aux fabricants, usines, laboratoires et silos dans un rayon de 25 cases, et évacuent vers le stock les sorties bloquées.</span>
+        <div class="row"><span class="kicker">Robots en vol</span> <b class="num">{flying}</b> / 8</div>
       {:else if isStation}
         {@const air = bdef.cls === BClass.CargoPad}
         <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage." : "Trains : sur les rails de l'équipe, 400 objets par voyage."} Les bras déposent dans « À envoyer » et prennent dans « Reçus ». Une gare alliée peut être la destination.</span>
@@ -186,7 +203,8 @@
         <button class="grp tip" onclick={() => client.selectIds(g.ids)}>
           {#if sprite("units", d.units[g.kind].key)}<img src={sprite("units", d.units[g.kind].key)} alt="" />{:else}<span class="ab">{abbrev(d.units[g.kind].name)}</span>{/if}
           <span class="cnt num">{g.count}</span>
-          <span class="tt"><b>{d.units[g.kind].name}</b><br /><span class="num">PV {d.units[g.kind].hp}</span> · {client.unitLayerName(d.units[g.kind].layer)}<br /><span class="dim">Clic : ne garder que ce type</span></span>
+          {#if g.lvl}<span class="vet">{"◆".repeat(g.lvl)}</span>{/if}
+          <span class="tt"><b>{d.units[g.kind].name}</b><br /><span class="num">PV {d.units[g.kind].hp}</span> · {client.unitLayerName(d.units[g.kind].layer)}{#if g.lvl}<br /><span class="good">Vétérance {g.lvl} : +{g.lvl * 10} % de points de vie, +{g.lvl * 5} % de dégâts</span>{/if}<br /><span class="dim">Clic : ne garder que ce type</span></span>
         </button>
       {/each}
     </div>
@@ -226,6 +244,7 @@
   .status.good { color: var(--good); }
   .status.good .led { background: var(--good); box-shadow: 0 0 8px var(--good); }
   .status.warn { color: var(--warn); }
+  .vet { position: absolute; top: 1px; left: 3px; font-size: 8px; color: #ffd060; letter-spacing: -1px; text-shadow: 0 0 4px rgba(255, 200, 80, 0.8); }
   .status.warn .led { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: blink 1s infinite; }
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }

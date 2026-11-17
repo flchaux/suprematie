@@ -270,6 +270,13 @@ pub fn logistics_demo() -> World {
     if f != usize::MAX {
         w.buildings[f].recipe = 0;
     }
+    // base de robots : ils apportent du minerai (stock) à la fonderie voisine et évacuent ses plaques
+    put(&mut w, 0, B_GENERATOR, x0 + 27, y0 + 14, 0);
+    put(&mut w, 0, B_GENERATOR, x0 + 30, y0 + 14, 0);
+    put(&mut w, 0, B_ROBOPORT, x0 + 28, y0 + 17, 0);
+    w.players[0].stock[IRON_ORE as usize] = 400;
+    // portail de don de l'allié (joueur 1)
+    put(&mut w, 1, B_PORTAL, x0 + 60, y0 + 20, 0);
     let asm = put(&mut w, 0, B_ASSEMBLER1, x0 + 34, y0 + 26, 0);
     if asm != usize::MAX {
         w.buildings[asm].recipe = 4;

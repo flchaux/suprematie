@@ -603,9 +603,9 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                     }
                     steer(w, s, tx, ty, tx, ty, 5 * TILE);
                     w.units.cold[s].stuck = 0;
-                } else if def.build_power > 0 && w.units.hp[t] < udef(w.units.kind[t]).hp && w.team_of(w.units.owner[t]) == w.team_of(owner) {
+                } else if def.build_power > 0 && w.units.hp[t] < w.max_hp(t) && w.team_of(w.units.owner[t]) == w.team_of(owner) {
                     let bp = build_power(w, s) as i32;
-                    let max = udef(w.units.kind[t]).hp;
+                    let max = w.max_hp(t);
                     w.units.hp[t] = (w.units.hp[t] + (max / 400).max(1) * bp / 10).min(max);
                     w.units.cold[s].flags |= UF_WORKING;
                 }

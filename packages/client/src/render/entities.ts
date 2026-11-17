@@ -102,6 +102,8 @@ export class Entities {
   diag: THREE.InstancedMesh;
   diagIcon: THREE.InstancedBufferAttribute;
   diagSince = new Map<number, { icon: number; since: number; seen: number }>();
+  /** insignes de vétérance (losanges dorés) */
+  ranks: THREE.InstancedMesh;
   frameN = 0;
   lastFxTick = -1;
   shields: THREE.InstancedMesh;
@@ -151,7 +153,7 @@ export class Entities {
     this.group.add(this.proj);
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
-    for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1]] as const) {
+    for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
       const built = buildModel(VEHICLE_MODELS[key] ?? fallbackModel(0.5));
       const size = new THREE.Vector3();
       built.box.getSize(size);
@@ -166,6 +168,12 @@ export class Entities {
     const t = atlas.sample(vec2(uv().x.add(icon).div(4), uv().y));
     dmat.colorNode = t.rgb;
     dmat.opacityNode = t.a;
+    this.ranks = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.7, 0.7).rotateZ(Math.PI / 4), new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(2.2, 1.7, 0.5), depthTest: false, transparent: true }), 3000);
+    this.ranks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.ranks.frustumCulled = false;
+    this.ranks.renderOrder = 8;
+    this.ranks.count = 0;
+    this.group.add(this.ranks);
     this.diag = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dmat, 2000);
     this.diag.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.diag.frustumCulled = false;
@@ -263,6 +271,7 @@ export class Entities {
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
+    let nr = 0;
     const now = performance.now();
     const camQ = this.camera?.quaternion ?? tmpQ.identity();
     for (const ic of this.icons) ic.count = 0;
@@ -343,7 +352,17 @@ export class Entities {
         rings++;
       }
       const hp = buf[o + 7];
-      const frac = Math.max(0, Math.min(1, hp / def.hp));
+      // vétérance : niveau 0 à 5 (+10 % de points de vie par niveau)
+      const lvl = (buf[o + 1] >>> 24) & 7;
+      const frac = Math.max(0, Math.min(1, hp / ((def.hp * (100 + 10 * lvl)) / 100)));
+      if (lvl > 0 && !enemy && nr + lvl <= 3000) {
+        // losanges dorés au-dessus de l'unité
+        const sz = Math.max(0.22, Math.min(0.6, iconScale * 0.25));
+        for (let k = 0; k < lvl; k++) {
+          tmpM.compose(tmpV.set(x + (k - (lvl - 1) / 2) * sz * 1.25, y + 1.45 + r * 0.6, z + r), camQ, tmpS.set(sz, sz, sz));
+          this.ranks.setMatrixAt(nr++, tmpM);
+        }
+      }
       if ((selected.has(id) || frac < 0.999) && bars < 5900) {
         const wdt = Math.max(0.8, r * 1.6);
         tmpM.compose(tmpV.set(x, y + 1.2 + r * 0.6, z + r), tmpQ.identity(), tmpS.set(wdt, 1, 1));
@@ -464,6 +483,8 @@ export class Entities {
       }
     }
     this.diag.count = nd;
+    this.ranks.count = nr;
+    this.ranks.instanceMatrix.needsUpdate = true;
     this.diag.instanceMatrix.needsUpdate = true;
     this.diagIcon.needsUpdate = true;
     if (this.frameN % 120 === 0) for (const [k, st] of this.diagSince) if (this.frameN - st.seen > 120) this.diagSince.delete(k);
@@ -490,9 +511,9 @@ export class Entities {
         km.ensure(km.n + 1);
         const g = groundHeight(this.map, x, z);
         let y = g + 0.05;
-        if (kind === 1) {
-          // drone : vol à 5 cases au-dessus du sol (ou de l'eau), posé sur l'héliport à l'arrêt
-          const target = moving ? Math.max(g, this.map.waterLevel * HSCALE) + 5 : g + 0.45;
+        if (kind >= 1) {
+          // drone : vol à 5 cases au-dessus du sol (ou de l'eau), posé sur l'héliport à l'arrêt ; robot : 3 cases
+          const target = moving ? Math.max(g, this.map.waterLevel * HSCALE) + (kind === 2 ? 3 : 5) : g + 0.45;
           const a = this.carAlt.get(idx) ?? target;
           const na = a + (target - a) * Math.min(1, dt * 2.5);
           this.carAlt.set(idx, na);

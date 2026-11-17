@@ -297,6 +297,12 @@ pub enum BClass {
     Station,
     /// Héliport de fret : drones de transport (rapides, petite capacité, en ligne droite).
     CargoPad,
+    /// Tapis de contrôle : répartiteur, trieur, débordement (selon le type).
+    Router,
+    /// Portail de don : les unités d'un allié qui le traversent passent à son propriétaire.
+    Portal,
+    /// Base de robots logistiques : alimente les fabricants voisins depuis le stock, évacue les sorties bloquées.
+    Roboport,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -397,8 +403,13 @@ pub const B_WAREHOUSE: u16 = 35;
 pub const B_RAIL: u16 = 36;
 pub const B_STATION: u16 = 37;
 pub const B_CARGO_PAD: u16 = 38;
+pub const B_SPLITTER: u16 = 39;
+pub const B_SORTER: u16 = 40;
+pub const B_OVERFLOW: u16 = 41;
+pub const B_PORTAL: u16 = 42;
+pub const B_ROBOPORT: u16 = 43;
 
-pub const BUILDINGS: [BuildingDef; 39] = [
+pub const BUILDINGS: [BuildingDef; 44] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -439,7 +450,17 @@ pub const BUILDINGS: [BuildingDef; 39] = [
     BuildingDef { key: "rail", name: "Rail", size: (1, 1), hp: 150, cost: &[(IRON_PLATE, 3)], build: 1, tech: 1, class: BClass::Rail, passable: true, ..BD },
     BuildingDef { key: "station", name: "Gare", size: (3, 3), hp: 2500, power_use: 100, cost: &[(IRON_PLATE, 40), (GEAR, 10), (CIRCUIT, 5)], build: 10, tech: 1, class: BClass::Station, ..BD },
     BuildingDef { key: "cargo_pad", name: "Héliport de fret", size: (3, 3), hp: 1500, power_use: 150, cost: &[(STEEL, 15), (CIRCUIT, 10)], build: 10, tech: 4, class: BClass::CargoPad, ..BD },
+    // tapis de contrôle (entrée par l'arrière ; sorties : avant, gauche, droite)
+    BuildingDef { key: "splitter", name: "Répartiteur", size: (1, 1), hp: 120, cost: &[(IRON_PLATE, 6), (GEAR, 4), (CIRCUIT, 2)], build: 2, tech: 1, class: BClass::Router, passable: true, ..BD },
+    BuildingDef { key: "sorter", name: "Trieur", size: (1, 1), hp: 120, cost: &[(IRON_PLATE, 6), (GEAR, 4), (CIRCUIT, 4)], build: 2, tech: 8, class: BClass::Router, passable: true, ..BD },
+    BuildingDef { key: "overflow", name: "Débordement", size: (1, 1), hp: 120, cost: &[(IRON_PLATE, 6), (GEAR, 4), (CIRCUIT, 2)], build: 2, tech: 8, class: BClass::Router, passable: true, ..BD },
+    BuildingDef { key: "gift_portal", name: "Portail de don", size: (3, 3), hp: 2000, cost: &[(IRON_PLATE, 40), (COPPER_PLATE, 20), (CIRCUIT, 10)], build: 8, class: BClass::Portal, passable: true, ..BD },
+    BuildingDef { key: "roboport", name: "Base de robots logistiques", size: (3, 3), hp: 3000, power_use: 800, cost: &[(STEEL, 40), (PROCESSOR, 10), (COMPOSITE, 10)], build: 20, tech: 31, class: BClass::Roboport, ..BD },
 ];
+
+/// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
+pub const ROBOPORT_RANGE: i32 = 25;
+pub const ROBOTS_PER_PORT: usize = 8;
 
 /// Véhicules de transport : 0 = train (rails, grande capacité), 1 = drone de fret (vol direct, rapide).
 pub struct CarrierDef {
@@ -454,9 +475,11 @@ pub struct CarrierDef {
     /// véhicules au plus par gare / héliport de départ
     pub max_per_station: usize,
 }
-pub const CARRIERS: [CarrierDef; 2] = [
+pub const CARRIERS: [CarrierDef; 3] = [
     CarrierDef { capacity: 400, speed: 8 * 256 / 20, dock: 60, buffer: 1600, cost: &[(IRON_PLATE, 40), (GEAR, 20), (STEEL, 10)], max_per_station: 4 },
     CarrierDef { capacity: 25, speed: 24 * 256 / 20, dock: 20, buffer: 200, cost: &[(STEEL, 6), (CIRCUIT, 8)], max_per_station: 6 },
+    // robot logistique (fourni avec sa base)
+    CarrierDef { capacity: 5, speed: 14 * 256 / 20, dock: 6, buffer: 0, cost: &[], max_per_station: ROBOTS_PER_PORT },
 ];
 
 /// Missile stratégique : composants livrés au silo par des bras.
@@ -520,6 +543,7 @@ const UD: UnitDef = UnitDef {
 pub const U_COMMANDER: u16 = 0;
 pub const U_ENG1: u16 = 1;
 pub const U_LINE_ROBOT: u16 = 4;
+pub const U_LIGHT_TANK: u16 = 6;
 pub const U_SONDE: u16 = 9;
 pub const U_SIEGE_WALKER: u16 = 16;
 pub const U_HEAVY_ARTY: u16 = 18;

@@ -2,7 +2,7 @@
 import type { GameData, LobbyState, StatSample } from "@supreme/shared";
 import { DEFAULT_GFX, type GfxSettings } from "../render/gfx.ts";
 
-export interface SelUnitGroup { kind: number; count: number; ids: number[] }
+export interface SelUnitGroup { kind: number; count: number; ids: number[]; /** vétérance la plus haute du groupe */ lvl?: number }
 export interface Message { id: number; text: string; kind: "info" | "alert" | "chat" | "good"; time: number }
 
 export const ui = $state({

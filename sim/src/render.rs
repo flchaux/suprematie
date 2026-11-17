@@ -76,7 +76,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     };
     out.extend_from_slice(&[
         w.unit_id(s) as i32,
-        w.units.kind[s] as i32 | (w.units.owner[s] as i32) << 8 | flags << 16,
+        w.units.kind[s] as i32 | (w.units.owner[s] as i32) << 8 | flags << 16 | (c.lvl as i32) << 24,
         w.units.x[s],
         w.units.y[s],
         w.units.px[s],
@@ -279,6 +279,10 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
         if !c.alive || c.x / TILE < mx0 || c.x / TILE > mx1 || c.y / TILE < my0 || c.y / TILE > my1 {
             continue;
         }
+        // robots posés dans leur base : invisibles
+        if c.kind == 2 && c.state & 1 == 0 {
+            continue;
+        }
         let moving = (c.state & 1) as i32;
         out.extend_from_slice(&[ci as i32, c.x, c.y, c.kind as i32 | (c.owner as i32) << 8 | moving << 16 | ((c.load > 0) as i32) << 17, c.angle as i32]);
         nc += 1;
@@ -392,7 +396,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let Some(s) = w.unit(id) else { return "null".into() };
     let c = &w.units.cold[s];
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -401,7 +405,10 @@ pub fn info_unit(w: &World, id: u32) -> String {
         js_list(c.cargo.iter()),
         c.deployed,
         c.ready_tick.saturating_sub(w.tick),
-        c.children
+        c.children,
+        c.xp,
+        c.lvl,
+        w.max_hp(s)
     )
 }
 

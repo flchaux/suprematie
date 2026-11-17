@@ -265,4 +265,6 @@ pub extern "C" fn game_winner() -> i32 {
 mod tests;
 #[cfg(test)]
 mod logistics_tests;
+#[cfg(test)]
+mod features_tests;
 pub mod stress;

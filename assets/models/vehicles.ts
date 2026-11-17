@@ -32,4 +32,14 @@ export const VEHICLE_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.1,0.06,0.1], pos: [0,0.5,0.38], color: "glow" },
     ],
   },
+  // robot logistique : petit corps avec deux propulseurs et une caisse
+  logistic_robot: {
+    parts: [
+      { shape: "box", size: [0.5,0.25,0.6], pos: [0,0.5,0], color: "light" },
+      { shape: "box", size: [0.52,0.06,0.62], pos: [0,0.64,0], color: "faction" },
+      { shape: "cylinder", sides: 6, radius: 0.13, height: 0.3, pos: [0.36,0.5,0], rot: [90,0,0], color: "metal", mirror: true },
+      { shape: "box", size: [0.08,0.06,0.08], pos: [0.36,0.5,-0.17], color: "glow", mirror: true },
+      { shape: "box", size: [0.3,0.2,0.3], pos: [0,0.28,0], color: "hazard" },
+    ],
+  },
 };

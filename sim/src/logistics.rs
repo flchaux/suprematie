@@ -351,6 +351,10 @@ pub fn update_carriers(w: &mut World) {
         if !w.carriers[ci].alive {
             continue;
         }
+        if w.carriers[ci].kind == 2 {
+            update_robot(w, ci);
+            continue;
+        }
         let (ra, rb) = (w.carriers[ci].a, w.carriers[ci].b);
         let (Some(a), Some(b)) = (w.building(ra), w.building(rb)) else {
             // une extrémité détruite : le véhicule et sa cargaison sont perdus
@@ -451,5 +455,260 @@ pub fn update_carriers(w: &mut World) {
     // les places libres en fin de liste sont retirées (la liste reste courte)
     while w.carriers.last().is_some_and(|c| !c.alive) {
         w.carriers.pop();
+    }
+}
+
+// ---------- portail de don ----------
+
+/// Portail de don : les unités d'un allié (même équipe, autre joueur) qui se trouvent sur le portail
+/// passent au propriétaire du portail. Pas de menu : on y envoie ses troupes comme ailleurs.
+pub fn tick_portal(w: &mut World, b: usize) {
+    w.buildings[b].wake = w.tick + 10;
+    let (owner, bx, by) = (w.buildings[b].owner, w.buildings[b].x, w.buildings[b].y);
+    let (bw, bh) = w.buildings[b].size();
+    let team = w.team_of(owner);
+    let (cx, cy) = w.buildings[b].center();
+    let (x0, y0, x1, y1) = (bx * TILE, by * TILE, (bx + bw) * TILE, (by + bh) * TILE);
+    let mut found: Vec<usize> = Vec::new();
+    {
+        let u = &w.units;
+        let players = &w.players;
+        w.grid.fine.query(cx, cy, 2 * TILE, |s| {
+            if !u.alive[s] || u.owner[s] == owner || u.kind[s] == U_COMMANDER || u.cold[s].carried_by != NONE {
+                return;
+            }
+            if players[u.owner[s] as usize].team != team {
+                return;
+            }
+            if u.x[s] >= x0 && u.x[s] < x1 && u.y[s] >= y0 && u.y[s] < y1 {
+                found.push(s);
+            }
+        });
+    }
+    found.sort_unstable();
+    for s in found {
+        if w.players[owner as usize].unit_count >= UNIT_CAP {
+            break;
+        }
+        let from = w.units.owner[s];
+        crate::units::clear_orders(w, s);
+        // les passagers d'un transport changent aussi de camp
+        let cargo = w.units.cold[s].cargo.clone();
+        for id in std::iter::once(w.unit_id(s)).chain(cargo) {
+            if let Some(u) = w.unit(id) {
+                let prev = w.units.owner[u] as usize;
+                w.players[prev].unit_count = w.players[prev].unit_count.saturating_sub(1);
+                w.units.owner[u] = owner;
+                w.players[owner as usize].unit_count += 1;
+                w.units.cold[u].parent = NONE;
+            }
+        }
+        let (x, y) = (w.units.x[s], w.units.y[s]);
+        w.ev(EV_GIFT, x, y, from as i32, owner as i32);
+    }
+}
+
+// ---------- robots logistiques ----------
+
+/// Objet qui manque à un bâtiment (et la quantité voulue), si un robot peut l'apporter.
+fn need_of(w: &World, b: usize) -> Option<(u8, u16)> {
+    let bb = &w.buildings[b];
+    let want: Vec<(u8, u16)> = match bb.def().class {
+        BClass::Crafter if bb.recipe != RECIPE_NONE => RECIPES[bb.recipe as usize].inputs.iter().enumerate().map(|(j, &(it, n))| (it, (n as u16 * 2).saturating_sub(bb.inv[j]))).collect(),
+        BClass::Factory => match bb.queue.first() {
+            Some(&(k, _)) => udef(k).cost.iter().enumerate().map(|(j, &(it, n))| (it, n.saturating_sub(bb.inv[j]))).collect(),
+            None => Vec::new(),
+        },
+        BClass::Lab => {
+            let t = w.players[bb.owner as usize].research;
+            let tier = if t != 0 { TECHS[t as usize].tier as usize } else { 0 };
+            (0..tier.min(6)).map(|k| (PACK1 + k as u8, 2u16.saturating_sub(bb.inv[k]))).collect()
+        }
+        BClass::Silo => MISSILE_COST.iter().enumerate().map(|(j, &(it, n))| (it, n.saturating_sub(bb.inv[j]))).collect(),
+        BClass::AntiMissile => INTERCEPTOR_COST.iter().enumerate().map(|(j, &(it, n))| (it, n.saturating_sub(bb.inv[j]))).collect(),
+        _ => Vec::new(),
+    };
+    let owner = bb.owner as usize;
+    want.into_iter().find(|&(it, n)| n > 0 && w.avail(owner, it) > 0 && crate::buildings::accepts(w, b, it))
+}
+
+/// Sortie bloquée d'un fabricant ou d'un extracteur (que les robots évacuent vers le stock).
+fn blocked_output(w: &World, b: usize) -> bool {
+    let bb = &w.buildings[b];
+    match bb.def().class {
+        BClass::Crafter if bb.recipe != RECIPE_NONE => {
+            let on = RECIPES[bb.recipe as usize].output.1 as u16;
+            bb.out + on > (on * 3).max(4)
+        }
+        BClass::Extractor => bb.out >= 5,
+        _ => false,
+    }
+}
+
+/// Base de robots : énergie à chaque tick, distribution des tâches toutes les 20 ticks.
+pub fn tick_roboport(w: &mut World, b: usize) {
+    let need = w.buildings[b].def().power_use;
+    let s = crate::buildings::use_power(w, b, need);
+    w.buildings[b].working = s >= 512;
+    if !w.buildings[b].working || !(w.tick + b as u32).is_multiple_of(20) {
+        return;
+    }
+    let me = w.building_ref(b);
+    let owner = w.buildings[b].owner;
+    let (cx, cy) = w.buildings[b].center();
+    // les robots viennent avec la base
+    let n = w.carriers.iter().filter(|c| c.alive && c.kind == 2 && c.a == me).count();
+    for _ in n..ROBOTS_PER_PORT {
+        let c = Carrier { alive: true, kind: 2, owner, a: me, b: me, state: 0, ready: true, x: cx, y: cy, ..Carrier::default() };
+        if let Some(slot) = w.carriers.iter().position(|c| !c.alive) {
+            w.carriers[slot] = c;
+        } else {
+            w.carriers.push(c);
+        }
+    }
+    let mut idle: Vec<usize> = (0..w.carriers.len()).filter(|&i| {
+        let c = &w.carriers[i];
+        c.alive && c.kind == 2 && c.a == me && c.state == 0 && c.timer == 0
+    }).collect();
+    if idle.is_empty() {
+        return;
+    }
+    let mut busy: Vec<u32> = w.carriers.iter().filter(|c| c.alive && c.kind == 2 && c.state == 1).map(|c| c.b).collect();
+    busy.sort_unstable();
+    let r = ROBOPORT_RANGE * TILE;
+    let mut cands: Vec<usize> = Vec::new();
+    w.grid.query_buildings(cx, cy, r, |o| cands.push(o));
+    cands.sort_unstable();
+    cands.dedup();
+    let cap = CARRIERS[2].capacity;
+    idle.reverse();
+    for o in cands {
+        if idle.is_empty() {
+            break;
+        }
+        let ob = &w.buildings[o];
+        if !ob.alive || ob.owner != owner || !ob.complete() || o == b {
+            continue;
+        }
+        let (ox, oy) = ob.center();
+        if crate::fixed::dist2(cx, cy, ox, oy) > (r as i64) * (r as i64) {
+            continue;
+        }
+        let oref = w.building_ref(o);
+        if busy.binary_search(&oref).is_ok() {
+            continue;
+        }
+        let job = if let Some((it, n)) = need_of(w, o) {
+            let k = (n.min(cap) as i32).min(w.avail(owner as usize, it)).max(0) as u16;
+            if k == 0 {
+                continue;
+            }
+            w.pay(owner as usize, it, k as i32);
+            Some((it, k))
+        } else if blocked_output(w, o) {
+            None
+        } else {
+            continue;
+        };
+        let ci = idle.pop().unwrap_or(usize::MAX);
+        if ci == usize::MAX {
+            break;
+        }
+        let c = &mut w.carriers[ci];
+        if let Some((it, k)) = job {
+            c.cargo[it as usize] += k;
+            c.load += k;
+        }
+        c.b = oref;
+        c.from = (cx, cy);
+        c.to = (ox, oy);
+        c.pos = 0;
+        c.len = crate::fixed::dist(cx, cy, ox, oy);
+        c.state = 1;
+        if let Err(p) = busy.binary_search(&oref) {
+            busy.insert(p, oref);
+        }
+    }
+}
+
+/// Vol d'un robot : livraison (ou ramassage d'une sortie bloquée), puis retour à sa base.
+fn update_robot(w: &mut World, ci: usize) {
+    let Some(port) = w.building(w.carriers[ci].a) else {
+        w.carriers[ci].alive = false;
+        return;
+    };
+    let owner = w.carriers[ci].owner as usize;
+    match w.carriers[ci].state {
+        0 => {
+            let c = &mut w.carriers[ci];
+            c.timer = c.timer.saturating_sub(1);
+            // retour avec des objets (ramassés, ou non livrés) : versés au stock du joueur
+            if c.load > 0 {
+                let cargo = c.cargo;
+                c.cargo = [0; NUM_ITEMS];
+                c.load = 0;
+                for (i, &n) in cargo.iter().enumerate() {
+                    w.players[owner].stock[i] += n as i32;
+                }
+            }
+            let (x, y) = w.buildings[port].center();
+            let c = &mut w.carriers[ci];
+            c.x = x;
+            c.y = y;
+        }
+        _ => {
+            let to_target = w.carriers[ci].state == 1;
+            let speed = CARRIERS[2].speed;
+            let c = &mut w.carriers[ci];
+            c.pos = (c.pos + speed).min(c.len);
+            let (fx, fy) = c.from;
+            let (tx, ty) = c.to;
+            let l = c.len.max(1) as i64;
+            c.x = fx + ((tx - fx) as i64 * c.pos as i64 / l) as i32;
+            c.y = fy + ((ty - fy) as i64 * c.pos as i64 / l) as i32;
+            let arrived = c.pos >= c.len;
+            let ang = w.trig.atan2((ty - fy) as i64, (tx - fx) as i64);
+            w.carriers[ci].angle = ang;
+            if !arrived {
+                return;
+            }
+            if to_target {
+                if let Some(t) = w.building(w.carriers[ci].b) {
+                    if w.carriers[ci].load > 0 {
+                        // livraison : ce que le bâtiment accepte
+                        for i in 1..NUM_ITEMS {
+                            while w.carriers[ci].cargo[i] > 0 && crate::buildings::accepts(w, t, i as u8) {
+                                crate::buildings::insert_item(w, t, i as u8);
+                                w.carriers[ci].cargo[i] -= 1;
+                                w.carriers[ci].load -= 1;
+                            }
+                        }
+                    } else if blocked_output(w, t) {
+                        // ramassage d'une sortie bloquée
+                        let it = match w.buildings[t].def().class {
+                            BClass::Crafter => RECIPES[w.buildings[t].recipe as usize].output.0,
+                            _ => w.buildings[t].recipe,
+                        };
+                        let k = w.buildings[t].out.min(CARRIERS[2].capacity);
+                        w.buildings[t].out -= k;
+                        w.carriers[ci].cargo[it as usize] += k;
+                        w.carriers[ci].load += k;
+                    }
+                    w.buildings[t].wake = 0;
+                    crate::buildings::wake_watchers(w, t);
+                }
+                let (px, py) = w.buildings[port].center();
+                let c = &mut w.carriers[ci];
+                c.from = (c.x, c.y);
+                c.to = (px, py);
+                c.pos = 0;
+                c.len = crate::fixed::dist(c.x, c.y, px, py);
+                c.state = 3;
+            } else {
+                let c = &mut w.carriers[ci];
+                c.state = 0;
+                c.timer = CARRIERS[2].dock;
+            }
+        }
     }
 }

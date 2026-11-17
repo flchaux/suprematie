@@ -78,6 +78,15 @@
   .lock { position: absolute; top: 18px; left: 5px; color: var(--amber); }
   .card.locked img { filter: grayscale(1) brightness(0.55); }
   .card:disabled { opacity: 0.62; }
+  /* écrans étroits : le panneau rétrécit, les onglets passent à la ligne, la grille perd des colonnes */
+  .build { min-width: 0; flex-shrink: 1; max-width: min(600px, calc(100vw - 545px)); }
+  .tabs { flex-wrap: wrap; }
+  .grid { grid-template-columns: repeat(auto-fill, 106px); }
+  @media (max-width: 1250px) {
+    .grid { grid-template-columns: repeat(auto-fill, 92px); }
+    .card { width: 92px; height: 78px; }
+    .card img { width: 48px; height: 48px; }
+  }
   @media (max-width: 1100px) {
     .grid { grid-template-columns: repeat(4, 96px); }
     .card { width: 96px; }

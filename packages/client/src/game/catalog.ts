@@ -2,10 +2,11 @@
 // et unités proposées par une usine (même ordre à l'écran et au clavier).
 import type { GameData } from "@supreme/shared";
 
-/** [nom, icône, clés des bâtiments] ; l'onglet n (1..6) et le bâtiment n (1..9) au clavier. */
+/** [nom, icône, clés des bâtiments] ; l'onglet n (1..7) et le bâtiment n (1..9) au clavier. */
 export const BUILD_CATS: [string, string, string[]][] = [
   ["Production", "production", ["extractor", "furnace", "assembler1", "assembler2", "assembler3", "refinery", "chemical", "lab", "depot"]],
-  ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "pylon", "warehouse", "rail", "station", "cargo_pad"]],
+  ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "splitter", "sorter", "overflow", "pylon"]],
+  ["Transport", "unload", ["warehouse", "rail", "station", "cargo_pad", "roboport", "gift_portal"]],
   ["Énergie", "energy", ["generator", "hydro_plant", "crystal_reactor"]],
   ["Usines", "factory", ["land_factory", "air_factory", "naval_factory", "gantry"]],
   ["Défense", "defense", ["radar", "wall", "light_turret", "aa_turret", "heavy_turret", "fixed_artillery", "shield_gen", "antimissile"]],

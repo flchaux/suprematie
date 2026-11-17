@@ -206,7 +206,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let Some(b) = own_building(w, p, b) else { return };
             let bb = &w.buildings[b];
             // entrepôt d'équipe : choix de l'objet qui en ressort (0 ou RECIPE_NONE : aucun)
-            if bb.def().class == BClass::Warehouse {
+            if bb.def().class == BClass::Warehouse || bb.kind == B_SORTER {
                 if r == RECIPE_NONE as i32 || (0..NUM_ITEMS as i32).contains(&r) {
                     w.buildings[b].recipe = if r == RECIPE_NONE as i32 { 0 } else { r as u8 };
                     crate::buildings::wake_watchers(w, b);
@@ -393,7 +393,7 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
             let (cx, cy) = w.buildings[b].center();
             let d = crate::fixed::dist(cx, cy, x, y);
             let total = (d / 102).clamp(200, 1200) as u16;
-            w.projectiles.push(Projectile { weapon: 0, owner: p, x0: cx, y0: cy, tx: x, ty: y, target: NONE, t: 0, total, dmg: 20000, aoe: 25 * TILE, special: 1 });
+            w.projectiles.push(Projectile { weapon: 0, owner: p, x0: cx, y0: cy, tx: x, ty: y, target: NONE, t: 0, total, dmg: 20000, aoe: 25 * TILE, special: 1, src: NONE });
             w.ev(EV_NUKE, p as i32, x, y, total as i32);
         }
         BClass::Orbital => {
@@ -401,7 +401,7 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
                 return;
             }
             w.buildings[b].charge = 0;
-            w.projectiles.push(Projectile { weapon: 37, owner: p, x0: x, y0: y, tx: x, ty: y, target: NONE, t: 0, total: 40, dmg: 6000, aoe: 6 * TILE, special: 2 });
+            w.projectiles.push(Projectile { weapon: 37, owner: p, x0: x, y0: y, tx: x, ty: y, target: NONE, t: 0, total: 40, dmg: 6000, aoe: 6 * TILE, special: 2, src: NONE });
             w.ev(EV_ORBITAL, p as i32, x, y, 40);
         }
         BClass::Transfer => {

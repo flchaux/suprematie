@@ -2,7 +2,7 @@
 
 use crate::belts::Belts;
 use crate::data::*;
-use crate::fixed::{Trig, TILE};
+use crate::fixed::{dist2, Trig, TILE};
 use crate::flow::Nav;
 use crate::map::Map;
 use crate::rng::Rng;
@@ -182,8 +182,19 @@ pub struct UnitCold {
     pub salvo_left: [u8; 2],
     pub ready_tick: u32,
     pub noprog: u16,
+    /// expérience : points de vie ennemis détruits, niveau de vétérance (0 à 5)
+    pub xp: u32,
+    pub lvl: u8,
+    /// dernière unité qui l'a touché (crédit de la destruction)
+    pub last_hit: u32,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit });
+
+/// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
+pub const MAX_LVL: u8 = 5;
+/// Débris : au plus ce nombre, et pas plus vieux que cette durée (ticks).
+pub const MAX_WRECKS: usize = 300;
+pub const WRECK_LIFE: u32 = 6000;
 crate::ser_struct!(Units { alive, gen, kind, owner, x, y, px, py, facing, hp, cold, free });
 
 pub const UF_FIRING: u8 = 1;
@@ -281,8 +292,10 @@ pub struct Projectile {
     pub dmg: i32,
     pub aoe: i32,
     pub special: u8, // 0 normal, 1 missile stratégique, 2 frappe orbitale
+    /// unité qui a tiré (NONE : bâtiment ou arme spéciale)
+    pub src: u32,
 }
-crate::ser_struct!(Projectile { weapon, owner, x0, y0, tx, ty, target, t, total, dmg, aoe, special });
+crate::ser_struct!(Projectile { weapon, owner, x0, y0, tx, ty, target, t, total, dmg, aoe, special, src });
 
 #[derive(Clone, Copy, Default)]
 pub struct Wreck {
@@ -293,8 +306,10 @@ pub struct Wreck {
     pub iron: i32,
     pub steel: i32,
     pub size: u8,
+    /// tick de création (ou du dernier ajout) : les débris disparaissent avec le temps
+    pub born: u32,
 }
-crate::ser_struct!(Wreck { alive, gen, x, y, iron, steel, size });
+crate::ser_struct!(Wreck { alive, gen, x, y, iron, steel, size, born });
 
 #[derive(Clone, Copy, Default)]
 pub struct Net {
@@ -322,6 +337,10 @@ pub const EV_FIRE: i32 = 13;
 pub const EV_INTERCEPT: i32 = 14;
 pub const EV_ORBITAL: i32 = 15;
 pub const EV_GAME_OVER: i32 = 16;
+/// montée en grade d'une unité : x, y, niveau, joueur
+pub const EV_PROMOTED: i32 = 17;
+/// unité donnée à un allié par un portail : x, y, ancien propriétaire, nouveau propriétaire
+pub const EV_GIFT: i32 = 18;
 
 pub struct World {
     pub params: Vec<i32>,
@@ -357,6 +376,8 @@ pub struct World {
     pub team_stock: Vec<[i32; NUM_ITEMS]>,
     /// trains et drones de fret
     pub carriers: Vec<crate::logistics::Carrier>,
+    /// unité qui tire (pendant la résolution d'un tir ou d'un impact), pour créditer la destruction
+    pub shooter: u32,
 }
 
 impl World {
@@ -431,6 +452,7 @@ impl World {
             n_teams,
             team_stock: vec![[0i32; NUM_ITEMS]; 8],
             carriers: Vec::new(),
+            shooter: NONE,
         };
         for p in 0..np {
             let (sx, sy) = w.map.starts[p];
@@ -481,7 +503,7 @@ impl World {
         u.py[slot] = y;
         u.facing[slot] = 16384;
         u.hp[slot] = def.hp;
-        u.cold[slot] = UnitCold { wtarget: [NONE; 2], carried_by: NONE, parent: NONE, shield: def.shield_hp, best_dist: i32::MAX, ..UnitCold::default() };
+        u.cold[slot] = UnitCold { wtarget: [NONE; 2], carried_by: NONE, parent: NONE, last_hit: NONE, shield: def.shield_hp, best_dist: i32::MAX, ..UnitCold::default() };
         if kind == U_COMMANDER {
             // le bouclier personnel vient de la recherche
             u.cold[slot].shield = 0;
@@ -556,12 +578,36 @@ impl World {
         None
     }
 
+    /// Points de vie maximum d'une unité (vétérance comprise).
+    #[inline]
+    pub fn max_hp(&self, s: usize) -> i32 {
+        udef(self.units.kind[s]).hp * (100 + 10 * self.units.cold[s].lvl as i32) / 100
+    }
+
     pub fn spawn_wreck(&mut self, x: i32, y: i32, cost: &[(u8, u16)], size: u8) {
         let (iron, steel) = wreck_value(cost);
         if iron + steel <= 0 {
             return;
         }
-        let w = Wreck { alive: true, gen: 0, x, y, iron, steel, size };
+        // un débris tout proche absorbe le nouveau (moins de débris sur un champ de bataille)
+        let near = (2 * TILE) as i64;
+        if let Some(k) = self.wrecks.iter().position(|wk| wk.alive && dist2(wk.x, wk.y, x, y) <= near * near) {
+            let wk = &mut self.wrecks[k];
+            wk.iron += iron;
+            wk.steel += steel;
+            wk.size = wk.size.max(size).saturating_add(if wk.size < 6 { 1 } else { 0 });
+            wk.born = self.tick;
+            return;
+        }
+        // trop de débris : le plus ancien disparaît
+        let alive = self.wrecks.iter().filter(|wk| wk.alive).count();
+        if alive >= MAX_WRECKS {
+            if let Some(k) = (0..self.wrecks.len()).filter(|&k| self.wrecks[k].alive).min_by_key(|&k| (self.wrecks[k].born, k)) {
+                self.wrecks[k].alive = false;
+                self.wfree.push(k as u32);
+            }
+        }
+        let w = Wreck { alive: true, gen: 0, x, y, iron, steel, size, born: self.tick };
         if let Some(s) = self.wfree.pop() {
             let g = self.wrecks[s as usize].gen.wrapping_add(1);
             self.wrecks[s as usize] = Wreck { gen: g, ..w };
@@ -571,8 +617,22 @@ impl World {
     }
 
     // ---------- Pas de simulation ----------
+    /// Débris trop anciens : disparus.
+    fn expire_wrecks(&mut self) {
+        for k in 0..self.wrecks.len() {
+            let wk = &self.wrecks[k];
+            if wk.alive && self.tick.saturating_sub(wk.born) > WRECK_LIFE {
+                self.wrecks[k].alive = false;
+                self.wfree.push(k as u32);
+            }
+        }
+    }
+
     pub fn step(&mut self, orders: &[i32]) -> u32 {
         self.events.clear();
+        if self.tick.is_multiple_of(100) {
+            self.expire_wrecks();
+        }
         crate::orders::apply_orders(self, orders);
         if self.power_dirty && self.tick.is_multiple_of(5) {
             crate::buildings::rebuild_power(self);

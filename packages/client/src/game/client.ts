@@ -436,6 +436,35 @@ export class GameClient {
             if (def && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) fx?.wreckage(a / TILE, c / TILE, Math.max(def.w, def.h), new THREE.Color(PLAYER_COLORS[e % 8]), true);
           }
           break;
+        case EV.PROMOTED: {
+          // montée en grade : éclat doré ; message pour nos unités (au plus un toutes les 5 s)
+          const x = a / TILE, z = c / TILE;
+          if (seen(x, z)) fx?.sparks(x, groundHeight(this.map!, x, z) + 1.5, z, [3, 2.4, 0.6], 8);
+          if (e === ui.me && performance.now() - this.lastPromo > 5000) {
+            this.lastPromo = performance.now();
+            pushMessage(`Unité promue : vétérance ${"★".repeat(d)}`, "good");
+          }
+          break;
+        }
+        case EV.GIFT: {
+          // dons par portail : regroupés en un message par seconde
+          if (d === ui.me || e === ui.me) {
+            const k = `${d}:${e}`;
+            this.gifts.set(k, (this.gifts.get(k) ?? 0) + 1);
+            if (!this.giftTimer) {
+              this.giftTimer = window.setTimeout(() => {
+                for (const [key, n] of this.gifts) {
+                  const [from, to] = key.split(":").map(Number);
+                  if (to === ui.me) pushMessage(`Renforts : ${n} unité${n > 1 ? "s" : ""} reçue${n > 1 ? "s" : ""} de ${ui.names[from] ?? "un allié"}`, "good");
+                  else pushMessage(`${n} unité${n > 1 ? "s" : ""} donnée${n > 1 ? "s" : ""} à ${ui.names[to] ?? "un allié"}`, "info");
+                }
+                this.gifts.clear();
+                this.giftTimer = 0;
+              }, 1000);
+            }
+          }
+          break;
+        }
         case EV.TELEPORT:
           sfx.teleport(Math.max(near(a / TILE, c / TILE), near(d / TILE, e / TILE)));
           if (seen(a / TILE, c / TILE)) fx?.warp(a / TILE, c / TILE);
@@ -495,6 +524,7 @@ export class GameClient {
     ui.players = f.players.map((p, i) => ({ name: ui.names[i] ?? `Joueur ${i + 1}`, alive: p.alive, team: p.team, units: p.unitCount, kills: p.kills, losses: p.losses, bot: p.bot, power: p.powerProd }));
     // sélection : retirer les morts, regrouper par type
     const groups = new Map<number, number[]>();
+    const lvls = new Map<number, number>();
     const alive = new Set<number>();
     for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
       const id = f.buf[o] >>> 0;
@@ -503,6 +533,7 @@ export class GameClient {
       const k = f.buf[o + 1] & 0xff;
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k)!.push(id);
+      lvls.set(k, Math.max(lvls.get(k) ?? 0, (f.buf[o + 1] >>> 24) & 7));
     }
     let selB: typeof ui.selBuilding = null;
     for (const id of this.selected) {
@@ -515,7 +546,7 @@ export class GameClient {
       }
     }
     for (const id of [...this.selected]) if (!alive.has(id)) this.selected.delete(id);
-    ui.selUnits = [...groups.entries()].map(([kind, ids]) => ({ kind, count: ids.length, ids })).sort((a, b) => a.kind - b.kind);
+    ui.selUnits = [...groups.entries()].map(([kind, ids]) => ({ kind, count: ids.length, ids, lvl: lvls.get(kind) ?? 0 })).sort((a, b) => a.kind - b.kind);
     ui.selBuilding = selB;
     ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0;
     if (!ui.canBuild && kb.buildStep) kb.buildStep = "";
@@ -1363,6 +1394,10 @@ export class GameClient {
   cancelBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
   }
+  lastPromo = 0;
+  gifts = new Map<string, number>();
+  giftTimer = 0;
+
   /** Gare ou héliport sélectionné : retire ses véhicules (relier le bâtiment à lui-même). */
   removeCarriers(): void {
     const sb = ui.selBuilding;
