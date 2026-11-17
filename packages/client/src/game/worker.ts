@@ -104,6 +104,8 @@ onmessage = async (e: MessageEvent<In>) => {
       else if (m.q === "canPlace") result = m.a.length >= 5 ? sim.canPlace(m.a[0], m.a[1], m.a[2], m.a[3], m.a[4]) : false;
       else if (m.q === "buildingAt") result = sim.buildingAt(m.a[0], m.a[1]);
       else if (m.q === "wreckAt") result = sim.wreckAt(m.a[0], m.a[1]);
+      else if (m.q === "orders") result = sim.unitOrders(m.a);
+      else if (m.q === "planned") result = sim.plannedBuilds(m.a[0]);
       else if (m.q === "canPlaceMany") {
         // a = [joueur, type, puis (x, y, dir)…]
         const r: boolean[] = [];

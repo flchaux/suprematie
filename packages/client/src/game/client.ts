@@ -311,6 +311,18 @@ export class GameClient {
       this.lastUiUpdate = now;
       this.updateUi();
     }
+    // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
+    const shift = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    sc.showOrders = shift && this.selected.size > 0;
+    if (sc.showOrders && now - this.lastOrdersQuery > 250) {
+      this.lastOrdersQuery = now;
+      const ids = [...this.selected].filter((id) => !Ord.isBuildingRef(id)).slice(0, 400);
+      void this.query<Int32Array | null>("orders", ids).then((r) => sc.overlay?.setOrders(r));
+    }
+    if (ui.me >= 0 && !ui.spectator && now - this.lastPlannedQuery > 500) {
+      this.lastPlannedQuery = now;
+      void this.query<Int32Array | null>("planned", [ui.me]).then((r) => sc.overlay?.setPlanned(r ?? []));
+    }
     if (now - this.lastMinimap > 200) {
       this.lastMinimap = now;
       this.drawMinimap();
@@ -1417,6 +1429,8 @@ export class GameClient {
     if (ui.selBuilding) this.cmd(Ord.cancel(ui.selBuilding.ref));
   }
   lastPromo = 0;
+  lastOrdersQuery = 0;
+  lastPlannedQuery = 0;
   gifts = new Map<string, number>();
   giftTimer = 0;
 

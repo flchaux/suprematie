@@ -425,3 +425,57 @@ pub fn map_info(w: &World) -> Vec<i32> {
     }
     out
 }
+
+/// Position visée par un ordre (sous-unités), si elle existe encore.
+fn order_point(w: &World, o: &Order) -> Option<(i32, i32)> {
+    match *o {
+        Order::Move { x, y, .. } | Order::Patrol { x, y, .. } | Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } => Some((x, y)),
+        Order::Build { kind, x, y, dir, .. } => {
+            let (bw, bh) = crate::buildings::dims(kind, dir);
+            Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2))
+        }
+        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } => w.ref_pos(target),
+        Order::Jump { beacon } => w.ref_pos(beacon),
+    }
+}
+
+/// Files d'ordres des unités demandées (affichage avec Maj) :
+/// pour chaque unité vivante : identifiant, x, y, nombre d'ordres n, puis n fois (code, x, y).
+pub fn unit_orders(w: &World, ids: &[u32]) -> Vec<i32> {
+    let mut out = Vec::new();
+    for &id in ids.iter().take(400) {
+        let Some(s) = w.unit(id) else { continue };
+        let pts: Vec<(u8, i32, i32)> = w.units.cold[s].orders.iter().filter_map(|o| order_point(w, o).map(|(x, y)| (o.code(), x, y))).take(32).collect();
+        out.extend_from_slice(&[id as i32, w.units.x[s], w.units.y[s], pts.len() as i32]);
+        for (c, x, y) in pts {
+            out.extend_from_slice(&[c as i32, x, y]);
+        }
+    }
+    out
+}
+
+/// Constructions prévues d'un joueur : ordres de construction pas encore commencés (pas de chantier
+/// posé), sans doublon. Par bâtiment : type, x, y (cases), direction.
+pub fn planned_builds(w: &World, player: i32) -> Vec<i32> {
+    let mut list: Vec<(u16, i32, i32, u8)> = Vec::new();
+    for s in 0..w.units.alive.len() {
+        if !w.units.alive[s] || w.units.owner[s] as i32 != player {
+            continue;
+        }
+        for o in &w.units.cold[s].orders {
+            if let Order::Build { kind, x, y, dir, bid } = *o {
+                if w.building(bid).is_none() {
+                    list.push((kind, x, y, dir));
+                }
+            }
+        }
+    }
+    list.sort_unstable();
+    list.dedup();
+    list.truncate(2000);
+    let mut out = Vec::with_capacity(list.len() * 4);
+    for (k, x, y, d) in list {
+        out.extend_from_slice(&[k as i32, x, y, d as i32]);
+    }
+    out
+}

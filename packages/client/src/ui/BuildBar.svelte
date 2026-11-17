@@ -66,8 +66,10 @@
   .build { padding: 8px; display: flex; flex-direction: column; gap: 7px; max-width: 600px; }
   .tabs { display: flex; gap: 3px; align-items: center; }
   .tab { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; font-size: 11.5px; }
+  .tab { position: relative; }
   .tab:not(.on) .tn { display: none; }
-  .tab:hover .tn { display: inline; }
+  /* au survol, le nom s'affiche en bulle au-dessus de l'onglet, sans décaler la barre */
+  .tab:not(.on):hover .tn { display: block; position: absolute; bottom: calc(100% + 5px); left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 3px 8px; background: var(--bg, #0b1219); border: 1px solid var(--line-hi, #2a4a5a); color: var(--text); font-size: 11px; pointer-events: none; z-index: 30; }
   .hint { margin-left: auto; padding-right: 4px; white-space: nowrap; }
   .plan-btns { display: inline-flex; gap: 3px; padding-left: 6px; border-left: 1px solid var(--line); }
   .pc { font-size: 9.5px; color: var(--dim); }

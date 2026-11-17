@@ -8,7 +8,8 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 await page.goto(url);
-await page.evaluate(() => localStorage.clear());
+// rendu logiciel (sans carte graphique) : réglages graphiques allégés, le test porte sur le jeu
+await page.evaluate(() => { localStorage.clear(); localStorage.setItem("supreme.gfx", JSON.stringify({ ground: false, decor: false, shadows: false, bloom: false })); });
 await page.goto(url);
 await page.fill("input", "Testeur");
 await page.click("button[type=submit]");

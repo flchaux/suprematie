@@ -13,6 +13,7 @@ import { Decorations } from "./decor.ts";
 import { buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
+import { CommandOverlay } from "./overlay.ts";
 
 /** Statistiques du rendu de la dernière image. */
 export interface RenderStats {
@@ -42,6 +43,9 @@ export class GameScene {
   iconDistance = 260;
   backend = "";
   ghost: { mesh: THREE.InstancedMesh; kind: number } | null = null;
+  /** constructions prévues et ordres affichés avec Maj */
+  overlay: CommandOverlay | null = null;
+  showOrders = false;
   ghostMeshes = new Map<number, ReturnType<typeof teamInstancedMesh>>();
   lineGhost: THREE.InstancedMesh | null = null;
   markers: THREE.InstancedMesh;
@@ -138,6 +142,9 @@ export class GameScene {
     this.decor = new Decorations(map, data);
     this.decor.enabled = this.gfx.decor !== false;
     this.scene.add(this.decor.mesh);
+    if (this.overlay) this.scene.remove(this.overlay.group);
+    this.overlay = new CommandOverlay(data, map);
+    this.scene.add(this.overlay.group);
     this.entities = new Entities(data, map);
     this.entities.camera = this.camera;
     this.entities.effects.quality = this.gfx.effects;
@@ -408,6 +415,13 @@ export class GameScene {
     this.markers.count = n;
     this.markers.instanceMatrix.needsUpdate = true;
     if (this.markers.instanceColor) this.markers.instanceColor.needsUpdate = true;
+    if (this.overlay && this.entities) {
+      let idx: Map<number, { x: number; y: number; z: number }> | null = null;
+      this.overlay.update(this.showOrders, (id) => {
+        if (!idx) idx = new Map(this.entities.screen.map((u) => [u.id, u]));
+        return idx.get(id);
+      });
+    }
     this.renderer.info.reset();
     if (this.gfx.bloom && this.post) this.post.render();
     else this.renderer.render(this.scene, this.camera);

@@ -25,6 +25,8 @@ export interface SimExports {
   wreck_at(x: number, y: number): number;
   bench_reference(): number;
   logistics_demo(): number;
+  unit_orders(nBytes: number): number;
+  planned_builds(player: number): number;
 }
 
 const dec = new TextDecoder();
@@ -89,6 +91,15 @@ export class Sim {
   }
   mapHeights(): Uint8Array {
     return this.outBytes(this.ex.map_heights());
+  }
+  /** Files d'ordres : par unité, id, x, y, n, puis n fois (code, x, y). */
+  unitOrders(ids: number[]): Int32Array {
+    const b = new Uint8Array(new Uint32Array(ids.map((x) => x >>> 0)).buffer);
+    return this.outI32(this.ex.unit_orders(this.writeBytes(b)));
+  }
+  /** Constructions prévues d'un joueur : type, x, y, direction. */
+  plannedBuilds(player: number): Int32Array {
+    return this.outI32(this.ex.planned_builds(player));
   }
   botDump(): Int32Array {
     return this.outI32(this.ex.bot_dump());

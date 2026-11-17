@@ -120,6 +120,25 @@ pub extern "C" fn restore(n_bytes: u32) -> u32 {
     }
 }
 
+/// Files d'ordres des unités dont les identifiants (u32) sont dans le tampon d'entrée.
+#[no_mangle]
+pub extern "C" fn unit_orders(n_bytes: u32) -> *const u8 {
+    let ids: Vec<u32> = INBUF.with(|b| {
+        let b = b.borrow();
+        let n = (n_bytes as usize).min(b.len()) / 4;
+        (0..n).map(|i| u32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]])).collect()
+    });
+    let v = with_world(|w| render::unit_orders(w, &ids), Vec::new());
+    set_out_i32(&v)
+}
+
+/// Constructions prévues d'un joueur (ordres de construction pas encore commencés).
+#[no_mangle]
+pub extern "C" fn planned_builds(player: i32) -> *const u8 {
+    let v = with_world(|w| render::planned_builds(w, player), Vec::new());
+    set_out_i32(&v)
+}
+
 #[no_mangle]
 pub extern "C" fn data_json() -> *const u8 {
     set_out_bytes(data::data_json().into_bytes())
