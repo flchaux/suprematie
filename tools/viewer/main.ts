@@ -1,5 +1,5 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
-// ?set=units|buildings|items  &only=clé1,clé2
+// ?set=units|buildings|items|decor  &only=clé1,clé2
 import * as THREE from "three/webgpu";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../../packages/client/src/models/generator.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
@@ -7,18 +7,22 @@ import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src
 import { UNIT_MODELS } from "../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../assets/models/buildings.ts";
 import { ITEM_MODELS } from "../../assets/models/items.ts";
+import { DECOR_MODELS } from "../../assets/models/decor.ts";
+import { DECOR_KINDS, decorBatch, decorGeometry, decorMaterial, type DecorKind } from "../../packages/client/src/render/decor.ts";
 import data from "./data.json";
 
 const params = new URLSearchParams(location.search);
 const set = params.get("set") ?? "units";
 const only = params.get("only")?.split(",");
 const defs: { key: string; name: string; size: number; w: number; h: number }[] =
-  set === "units"
+  set === "decor"
+    ? Object.keys(DECOR_MODELS).map((k) => ({ key: k, name: k, size: DECOR_KINDS[k as DecorKind]?.size[1] ?? 1, w: 0, h: 0 }))
+    : set === "units"
     ? data.units.map((u: { key: string; name: string; radius: number }) => ({ key: u.key, name: u.name, size: Math.max(0.6, (u.radius * 2.4) / 256), w: 0, h: 0 }))
     : set === "items"
       ? data.items.slice(1).map((it: { key: string; name: string }) => ({ key: it.key, name: it.name, size: 1, w: 0, h: 0 }))
       : data.buildings.map((b: { key: string; name: string; w: number; h: number; reach?: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h) * Math.max(1, b.reach ?? 1), w: b.w, h: b.h }));
-const models = set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
+const models = set === "decor" ? DECOR_MODELS : set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
 // variantes de modèles sans définition propre (virages des tapis…) : affichées si demandées par leur clé
 const variants = (only ?? []).filter((k) => models[k] && !defs.some((d) => d.key === k)).map((k) => ({ key: k, name: k, size: 1, w: 1, h: 1 }));
 const list = only ? [...defs.filter((d) => only.includes(d.key)), ...variants] : defs;
@@ -41,11 +45,51 @@ sun.position.set(-3, 6, 4);
 scene.add(sun);
 
 const cols = Math.ceil(Math.sqrt(list.length * 1.6));
-const cell = set === "units" ? 3.2 : set === "items" ? 1.6 : 8;
+const cell = set === "units" ? 3.2 : set === "items" ? 1.6 : set === "decor" ? 3 : 8;
 const labels = document.getElementById("labels")!;
 let tris = 0;
 const placed: { pos: THREE.Vector3; name: string; tri: number }[] = [];
-list.forEach((d, i) => {
+if (set === "decor") {
+  // sol herbeux sous les décorations ; pour chaque sorte, une grande et deux petites, tournées et teintées
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(cols * cell + cell, Math.ceil(list.length / cols) * cell + cell), new THREE.MeshStandardNodeMaterial({ color: 0x55603c, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(((cols - 1) * cell) / 2, 0, ((Math.ceil(list.length / cols) - 1) * cell) / 2);
+  ground.receiveShadow = true;
+  scene.add(ground);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const sc = sun.shadow.camera as THREE.OrthographicCamera;
+  sc.left = sc.bottom = -40;
+  sc.right = sc.top = 40;
+  sun.position.set(-12, 30, 18).add(ground.position);
+  sun.target.position.copy(ground.position);
+  scene.add(sun.target);
+  renderer.shadowMap.enabled = true;
+  const mat = decorMaterial();
+  list.forEach((d, i) => {
+    const kind = d.key as DecorKind;
+    const def = DECOR_KINDS[kind];
+    const x = (i % cols) * cell;
+    const z = Math.floor(i / cols) * cell;
+    const b = decorBatch(kind, 3, mat);
+    const items = [
+      [x - 0.2, z - 0.3, def.size[1], 0.6, 1, 0.5],
+      [x + 0.95, z + 0.75, def.size[0], 2.4, 0.86, 0],
+      [x - 1.0, z + 0.8, (def.size[0] + def.size[1]) / 2, 4.1, 1.06, 1],
+    ];
+    items.forEach(([px, pz, size, angle, tint, warm], j) => {
+      b.pos.setXYZW(j, px, -def.sink * size, pz, size);
+      b.info.setXYZW(j, angle, tint, def.sway, warm);
+    });
+    b.geo.instanceCount = 3;
+    b.mesh.visible = true;
+    scene.add(b.mesh);
+    const tri = decorGeometry(kind).triangles;
+    tris += tri;
+    placed.push({ pos: new THREE.Vector3(x, 0, z + cell * 0.38), name: d.name, tri });
+  });
+}
+if (set !== "decor") list.forEach((d, i) => {
   const desc = models[d.key];
   const built = buildModel(desc ?? fallbackModel());
   const size = new THREE.Vector3();
@@ -86,7 +130,7 @@ const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 10
 const dist = Math.max(cols, rows) * cell * 1.25;
 camera.position.set(cx, dist * 0.82, cz + dist * 0.62);
 camera.lookAt(cx, 0, cz);
-renderer.render(scene, camera);
+camera.updateMatrixWorld();
 for (const p of placed) {
   const v = p.pos.clone().project(camera);
   const el = document.createElement("div");
@@ -96,4 +140,9 @@ for (const p of placed) {
   labels.appendChild(el);
 }
 document.getElementById("info")!.textContent = `${list.length} modèles, ${tris} triangles · moteur ${(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL2"}`;
-(window as unknown as { __ready: boolean }).__ready = true;
+// rendu continu : le canevas WebGPU n'est pas toujours conservé après une seule image (captures)
+let frames = 0;
+void renderer.setAnimationLoop(() => {
+  renderer.render(scene, camera);
+  if (++frames === 3) (window as unknown as { __ready: boolean }).__ready = true;
+});

@@ -1,5 +1,5 @@
 // Capture du visualiseur (~800 px de large) avec Playwright, pour vérifier les modèles.
-// Usage : node tools/viewer/capture.mjs [units|buildings] [clé1,clé2]
+// Usage : node tools/viewer/capture.mjs [units|buildings|items|decor] [clé1,clé2]
 import { launchBrowser } from "../browser.mjs";
 import { createServer } from "vite";
 import { mkdirSync, writeFileSync } from "node:fs";
