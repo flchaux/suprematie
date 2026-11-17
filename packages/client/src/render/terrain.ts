@@ -67,8 +67,7 @@ const sstep = (a: number, b: number, x: number) => {
  * Position dans la chaîne des textures du sol (0 fond marin, 1 sable, 2 herbe, 3 herbe sèche,
  * 4 neige) selon l'altitude : mêmes seuils que terrainColor.
  */
-export function groundChain(h: number, water: number): number {
-  const rel = h - water;
+export function groundChain(h: number, water: number, rel = h - water): number {
   return Math.min(4, sstep(-3, 0, rel) + sstep(3, 9, rel) + sstep(175, 205, h) + sstep(212, 232, h));
 }
 /** Poids de la roche selon la pente. */
@@ -77,8 +76,7 @@ export function rockWeight(slope: number): number {
 }
 
 /** Couleur continue selon l'altitude (relative à l'eau) et la pente : transitions douces. */
-function terrainColor(h: number, slope: number, water: number, out: THREE.Color): void {
-  const rel = h - water;
+function terrainColor(h: number, slope: number, water: number, out: THREE.Color, rel = h - water): void {
   out.copy(C_SEABED);
   out.lerp(C_SAND, sstep(-3, 0, rel));
   out.lerp(C_GRASS, sstep(3, 9, rel));
@@ -86,6 +84,49 @@ function terrainColor(h: number, slope: number, water: number, out: THREE.Color)
   out.lerp(C_DRY, sstep(175, 205, h));
   out.lerp(C_SNOW, sstep(212, 232, h));
   out.lerp(rel < 2 ? C_DIRT : C_ROCK, sstep(2.5, 8, slope) * 0.85);
+}
+
+/** Distance (en cases, plafonnée à 8) de chaque case de terre à l'eau la plus proche. */
+function shoreDistance(map: MapData): Uint8Array {
+  const { w, h, heights, waterLevel } = map;
+  const d = new Uint8Array(w * h).fill(255);
+  if (waterLevel <= 0) return d;
+  const q: number[] = [];
+  for (let i = 0; i < w * h; i++) {
+    if (heights[i] < waterLevel) {
+      d[i] = 0;
+      q.push(i);
+    }
+  }
+  for (let k = 0; k < q.length; k++) {
+    const i = q[k];
+    if (d[i] >= 8) continue;
+    const x = i % w;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+      if (j >= 0 && j < w * h && d[j] === 255) {
+        d[j] = d[i] + 1;
+        q.push(j);
+      }
+    }
+  }
+  return d;
+}
+
+/** Bruit de valeurs lissé, de 0 à 1 (purement visuel). */
+function valueNoise(x: number, z: number): number {
+  const xi = Math.floor(x);
+  const zi = Math.floor(z);
+  const fx = x - xi;
+  const fz = z - zi;
+  const r = (a: number, b: number) => {
+    const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  const sx = fx * fx * (3 - 2 * fx);
+  const sz = fz * fz * (3 - 2 * fz);
+  const top = r(xi, zi) + (r(xi + 1, zi) - r(xi, zi)) * sx;
+  const bot = r(xi, zi + 1) + (r(xi + 1, zi + 1) - r(xi, zi + 1)) * sx;
+  return top + (bot - top) * sz;
 }
 
 /** Lissage temporel du brouillard : vitesse d'apparition / de disparition (niveaux par seconde). */
@@ -119,6 +160,10 @@ export class Terrain {
     const hAt = (x: number, z: number) => heights[Math.min(h - 1, Math.max(0, z)) * w + Math.min(w - 1, Math.max(0, x))];
     // hauteur d'un sommet : moyenne des 4 cases qui le touchent
     const hv = (x: number, z: number) => (hAt(x - 1, z - 1) + hAt(x, z - 1) + hAt(x - 1, z) + hAt(x, z)) / 4;
+    // La carte est plate : le sol ne se colore plus selon l'altitude mais selon la distance à l'eau
+    // (sable le long des côtes) et un bruit à grande échelle (zones d'herbe sèche).
+    const shore = shoreDistance(map);
+    const patches = (x: number, z: number) => valueNoise(x / 70, z / 70) * 0.65 + valueNoise(x / 23 + 17, z / 23 + 5) * 0.35;
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
         const x = i * step;
@@ -132,8 +177,11 @@ export class Terrain {
         const gx = (hv(x + 2, z) - hv(x - 2, z)) / 4;
         const gz = (hv(x, z + 2) - hv(x, z - 2)) / 4;
         const slope = Math.hypot(gx, gz) * 1.6;
-        terrainColor(hc, slope, map.waterLevel, c);
-        gnd[k * 2] = groundChain(hc, map.waterLevel);
+        // altitude « de couleur » : 150 ± bruit (herbe, herbe sèche) ; écart à l'eau : distance à la côte
+        const hcol = hc < map.waterLevel ? hc : 135 + patches(x, z) * 60;
+        const rel = hc < map.waterLevel ? hc - map.waterLevel : Math.min(12, shore[Math.min(h - 1, z) * w + Math.min(w - 1, x)] * 2.2);
+        terrainColor(hcol, slope, map.waterLevel, c, rel);
+        gnd[k * 2] = groundChain(hcol, map.waterLevel, rel);
         gnd[k * 2 + 1] = rockWeight(slope);
         col[k * 3] = c.r;
         col[k * 3 + 1] = c.g;

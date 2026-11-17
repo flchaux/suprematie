@@ -15,6 +15,9 @@ pub struct Spot {
 }
 crate::ser_struct!(Spot { kind, x, y });
 
+/// Hauteur unique de la terre : la carte est plate (les tapis et les bâtiments sont tous de niveau).
+pub const FLAT_LAND: u8 = 150;
+
 pub struct Map {
     pub w: i32,
     pub h: i32,
@@ -66,11 +69,14 @@ impl Map {
         self.inside(x, y) && self.pass[self.idx(x, y)] & mask != 0
     }
 
+    /// Génère la carte (plate : voir FLAT_LAND).
     pub fn generate(seed: u32, size: i32, water: bool, nplayers: usize) -> Map {
         let w = size;
         let h = size;
         let n = (w * h) as usize;
         let mut rng = Rng::new(seed as u64 ^ 0x5eed_0000_1234);
+        // Le relief (bruit) ne sert qu'à dessiner les côtes : seuil de l'eau pendant la génération,
+        // puis la carte est rendue plate (voir plus bas).
         let water_level: u8 = if water { 72 } else { 0 };
         let mut height = vec![0u8; n];
         let sc = size / 512; // 1 ou 2
@@ -195,6 +201,21 @@ impl Map {
                 }
             }
         }
+        // Carte plate : toute la terre à la même hauteur, l'eau à deux profondeurs (haut-fond près des
+        // côtes, eau profonde au large). Les écarts restent sous le seuil des falaises : pas de falaise,
+        // les aéroglisseurs passent de la terre à l'eau, les tapis et les bâtiments sont tous de niveau.
+        let final_level: u8 = if water { FLAT_LAND - 4 } else { 0 };
+        for hv in height.iter_mut() {
+            let depth = water_level as i32 - *hv as i32;
+            *hv = if !water || depth <= 0 {
+                FLAT_LAND
+            } else if depth > 6 {
+                final_level - 4
+            } else {
+                final_level - 1
+            };
+        }
+        let water_level = final_level;
         let mut m = Map { w, h, water_level, height, deposit, cliff: vec![0; n], spots, starts, occ: vec![0; n], pass: vec![0; n] };
         m.compute_cliffs();
         for y in 0..h {

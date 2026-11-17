@@ -1524,7 +1524,7 @@ export class GameClient {
         const h = m.heights[z * m.w + x];
         let r: number, g: number, b: number;
         if (h < m.waterLevel) [r, g, b] = [30, 70, 105];
-        else if (h - m.waterLevel < 5) [r, g, b] = [150, 140, 100];
+        else if (h - m.waterLevel < 3) [r, g, b] = [150, 140, 100]; // (carte plate : la terre est 4 au-dessus de l'eau)
         else if (h > 205) [r, g, b] = [190, 190, 195];
         else [r, g, b] = [60 + h * 0.3, 90 + h * 0.25, 50 + h * 0.15];
         const k = (j * S + i) * 4;
