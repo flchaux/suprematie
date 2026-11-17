@@ -43,9 +43,11 @@ impl Line {
         (self.tiles.len() as i32 - 1 - idx as i32) * TILE + TILE / 2
     }
     /// Insère un objet à la distance `p` de l'avant, si la place le permet.
-    pub fn insert_at(&mut self, item: u8, p: i32) -> bool {
+    /// Place libre en `p` (écart minimal avec les objets voisins) : indice d'insertion et position de
+    /// l'objet précédent, sinon None.
+    fn slot_at(&self, p: i32) -> Option<(usize, i32)> {
         if p < 0 || p > self.len() - ITEM_GAP / 2 {
-            return false;
+            return None;
         }
         let mut pos = 0;
         let mut k = 0usize;
@@ -60,13 +62,21 @@ impl Line {
         }
         // pos = position de l'objet k-1 (ou 0 si k == 0)
         if k > 0 && p - pos < ITEM_GAP {
-            return false;
+            return None;
         }
+        if k < self.items.len() && pos + self.items[k].1 - p < ITEM_GAP {
+            return None;
+        }
+        Some((k, pos))
+    }
+    /// Un objet peut-il être posé en `p` ?
+    pub fn room_at(&self, p: i32) -> bool {
+        self.slot_at(p).is_some()
+    }
+    pub fn insert_at(&mut self, item: u8, p: i32) -> bool {
+        let Some((k, pos)) = self.slot_at(p) else { return false };
         if k < self.items.len() {
             let next = pos + self.items[k].1;
-            if next - p < ITEM_GAP {
-                return false;
-            }
             self.items[k].1 = next - p;
         }
         self.items.insert(k, (item, p - pos));
@@ -430,6 +440,16 @@ pub fn put_on_belt(w: &mut World, b: usize, item: u8) -> bool {
     let l = &mut w.belts.lines[bb.line as usize];
     let p = l.tile_center(idx);
     l.insert_at(item, p)
+}
+
+/// Un objet peut-il être posé sur la case de tapis `b` (au centre) ?
+pub fn belt_has_room(w: &World, b: usize) -> bool {
+    let bb = &w.buildings[b];
+    if bb.line == NONE {
+        return false;
+    }
+    let l = &w.belts.lines[bb.line as usize];
+    l.room_at(l.tile_center(bb.line_idx as usize))
 }
 
 /// Prend sur la case de tapis `b` un objet accepté par `want`.
