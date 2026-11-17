@@ -9,8 +9,7 @@
   import Stats from "./Stats.svelte";
   import Help from "./Help.svelte";
   import Icon from "./Icon.svelte";
-  import { sprite } from "./sprites.ts";
-  import { PLAYER_COLORS } from "../models/generator.ts";
+  import EndReport from "./EndReport.svelte";
 
   let view: HTMLDivElement;
   let box: HTMLDivElement;
@@ -47,8 +46,6 @@
     build: ["production", "Construction : clic gauche pour poser (glisser pour une ligne), R pour tourner, clic droit pour annuler"],
   };
   const MSG_ICON: Record<string, string> = { alert: "alert", good: "check", chat: "chat", info: "flag" };
-  const color = (i: number) => "#" + PLAYER_COLORS[i % 8].toString(16).padStart(6, "0");
-  const emblem = sprite("art", "emblem");
 </script>
 
 <div class="game" class:hidden={ui.screen !== "game"}>
@@ -105,33 +102,7 @@
     {#if ui.showResearch}<Research />{/if}
     {#if ui.showStats}<Stats />{/if}
     {#if ui.showHelp}<Help />{/if}
-    {#if ui.gameOver}
-      <div class="endwrap">
-        <div class="end panel" class:won={ui.gameOver.won && !ui.spectator} class:lost={!ui.gameOver.won && !ui.spectator}>
-          {#if emblem}<img class="emb" src={emblem} alt="" />{/if}
-          {#if ui.spectator}
-            <div class="kicker">Fin de la partie</div>
-            <h1>{ui.gameOver.winner >= 0 ? "Équipe " + (ui.gameOver.winner + 1) : "Aucun vainqueur"}</h1>
-          {:else}
-            <div class="kicker">Rapport de fin de mission</div>
-            <h1>{ui.gameOver.won ? "Victoire" : "Défaite"}</h1>
-          {/if}
-          <table>
-            <thead><tr><th>Joueur</th><th>Équipe</th><th>Unités</th><th>Destructions</th><th>Pertes</th></tr></thead>
-            <tbody>
-              {#each ui.players as p, i}
-                <tr class:out={!p.alive}><td><span class="pc" style:background={color(i)}></span>{p.name}</td><td class="num">{p.team + 1}</td><td class="num">{p.units}</td><td class="num">{p.kills}</td><td class="num">{p.losses}</td></tr>
-              {/each}
-            </tbody>
-          </table>
-          <div class="row">
-            {#if ui.gameOver.replay}<a href={ui.gameOver.replay} download><button class="icon-btn"><Icon name="replay" size={14} /> Télécharger le replay</button></a>{/if}
-            <button class="icon-btn" onclick={() => (ui.gameOver = null)}><Icon name="eye" size={14} /> Continuer à regarder</button>
-            <button class="primary" onclick={() => location.reload()}>Retour au salon</button>
-          </div>
-        </div>
-      </div>
-    {/if}
+    {#if ui.gameOver}<EndReport />{/if}
   {/if}
 </div>
 
@@ -171,19 +142,6 @@
   .replay { position: absolute; top: 60px; right: 10px; padding: 6px 10px; display: flex; gap: 4px; align-items: center; }
   .replay button { padding: 3px 8px; min-width: 34px; display: inline-flex; justify-content: center; }
   .perfbox { position: absolute; top: 60px; left: 10px; padding: 9px 12px; font-size: 11.5px; display: flex; flex-direction: column; gap: 3px; pointer-events: none; }
-  .endwrap { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: radial-gradient(circle, rgba(2, 5, 9, 0.35), rgba(2, 5, 9, 0.8)); animation: fade 0.4s ease-out; }
-  .end { padding: 26px 34px 22px; display: flex; flex-direction: column; gap: 12px; align-items: center; min-width: 460px; }
-  .emb { width: 76px; height: 76px; margin-top: -4px; filter: drop-shadow(0 0 18px rgba(62, 240, 255, 0.5)); }
-  .end h1 { margin: 0; font-size: 46px; font-weight: 700; letter-spacing: 0.24em; }
-  .end.won h1 { color: var(--accent); text-shadow: 0 0 24px rgba(62, 240, 255, 0.6); }
-  .end.lost h1 { color: var(--bad); text-shadow: 0 0 24px rgba(255, 77, 94, 0.5); }
-  .end.lost .emb { filter: grayscale(1) drop-shadow(0 0 14px rgba(255, 77, 94, 0.5)); }
-  .end table { width: 100%; margin: 4px 0; }
-  .end td, .end th { padding: 5px 10px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-  .end tr.out td { color: var(--faint); text-decoration: line-through; text-decoration-color: rgba(255, 77, 94, 0.5); }
-  .pc { display: inline-block; width: 9px; height: 9px; margin-right: 8px; transform: rotate(45deg); }
-  .row { display: flex; gap: 8px; align-items: center; }
   @keyframes slide { from { opacity: 0; transform: translateX(-10px); } }
-  @keyframes fade { from { opacity: 0; } }
   @keyframes blink { 50% { opacity: 0.3; } }
 </style>

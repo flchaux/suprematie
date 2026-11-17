@@ -1,5 +1,5 @@
 // État partagé entre le contrôleur de partie et l'interface Svelte (rafraîchi quelques fois par seconde).
-import type { GameData, LobbyState } from "@supreme/shared";
+import type { GameData, LobbyState, StatSample } from "@supreme/shared";
 import { DEFAULT_GFX, type GfxSettings } from "../render/gfx.ts";
 
 export interface SelUnitGroup { kind: number; count: number; ids: number[] }
@@ -40,6 +40,10 @@ export const ui = $state({
   messages: [] as Message[],
   waiting: [] as string[],
   gameOver: null as null | { winner: number; replay: string; won: boolean },
+  /** partie terminée (reste vrai après « Continuer à regarder ») : toutes les statistiques sont visibles */
+  ended: false,
+  /** relevés statistiques du serveur (toutes les 30 s) ; null = joueur caché (autre équipe) */
+  stats: [] as StatSample[],
   fps: 0,
   simMs: 0,
   backend: "",
