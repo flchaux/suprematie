@@ -87,22 +87,30 @@ macro_rules! r {
     };
 }
 
+/// Recherches qui débloquent des recettes (voir RECIPES)
+pub const T_AUTOMATION: u8 = 1;
+pub const T_ELECTRONICS: u8 = 4;
+pub const T_CHEMISTRY: u8 = 9;
+
+/// Recettes : celles de base (plaques, acier, engrenages, câbles, circuits, munitions, lots 1) sont
+/// connues d'emblée ; les autres sont débloquées par une recherche (test : recipes_follow_the_tech_tree).
+/// Carburant et composites restent libres : leur machine (raffinerie, usine chimique) est déjà verrouillée.
 pub const RECIPES: [RecipeDef; 21] = [
     r!("iron_plate", Furnace, [(IRON_ORE, 1)], (IRON_PLATE, 1), 40, 0),
     r!("copper_plate", Furnace, [(COPPER_ORE, 1)], (COPPER_PLATE, 1), 40, 0),
     r!("steel", Furnace, [(IRON_PLATE, 5)], (STEEL, 1), 160, 0),
-    r!("wafer", Furnace, [(SILICON, 1)], (WAFER, 1), 60, 0),
+    r!("wafer", Furnace, [(SILICON, 1)], (WAFER, 1), 60, T_ELECTRONICS),
     r!("gear", Assembler, [(IRON_PLATE, 2)], (GEAR, 1), 20, 0),
     r!("cable", Assembler, [(COPPER_PLATE, 1)], (CABLE, 2), 10, 0),
     r!("circuit", Assembler, [(IRON_PLATE, 1), (CABLE, 3)], (CIRCUIT, 1), 20, 0),
-    r!("engine", Assembler, [(STEEL, 1), (GEAR, 2)], (ENGINE, 1), 100, 0),
+    r!("engine", Assembler, [(STEEL, 1), (GEAR, 2)], (ENGINE, 1), 100, T_ELECTRONICS),
     r!("ammo", Assembler, [(STEEL, 1), (COPPER_PLATE, 2)], (AMMO, 2), 60, 0),
-    r!("processor", Assembler, [(CIRCUIT, 2), (WAFER, 1)], (PROCESSOR, 1), 120, 0),
-    r!("arm_part", Assembler, [(CIRCUIT, 1), (GEAR, 1), (IRON_PLATE, 1)], (ARM_PART, 1), 20, 0),
+    r!("processor", Assembler, [(CIRCUIT, 2), (WAFER, 1)], (PROCESSOR, 1), 120, T_ELECTRONICS),
+    r!("arm_part", Assembler, [(CIRCUIT, 1), (GEAR, 1), (IRON_PLATE, 1)], (ARM_PART, 1), 20, T_AUTOMATION),
     r!("pack1", Assembler, [(GEAR, 1), (COPPER_PLATE, 1)], (PACK1, 1), 100, 0),
-    r!("pack2", Assembler, [(CIRCUIT, 1), (ARM_PART, 1)], (PACK1 + 1, 1), 120, 0),
-    r!("pack3", Assembler, [(AMMO, 1), (STEEL, 1)], (PACK1 + 2, 1), 200, 0),
-    r!("pack4", Assembler, [(PROCESSOR, 1), (COMPOSITE, 1)], (PACK1 + 3, 2), 280, 0),
+    r!("pack2", Assembler, [(CIRCUIT, 1), (ARM_PART, 1)], (PACK1 + 1, 1), 120, T_AUTOMATION),
+    r!("pack3", Assembler, [(AMMO, 1), (STEEL, 1)], (PACK1 + 2, 1), 200, T_ELECTRONICS),
+    r!("pack4", Assembler, [(PROCESSOR, 1), (COMPOSITE, 1)], (PACK1 + 3, 2), 280, T_CHEMISTRY),
     r!("pack5", Assembler, [(REFINED_CRYSTAL, 1), (PROCESSOR, 1)], (PACK1 + 4, 2), 280, T_CRYSTAL_REFINING),
     r!("pack6", Assembler, [(ENERGY_CELL, 1), (COMPOSITE, 1), (PROCESSOR, 1)], (PACK1 + 5, 3), 420, T_CRYSTAL_REFINING),
     r!("fuel", Refinery, [(HYDROCARBON, 2)], (FUEL, 1), 40, 0),

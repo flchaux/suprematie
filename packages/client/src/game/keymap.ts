@@ -73,6 +73,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "camSave3", label: "Marque-page 3 : enregistrer", group: "Caméra", ctx: "global" },
   { id: "research", label: "Recherche", group: "Interface", ctx: "global" },
   { id: "stats", label: "Statistiques", group: "Interface", ctx: "global" },
+  { id: "recipes", label: "Recettes débloquées", group: "Interface", ctx: "global" },
   { id: "help", label: "Aide", group: "Interface", ctx: "global" },
   { id: "chat", label: "Discussion", group: "Interface", ctx: "global" },
   { id: "perf", label: "Détail des performances", group: "Interface", ctx: "global" },
@@ -195,6 +196,7 @@ export function defaultBindings(layout: Layout): Record<string, Chord[]> {
     camSave3: [named("F4", { shift: true })],
     research: k("t"),
     stats: [named("Tab")],
+    recipes: k("y"),
     help: [named("F1"), ...k("h")],
     chat: [named("Enter")],
     // F3 sert aux marque-pages : les performances passent sur F9

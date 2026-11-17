@@ -9,6 +9,7 @@
   import Research from "./Research.svelte";
   import Stats from "./Stats.svelte";
   import Help from "./Help.svelte";
+  import Recipes from "./Recipes.svelte";
   import Icon from "./Icon.svelte";
   import EndReport from "./EndReport.svelte";
   import { keyOf } from "../game/keys.svelte.ts";
@@ -108,6 +109,7 @@
     {#if ui.showResearch}<Research />{/if}
     {#if ui.showStats}<Stats />{/if}
     {#if ui.showHelp}<Help />{/if}
+    {#if ui.showRecipes}<Recipes />{/if}
     {#if plans.show}<Plans />{/if}
     {#if ui.gameOver}<EndReport />{/if}
   {/if}

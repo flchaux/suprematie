@@ -893,7 +893,7 @@ export class GameClient {
     if (e.code === "Escape" && !e.ctrlKey && !e.altKey) {
       if (kb.buildStep) kb.buildStep = "";
       else if (ui.mode) this.cancelMode();
-      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = plans.show = false;
+      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = false;
       else {
         this.selected.clear();
         this.updateUi();
@@ -1004,6 +1004,9 @@ export class GameClient {
         break;
       case "stats":
         ui.showStats = !ui.showStats;
+        break;
+      case "recipes":
+        ui.showRecipes = !ui.showRecipes;
         break;
       case "help":
         ui.showHelp = !ui.showHelp;

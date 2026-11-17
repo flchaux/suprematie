@@ -54,6 +54,8 @@ export const ui = $state({
   showResearch: false,
   showStats: false,
   showHelp: false,
+  /** écran des recettes débloquées */
+  showRecipes: false,
   chatOpen: false,
   volume: 0.5,
   music: 0.35,

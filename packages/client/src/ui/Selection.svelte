@@ -22,7 +22,10 @@
   const deployable = $derived(has("sonde") || has("heavy_artillery"));
   // même ordre que la rangée de touches de l'usine (factory1, factory2…)
   const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory).map((i) => ({ u: d.units[i], i })) : []);
-  const recipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
+  const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
+  // seulement les recettes débloquées par nos recherches (les autres apparaissent dans l'écran des recettes)
+  const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
+  const lockedRecipes = $derived(allRecipes.length - recipes.length);
   const total = $derived(ui.selUnits.reduce((s, g) => s + g.count, 0));
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   // diagnostic : ce qui bloque le bâtiment, en clair
@@ -140,6 +143,7 @@
             </div>
           {/each}
         </div>
+        {#if lockedRecipes}<button class="ghost rlock small" onclick={() => (ui.showRecipes = true)}><Icon name="lock" size={12} /> {lockedRecipes} recette{lockedRecipes > 1 ? "s" : ""} à débloquer par la recherche</button>{/if}
         {/if}
         {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe] && !picking}
           {@const r = d.recipes[info.recipe]}
@@ -317,6 +321,7 @@
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .rlock { margin-top: 6px; font-size: 11px; opacity: 0.75; }
   .rhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .rhead .icon-btn { font-size: 11px; padding: 3px 8px; }
   .share { display: flex; flex-direction: column; gap: 6px; }
