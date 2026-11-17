@@ -20,10 +20,22 @@ export const PALETTE: Record<ColorName, number> = {
   black: 0x15181c,
   /** teinte de la ressource exploitée (extracteur), fixée par instance ; couleur par défaut pour le visualiseur */
   ore: 0xd08a40,
+  // décorations du sol
+  leaf: 0x5f8a3a,
+  leaf_dark: 0x335c2e,
+  wood: 0x6e4c30,
+  dry: 0xb09458,
+  rock: 0x8c8780,
+  snow: 0xedf2f6,
+  ice: 0x9ccbe0,
+  crystal: 0x4fdcf0,
+  flower: 0xe8c43a,
+  rust: 0x8c4d2c,
 };
 
 /** Couche de texture de chaque couleur de pièce (voir render/textures.ts ; 5 = pas de texture). */
-export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5 };
+export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5,
+  leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -181,7 +193,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
   const mask = new Float32Array(n);
   const mat = new Float32Array(n).fill(MATERIAL_LAYER[color] ?? 1);
   const isFaction = color === "faction" ? 1 : 0;
-  const glow = color === "glow" || color === "amber" ? 1 : 0;
+  const glow = color === "glow" || color === "amber" || color === "crystal" ? 1 : 0;
   for (let i = 0; i < n; i++) {
     col[i * 3] = c.r;
     col[i * 3 + 1] = c.g;
