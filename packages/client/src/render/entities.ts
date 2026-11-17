@@ -85,6 +85,9 @@ const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
 const tmpQ2 = new THREE.Quaternion();
+const tmpQ3 = new THREE.Quaternion();
+/** hauteur d'un niveau de tapis (cases du monde) : niveau 1 au-dessus des bâtiments bas, niveau 2 encore au-dessus */
+export const FLOOR_H = 1.6;
 const tmpV2 = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
@@ -173,6 +176,9 @@ export class Entities {
   wallSeg: KindMesh | null = null;
   /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
   levelPips: THREE.InstancedMesh;
+  /** tapis surélevés : piliers, et cages d'ascenseur (montants et traverse) là où un tapis change de niveau */
+  supports: THREE.InstancedMesh;
+  liftGlow: THREE.InstancedMesh;
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
@@ -287,6 +293,16 @@ export class Entities {
     this.levelPips.count = 0;
     this.levelPips.frustumCulled = false;
     this.group.add(this.levelPips);
+    // boîte unité posée sur y = 0 (étirée en hauteur pour les piliers et les montants)
+    const post = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+    this.supports = new THREE.InstancedMesh(post, new THREE.MeshStandardNodeMaterial({ color: 0x3a4250, roughness: 0.45, metalness: 0.7 }), 8000);
+    this.supports.castShadow = true;
+    this.liftGlow = new THREE.InstancedMesh(post, new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0x3ef0ff).multiplyScalar(1.6) }), 2000);
+    for (const m of [this.supports, this.liftGlow]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
     for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
@@ -567,6 +583,18 @@ export class Entities {
     }
     // ----- bâtiments -----
     let npip = 0;
+    let nsup = 0;
+    let nlift = 0;
+    /** pilier ou montant : boîte de (sx, h, sz) posée en (x, y0, z), tournée de q */
+    const support = (x: number, y0: number, z: number, sx: number, h: number, sz: number, q: THREE.Quaternion, glow = false) => {
+      const m = glow ? this.liftGlow : this.supports;
+      const n = glow ? nlift : nsup;
+      if (n >= (glow ? 2000 : 8000) || h <= 0) return;
+      tmpM2.compose(tmpV.set(x, y0, z), q, tmpS.set(sx, h, sz));
+      m.setMatrixAt(n, tmpM2);
+      if (glow) nlift++;
+      else nsup++;
+    };
     // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
     const walls = new Map<number, number>();
     o = f.buildingOff;
@@ -604,14 +632,39 @@ export class Entities {
       const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : this.buildingMeshes[kind];
       km.ensure(km.n + 1);
       const build = buf[o + 4] / 65536;
-      const y = groundHeight(this.map, cx, cz);
+      const ground = groundHeight(this.map, cx, cz);
+      // tapis surélevé (bits 28-29) ; montée ou descente vers le niveau des bits 3-4 du mot auxiliaire
+      const floor = def.cls === BClass.Belt ? (buf[o + 1] >>> 28) & 3 : 0;
+      const ramp = def.cls === BClass.Belt && (buf[o + 5] & 4) !== 0 ? (buf[o + 5] >> 3) & 3 : -1;
+      const y = ground + (ramp >= 0 ? ((floor + ramp) / 2) * FLOOR_H : floor * FLOOR_H);
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
       const sc = km.scale;
       const sy = build >= 1 ? sc : sc * Math.max(0.08, build);
-      tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
+      let szz = sc;
+      tmpQ3.copy(tmpQ);
+      if (ramp >= 0) {
+        // rampe : le tapis s'incline vers l'avant (+z du modèle) et s'allonge pour couvrir la case
+        const pitch = Math.atan2((ramp - floor) * FLOOR_H, 1);
+        tmpQ3.multiply(tmpQ2.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitch));
+        szz = sc / Math.cos(pitch);
+      }
+      tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ3, tmpS.set(sc, sy, szz));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
+      // tapis surélevé : pilier sous la case ; rampe : cage d'ascenseur (deux montants, traverse, filets)
+      if (def.cls === BClass.Belt && (floor > 0 || ramp >= 0)) {
+        if (ramp < 0) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
+        else {
+          const top = Math.max(floor, ramp) * FLOOR_H + 0.4;
+          for (const side of [-1, 1]) {
+            tmpV2.set(side * 0.4, 0, 0).applyQuaternion(tmpQ);
+            support(cx + tmpV2.x, ground, cz + tmpV2.z, 0.1, top, 0.1, tmpQ);
+            support(cx + tmpV2.x * 1.12, ground + 0.15, cz + tmpV2.z * 1.12, 0.025, top - 0.3, 0.025, tmpQ, true);
+          }
+          support(cx, ground + top, cz, 0.9, 0.08, 0.12, tmpQ);
+        }
+      }
       // extracteur amélioré : barres de niveau sur la façade avant (repère du bâtiment)
       const lvl = def.cls === BClass.Extractor ? (buf[o + 5] >>> 24) & 3 : 0;
       if (lvl > 0 && build >= 1 && npip + lvl <= 2000) {
@@ -786,6 +839,10 @@ export class Entities {
     this.wallSeg?.end();
     this.levelPips.count = npip;
     this.levelPips.instanceMatrix.needsUpdate = true;
+    this.supports.count = nsup;
+    this.supports.instanceMatrix.needsUpdate = true;
+    this.liftGlow.count = nlift;
+    this.liftGlow.instanceMatrix.needsUpdate = true;
     this.updateHatches(f, strategic, myTeam, spectator);
     this.updateLogos(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
@@ -805,14 +862,16 @@ export class Entities {
       o = f.itemOff;
       tmpQ.setFromAxisAngle(UP, 0.45);
       for (let i = 0; i < f.nItems && ni < 20000; i++, o += ITEM_WORDS) {
-        const kind = buf[o + 2];
+        const kind = buf[o + 2] & 0xff;
         const km = this.itemMesh(kind);
         if (!km) continue;
         const x = buf[o] / TILE;
         const z = buf[o + 1] / TILE;
+        // élévation sur un tapis surélevé ou dans un ascenseur (1/256 de niveau)
+        const elev = ((buf[o + 2] >> 8) / 256) * FLOOR_H;
         km.ensure(km.n + 1);
         const s = km.scale;
-        tmpM.compose(tmpV.set(x, groundHeight(this.map, x, z) + 0.15, z), tmpQ, tmpS.set(s, s, s));
+        tmpM.compose(tmpV.set(x, groundHeight(this.map, x, z) + 0.15 + elev, z), tmpQ, tmpS.set(s, s, s));
         km.body!.mesh.setMatrixAt(km.n, tmpM);
         setTeamColor(km.body!, km.n, this.itemColors[kind]);
         km.n++;
@@ -997,6 +1056,8 @@ export class Entities {
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const bd = this.data.buildings[buf[o + 1] & 0xff];
       if (bd.cls !== BClass.Belt && bd.cls !== BClass.Inserter) continue;
+      // un tapis surélevé ne touche pas les bâtiments
+      if ((buf[o + 1] >>> 28) & 3) continue;
       const dir = (buf[o + 1] >> 16) & 3;
       links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (bd.cls === BClass.Inserter ? 4 * Math.max(1, bd.reach ?? 1) : 0) + dir);
     }

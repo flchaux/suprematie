@@ -49,6 +49,7 @@
           <tr><td>Clic droit</td><td>Déplacer, attaquer, assister, recycler, charger, ralliement (selon la cible)</td></tr>
           <tr><td>Maj + ordre</td><td>Mettre l'ordre en file</td></tr>
           <tr><td>Molette</td><td>Zoom continu (vue stratégique avec icônes de loin)</td></tr>
+          <tr><td>Molette (pose de tapis)</td><td>Niveau du tapis : sol, étage 1 ou étage 2. Un tapis surélevé passe au-dessus des tapis et des bâtiments ; entre deux niveaux, un ascenseur se forme tout seul. Un tapis ne livre un bâtiment qu'au sol.</td></tr>
           <tr><td>Clic milieu glissé</td><td>Tourner / incliner la caméra</td></tr>
           <tr><td>Clic droit glissé (unités sélectionnées)</td><td>Formation orientée : les unités se placent en lignes autour du point cliqué, face à la direction du glisser (Maj : en file)</td></tr>
           <tr><td>Clic droit glissé (sans unité), bords</td><td>Déplacer la caméra</td></tr>

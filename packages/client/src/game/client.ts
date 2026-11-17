@@ -3,6 +3,7 @@
 import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
+import { FLOOR_H } from "../render/entities.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, hasTech } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
@@ -618,16 +619,21 @@ export class GameClient {
   buildingAtTile(tx: number, tz: number): { ref: number; kind: number; owner: number; x: number; y: number; build: number; hp: number } | null {
     const f = this.frame;
     if (!f || !this.data) return null;
+    // plusieurs niveaux sur une case (tapis surélevé au-dessus) : le plus haut d'abord
+    let best: { ref: number; kind: number; owner: number; x: number; y: number; build: number; hp: number } | null = null;
+    let bestFloor = -1;
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = f.buf[o + 1] & 0xff;
       const def = this.data.buildings[kind];
       const x = f.buf[o + 2] & 0xffff;
       const y = (f.buf[o + 2] >>> 16) & 0xffff;
-      if (tx >= x && tx < x + def.w && tz >= y && tz < y + def.h) {
-        return { ref: f.buf[o] >>> 0, kind, owner: (f.buf[o + 1] >> 8) & 0xff, x, y, build: f.buf[o + 4], hp: f.buf[o + 3] };
+      const floor = (f.buf[o + 1] >>> 28) & 3;
+      if (tx >= x && tx < x + def.w && tz >= y && tz < y + def.h && floor > bestFloor) {
+        best = { ref: f.buf[o] >>> 0, kind, owner: (f.buf[o + 1] >> 8) & 0xff, x, y, build: f.buf[o + 4], hp: f.buf[o + 3] };
+        bestFloor = floor;
       }
     }
-    return null;
+    return best;
   }
 
   teamOf(p: number): number {
@@ -843,6 +849,16 @@ export class GameClient {
     e.preventDefault();
     const sc = this.scene;
     if (!sc) return;
+    // pose de tapis : la molette choisit le niveau (sol, étage 1, étage 2) au lieu du zoom
+    if (ui.mode === "build" && this.isBeltKind() && !e.ctrlKey) {
+      const f = Math.max(0, Math.min(2, ui.buildFloor + (e.deltaY < 0 ? 1 : -1)));
+      if (f !== ui.buildFloor) {
+        ui.buildFloor = f;
+        sfx.click();
+        this.updateGhost();
+      }
+      return;
+    }
     const [x, y] = this.localXY(e);
     const before = this.groundAt(x, y);
     const f = Math.exp(Math.sign(e.deltaY) * Math.min(0.5, Math.abs(e.deltaY) / 400));
@@ -1636,6 +1652,11 @@ export class GameClient {
   /** file de tapis en cours de tracé : direction de la dernière case choisie avec R (null : automatique) */
   lineEndDir: number | null = null;
 
+  /** Niveau du tapis à poser dans l'octet de direction (bits 3-4) ; 0 pour les autres bâtiments. */
+  private floorBits(): number {
+    return this.isBeltKind() ? (ui.buildFloor & 3) << 3 : 0;
+  }
+
   /** pose de tapis : direction forcée par R (sinon déduite des tapis voisins) */
   beltForced = false;
   isBeltKind(): boolean {
@@ -1709,8 +1730,9 @@ export class GameClient {
     const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
     const seq = ++this.ghostSeq;
     const args = [ui.me, ui.buildKind];
-    const rf = this.replaceFlag();
+    const rf = this.replaceFlag() | this.floorBits();
     for (const c of cells) args.push(c.x, c.y, c.dir | rf);
+    this.scene.ghostLift = this.isBeltKind() ? ui.buildFloor * FLOOR_H : 0;
     const ok = await this.query<boolean[]>("canPlaceMany", args);
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!ok?.[i] }));
@@ -1735,7 +1757,7 @@ export class GameClient {
       sfx.error();
       return;
     }
-    const rf = this.replaceFlag();
+    const rf = this.replaceFlag() | this.floorBits();
     cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf, shift || i > 0)));
     sfx.confirm();
     this.ghostStart = null;

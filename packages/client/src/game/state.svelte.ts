@@ -62,6 +62,8 @@ export const ui = $state({
   showHelp: false,
   /** écran des recettes débloquées */
   showRecipes: false,
+  /** niveau des tapis à poser (0 : sol ; 1 et 2 : étages), choisi à la molette */
+  buildFloor: 0,
   chatOpen: false,
   volume: 0.5,
   music: 0.35,

@@ -277,6 +277,8 @@ export class GameScene {
 
   /** Fantôme de placement d'un bâtiment (ou d'une ligne de bâtiments). */
   /** Fantôme de pose ; `shape` (tapis) : 1 et 2 pour les virages (modèles « _virage_g » et « _virage_d »). */
+  /** hauteur du fantôme de pose (tapis surélevé : niveau x FLOOR_H) */
+  ghostLift = 0;
   setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number }[]): void {
     if (kind < 0) return this.setGhosts([]);
     const groups = [0, 1, 2].map((variant) => ({ kind, variant, cells: cells.filter((c) => (c.shape ?? 0) === variant) }));
@@ -369,7 +371,7 @@ export class GameScene {
       const cx = c.x + (c.dir & 1 ? def.h : def.w) / 2;
       const cz = c.y + (c.dir & 1 ? def.w : def.h) / 2;
       const y = def.water ? this.map.waterLevel * 0.08 : groundHeight(this.map, cx, cz);
-      m.compose(new THREE.Vector3(cx, y + 0.05, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
+      m.compose(new THREE.Vector3(cx, y + 0.05 + this.ghostLift, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
       g.mesh.setMatrixAt(n, m);
       setTeamColor(g, n, c.ok ? good : bad);
       n++;

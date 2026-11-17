@@ -68,6 +68,10 @@ fn replaceable_at(w: &World, owner: u8, i: usize) -> Option<usize> {
 /// simplement réorienté (renvoie son indice : rien à construire) ; sinon les tapis remplacés sont
 /// démontés, leur coût et les objets qu'ils portent rendus au stock (renvoie None : poser le chantier).
 pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
+    // tapis surélevé : jamais de remplacement (il ne doit pas toucher aux tapis du sol en dessous)
+    if floor_of(dir) > 0 {
+        return None;
+    }
     if dir & DIR_REPLACE == 0 || !replaces_belts(bdef(kind).class) {
         return None;
     }
@@ -119,6 +123,12 @@ pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, di
     None
 }
 
+/// Niveau demandé dans l'octet de direction d'une pose (bits 3-4 ; 0 : sol).
+#[inline]
+pub fn floor_of(dir: u8) -> u8 {
+    ((dir >> 3) & 3).min(crate::map::FLOORS - 1)
+}
+
 pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bool {
     if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
         return false;
@@ -130,6 +140,11 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
     let (bw, bh) = dims(kind, dir);
     if x < 1 || y < 1 || x + bw > w.map.w - 1 || y + bh > w.map.h - 1 {
         return false;
+    }
+    // tapis surélevé : seule sa case à son niveau compte (il passe au-dessus du sol, de l'eau, des falaises)
+    let floor = floor_of(dir);
+    if floor > 0 {
+        return def.class == BClass::Belt && w.map.occ_floor(w.map.idx(x, y), floor) == 0;
     }
     let replace = dir & DIR_REPLACE != 0 && replaces_belts(def.class);
     for ty in y..y + bh {
@@ -189,11 +204,13 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         }
     }
     let (fx, fy) = front_tile(x, y, bw, bh, dir);
+    let floor = floor_of(dir);
     w.buildings[slot] = Building {
         alive: true,
         gen,
         kind,
         owner,
+        floor,
         dir: dir & 3,
         x,
         y,
@@ -211,8 +228,8 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     for ty in y..y + bh {
         for tx in x..x + bw {
             let i = w.map.idx(tx, ty);
-            w.map.occ[i] = slot as u32 + 1;
-            if !def.passable {
+            w.map.set_occ_floor(i, floor, slot as u32 + 1);
+            if !def.passable && floor == 0 {
                 w.map.update_pass_with(tx, ty, true);
             }
         }
@@ -257,13 +274,16 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     let (x, y, kind) = (w.buildings[b].x, w.buildings[b].y, w.buildings[b].kind);
     let (bw, bh) = w.buildings[b].size();
     let def = bdef(kind);
+    let floor = w.buildings[b].floor;
     w.buildings[b].alive = false;
     for ty in y..y + bh {
         for tx in x..x + bw {
             let i = w.map.idx(tx, ty);
-            if w.map.occ[i] == b as u32 + 1 {
-                w.map.occ[i] = 0;
-                w.map.update_pass_with(tx, ty, false);
+            if w.map.occ_floor(i, floor) == b as u32 + 1 {
+                w.map.set_occ_floor(i, floor, 0);
+                if floor == 0 {
+                    w.map.update_pass_with(tx, ty, false);
+                }
             }
         }
     }

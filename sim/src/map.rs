@@ -29,8 +29,35 @@ pub struct Map {
     pub starts: Vec<(i32, i32)>,
     /// Occupation par les bâtiments : 0 ou indice du bâtiment + 1.
     pub occ: Vec<u32>,
+    /// Occupation des étages au-dessus du sol (tapis surélevés) : étage 1 puis étage 2, même codage.
+    /// Le sol (occ) reste seul à compter pour la passabilité, les bras, les trappes et la construction.
+    pub occ_up: Vec<u32>,
     /// Passabilité (P_LAND | P_HOVER | P_NAVAL), dérivée.
     pub pass: Vec<u8>,
+}
+
+/// Nombre de niveaux de tapis : le sol et deux étages.
+pub const FLOORS: u8 = 3;
+
+impl Map {
+    /// Occupant (indice + 1, ou 0) de la case `i` au niveau `floor` (0 : sol).
+    #[inline]
+    pub fn occ_floor(&self, i: usize, floor: u8) -> u32 {
+        if floor == 0 {
+            self.occ[i]
+        } else {
+            self.occ_up[(floor as usize - 1) * self.occ.len() + i]
+        }
+    }
+    #[inline]
+    pub fn set_occ_floor(&mut self, i: usize, floor: u8, v: u32) {
+        if floor == 0 {
+            self.occ[i] = v;
+        } else {
+            let n = self.occ.len();
+            self.occ_up[(floor as usize - 1) * n + i] = v;
+        }
+    }
 }
 
 fn smooth(t: i64) -> i64 {
@@ -216,7 +243,7 @@ impl Map {
             };
         }
         let water_level = final_level;
-        let mut m = Map { w, h, water_level, height, deposit, cliff: vec![0; n], spots, starts, occ: vec![0; n], pass: vec![0; n] };
+        let mut m = Map { w, h, water_level, height, deposit, cliff: vec![0; n], spots, starts, occ: vec![0; n], occ_up: vec![0; n * (FLOORS as usize - 1)], pass: vec![0; n] };
         m.compute_cliffs();
         for y in 0..h {
             for x in 0..w {

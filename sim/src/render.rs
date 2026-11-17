@@ -161,12 +161,16 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
         BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress / 1024) as i32),
-        BClass::Belt if bb.complete() => (crate::belts::belt_shape(w, b) as i32, 0),
+        // tapis : forme (bits 0-1), montée ou descente (bit 2) vers le niveau des bits 3-4
+        BClass::Belt if bb.complete() => {
+            let ramp = crate::belts::ramp_to(w, b).map(|f| 4 | (f as i32) << 3).unwrap_or(0);
+            (crate::belts::belt_shape(w, b) as i32 | ramp, 0)
+        }
         _ => (0, 0),
     };
     out.extend_from_slice(&[
         w.building_ref(b) as i32,
-        bb.kind as i32 | (bb.owner as i32) << 8 | (bb.dir as i32) << 16 | flags << 20,
+        bb.kind as i32 | (bb.owner as i32) << 8 | (bb.dir as i32) << 16 | flags << 20 | (bb.floor as i32 & 3) << 28,
         bb.x | bb.y << 16,
         bb.hp,
         bb.build as i32,
@@ -243,7 +247,12 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
                     let r = TILE / 2;
                     (kx - (dx * c + sx * s) * r / 16384, ky - (dy * c + sy * s) * r / 16384)
                 };
-                out.extend_from_slice(&[cx, cy, it as i32]);
+                // élévation (1/256 de niveau) : niveau du tapis, interpolé sur une case d'ascenseur
+                let mut elev = bb.floor as i32 * 256;
+                if let Some(g) = crate::belts::ramp_to(w, l.tiles[idx] as usize) {
+                    elev += (g as i32 - bb.floor as i32) * 256 * (TILE - off.clamp(0, TILE)) / TILE;
+                }
+                out.extend_from_slice(&[cx, cy, it as i32 | elev << 8]);
                 ni += 1;
             }
         }

@@ -279,11 +279,13 @@ pub struct Building {
     pub vpass: u64,
     /// niveau d'amélioration (extracteur : voir EXTRACTOR_LEVELS)
     pub level: u8,
+    /// étage d'un tapis (0 : sol ; 1 et 2 : surélevé, voir map::FLOORS)
+    pub floor: u8,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level
+    share, pass, vpass, level, floor
 });
 
 impl Building {

@@ -110,6 +110,9 @@
     {#if ui.showStats}<Stats />{/if}
     {#if ui.showHelp}<Help />{/if}
     {#if ui.showRecipes}<Recipes />{/if}
+    {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt}
+      <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette pour monter ou descendre ; les ascenseurs se posent seuls</span></div>
+    {/if}
     {#if plans.show}<Plans />{/if}
     {#if ui.gameOver}<EndReport />{/if}
   {/if}
@@ -154,4 +157,5 @@
   .perfbox { position: absolute; top: 60px; left: 10px; padding: 9px 12px; font-size: 11.5px; display: flex; flex-direction: column; gap: 3px; pointer-events: none; }
   @keyframes slide { from { opacity: 0; transform: translateX(-10px); } }
   @keyframes blink { 50% { opacity: 0.3; } }
+  .floorbadge { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); padding: 6px 12px; font-size: 12px; z-index: 6; pointer-events: none; white-space: nowrap; }
 </style>

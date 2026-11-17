@@ -282,6 +282,35 @@ pub fn logistics_demo() -> World {
     if asm != usize::MAX {
         w.buildings[asm].recipe = 4;
     }
+    // tapis surélevés : une ligne monte par un ascenseur, passe au-dessus d'une ligne au sol et d'un
+    // générateur, puis redescend vers un dépôt
+    for x in x0 + 40..x0 + 43 {
+        put(&mut w, 0, B_BELT1, x, y0 + 50, 0);
+    }
+    for x in x0 + 43..x0 + 51 {
+        put(&mut w, 0, B_BELT1, x, y0 + 50, 1 << 3);
+    }
+    for x in x0 + 51..x0 + 54 {
+        put(&mut w, 0, B_BELT1, x, y0 + 50, 0);
+    }
+    put(&mut w, 0, B_DEPOT, x0 + 54, y0 + 50, 0);
+    for y in y0 + 45..y0 + 55 {
+        put(&mut w, 0, B_BELT1, x0 + 46, y, 1);
+    }
+    put(&mut w, 0, B_GENERATOR, x0 + 48, y0 + 49, 0);
+    let start = w.map.occ[w.map.idx(x0 + 40, y0 + 50)];
+    let cross = w.map.occ[w.map.idx(x0 + 46, y0 + 45)];
+    for k in 0..12 {
+        if start != 0 && k % 2 == 0 {
+            crate::belts::put_on_belt(&mut w, start as usize - 1, IRON_ORE);
+        }
+        if cross != 0 {
+            crate::belts::put_on_belt(&mut w, cross as usize - 1, COPPER_ORE);
+        }
+        w.step(&[]);
+        w.step(&[]);
+        w.step(&[]);
+    }
     // extracteurs améliorés (niveaux 2 et 3) sur un gisement de démonstration
     put(&mut w, 0, B_GENERATOR, x0 + 44, y0 + 34, 0);
     for (k, x) in [x0 + 40, x0 + 47].into_iter().enumerate() {

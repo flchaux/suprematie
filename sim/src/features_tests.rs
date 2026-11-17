@@ -618,3 +618,103 @@ fn single_output_belt_gets_everything() {
     let got = w.players[0].stock[IRON_PLATE as usize] - before;
     assert!(got > 20 && got as i64 + 6 >= fed as i64, "production perdue ou bloquée : {} plaques pour {} minerais", got, fed);
 }
+
+/// Pose d'un tapis au niveau `floor` (bits 3-4 de l'octet de direction).
+fn put_belt(w: &mut World, x: i32, y: i32, dir: u8, floor: u8) -> usize {
+    put(w, 0, B_BELT1, x, y, dir | floor << 3)
+}
+
+/// Une ligne de tapis qui monte par un ascenseur, passe au-dessus d'une ligne qui la croise au sol,
+/// puis redescend et livre ; chaque ligne livre ses propres objets.
+fn crossing_world() -> (World, usize, usize) {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 130, 130);
+    // ligne est-ouest : sol 100..103, étage 1 de 104 à 110, sol de 111 à 113, dépôt en 114
+    for x in 100..104 {
+        put_belt(&mut w, x, 100, 0, 0);
+    }
+    for x in 104..111 {
+        put_belt(&mut w, x, 100, 0, 1);
+    }
+    for x in 111..114 {
+        put_belt(&mut w, x, 100, 0, 0);
+    }
+    put(&mut w, 0, B_DEPOT, 114, 100, 0);
+    // ligne nord-sud au sol qui passe sous l'étage en x = 107, vers un dépôt au sud
+    for y in 95..104 {
+        put_belt(&mut w, 107, y, 1, 0);
+    }
+    put(&mut w, 0, B_DEPOT, 107, 104, 0);
+    let a = w.map.occ_floor(w.map.idx(100, 100), 0) as usize - 1;
+    let b = w.map.occ_floor(w.map.idx(107, 95), 0) as usize - 1;
+    (w, a, b)
+}
+
+#[test]
+fn elevated_belts_cross_over_ground_belts() {
+    let (mut w, a, b) = crossing_world();
+    // la ligne qui monte, l'étage et la descente forment une seule ligne (même vitesse)
+    assert_eq!(w.buildings[a].line, w.buildings[w.map.occ_floor(w.map.idx(108, 100), 1) as usize - 1].line, "ascenseur : une seule ligne");
+    assert_eq!(crate::belts::ramp_to(&w, a + 3), Some(1), "montée sur la dernière case du sol");
+    let top = w.map.occ_floor(w.map.idx(110, 100), 1) as usize - 1;
+    assert_eq!(crate::belts::ramp_to(&w, top), Some(0), "descente sur la dernière case de l'étage");
+    // la ligne au sol en x = 107 n'est pas reliée à l'étage
+    let under = w.map.occ_floor(w.map.idx(107, 100), 0) as usize - 1;
+    assert_ne!(w.buildings[under].line, w.buildings[a].line);
+    // du fer sur la ligne qui monte, du cuivre sur celle du sol
+    let (fe0, cu0) = (w.players[0].stock[IRON_ORE as usize], w.players[0].stock[COPPER_ORE as usize]);
+    let mut sent = [0, 0];
+    for k in 0..700 {
+        if k % 10 == 0 && k < 300 {
+            sent[0] += crate::belts::put_on_belt(&mut w, a, IRON_ORE) as i32;
+            sent[1] += crate::belts::put_on_belt(&mut w, b, COPPER_ORE) as i32;
+        }
+        w.step(&[]);
+    }
+    let fe = w.players[0].stock[IRON_ORE as usize] - fe0;
+    let cu = w.players[0].stock[COPPER_ORE as usize] - cu0;
+    println!("fer {} cuivre {}", fe, cu);
+    // tout arrive, rien ne se perd ni ne se mélange au croisement
+    assert_eq!((fe, cu), (sent[0], sent[1]), "fer {} sur {}, cuivre {} sur {}", fe, sent[0], cu, sent[1]);
+    assert!(sent[0] >= 25 && sent[1] >= 25);
+}
+
+#[test]
+fn elevated_placement_rules() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 130, 130);
+    put(&mut w, 0, B_FURNACE, 100, 100, 0);
+    // un tapis surélevé passe au-dessus d'un bâtiment ; un autre bâtiment ne peut pas être surélevé
+    assert!(crate::buildings::can_place(&w, 0, B_BELT1, 100, 100, 1 << 3));
+    assert!(!crate::buildings::can_place(&w, 0, B_WALL, 104, 104, 1 << 3));
+    let up = put_belt(&mut w, 100, 100, 0, 1);
+    assert!(!crate::buildings::can_place(&w, 0, B_BELT1, 100, 100, 1 << 3), "case de l'étage occupée");
+    assert!(crate::buildings::can_place(&w, 0, B_BELT1, 100, 100, 2 << 3), "le niveau 2 reste libre");
+    // le sol sous un tapis surélevé reste libre pour la construction
+    assert!(crate::buildings::can_place(&w, 0, B_WALL, 103, 100, 0));
+    put_belt(&mut w, 103, 100, 0, 1);
+    assert!(crate::buildings::can_place(&w, 0, B_WALL, 103, 100, 0));
+    crate::buildings::remove_building(&mut w, up, false);
+    assert_eq!(w.map.occ_floor(w.map.idx(100, 100), 1), 0);
+    assert_ne!(w.map.occ_floor(w.map.idx(100, 100), 0), 0, "la fonderie reste");
+}
+
+#[test]
+fn elevated_belts_survive_snapshot() {
+    let (mut w, a, _) = crossing_world();
+    for k in 0..60 {
+        if k % 10 == 0 {
+            crate::belts::put_on_belt(&mut w, a, IRON_ORE);
+        }
+        w.step(&[]);
+    }
+    let snap = crate::save::snapshot(&w);
+    let mut w2 = crate::save::restore(&snap).expect("restauration");
+    assert_eq!(w.hash(), w2.hash());
+    assert_eq!(w2.map.occ_floor(w2.map.idx(105, 100), 1), w.map.occ_floor(w.map.idx(105, 100), 1));
+    for _ in 0..200 {
+        w.step(&[]);
+        w2.step(&[]);
+    }
+    assert_eq!(w.hash(), w2.hash(), "même suite après restauration");
+}
