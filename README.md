@@ -18,6 +18,17 @@ aériennes sur l'économie, appels à l'aide et cible commune entre IA alliées.
 - `?demo=eau` : carte avec de l'eau, sans les armées (aperçu du terrain).
 - `?webgl` : force le moteur WebGL2 au lieu de WebGPU.
 
+## Interface
+
+Charte « holo-tactique » (`packages/client/src/ui/style.css`) : verre sombre bleu nuit, coins biseautés, traits
+lumineux cyan (action, sélection) et ambre (recherche, attention), Chakra Petch pour les libellés et JetBrains Mono
+pour les nombres (polices servies par le jeu, sans appel externe). Icônes de commandes : `ui/Icon.svelte` (vectorielles).
+
+Les icônes d'objets, de bâtiments et d'unités et les illustrations sont générées avec l'API d'images d'OpenAI :
+`tools/sprites/manifest.mjs` décrit chaque image (style commun + sujet), `node tools/sprites/generate.mjs [catégorie]
+[clé…]` les génère (clé dans `OPENAI_API_KEY`, images brutes dans `tools/sprites/raw/`, non versionné), puis
+`python3 tools/sprites/process.py` les réduit en WebP dans `packages/client/src/assets/sprites/`.
+
 ## Développement
 
 | Commande | Rôle |
