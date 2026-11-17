@@ -5,7 +5,7 @@
 //   coloré par type d'ordre à chaque étape.
 import * as THREE from "three/webgpu";
 import type { GameData } from "@supreme/shared";
-import { buildModel, fallbackModel } from "../models/generator.ts";
+import { buildingScale, buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor, type TeamMesh } from "./materials.ts";
 import { groundHeight, type MapData } from "./terrain.ts";
@@ -78,7 +78,7 @@ export class CommandOverlay {
         mat.depthWrite = false;
         const size = new THREE.Vector3();
         built.box.getSize(size);
-        g = { tm, scale: (def.w * 0.98) / Math.max(size.x, size.z, 0.01) };
+        g = { tm, scale: buildingScale(def.w, size.x, size.z) };
         this.group.add(tm.mesh);
         this.planned.set(kind, g);
       }

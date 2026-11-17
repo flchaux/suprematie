@@ -5,7 +5,7 @@ import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1 } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, instancedBufferAttribute } from "three/tsl";
-import { buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
+import { BUILDING_FILL, buildingScale, buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -183,7 +183,7 @@ export class Entities {
       const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4));
       const size = new THREE.Vector3();
       built.box.getSize(size);
-      const scale = (b.w * 0.98) / Math.max(size.x, size.z, 0.01);
+      const scale = buildingScale(b.w, size.x, size.z);
       this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
       // tapis : virages (objets entrant par la gauche, par la droite), à l'échelle du tapis droit
       if (b.cls === BClass.Belt) {
@@ -789,6 +789,8 @@ export class Entities {
       const w = dir & 1 ? def.h : def.w;
       const h = dir & 1 ? def.w : def.h;
       const inside = (x: number, z: number) => x >= bx && x < bx + w && z >= bz && z < bz + h;
+      // face du modèle, depuis le centre de la case de bord (le modèle laisse une marge sur l'emprise)
+      const face = 0.52 - (def.w * (1 - BUILDING_FILL)) / 2;
       for (let side = 0; side < 4; side++) {
         const n = side & 1 ? w : h; // cases le long de la face
         for (let k = 0; k < n; k++) {
@@ -807,8 +809,8 @@ export class Entities {
             if (inside(ox + DX[d], oz + DZ[d])) state = 1;
             else if (inside(ox - DX[d], oz - DZ[d])) state = 2;
           }
-          const px = ex + 0.5 + DX[side] * 0.52;
-          const pz = ez + 0.5 + DZ[side] * 0.52;
+          const px = ex + 0.5 + DX[side] * face;
+          const pz = ez + 0.5 + DZ[side] * face;
           const y = groundHeight(this.map, px, pz) + 0.3;
           q.setFromAxisAngle(UP, [Math.PI / 2, 0, -Math.PI / 2, Math.PI][side]);
           if (state === 0) {
@@ -960,7 +962,7 @@ export class Entities {
     for (const m of this.logoMeshes.values()) m.instanceMatrix.needsUpdate = true;
   }
 
-  /** Maillage des objets d'un type (modèle de assets/models/items.ts, un tiers de case de large). */
+  /** Maillage des objets d'un type (modèle de assets/models/items.ts, un quart de case de large). */
   private itemMesh(kind: number): KindMesh | undefined {
     let km = this.itemMeshes[kind];
     if (km) return km;
@@ -969,7 +971,7 @@ export class Entities {
     const built = buildModel(ITEM_MODELS[key] ?? fallbackModel(0.5));
     const size = new THREE.Vector3();
     built.box.getSize(size);
-    km = new KindMesh(this.group, built, 0.3 / Math.max(size.x, size.z, 0.01), 0, false);
+    km = new KindMesh(this.group, built, 0.24 / Math.max(size.x, size.z, 0.01), 0, false);
     this.itemMeshes[kind] = km;
     return km;
   }

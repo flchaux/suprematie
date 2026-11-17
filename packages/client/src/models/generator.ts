@@ -239,6 +239,21 @@ export function buildModel(model: Model): BuiltModel {
 }
 
 /** Modèle de secours : une boîte aux couleurs du joueur. */
+/** Part de l'emprise couverte par un bâtiment de plusieurs cases (marge pour distinguer les voisins). */
+export const BUILDING_FILL = 0.94;
+
+/**
+ * Échelle d'un modèle de bâtiment de `w` cases dont la boîte mesure `sx` x `sz` (unités du modèle).
+ * Plusieurs cases : le modèle est ajusté à l'emprise (moins une marge). Une case : les modèles sont
+ * dessinés en unités de case et gardent leur taille (un bras fin reste fin), réduits seulement s'ils
+ * dépassent la case.
+ */
+export function buildingScale(w: number, sx: number, sz: number): number {
+  const m = Math.max(sx, sz, 0.01);
+  if (w <= 1) return 0.98 / Math.max(1, m);
+  return (w * BUILDING_FILL) / m;
+}
+
 export function fallbackModel(height = 0.6): Model {
   return {
     parts: [

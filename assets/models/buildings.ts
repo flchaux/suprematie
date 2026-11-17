@@ -20,15 +20,15 @@ function filets(w: number, d = w, cotes = true): Part[] {
   return out;
 }
 
-/** Tapis roulant (au plus 100 triangles) : surface plate, rebords clairs, flèche de sens. */
+/** Tapis roulant étroit (0,62 case, au plus 100 triangles) : surface plate, rebords clairs, flèche de sens. */
 function tapis(surface: Part["color"], fleche: Part["color"], filet: Part["color"], lf: number): Model {
   return {
     parts: [
-      { shape: "box", size: [0.92, 0.07, 1], pos: [0, 0.035, 0], color: "dark" },
-      { shape: "box", size: [0.78, 0.03, 0.98], pos: [0, 0.085, 0], color: surface },
-      { shape: "box", size: [0.08, 0.14, 1], pos: [0.46, 0.07, 0], color: "light", mirror: true },
-      { shape: "box", size: [0.035, 0.02, lf], pos: [0.46, 0.15, 0], color: filet, mirror: true },
-      { shape: "wedge", size: [0.03, 0.3, 0.36], pos: [0.15, 0.115, 0.02], color: fleche, rot: [0, 0, -90], mirror: true },
+      { shape: "box", size: [0.62, 0.06, 1], pos: [0, 0.03, 0], color: "dark" },
+      { shape: "box", size: [0.5, 0.03, 0.98], pos: [0, 0.075, 0], color: surface },
+      { shape: "box", size: [0.06, 0.12, 1], pos: [0.28, 0.06, 0], color: "light", mirror: true },
+      { shape: "box", size: [0.03, 0.02, lf], pos: [0.28, 0.13, 0], color: filet, mirror: true },
+      { shape: "wedge", size: [0.03, 0.2, 0.26], pos: [0.1, 0.1, 0.02], color: fleche, rot: [0, 0, -90], mirror: true },
     ],
   };
 }
@@ -36,7 +36,7 @@ function tapis(surface: Part["color"], fleche: Part["color"], filet: Part["color
 /**
  * Tapis en virage : quart de cercle de rayon 1/2 case centré sur le coin d'entrée, en 6 segments.
  * Les objets entrent par le côté (côté gauche du modèle si `side` = -1, droit si +1) et sortent vers +z,
- * comme sur un tapis droit. Rebord extérieur continu, petit poteau au coin intérieur.
+ * comme sur un tapis droit. Tapis étroit (0,62 case) bordé de rebords intérieur et extérieur.
  */
 function tapisVirage(surface: Part["color"], fleche: Part["color"], filet: Part["color"], side: -1 | 1): Model {
   const parts: Part[] = [];
@@ -53,13 +53,13 @@ function tapisVirage(surface: Part["color"], fleche: Part["color"], filet: Part[
     const yaw = Math.round((Math.atan2(-side * -Math.sin(phi), Math.cos(phi)) * 180) / Math.PI);
     const at = (rad: number, y: number): [number, number, number] => [r(cx + ux * rad), y, r(cz + uz * rad)];
     parts.push(
-      { shape: "box", size: [0.92, 0.07, 0.3], pos: at(0.5, 0.035), rot: [0, yaw, 0], color: "dark" },
-      { shape: "box", size: [0.78, 0.03, 0.27], pos: at(0.5, 0.085), rot: [0, yaw, 0], color: i === 2 || i === 3 ? fleche : surface },
-      { shape: "box", size: [0.08, 0.14, 0.27], pos: at(0.96, 0.07), rot: [0, yaw, 0], color: "light" },
-      { shape: "box", size: [0.035, 0.02, 0.2], pos: at(0.96, 0.15), rot: [0, yaw, 0], color: filet },
+      { shape: "box", size: [0.62, 0.06, 0.24], pos: at(0.5, 0.03), rot: [0, yaw, 0], color: "dark" },
+      { shape: "box", size: [0.5, 0.03, 0.21], pos: at(0.5, 0.075), rot: [0, yaw, 0], color: i === 2 || i === 3 ? fleche : surface },
+      { shape: "box", size: [0.06, 0.12, 0.23], pos: at(0.78, 0.06), rot: [0, yaw, 0], color: "light" },
+      { shape: "box", size: [0.03, 0.02, 0.17], pos: at(0.78, 0.13), rot: [0, yaw, 0], color: filet },
+      { shape: "box", size: [0.06, 0.12, 0.07], pos: at(0.22, 0.06), rot: [0, yaw, 0], color: "light" },
     );
   }
-  parts.push({ shape: "cylinder", sides: 8, radius: 0.06, height: 0.16, pos: [r(cx - side * 0.04), 0.08, r(cz - 0.04)], color: "light" });
   return { parts };
 }
 
@@ -148,15 +148,15 @@ export const BUILDING_MODELS: Record<string, Model> = {
   // belt3_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
   belt3_virage_g: tapisVirage("dark", "glow", "glow", -1),
   belt3_virage_d: tapisVirage("dark", "glow", "glow", 1),
-  // inserter : socle rond à liseré cyan, colonne, bras et pince (84 triangles)
+  // inserter : petit socle rond à liseré cyan, colonne fine, bras long et pince (84 triangles)
   inserter: {
     parts: [
-      { shape: "cylinder", sides: 6, radius: 0.4, height: 0.1, pos: [0,0.05,0], color: "dark" },
-      { shape: "box", size: [0.56,0.02,0.56], pos: [0,0.11,-0.08], color: "glow" },
-      { shape: "box", size: [0.46,0.16,0.46], pos: [0,0.2,-0.08], color: "faction" },
-      { shape: "box", size: [0.18,0.28,0.18], pos: [0,0.4,-0.08], color: "metal" },
-      { shape: "box", size: [0.1,0.1,0.7], pos: [0,0.55,0.2], color: "light", pivot: "bras" },
-      { shape: "box", size: [0.25,0.1,0.1], pos: [0,0.5,0.58], color: "dark", parent: "bras" },
+      { shape: "cylinder", sides: 6, radius: 0.24, height: 0.08, pos: [0,0.04,0], color: "dark" },
+      { shape: "box", size: [0.34,0.02,0.34], pos: [0,0.09,-0.04], color: "glow" },
+      { shape: "box", size: [0.28,0.12,0.28], pos: [0,0.16,-0.04], color: "faction" },
+      { shape: "box", size: [0.1,0.26,0.1], pos: [0,0.34,-0.04], color: "metal" },
+      { shape: "box", size: [0.06,0.06,0.66], pos: [0,0.48,0.2], color: "light", pivot: "bras" },
+      { shape: "box", size: [0.16,0.07,0.07], pos: [0,0.44,0.53], color: "dark", parent: "bras" },
     ],
   },
   // furnace : bloc sombre à coins blindés, gueule de feu ambre, cheminée rougeoyante (708 triangles)
