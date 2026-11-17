@@ -98,6 +98,8 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
         w.units.cold[s].timer = 0;
     }
     let mut heading = w.trig.atan2((ty - y) as i64, (tx - x) as i64);
+    // l'unité suit un champ de flux valide (chemin connu, éventuellement un long détour)
+    let mut following = false;
     if let Some(class) = move_class(def.layer) {
         if d > 5 * TILE {
             if w.units.cold[s].goal == 0 {
@@ -108,6 +110,7 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
             let fd = flow::flow_dir(w, key, x / TILE, y / TILE);
             if fd != NO_DIR && fd != AT_GOAL {
                 heading = (fd as u16).wrapping_mul(8192);
+                following = true;
             }
         }
     }
@@ -146,6 +149,9 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
     if nd + 16 < c.best_dist {
         c.best_dist = nd;
         c.noprog = 0;
+    } else if following && moved * 4 >= speed && nd > stop + 6 * TILE {
+        // détour le long du champ de flux (contournement d'un lac, d'une falaise) : l'unité avance,
+        // même si elle s'éloigne du but à vol d'oiseau ; ce n'est pas une absence de progrès
     } else {
         c.noprog = c.noprog.saturating_add(1);
     }

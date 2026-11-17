@@ -168,8 +168,16 @@ export class SkirmishAI implements Bot {
   busMines = new Map<number, number>();
   blockedSince = new Map<string, number>();
   thinkN = 0;
+  /** échecs de placement par entrée de plan (« module:type ») */
+  slotFails = new Map<string, number>();
+  /** l'usine du module principal n'a pas pu être placée : le prochain module sera un module d'armée */
+  factoryLost = false;
+  /** depuis ce tick, plus aucun chantier en cours faute de ressources (0 : non) */
+  starvedSince = 0;
   stats = { projectsDone: 0, projectsFailed: 0 };
   landTarget = -1;
+  /** assauts repoussés par la cible terrestre au moment de son choix */
+  landTargetRepelled = 0;
   airTarget = -1;
   debug = false;
   /** niveau de difficulté */
@@ -213,7 +221,7 @@ export class SkirmishAI implements Bot {
     }
     const n = Math.hypot(ex, ey) || 1;
     this.enemyDir = [ex / n, ey / n];
-    this.debug = typeof process !== "undefined" && process.env?.BOTDEBUG === String(ctx.slot);
+    this.debug = typeof process !== "undefined" && (process.env?.BOTDEBUG ?? "").split(",").includes(String(ctx.slot));
   }
 
   // ---------- Sauvegarde de partie ----------
@@ -282,7 +290,13 @@ export class SkirmishAI implements Bot {
   pickTarget(land: boolean): number {
     const valid = (t: number) => t >= 0 && this.view.players[t]?.alive && !this.sameTeam(t) && (!land || this.reachable(t));
     const prev = land ? this.landTarget : this.airTarget;
-    if (valid(prev)) {
+    const repelled = (t: number) => this.army.repelled[t] ?? 0;
+    // deux assauts repoussés de plus depuis le choix de cette cible : en changer
+    if (land && valid(prev) && repelled(prev) >= this.landTargetRepelled + 2 && this.enemyIds.length > 1) {
+      this.landTarget = -1;
+      if (this.board.target === prev) this.board.target = -1;
+      this.log("cible", prev, "trop défendue : changement d'adversaire");
+    } else if (valid(prev)) {
       if (land && !valid(this.board.target)) this.board.target = prev;
       return prev;
     }
@@ -299,6 +313,8 @@ export class SkirmishAI implements Bot {
       let d = Math.sqrt(dist2(bx, by, x, y)) * (1 + Math.min(3, strength) * 0.4);
       // l'aviation va de préférence là où l'armée de terre ne peut pas aller
       if (!land && !this.reachable(i)) d *= 0.5;
+      // adversaires qui nous ont déjà repoussés : en dernier
+      if (land) d *= 1 + repelled(i) * 0.7;
       if (d < bd) {
         bd = d;
         best = i;
@@ -314,6 +330,7 @@ export class SkirmishAI implements Bot {
     }
     if (land) {
       this.landTarget = best;
+      this.landTargetRepelled = best >= 0 ? repelled(best) : 0;
       if (best >= 0 && !valid(shared)) {
         this.board.target = best;
         this.board.targetSince = this.tick;
@@ -434,6 +451,40 @@ export class SkirmishAI implements Bot {
     }
     return best;
   }
+  /**
+   * Point (sous-unités) proche de (x, y) sur la même terre que (tx, ty) : recherche en spirale jusqu'à
+   * 40 cases, sinon l'objectif lui-même.
+   */
+  landNear(x: number, y: number, tx: number, ty: number): [number, number] {
+    const map = this.ctx.map;
+    const comp = landComponents(map);
+    const cx = Math.max(0, Math.min(map.w - 1, Math.floor(x / TILE)));
+    const cy = Math.max(0, Math.min(map.h - 1, Math.floor(y / TILE)));
+    const want = comp[Math.max(0, Math.min(map.h - 1, Math.floor(ty / TILE))) * map.w + Math.max(0, Math.min(map.w - 1, Math.floor(tx / TILE)))];
+    if (want < 0) return [x, y];
+    if (comp[cy * map.w + cx] === want) return [x, y];
+    for (let r = 1; r <= 40; r++) {
+      let best: [number, number] | null = null;
+      let bd = Infinity;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const px = cx + dx;
+          const py = cy + dy;
+          if (px < 1 || py < 1 || px >= map.w - 1 || py >= map.h - 1 || comp[py * map.w + px] !== want) continue;
+          // à distance égale, le point le plus proche de l'objectif
+          const d = (px * TILE - tx) ** 2 + (py * TILE - ty) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = [px * TILE + TILE / 2, py * TILE + TILE / 2];
+          }
+        }
+      }
+      if (best) return best;
+    }
+    return [tx, ty];
+  }
+
   playerPos(i: number): [number, number] {
     const c = this.unitById(this.view.players[i].commander);
     return c ? [c.x, c.y] : [this.ctx.map.starts[i][0] * TILE + TILE / 2, this.ctx.map.starts[i][1] * TILE + TILE / 2];
@@ -524,6 +575,10 @@ export class SkirmishAI implements Bot {
       else this.enemyIds.push(i);
     }
     if (this.thinkN % 10 === 1 && this.level !== "facile") this.analyse();
+    if (this.debug && this.thinkN % 120 === 1) {
+      const top = this.engBuilders(this.builderUnits()[0] ?? ({} as BotUnit)).sort((a, b) => b.prio - a.prio).slice(0, 5).map((b) => `${b.name}:${b.prio}`);
+      this.log("état", "recherche", this.me.research, "plan", JSON.stringify([...this.pendingPlan.values()]), "chantiers", this.projects.map((p) => `${p.name}[${p.builders.length}]`).join(","), "priorités", top.join(" "), "commandant", ((c) => (c ? `${Math.round(c.x / TILE)},${Math.round(c.y / TILE)} ordres ${c.nOrders} (${c.order})` : "?"))(this.unitById(this.me.commander)), "abri", this.cmdHoldUntil > this.tick);
+    }
     this.underPressure = this.tick - this.lastThreat < 1200;
     const prof = this.prof;
     let t0 = prof ? performance.now() : 0;
@@ -674,6 +729,13 @@ export class SkirmishAI implements Bot {
       }
     }
     if (changed) p.lastProgress = this.tick;
+    // bâtisseur encore en route vers un chantier lointain (long détour autour d'un lac, d'une falaise) :
+    // le trajet ne compte pas comme une absence de progrès
+    const next = p.places.find((_, i) => p.st[i] === 0);
+    if (next && p.builders.some((id) => {
+      const u = this.unitById(id);
+      return !!u && u.nOrders > 0 && dist2(u.x, u.y, next.x * TILE, next.y * TILE) > (20 * TILE) ** 2;
+    })) p.lastProgress = Math.max(p.lastProgress, this.tick - 3000);
     // projet bloqué trop longtemps (stock vide ou chantier inaccessible)
     if (this.tick - p.lastProgress > 6000 && p.builders.length > 0) {
       for (let i = 0; i < p.st.length; i++) if (p.st[i] === 0) p.st[i] = 2;
@@ -823,13 +885,18 @@ export class SkirmishAI implements Bot {
     list.sort((a, b) => b.prio - a.prio);
     const res = this.reserved();
     const isCmd = u.id === this.me.commander;
+    // une seule tâche importante épargne à la fois (des réserves cumulées bloquaient tout le reste)
+    let saving = false;
     for (const b of list) {
       if (b.prio <= 0) break;
       if (b.remote && isCmd && this.engineerCount() > 0) continue;
       if (this.projects.some((p) => p.name === b.name)) continue;
       if (!this.estAffordable(b.est, res)) {
         // épargner pour les tâches importantes
-        if (b.prio >= 780) this.reserveEst(b.est, res);
+        if (b.prio >= 780 && !saving) {
+          this.reserveEst(b.est, res);
+          saving = true;
+        }
         continue;
       }
       if ((this.failUntil.get(b.name) ?? 0) > this.tick) continue;
@@ -837,12 +904,27 @@ export class SkirmishAI implements Bot {
       if (!p) {
         // échec de planification : ne pas recommencer à chaque décision
         this.failUntil.set(b.name, this.tick + (b.name === "module" ? 1200 : 300));
+        // étape d'ouverture impossible (plus de gisement à portée…) : passer à la suivante
+        if (b.prio === 990) this.openingIdx++;
         continue;
       }
       this.projects.push(p);
+      this.starvedSince = 0;
       if (b.prio === 990) this.openingIdx++;
       this.log("début", p.name, p.slot?.type ?? "", p.places.length, "placements");
       return p;
+    }
+    // constructeur sans chantier faute de ressources : les usines laisseront remonter le stock
+    if (list.some((b) => b.prio > 0 && !this.projects.some((p) => p.name === b.name) && !this.estAffordable(b.est, this.reserved())) && this.projects.length === 0 && !this.starvedSince) this.starvedSince = this.tick;
+    if (this.debug && this.thinkN % 60 === 0) {
+      const why = list.filter((b) => b.prio > 0).slice(0, 5).map((b) => {
+        if (this.projects.some((p) => p.name === b.name)) return `${b.name}:en cours`;
+        if (b.remote && isCmd && this.engineerCount() > 0) return `${b.name}:distant`;
+        if (!this.estAffordable(b.est, res)) return `${b.name}:coût ${b.est.join("/")}`;
+        if ((this.failUntil.get(b.name) ?? 0) > this.tick) return `${b.name}:échec récent`;
+        return `${b.name}:?`;
+      });
+      this.log("rien à lancer", why.join(" "), "réservé", res.slice(0, 5).join("/"), "stock fer", this.stock(this.ids.item.iron_plate), "cuivre", this.stock(this.ids.item.copper_plate), "engr", this.stock(this.ids.item.gear), "circ", this.stock(this.ids.item.circuit));
     }
     return null;
   }
@@ -926,6 +1008,8 @@ export class SkirmishAI implements Bot {
           let prio = 800 - m.id * 50;
           if (type === "lab" || type.startsWith("A:pack")) prio += P.techBias;
           if (type.startsWith("factory")) prio += P.name === "rush" ? 80 : 20;
+          // première usine (et ses fournisseurs) : avant tout le reste (ingénieurs et armée en dépendent)
+          if ((this.isFactoryEntry(type) || pend.slice(0, 4).includes("factory:land_factory")) && !this.hasFactorySlot()) prio = 985;
           L.push({ name: "slot" + m.id, prio, remote: m.id > 0, est: this.slotEst(type), make: () => this.makeSlot(m, type, k) });
         }
       }
@@ -969,8 +1053,13 @@ export class SkirmishAI implements Bot {
     const rich = this.stock(it.iron_plate) > 600 && this.stock(it.copper_plate) > 300;
     const maxMods = 1 + P.modules + (rich ? 3 : 0);
     const coreDone = m0.slots.some((s) => s.type.startsWith("factory")) && !this.projects.some((p) => p.module === m0 && p.name.startsWith("slot"));
-    const techFirst = !mods.some((m) => m.role === "tech") && m0.slots.some((s) => s.type === "lab");
-    if (allBuilt && mods.length < maxMods && this.tick > P.moduleDelay && (planDone || rich || coreDone || techFirst || this.tick > P.moduleDelay * 2)) {
+    // le module technologique attend que l'usine soit placée (sinon le commandant, seul constructeur,
+    // part poser un tapis loin de la base au lieu de l'usine qui donne les ingénieurs)
+    const techFirst = !mods.some((m) => m.role === "tech") && m0.slots.some((s) => s.type === "lab") && this.hasFactorySlot();
+    if (allBuilt && mods.length < maxMods && this.factoryLost && !this.hasFactorySlot()) {
+      // usine impossible dans le module principal : un module d'armée, sans attendre
+      L.push({ name: "module", prio: 950, remote: true, est: [150, 60], make: () => this.makeModule() });
+    } else if (allBuilt && mods.length < maxMods && this.tick > P.moduleDelay && (planDone || rich || coreDone || techFirst || this.tick > P.moduleDelay * 2)) {
       L.push({ name: "module", prio: techFirst ? 810 : 520, remote: true, est: [150, 60], make: () => this.makeModule() });
     }
     return L;
@@ -1031,9 +1120,8 @@ export class SkirmishAI implements Bot {
     const isFactory = type.startsWith("factory");
     const isLab = type === "lab";
     const slot = this.planner.allocSlot(m, kind, d.w, type, { input: true, output: !isFactory && !isLab, faceOut: isFactory, recipe });
-    const pend = this.pendingPlan.get(m);
-    pend?.splice(k, 1);
-    if (!slot) return null;
+    if (!slot) return this.slotFailed(m, type, k);
+    this.pendingPlan.get(m)?.splice(k, 1);
     for (const pl of slot.places) {
       const bd = this.ctx.data.buildings[pl.kind];
       m.use += bd.powerUse;
@@ -1045,11 +1133,45 @@ export class SkirmishAI implements Bot {
     return this.newProject("slot" + m.id, slot.places, { module: m, slot, remote: m.id > 0, critical: true });
   }
 
+  /** Entrée de plan d'un type qui fait une usine (cellule de robots ou usine seule). */
+  isFactoryEntry(type: string): boolean {
+    return type.startsWith("factory") || type === "cell:robot";
+  }
+
+  /**
+   * Placement impossible d'une entrée de plan : elle reste en tête du plan et sera retentée (le module
+   * peut se libérer) ; après 3 échecs elle est abandonnée. Une usine perdue n'est jamais oubliée :
+   * le prochain module sera un module d'armée.
+   */
+  slotFailed(m: Module, type: string, k: number): null {
+    const key = m.id + ":" + type;
+    const n = (this.slotFails.get(key) ?? 0) + 1;
+    this.slotFails.set(key, n);
+    this.log("échec de placement", type, "module", m.id, "essai", n);
+    if (n >= 3) {
+      const pend = this.pendingPlan.get(m);
+      if (type === "cell:robot" && !this.hasFactorySlot() && pend) {
+        // cellule trop grande pour la place restante : une usine seule, alimentée par le tapis, avec en
+        // amont les assembleurs de ses composants (engrenages, câbles, circuits)
+        pend.splice(k, 1, "A:gear", "A:cable", "A:circuit", "factory:land_factory");
+        this.log("cellule d'usine impossible : usine seule à la place");
+      } else {
+        pend?.splice(k, 1);
+        if (this.isFactoryEntry(type) && !this.hasFactorySlot()) this.factoryLost = true;
+      }
+    }
+    return null;
+  }
+
+  /** Une usine (terrestre, aérienne ou navale) est-elle placée dans un module (en chantier ou finie) ? */
+  hasFactorySlot(): boolean {
+    return this.planner.modules.some((mm) => mm.slots.some((sl) => sl.type.startsWith("factory")));
+  }
+
   makeCell(m: Module, type: string, k: number): Project | null {
     const cs = this.planner.allocCell(m, CELLS[type.slice(5)]);
-    const pend = this.pendingPlan.get(m);
-    pend?.splice(k, 1);
-    if (!cs) return null;
+    if (!cs) return this.slotFailed(m, type, k);
+    this.pendingPlan.get(m)?.splice(k, 1);
     for (const pl of cs.places) {
       const bd = this.ctx.data.buildings[pl.kind];
       m.use += bd.powerUse;
@@ -1179,6 +1301,9 @@ export class SkirmishAI implements Bot {
       if (!airReady || nAir >= 2) return null;
       plan = AIR_PLAN;
     }
+    // aucune usine possible dans le module principal : celui-ci sera un module d'armée, avant toute
+    // autre considération (sans usine, pas d'ingénieurs ni d'armée de toute la partie)
+    if (this.factoryLost && !this.hasFactorySlot()) plan = this.pickTarget(true) >= 0 || !airReady ? ARMY_PLAN : AIR_PLAN;
     const air = plan === AIR_PLAN;
     const role = air ? "air" : plan === TECH_PLAN ? "tech" : plan.some((t) => t.startsWith("cell:robot")) ? "army" : "tech";
     // près des gisements libres les plus proches, du côté opposé aux adversaires si possible
@@ -1222,6 +1347,7 @@ export class SkirmishAI implements Bot {
       m.role = role;
       this.pendingPlan.set(m, [...plan]);
       this.produces.set(m, new Set());
+      if (plan === ARMY_PLAN) this.factoryLost = false;
       this.log("module", m.id, m.role, "en", m.cx, m.cy);
       return this.newProject("bus", m.bus.slice(), { module: m, remote: true });
     }
@@ -1459,6 +1585,10 @@ export class SkirmishAI implements Bot {
         continue;
       } else if (this.stock(this.ids.item.iron_plate) < 40 && !this.underPressure && engs >= 1) {
         // le stock de construction passe d'abord
+        continue;
+      } else if (this.starvedSince && this.tick - this.starvedSince > 600 && !this.underPressure && engs >= 1) {
+        // les constructeurs attendent des ressources depuis 30 s : pause des unités de combat
+        if (this.debug && this.thinkN % 30 === 1) this.log("usines en pause : stock de construction insuffisant");
         continue;
 
       } else {

@@ -4,7 +4,7 @@
 //
 //   node tools/bench/bench.ts [--minutes N] [--size 512|1024] [--players 8] [--seed S]
 //                             [--water 0|1] [--personality a,b,...] [--aix 100] [--level normal]
-//                             [--check] [--until-victory] [--quiet]
+//                             [--check] [--until-victory] [--quiet] [--wasm chemin]
 //
 // --check : une seconde simulation reçoit les mêmes ordres ; les hash doivent être égaux à chaque tick
 //           (sortie 1 en cas de désynchronisation ou de blocage de la partie).
@@ -41,7 +41,8 @@ const personas = arg("personality", PERSONALITIES.join(",")).split(",");
 const maxTicks = Math.round(minutes * TICKS_PER_MIN);
 
 const root = new URL("../../", import.meta.url).pathname;
-const wasm = readFileSync(root + "packages/client/public/sim.wasm");
+// --wasm : autre simulation compilée (comparaison de versions avec les mêmes IA)
+const wasm = readFileSync(arg("wasm", root + "packages/client/public/sim.wasm"));
 
 const params = [seed, size, water ? 1 : 0, nPlayers];
 for (let i = 0; i < nPlayers; i++) params.push(i, 1, aix, aix);

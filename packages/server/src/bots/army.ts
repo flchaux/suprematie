@@ -44,6 +44,10 @@ interface Platoon {
   since: number; // début de la mission
   quiet: number; // dernier tick avec un ennemi proche (garde)
   readySince: number; // en formation : effectif atteint depuis ce tick (0 : pas encore)
+  /** dernier déplacement notable du peloton (détection d'un peloton bloqué) */
+  mx?: number;
+  my?: number;
+  movedAt?: number;
 }
 
 const R_LOCAL = 26; // rayon (cases) du jugement local d'un combat
@@ -56,6 +60,8 @@ export class Army {
   airSize: number;
   attacks = 0;
   retreats = 0;
+  /** assauts repoussés par adversaire (indice du joueur -> nombre) : l'IA change de cible */
+  repelled: Record<number, number> = {};
   /** menace sur nos installations (la plus forte), pour le commandant et la production */
   threat: { x: number; y: number; n: number; power: number; air: number; tick: number } | null = null;
 
@@ -118,7 +124,12 @@ export class Army {
     };
     const ctx = { mine, units };
     if (ai.debug && tick % 1200 < 20) {
-      ai.log("pelotons", this.platoons.filter((p) => p.units.size).map((p) => `${p.id}:${p.family}/${p.mission}/${p.units.size}→J${p.targetPlayer}`).join(" "), "cible terre", ai.pickTarget(true), "taille", this.attackSize);
+      ai.log("pelotons", this.platoons.filter((p) => p.units.size).map((p) => {
+        const us = [...p.units].map((id) => ai.unitById(id)).filter((u): u is BotUnit => !!u);
+        const [cx, cy] = us.length ? centroid(us) : [0, 0];
+        const T_ = 256;
+        return `${p.id}:${p.family}/${p.mission}/${p.units.size}→J${p.targetPlayer}@${Math.round(cx / T_)},${Math.round(cy / T_)}${p.mission !== "form" ? `>${Math.round(p.ox / T_)},${Math.round(p.oy / T_)}${p.staged ? "" : " rgt " + Math.round(p.sx / T_) + "," + Math.round(p.sy / T_)} ord ${us.filter((u) => u.nOrders > 0).length}` : ""}`;
+      }).join(" "), "cible terre", ai.pickTarget(true), "taille", this.attackSize);
     }
     for (const p of this.platoons.slice()) {
       const us = units(p);
@@ -214,6 +225,22 @@ export class Army {
     if (us.length < Math.max(3, p.launched * 0.25)) {
       this.retreat(ai, p, tick, "décimé");
       return;
+    }
+    // peloton bloqué (point inaccessible, embouteillage) : d'abord droit sur l'objectif, puis repli
+    if (p.movedAt === undefined || dist2(cx, cy, p.mx ?? 0, p.my ?? 0) > (4 * TILE) ** 2) {
+      p.mx = cx;
+      p.my = cy;
+      p.movedAt = tick;
+    } else if (tick - p.movedAt > 1500 && dist2(cx, cy, p.ox, p.oy) > (14 * TILE) ** 2) {
+      p.movedAt = tick;
+      if (!p.staged) {
+        ai.log("peloton", p.id, "bloqué : assaut direct");
+        p.staged = true;
+        p.lastOrder = -1e9;
+      } else {
+        this.retreat(ai, p, tick, "bloqué");
+        return;
+      }
     }
     // jugement local du combat (LOUD : comparaison des menaces avant d'engager)
     if (ai.level !== "facile") {
@@ -319,14 +346,37 @@ export class Army {
     else if (!p.readySince) p.readySince = tick;
     const waited = p.readySince > 0 && tick - p.readySince > 2400;
     const big = us.length >= need * 2;
+    let launchTgt = tgt;
+    let launchObj = obj;
+    if (us.length >= need && !strongEnough && !big && waited) {
+      // trop faible pour cet objectif : une installation moins défendue, chez n'importe quel adversaire
+      // joignable (plutôt que de se faire repousser sans rien détruire)
+      let bestDef = Infinity;
+      launchObj = null;
+      for (const e of ai.enemyIds) {
+        if (!amphib && !ai.reachable(e)) continue;
+        const o = ai.objective(e, power, !amphib, 3);
+        if (!o) continue;
+        const d = ai.enemySum(T.Surface, o[0], o[1], R_LOCAL);
+        if (d < bestDef) {
+          bestDef = d;
+          launchTgt = e;
+          launchObj = o;
+        }
+      }
+      if (!launchObj || power <= bestDef * 1.3) {
+        // rien d'abordable : attendre d'être deux fois plus nombreux
+        return;
+      }
+    }
     if ((us.length >= need && (strongEnough || waited)) || big) {
       p.readySince = 0;
-      const np = this.newPlatoon(p.family, "attack", tgt, tick);
+      const np = this.newPlatoon(p.family, "attack", launchTgt, tick);
       np.launched = us.length;
       np.launchPower = power;
-      if (obj) {
-        np.ox = obj[0];
-        np.oy = obj[1];
+      if (launchObj) {
+        np.ox = launchObj[0];
+        np.oy = launchObj[1];
       }
       this.merge(p, np, us);
       this.platoons.push(np);
@@ -334,7 +384,7 @@ export class Army {
       if (np.ox) this.setStage(ai, np, cx, cy);
       this.attacks++;
       this.attackSize = Math.min(P.maxAttack, this.attackSize + P.attackGrow);
-      ai.log("attaque", np.id, "sur", tgt, us.length, "unités, puissance", power.toFixed(0), "défense", defense.toFixed(0));
+      ai.log("attaque", np.id, "sur", launchTgt, us.length, "unités, puissance", power.toFixed(0), "défense", defense.toFixed(0));
       return;
     }
     if (!amphib && P.name === "rush" && this.attacks === 0 && us.length >= 6 && tick >= P.attackDelay * 0.6 && !this.platoons.some((q) => q.mission === "raid")) {
@@ -354,6 +404,12 @@ export class Army {
     const back = Math.min(d * 0.5, 40 * TILE);
     p.sx = p.ox - (dx / d) * back;
     p.sy = p.oy - (dy / d) * back;
+    // regroupement sur la terre ferme reliée à l'objectif (la ligne droite peut traverser un lac)
+    if (p.family !== "amphib" && p.family !== "air") {
+      const pt = ai.landNear(p.sx, p.sy, p.ox, p.oy);
+      p.sx = pt[0];
+      p.sy = pt[1];
+    }
     p.staged = d < 30 * TILE || ai.level === "facile";
     p.stageSince = 0;
   }
@@ -364,6 +420,7 @@ export class Army {
     p.lastOrder = -1e9;
     p.staged = false;
     this.retreats++;
+    if ((p.mission === "retreat") && (why.startsWith("ennemi") || why === "décimé" || why === "bloqué")) this.repelled[p.targetPlayer] = (this.repelled[p.targetPlayer] ?? 0) + 1;
     // il faudra une armée un peu plus grosse la prochaine fois
     this.attackSize = Math.min(ai.persona.maxAttack, this.attackSize + Math.ceil(ai.persona.attackGrow / 2));
     ai.log("repli du peloton", p.id, why);

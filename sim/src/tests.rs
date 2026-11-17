@@ -273,3 +273,62 @@ fn flow_field_goes_around_wall() {
     println!("arrivée à {} cases, en {} ticks, position {},{}", d / TILE, w.tick, w.units.x[s] / TILE, w.units.y[s] / TILE);
     assert!(d < 3 * TILE, "l'unité n'a pas contourné le mur");
 }
+
+#[test]
+fn flow_goal_on_building_goes_around_wall() {
+    // but posé au centre d'un bâtiment (case infranchissable) : le chemin doit quand même
+    // contourner le mur au lieu d'aller tout droit s'y bloquer
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 60, 60, 200, 200);
+    w.nav = crate::flow::Nav::new(&w.map);
+    for y in 70..190 {
+        if (185..=187).contains(&y) {
+            continue;
+        }
+        put(&mut w, B_WALL, 130, y, 0);
+    }
+    let depot = put(&mut w, B_DEPOT, 160, 100, 0);
+    crate::flow::process_dirty(&mut w);
+    let (bx, by) = w.buildings[depot].center();
+    let id = w.spawn_unit(6, 0, 100 * TILE, 100 * TILE);
+    let s = slot_of(id);
+    w.units.cold[s].orders.push(Order::Move { x: bx, y: by, gx: bx, gy: by, attack: false });
+    for _ in 0..2500 {
+        w.step(&[]);
+        if w.units.cold[s].orders.is_empty() {
+            break;
+        }
+    }
+    let d = crate::fixed::dist(w.units.x[s], w.units.y[s], bx, by);
+    assert!(d < 5 * TILE, "l'unité n'a pas atteint le bâtiment : arrêtée à {} cases, en {},{}", d / TILE, w.units.x[s] / TILE, w.units.y[s] / TILE);
+}
+
+#[test]
+fn long_detour_keeps_the_order() {
+    // mur de 360 cases : pour rejoindre un point à 60 cases, l'unité doit s'éloigner du but pendant
+    // bien plus de 1200 ticks ; elle ne doit pas abandonner son ordre en route
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 60, 0, 200, 440);
+    w.nav = crate::flow::Nav::new(&w.map);
+    for y in 1..420 {
+        if (415..=417).contains(&y) {
+            continue;
+        }
+        put(&mut w, B_WALL, 130, y, 0);
+    }
+    crate::flow::process_dirty(&mut w);
+    let id = w.spawn_unit(U_LINE_ROBOT, 0, 100 * TILE, 100 * TILE);
+    let s = slot_of(id);
+    let (tx, ty) = (160 * TILE, 100 * TILE);
+    w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: false });
+    for _ in 0..12000 {
+        w.step(&[]);
+        if w.units.cold[s].orders.is_empty() {
+            break;
+        }
+    }
+    let d = crate::fixed::dist(w.units.x[s], w.units.y[s], tx, ty);
+    assert!(d < 3 * TILE, "ordre abandonné en route : arrêtée à {} cases, en {},{} (tick {})", d / TILE, w.units.x[s] / TILE, w.units.y[s] / TILE, w.tick);
+}

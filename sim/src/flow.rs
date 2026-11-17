@@ -202,7 +202,7 @@ impl Nav {
 pub fn acquire_goal(w: &mut World, class: u8, x: i32, y: i32) -> u64 {
     let tx = x.clamp(0, w.map.w - 1);
     let ty = y.clamp(0, w.map.h - 1);
-    let tile = (ty * w.map.w + tx) as usize;
+    let tile = passable_near(&w.map, class as usize, tx, ty);
     let key = goal_key(class, tile);
     if let Some(g) = w.nav.goals.get_mut(&key) {
         g.refs += 1;
@@ -211,6 +211,41 @@ pub fn acquire_goal(w: &mut World, class: u8, x: i32, y: i32) -> u64 {
     let dist = w.nav.bfs(&w.map, class as usize, tile);
     w.nav.goals.insert(key, Goal { refs: 1, dist, fields: BTreeMap::new() });
     key
+}
+
+/// Case franchissable la plus proche de (x, y) pour la classe de déplacement (anneaux de 1 à 12 cases).
+/// Un but sur une case occupée (centre d'un bâtiment visé, rocher, eau pour un véhicule terrestre)
+/// n'aurait aucune région : sans distances, les unités iraient en ligne droite et buteraient sur le
+/// premier obstacle (une rive, une falaise).
+fn passable_near(map: &Map, class: usize, x: i32, y: i32) -> usize {
+    let mask = MASKS[class];
+    let at = |x: i32, y: i32| (y * map.w + x) as usize;
+    if map.pass[at(x, y)] & mask != 0 {
+        return at(x, y);
+    }
+    for r in 1..=12i32 {
+        let mut best: Option<(i32, usize)> = None;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                if dx.abs().max(dy.abs()) != r {
+                    continue;
+                }
+                let (nx, ny) = (x + dx, y + dy);
+                if nx < 0 || ny < 0 || nx >= map.w || ny >= map.h || map.pass[at(nx, ny)] & mask == 0 {
+                    continue;
+                }
+                // à égalité d'anneau, la plus proche (puis la première dans l'ordre de parcours)
+                let d = dx * dx + dy * dy;
+                if best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, at(nx, ny)));
+                }
+            }
+        }
+        if let Some((_, t)) = best {
+            return t;
+        }
+    }
+    at(x, y)
 }
 
 pub fn release_goal(w: &mut World, key: u64) {
