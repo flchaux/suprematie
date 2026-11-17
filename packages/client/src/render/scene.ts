@@ -623,7 +623,8 @@ export class GameScene {
 function environmentTexture(): THREE.DataTexture {
   const W = 256;
   const H = 128;
-  const data = new Float32Array(W * H * 4);
+  // demi-flottants : toujours filtrables en WebGPU (les flottants 32 bits ne le sont pas partout)
+  const data = new Uint16Array(W * H * 4);
   const sky = [0.32, 0.46, 0.72];
   const zenith = [0.16, 0.26, 0.5];
   const horizon = [0.82, 0.78, 0.72];
@@ -647,13 +648,13 @@ function environmentTexture(): THREE.DataTexture {
         c = lerp(ground, [0.28, 0.25, 0.2], Math.max(0, 1 + el / 0.25));
       }
       const i = (y * W + x) * 4;
-      data[i] = c[0];
-      data[i + 1] = c[1];
-      data[i + 2] = c[2];
-      data[i + 3] = 1;
+      data[i] = THREE.DataUtils.toHalfFloat(c[0]);
+      data[i + 1] = THREE.DataUtils.toHalfFloat(c[1]);
+      data[i + 2] = THREE.DataUtils.toHalfFloat(c[2]);
+      data[i + 3] = THREE.DataUtils.toHalfFloat(1);
     }
   }
-  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.HalfFloatType);
   tex.mapping = THREE.EquirectangularReflectionMapping;
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearFilter;

@@ -28,7 +28,8 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   const vcol = attribute("color", "vec3");
   // matière par pièce (attribut « mat ») : blindage peint, métal nu, métal sombre, peinture de danger,
   // verre, lumineux. Le métal nu est très métallique et assez lisse : il reflète l'environnement.
-  const layer = attribute("mat", "float");
+  const matAo = attribute("mat", "vec2");
+  const layer = matAo.x;
   const byLayer = (v: number[]): N => {
     let node: N = float(v[v.length - 1]) as unknown as N;
     for (let i = v.length - 2; i >= 0; i--) node = layer.lessThan(float(i + 0.5)).select(float(v[i]), node) as unknown as N;
@@ -37,7 +38,7 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   const metal = byLayer([0.4, 0.92, 0.7, 0.25, 0.1, 0]);
   const rough = byLayer([0.46, 0.3, 0.42, 0.5, 0.08, 0.6]);
   // occlusion ambiante cuite au chargement (générateur) : sur la lumière indirecte, et un peu sur la directe
-  const ao = attribute("ao", "float");
+  const ao = matAo.y;
   mat.aoNode = ao;
   mat.metalnessNode = metal;
   mat.roughnessNode = rough;

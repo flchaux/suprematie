@@ -190,7 +190,7 @@ const AO_DIRS: THREE.Vector3[] = (() => {
 const AO_STEPS: [number, number][] = [[0.15, 1], [0.5, 0.6]];
 
 /**
- * Occlusion ambiante cuite dans les sommets (attribut `ao`, 1 = à découvert) : depuis chaque sommet,
+ * Occlusion ambiante cuite dans les sommets (second composant de l'attribut `mat`, 1 = à découvert) : depuis chaque sommet,
  * des directions de l'hémisphère de la face testent si elles rencontrent une autre pièce du modèle ou le
  * sol (y < 0). Calculée une fois au chargement, sans coût au rendu ; les creux, jointures et bas de
  * caisse s'assombrissent. Grille de répartition des volumes pour limiter les tests.
@@ -223,6 +223,7 @@ function bakeAO(geos: { g: THREE.BufferGeometry; self: number }[], vols: (Vol | 
   const e2 = new THREE.Vector3();
   for (const { g, self } of geos) {
     const pos = g.getAttribute("position");
+    const matAttr = g.getAttribute("mat");
     const ao = new Float32Array(pos.count).fill(1);
     for (let i = 0; i + 2 < pos.count; i += 3) {
       // normale de la face
@@ -251,7 +252,7 @@ function bakeAO(geos: { g: THREE.BufferGeometry; self: number }[], vols: (Vol | 
         ao[i + k] = Math.max(0.3, 1 - 0.85 * (occ / AO_DIRS.length));
       }
     }
-    g.setAttribute("ao", new THREE.BufferAttribute(ao, 1));
+    for (let i = 0; i < pos.count; i++) matAttr.setY(i, ao[i]);
   }
 }
 
@@ -318,7 +319,13 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
   const c = new THREE.Color(PALETTE[color]);
   const col = new Float32Array(n * 3);
   const mask = new Float32Array(n);
-  const mat = new Float32Array(n).fill(MATERIAL_LAYER[color] ?? 1);
+  // « mat » = (couche de matière, occlusion ambiante) dans un seul tampon : WebGPU limite un maillage à
+  // 8 tampons de sommets, et les unités en utilisent déjà 7 sans celui-ci (instances comprises)
+  const mat = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    mat[i * 2] = MATERIAL_LAYER[color] ?? 1;
+    mat[i * 2 + 1] = 1;
+  }
   const isFaction = color === "faction" ? 1 : 0;
   const glow = color === "glow" || color === "amber" || color === "crystal" ? 1 : 0;
   for (let i = 0; i < n; i++) {
@@ -329,7 +336,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeomet
   }
   ng.setAttribute("color", new THREE.BufferAttribute(col, 3));
   ng.setAttribute("mask", new THREE.BufferAttribute(mask, 1));
-  ng.setAttribute("mat", new THREE.BufferAttribute(mat, 1));
+  ng.setAttribute("mat", new THREE.BufferAttribute(mat, 2));
   return ng;
 }
 
@@ -339,8 +346,7 @@ function emptyGeometry(): THREE.BufferGeometry {
   g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(9), 3));
   g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(9), 3));
   g.setAttribute("mask", new THREE.BufferAttribute(new Float32Array(3), 1));
-  g.setAttribute("mat", new THREE.BufferAttribute(new Float32Array(3), 1));
-  g.setAttribute("ao", new THREE.BufferAttribute(new Float32Array(3).fill(1), 1));
+  g.setAttribute("mat", new THREE.BufferAttribute(new Float32Array([0, 1, 0, 1, 0, 1]), 2));
   return g;
 }
 
