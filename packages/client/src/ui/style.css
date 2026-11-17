@@ -218,14 +218,16 @@ tbody tr { transition: background 0.1s; }
 tbody tr:hover { background: rgba(62, 240, 255, 0.04); }
 
 /* ---------- infobulles ---------- */
+/* Le contenu `.tt` d'un `.tip` n'est jamais affiché sur place : ui/tooltips.ts le recopie dans
+   un calque `.tt-float` au premier plan (rien ne peut le couper). */
 .tip { position: relative; }
-.tip .tt {
+.tip .tt { display: none !important; }
+.tt-float {
   display: none;
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
   width: max-content;
   max-width: 290px;
   padding: 9px 11px;
@@ -241,9 +243,7 @@ tbody tr:hover { background: rgba(62, 240, 255, 0.04); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), var(--glow);
   pointer-events: none;
 }
-.tip:hover .tt { display: block; animation: tt-in 0.12s ease-out; }
-.tt b { font-weight: 600; letter-spacing: 0.04em; }
-@keyframes tt-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+.tt-float b { font-weight: 600; letter-spacing: 0.04em; }
 
 /* ---------- défilement ---------- */
 * { scrollbar-width: thin; scrollbar-color: rgba(62, 240, 255, 0.35) transparent; }

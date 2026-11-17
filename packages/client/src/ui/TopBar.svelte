@@ -121,7 +121,6 @@
   .clock :global(.ic) { color: var(--accent); }
   .right .icon-btn { padding: 6px 7px; }
   .perf { font-size: 10.5px; color: var(--dim); white-space: nowrap; padding: 4px 4px; }
-  .top :global(.tip .tt) { top: calc(100% + 8px); bottom: auto; }
   @keyframes nudge { 50% { filter: drop-shadow(0 0 8px rgba(255, 181, 71, 0.55)); } }
   @media (max-width: 1250px) {
     .perf { display: none; }

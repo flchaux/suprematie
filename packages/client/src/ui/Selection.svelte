@@ -324,6 +324,5 @@
   .cmd:hover:not(:disabled) { color: #fff; }
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
   .sel :global(.key:empty) { display: none; }
-  .sel :global(.tip .tt) { bottom: calc(100% + 8px); }
   @keyframes blink { 50% { opacity: 0.3; } }
 </style>

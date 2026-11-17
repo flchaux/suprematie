@@ -10,6 +10,7 @@ import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
+import { ITEM_MODELS } from "../../../../assets/models/items.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
 import { Effects } from "./effects.ts";
 
@@ -29,6 +30,8 @@ class KindMesh {
     public scale: number,
     /** répétitions de texture par case du monde */
     public texPerTile = 0,
+    /** ombres portées (désactivées pour les objets des tapis, très nombreux) */
+    public shadows = true,
   ) {
     const size = new THREE.Vector3();
     built.box.getSize(size);
@@ -40,6 +43,7 @@ class KindMesh {
     if (this.body) this.scene.remove(this.body.mesh);
     for (const p of this.pivots) this.scene.remove(p.tm.mesh);
     this.body = teamInstancedMesh(this.built.body, cap, this.texPerTile * this.scale);
+    this.body.mesh.castShadow = this.shadows;
     this.scene.add(this.body.mesh);
     this.pivots = this.built.pivots.map((p) => {
       const tm = teamInstancedMesh(p.geometry, cap, this.texPerTile * this.scale);
@@ -102,7 +106,9 @@ export class Entities {
   unitMeshes: KindMesh[] = [];
   buildingMeshes: KindMesh[] = [];
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
-  items: THREE.InstancedMesh;
+  /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
+  itemMeshes: (KindMesh | undefined)[] = [];
+  itemColors: THREE.Color[] = [];
   proj: THREE.InstancedMesh;
   effects: Effects;
   camera: THREE.Camera | null = null;
@@ -155,11 +161,7 @@ export class Entities {
       this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
-    this.items = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.14, 0.2), new THREE.MeshStandardNodeMaterial({ roughness: 0.5 }), 20000);
-    this.items.count = 0;
-    this.items.frustumCulled = false;
-    this.items.setColorAt(0, new THREE.Color());
-    this.group.add(this.items);
+    this.itemColors = data.items.map((it) => new THREE.Color(it.color ?? 0xffffff));
     // projectiles lumineux (couleurs au-delà de 1 : halo)
     this.proj = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 0.5), basic({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 8000);
     this.proj.count = 0;
@@ -560,22 +562,28 @@ export class Entities {
     this.bars.count = bars;
     this.bars.instanceMatrix.needsUpdate = true;
     if (this.bars.instanceColor) this.bars.instanceColor.needsUpdate = true;
-    // ----- objets sur les tapis -----
+    // ----- objets sur les tapis : petit modèle par type, teinté de la couleur de l'objet -----
     let ni = 0;
+    for (const km of this.itemMeshes) km?.begin();
     if (!strategic) {
       o = f.itemOff;
+      tmpQ.setFromAxisAngle(UP, 0.45);
       for (let i = 0; i < f.nItems && ni < 20000; i++, o += ITEM_WORDS) {
+        const kind = buf[o + 2];
+        const km = this.itemMesh(kind);
+        if (!km) continue;
         const x = buf[o] / TILE;
         const z = buf[o + 1] / TILE;
-        tmpM.makeTranslation(x, groundHeight(this.map, x, z) + 0.2, z);
-        this.items.setMatrixAt(ni, tmpM);
-        this.items.setColorAt(ni, tmpC.setHex(this.data.items[buf[o + 2]]?.color ?? 0xffffff));
+        km.ensure(km.n + 1);
+        const s = km.scale;
+        tmpM.compose(tmpV.set(x, groundHeight(this.map, x, z) + 0.15, z), tmpQ, tmpS.set(s, s, s));
+        km.body!.mesh.setMatrixAt(km.n, tmpM);
+        setTeamColor(km.body!, km.n, this.itemColors[kind]);
+        km.n++;
         ni++;
       }
     }
-    this.items.count = ni;
-    this.items.instanceMatrix.needsUpdate = true;
-    if (this.items.instanceColor) this.items.instanceColor.needsUpdate = true;
+    for (const km of this.itemMeshes) km?.end();
     // ----- projectiles -----
     let np = 0;
     o = f.projOff;
@@ -656,6 +664,20 @@ export class Entities {
     if (this.shields.instanceColor) this.shields.instanceColor.needsUpdate = true;
     this.updateFx(dt);
     void me;
+  }
+
+  /** Maillage des objets d'un type (modèle de assets/models/items.ts, un tiers de case de large). */
+  private itemMesh(kind: number): KindMesh | undefined {
+    let km = this.itemMeshes[kind];
+    if (km) return km;
+    const key = this.data.items[kind]?.key;
+    if (!key) return undefined;
+    const built = buildModel(ITEM_MODELS[key] ?? fallbackModel(0.5));
+    const size = new THREE.Vector3();
+    built.box.getSize(size);
+    km = new KindMesh(this.group, built, 0.3 / Math.max(size.x, size.z, 0.01), 0, false);
+    this.itemMeshes[kind] = km;
+    return km;
   }
 
   addExplosion(x: number, z: number, r: number, kind: number): void {

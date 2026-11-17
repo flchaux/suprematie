@@ -7,6 +7,7 @@ import { fogEnabled } from "./fog.ts";
 import { loadModelTextures, setTexturesEnabled } from "./textures.ts";
 import { DEFAULT_GFX, type GfxSettings } from "./gfx.ts";
 import type { GameData, Frame } from "@supreme/shared";
+import { BClass } from "@supreme/shared";
 import { Terrain, groundHeight, type MapData } from "./terrain.ts";
 import { Entities } from "./entities.ts";
 import { Decorations } from "./decor.ts";
@@ -51,6 +52,9 @@ export class GameScene {
   showOrders = false;
   ghostMeshes = new Map<number, ReturnType<typeof teamInstancedMesh>>();
   lineGhost: THREE.InstancedMesh | null = null;
+  /** pose d'un bras : flèche de la case de prise vers la case de dépôt, et cadres sur ces deux cases */
+  armArrows: THREE.InstancedMesh;
+  armPads: THREE.InstancedMesh;
   markers: THREE.InstancedMesh;
   markerList: { x: number; z: number; age: number; color: THREE.Color }[] = [];
   rangeRing: THREE.Mesh;
@@ -72,6 +76,24 @@ export class GameScene {
     this.markers.setColorAt(0, new THREE.Color());
     this.rangeRing = new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ color: 0xffd060, transparent: true, opacity: 0.6, depthTest: false }));
     this.rangeRing.visible = false;
+    // flèche plate (de x = -1 à x = +1, pointe en +x) et cadre carré d'une case, posés au sol
+    const arrow = new THREE.Shape();
+    arrow.moveTo(-1.0, -0.09);
+    arrow.lineTo(0.5, -0.09);
+    arrow.lineTo(0.5, -0.26);
+    arrow.lineTo(1.05, 0);
+    arrow.lineTo(0.5, 0.26);
+    arrow.lineTo(0.5, 0.09);
+    arrow.lineTo(-1.0, 0.09);
+    const overlay = (opacity: number) => new THREE.MeshBasicNodeMaterial({ transparent: true, opacity, depthTest: false, depthWrite: false });
+    this.armArrows = new THREE.InstancedMesh(new THREE.ShapeGeometry(arrow).rotateX(-Math.PI / 2), overlay(0.9), 512);
+    this.armPads = new THREE.InstancedMesh(new THREE.RingGeometry(0.5, 0.64, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2), overlay(0.95), 1024);
+    for (const m of [this.armArrows, this.armPads]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.renderOrder = 9;
+      m.setColorAt(0, new THREE.Color());
+    }
     this.rangeRing.renderOrder = 8;
   }
 
@@ -100,6 +122,7 @@ export class GameScene {
     loadModelTextures().catch((e) => console.warn("textures des modèles indisponibles", e));
     this.buildPost();
     this.scene.add(this.markers);
+    this.scene.add(this.armArrows, this.armPads);
     this.scene.add(this.rangeRing);
     this.resize();
     addEventListener("resize", () => this.resize());
@@ -261,6 +284,51 @@ export class GameScene {
     const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind));
     for (const [k, g] of this.ghostMeshes) g.mesh.visible = shown.has(k);
     for (const { kind, cells, tint } of groups) if (kind >= 0 && cells.length) this.fillGhost(kind, cells, tint);
+    this.fillArmArrows(groups);
+  }
+
+  /**
+   * Sens des bras à poser : un bras prend sur la case derrière lui et pose sur la case devant
+   * (voir sim : front_tile). Flèche cyan de l'une à l'autre, cadre ambre sur la prise, cyan sur le dépôt.
+   */
+  private fillArmArrows(groups: { kind: number; cells: { x: number; y: number; dir: number; ok: boolean }[] }[]): void {
+    const DX = [1, 0, -1, 0];
+    const DZ = [0, 1, 0, -1];
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const one = new THREE.Vector3(1, 1, 1);
+    const take = new THREE.Color(1.6, 1.0, 0.25);
+    const drop = new THREE.Color(0.35, 1.6, 1.8);
+    const blocked = new THREE.Color(1.4, 0.3, 0.3);
+    let na = 0;
+    let np = 0;
+    for (const { kind, cells } of groups) {
+      if (kind < 0 || this.data.buildings[kind]?.cls !== BClass.Inserter) continue;
+      for (const c of cells.slice(0, 512)) {
+        const d = c.dir & 3;
+        const cx = c.x + 0.5;
+        const cz = c.y + 0.5;
+        const y = groundHeight(this.map, cx, cz) + 0.45;
+        q.setFromAxisAngle(up, (-d * Math.PI) / 2);
+        m.compose(new THREE.Vector3(cx, y, cz), q, one);
+        this.armArrows.setMatrixAt(na, m);
+        this.armArrows.setColorAt(na, c.ok ? drop : blocked);
+        na++;
+        for (const [k, col] of [[-1, take], [1, drop]] as [number, THREE.Color][]) {
+          m.compose(new THREE.Vector3(cx + DX[d] * k, groundHeight(this.map, cx, cz) + 0.08, cz + DZ[d] * k), new THREE.Quaternion(), one);
+          this.armPads.setMatrixAt(np, m);
+          this.armPads.setColorAt(np, col);
+          np++;
+        }
+      }
+    }
+    this.armArrows.count = na;
+    this.armPads.count = np;
+    for (const mesh of [this.armArrows, this.armPads]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[], tint?: number): void {
@@ -350,6 +418,8 @@ export class GameScene {
 
   hideGhost(): void {
     for (const g of this.ghostMeshes.values()) g.mesh.visible = false;
+    this.armArrows.count = 0;
+    this.armPads.count = 0;
   }
 
   addMarker(x: number, z: number, color: number): void {
