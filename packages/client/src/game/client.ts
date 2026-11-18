@@ -1956,6 +1956,10 @@ export class GameClient {
       sfx.confirm();
     }
   }
+  /** Rotation du bras sélectionné, en quarts de tour (1 : prend à droite, 2 : derrière, 3 : à gauche). */
+  setTurn(quarters: number): void {
+    if (ui.selBuilding) this.cmd(Ord.setTurn(ui.selBuilding.ref, quarters));
+  }
   /** Objets remis en sortie par le dépôt amélioré sélectionné. */
   setFilters(items: number[]): void {
     if (ui.selBuilding) this.cmd(Ord.setFilters(ui.selBuilding.ref, items));

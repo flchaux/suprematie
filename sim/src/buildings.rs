@@ -600,11 +600,23 @@ pub fn wake_watchers(w: &mut World, b: usize) {
     }
 }
 
-/// Case de prise et case de dépose d'un bras (à `reach` cases de part et d'autre, selon sa direction).
+/// Rotation d'un bras en quarts de tour (1, 2 ou 3 ; 2 par défaut).
+#[inline]
+pub fn arm_turn(bb: &Building) -> u8 {
+    if (1..=3).contains(&bb.turn) {
+        bb.turn
+    } else {
+        2
+    }
+}
+
+/// Case de prise et case de dépose d'un bras (à `reach` cases). Il dépose devant lui ; il prend derrière
+/// (demi-tour), à sa droite (quart de tour) ou à sa gauche (trois quarts de tour).
 pub fn arm_ends(bb: &Building) -> ((i32, i32), (i32, i32)) {
     let (dx, dy) = DIRS[(bb.dir & 3) as usize];
+    let (px, py) = DIRS[((bb.dir + arm_turn(bb)) & 3) as usize];
     let r = bb.def().reach.max(1) as i32;
-    ((bb.x - dx * r, bb.y - dy * r), (bb.x + dx * r, bb.y + dy * r))
+    ((bb.x + px * r, bb.y + py * r), (bb.x + dx * r, bb.y + dy * r))
 }
 
 /// Portée maximale des bras (cases) : pourtour à examiner autour d'un bâtiment pour trouver ses bras.

@@ -264,6 +264,13 @@
       {:else if bdef.cls === BClass.Shield}
         <div class="row">Bouclier : <b class="num">{info.shield}</b> <button onclick={() => client.toggleBuilding()}>{info.enabled ? "Couper" : "Activer"}</button></div>
       {:else if bdef.cls === BClass.Inserter}
+        <div class="row turn">
+          <span class="kicker">Rotation</span>
+          {#each [[1, "¼ tour", "prend à sa droite"], [2, "½ tour", "prend derrière"], [3, "¾ tour", "prend à sa gauche"]] as [k, label, hint]}
+            <button class="icon-btn" class:on={(info.turn ?? 2) === k} disabled={!mine} title={`${label} : ${hint}, dépose devant`} onclick={() => client.setTurn(k as number)}>{label}</button>
+          {/each}
+        </div>
+        <span class="dim small">Le bras dépose toujours devant lui ; il {(info.turn ?? 2) === 1 ? "prend à sa droite" : (info.turn ?? 2) === 3 ? "prend à sa gauche" : "prend derrière lui"}.</span>
         <div class="share">
           <div class="row">
             <span class="kicker">Part de la sortie</span>
@@ -526,4 +533,6 @@
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
   .sel :global(.key:empty) { display: none; }
   @keyframes blink { 50% { opacity: 0.3; } }
+  .turn .icon-btn { padding: 3px 9px; }
+  .turn .icon-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(62, 240, 255, 0.12); }
 </style>
