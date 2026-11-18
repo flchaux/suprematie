@@ -1406,7 +1406,7 @@ export class GameClient {
       return;
     }
     const id = g.ids[0];
-    void this.query<{ hp: number; maxHp: number; lvl: number } | null>("unit", [id]).then((r) => {
+    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean } | null>("unit", [id]).then((r) => {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });

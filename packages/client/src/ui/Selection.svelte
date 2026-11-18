@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ui, hasTechUI } from "../game/state.svelte.ts";
+  import { UNIT_TRAITS } from "../game/traits.ts";
   import { client } from "../game/client.ts";
   import { BClass, RECIPE_NONE, PACK1 } from "@supreme/shared";
   import Item from "./Item.svelte";
@@ -225,7 +226,7 @@
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
-                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br /><Cost cost={u.cost} />
+                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}<Cost cost={u.cost} />
                 <span class="dim">Clic{#if hk} ou {hk}{/if} : +1 · Maj+clic{#if hk} ou Maj+{hk}{/if} : +5 · clic droit : retirer. Les composants arrivent par bras.</span></div>
             </div>
           {/each}
@@ -378,6 +379,10 @@
     {#if ui.unitInfo && total === 1}
       {@const f = ui.unitInfo.hp / Math.max(1, ui.unitInfo.maxHp)}
       <div class="hpline own"><span class="hp" class:mid={f < 0.6} class:low={f < 0.3}><span style:width={f * 100 + "%"}></span></span><span class="num small">{ui.unitInfo.hp} / {ui.unitInfo.maxHp} PV</span></div>
+      {@const tr = UNIT_TRAITS[d.units[ui.selUnits[0].kind].key]}
+      {#if tr}<span class="dim small">{tr}</span>{/if}
+      {#if ui.unitInfo.cloaked}<span class="good small">Camouflé : invisible pour l'ennemi</span>{:else if d.units[ui.selUnits[0].kind].key === "commando"}<span class="bad small">Repérable : il vient de tirer</span>{/if}
+      {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
     {/if}
     <div class="groups">
       {#each ui.selUnits as g}

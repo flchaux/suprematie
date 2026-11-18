@@ -1020,14 +1020,16 @@ export class Entities {
       } else {
         // énergie : trait lumineux (les traits « blaster » sont plus longs et plus fins)
         const blaster = pk === 9;
-        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(big * (blaster ? 0.7 : 1), big * (blaster ? 0.7 : 1), big * (blaster ? 2.6 : 1)));
+        // canon de rail : trait très long et fin
+        const rail = pk === 11;
+        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(big * (blaster ? 0.7 : rail ? 0.5 : 1), big * (blaster ? 0.7 : rail ? 0.5 : 1), big * (blaster ? 2.6 : rail ? 6 : 1)));
         this.proj.setMatrixAt(np, tmpM);
         this.proj.setColorAt(np, tmpC.setHex(special ? 0xffe070 : PROJ_COLORS[pk] ?? 0xffffff).multiplyScalar(pk === 3 ? 0.6 : blaster ? 3.2 : 2.6));
         np++;
       }
       const elapsed = buf[o + 4] & 0xffff;
       if (elapsed >= 1 && elapsed <= tickDelta && special === 0 && pk !== 3 && pk !== 4) fx.muzzle(x0, gy0 + 1, z0, pk, big);
-      if (special || pk === 1 || pk === 2 || pk === 4) fx.trail(x, y, z, pk, dt, big);
+      if (special || pk === 1 || pk === 2 || pk === 4 || pk === 11) fx.trail(x, y, z, pk, dt, big);
     }
     this.proj.count = np;
     this.proj.instanceMatrix.needsUpdate = true;
@@ -1639,4 +1641,4 @@ function diagAtlas(): THREE.Texture {
   return t;
 }
 
-const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030 };
+const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030, 11: 0xc8ecff };

@@ -43,6 +43,12 @@
         <li>Les <b>usines</b> reçoivent les composants des unités par des bras. Les <b>laboratoires</b> consomment les lots de recherche.</li>
         <li>Les épaves se recyclent en plaques de fer et en acier.</li>
       </ul>
+      <h3>Furtivité et radar</h3>
+      <ul>
+        <li>Une unité ennemie apparaît à vue, ou en écho au <b>radar</b>. Le <b>bombardier furtif</b> n'apparaît jamais au radar ; un <b>brouilleur mobile</b> en fait autant pour les alliés dans sa bulle (12 cases).</li>
+        <li>Le <b>commando furtif</b> est invisible tant qu'il ne tire pas (5 s après chaque tir). Toute unité ou tout bâtiment le repère à quelques cases, une sonde déployée à 25 cases.</li>
+        <li>Le <b>Gardien</b> encaisse mieux de face (-45 %) ; la <b>tourelle mobile</b> ne tire que déployée et encaisse alors mieux (-30 %).</li>
+      </ul>
       <h3>Souris</h3>
       <table>
         <tbody>

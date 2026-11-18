@@ -16,10 +16,10 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient les 39 unités, 46 bâtiments et 46 recherches", () => {
-    expect(data.units.length).toBe(39);
+  it("contient les 49 unités, 46 bâtiments et 48 recherches", () => {
+    expect(data.units.length).toBe(49);
     expect(data.buildings.length).toBe(46);
-    expect(data.techs.length).toBe(46);
+    expect(data.techs.length).toBe(48);
     expect(data.units[0].key).toBe("commander");
   });
 });

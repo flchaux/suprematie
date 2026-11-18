@@ -82,6 +82,7 @@ export const BUILDINGS = {
   splitter: "a compact conveyor belt splitter block with one input and three glowing output arrows (left, forward, right)",
   sorter: "a compact conveyor sorting block with a small scanner window, one glowing arrow forward and one to the left",
   overflow: "a compact conveyor overflow valve block with a bright forward arrow and two dim side arrows",
+  collector: "a short conveyor belt segment straddled by a small boxy gantry hood on four legs, a glowing amber suction mouth over the belt, a small hopper on top",
   gift_portal: "a glowing gateway arch on a platform where allied troops walk through to join another commander",
   roboport: "a logistics robot hub: a square tower with a landing pad on top, beacon lights and small flying robots",
   gate: "a large circular transit portal gate with a swirling energy field",
@@ -133,6 +134,16 @@ export const UNITS = {
   roach: "a gigantic experimental armoured tank shaped like a cockroach, segmented glossy carapace with wing covers, six jointed legs, long antennae, twin mandible cannons at the front",
   dragon: "a gigantic experimental flying robot Chinese dragon, long serpentine segmented body, horned head with long whiskers, amber dorsal crest, glowing energy pearl in front of its open mouth",
   star_cruiser: "a gigantic experimental wedge-shaped capital starship, long triangular hull seen from above, stepped superstructure and a command tower at the rear, rows of small gun turrets, glowing engines",
+  guardian: "a medium battle tank on tracks with a very thick wedge-shaped frontal armor glacis covered with reactive armor blocks, squat turret with a medium cannon",
+  rocket_battery: "a six-wheeled military truck carrying a tilted rectangular rocket launcher box with a 4 by 4 grid of rocket tubes",
+  commando: "a slim angular dark stealth commando robot soldier with a glowing visor, a thin rifle and a backpack of explosive charges, partially shimmering cloak",
+  jammer: "a four-wheeled electronic warfare vehicle with a tall antenna mast and a large rotating jamming panel, glowing emitters",
+  deploy_turret: "a heavy tracked self-propelled turret with four folded hydraulic stabilizer legs on its sides and a big twin-barrel plasma cannon turret",
+  stealth_bomber: "a black faceted stealth flying wing bomber with sharp angular edges and recessed glowing engine exhausts",
+  ew_plane: "a straight-winged electronic warfare aircraft with a large rotating radar dome on its back and antennas under the fuselage",
+  heavy_transport: "a massive armored heavy-lift transport aircraft with a square cargo hold and four large ducted rotors",
+  carrier: "a long naval aircraft carrier warship with a flat flight deck, an island superstructure on one side and small jets parked on deck",
+  railgun_ship: "a heavy battleship warship with two front turrets carrying very long twin railgun barrels with glowing coils, massive central superstructure",
 };
 
 /** Illustrations (pas d'arrière-plan transparent). */

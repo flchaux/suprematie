@@ -166,6 +166,8 @@ pub enum Proj {
     Blaster = 9,
     /// souffle de feu (rayon prolongé orange)
     Fire = 10,
+    /// canon de rail : projectile cinétique très rapide, trait bleu-blanc
+    Rail = 11,
 }
 
 pub const M_LAND: u8 = 1;
@@ -189,18 +191,21 @@ pub struct WeaponDef {
     /// rayon prolongé : durée en ticks (0 : tir ordinaire). Les dégâts `dmg` sont infligés à chaque tick
     /// tant que la source et la cible restent à portée.
     pub sustain: u16,
+    /// dispersion de la salve (1/256 de case) : chaque projectile tombe au hasard dans ce rayon autour du
+    /// point visé, même le premier (0 : salve groupée)
+    pub spread: i32,
 }
 
 macro_rules! w {
     ($dmg:expr, $range:expr, $cd:expr, $proj:ident, $speed:expr, $aoe:expr, $mask:expr) => {
-        WeaponDef { dmg: $dmg, range: $range, min_range: 0, cooldown: $cd, proj: Proj::$proj, speed: $speed, aoe: $aoe, mask: $mask, stun: 0, salvo: 1, prefer_buildings: false, sustain: 0 }
+        WeaponDef { dmg: $dmg, range: $range, min_range: 0, cooldown: $cd, proj: Proj::$proj, speed: $speed, aoe: $aoe, mask: $mask, stun: 0, salvo: 1, prefer_buildings: false, sustain: 0, spread: 0 }
     };
     ($dmg:expr, $range:expr, $cd:expr, $proj:ident, $speed:expr, $aoe:expr, $mask:expr, $($f:ident : $v:expr),*) => {
         WeaponDef { $($f: $v,)* ..w!($dmg, $range, $cd, $proj, $speed, $aoe, $mask) }
     };
 }
 
-pub const WEAPONS: [WeaponDef; 45] = [
+pub const WEAPONS: [WeaponDef; 55] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -246,6 +251,16 @@ pub const WEAPONS: [WeaponDef; 45] = [
     w!(120, 28, 30, Plasma, 30, 256, M_SURF | M_AIR),                   // 42 perle d'énergie du dragon
     w!(140, 44, 24, Blaster, 50, 192, M_SURF, salvo: 4),                // 43 batteries du cuirassé stellaire
     w!(40, 32, 6, Blaster, 70, 0, M_AIR, salvo: 2),                     // 44 défense AA du cuirassé stellaire
+    w!(80, 22, 24, Bullet, 40, 0, M_SURF),                              // 45 canon du Gardien
+    w!(45, 34, 240, Missile, 16, 256, M_SURF, salvo: 16, spread: 900, min_range: 6), // 46 roquettes à saturation
+    w!(18, 12, 14, Blaster, 40, 0, M_SURF),                             // 47 fusil du commando
+    w!(450, 2, 300, Plasma, 20, 160, M_LAND, prefer_buildings: true),   // 48 charge du commando
+    w!(240, 40, 50, Plasma, 40, 256, M_SURF),                           // 49 tourelle mobile déployée
+    w!(1600, 3, 300, Bomb, 8, 640, M_SURF),                             // 50 bombe du bombardier furtif
+    w!(10, 3, 300, Ion, 8, 1280, M_SURF, stun: 120),                    // 51 impulsion électromagnétique
+    w!(20, 18, 10, Bullet, 50, 0, M_AIR),                               // 52 tourelle AA du transport lourd
+    w!(35, 28, 8, Bullet, 60, 0, M_AIR),                                // 53 défense AA du porte-avions
+    w!(700, 75, 120, Rail, 120, 192, M_SURF, min_range: 8),             // 54 canons de rail du cuirassé
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -272,7 +287,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 46] = [
+pub const TECHS: [TechDef; 48] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Assembleurs, bras long"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -285,9 +300,9 @@ pub const TECHS: [TechDef; 46] = [
     t!("chemistry", "Chimie", 3, 30, 10, [5], "Usine chimique (composites)"),
     t!("engineer3", "Ingénierie avancée", 3, 25, 10, [4], "Drone ingénieur avancé"),
     t!("naval", "Marine", 3, 30, 10, [4], "Usine navale, frégate, sous-marin"),
-    t!("assault", "Assaut", 3, 35, 10, [6], "Marcheur d'assaut, char glisseur, lance-missiles mobile"),
-    t!("heavy_air", "Aviation lourde", 3, 35, 10, [4], "Canonnière, bombardier"),
-    t!("heavy_turret", "Tourelle lourde", 3, 25, 10, [3], "Tourelle lourde"),
+    t!("assault", "Assaut", 3, 35, 10, [6], "Marcheur d'assaut, char glisseur, lance-missiles mobile, Gardien, lance-roquettes à saturation"),
+    t!("heavy_air", "Aviation lourde", 3, 35, 10, [4], "Canonnière, bombardier, transport lourd"),
+    t!("heavy_turret", "Tourelle lourde", 3, 25, 10, [3], "Tourelle lourde, tourelle mobile déployable"),
     t!("shields", "Boucliers", 4, 40, 12, [9], "Générateur de bouclier mobile et fixe"),
     t!("ions", "Canons à ions", 4, 40, 12, [12], "Canon à ions mobile"),
     t!("drones", "Drones guidés", 4, 40, 12, [12], "Lanceur de drones guidés"),
@@ -319,7 +334,11 @@ pub const TECHS: [TechDef; 46] = [
     t!("roach", "Char Blatte", 6, 60, 15, [36], "Char Blatte"),
     t!("dragon", "Gros Chinois", 6, 70, 15, [36], "Gros Chinois, dragon robot volant"),
     t!("star_cruiser", "Cuirassé stellaire", 6, 90, 15, [36], "Cuirassé stellaire"),
+    t!("electronic_warfare", "Guerre électronique", 4, 45, 12, [12, 13], "Commando furtif, brouilleur mobile, bombardier furtif, avion de guerre électronique"),
+    t!("heavy_navy", "Marine lourde", 5, 60, 15, [22], "Porte-avions, cuirassé à canons de rail"),
 ];
+pub const T_ELECTRONIC_WARFARE: u8 = 46;
+pub const T_HEAVY_NAVY: u8 = 47;
 
 // ---------- Bâtiments ----------
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -625,8 +644,23 @@ pub const U_HYPER: u16 = 35;
 pub const U_ROACH: u16 = 36;
 pub const U_DRAGON: u16 = 37;
 pub const U_STAR_CRUISER: u16 = 38;
+pub const U_INTERCEPTOR: u16 = 20;
+pub const U_GUARDIAN: u16 = 39;
+pub const U_ROCKET_BATTERY: u16 = 40;
+pub const U_COMMANDO: u16 = 41;
+pub const U_JAMMER: u16 = 42;
+pub const U_DEPLOY_TURRET: u16 = 43;
+pub const U_STEALTH_BOMBER: u16 = 44;
+pub const U_EW_PLANE: u16 = 45;
+pub const U_HEAVY_TRANSPORT: u16 = 46;
+pub const U_CARRIER: u16 = 47;
+pub const U_RAILGUN_SHIP: u16 = 48;
+/// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
+pub const JAM_RADIUS: i32 = 12;
+/// intercepteurs embarqués au plus par porte-avions
+pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 39] = [
+pub const UNITS: [UnitDef; 49] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, tier: 3, altitude: 170, ..UD },
@@ -666,6 +700,17 @@ pub const UNITS: [UnitDef; 39] = [
     UnitDef { key: "roach", name: "Char Blatte", hp: 55000, speed: 26, radius: 720, weapons: &[39, 40], vision: 34, cost: &[(STEEL, 260), (PROCESSOR, 70), (COMPOSITE, 130), (ENERGY_CELL, 40)], build: 120, tech: 43, factory: FactoryKind::Exp, tier: 6, ..UD },
     UnitDef { key: "dragon", name: "Gros Chinois", layer: Layer::Air, hp: 42000, speed: 45, radius: 820, weapons: &[41, 42], vision: 38, cost: &[(STEEL, 220), (PROCESSOR, 90), (COMPOSITE, 110), (ENERGY_CELL, 60)], build: 140, tech: 44, factory: FactoryKind::Exp, tier: 6, altitude: 1536, ..UD },
     UnitDef { key: "star_cruiser", name: "Cuirassé stellaire", layer: Layer::Air, hp: 80000, speed: 22, radius: 1300, weapons: &[43, 44], vision: 44, radar: 60, cost: &[(STEEL, 400), (PROCESSOR, 150), (COMPOSITE, 200), (ENERGY_CELL, 80)], build: 200, tech: 45, factory: FactoryKind::Exp, tier: 6, altitude: 4352, ..UD },
+    // ----- unités de ligne et de soutien (guerre électronique, marine lourde) -----
+    UnitDef { key: "guardian", name: "Gardien", hp: 1500, speed: 28, radius: 150, weapons: &[45], cost: &[(STEEL, 7), (GEAR, 4), (CIRCUIT, 3), (AMMO, 2)], build: 9, tech: 12, tier: 3, ..UD },
+    UnitDef { key: "rocket_battery", name: "Lance-roquettes à saturation", hp: 450, speed: 26, radius: 150, weapons: &[46], cost: &[(STEEL, 6), (CIRCUIT, 4), (FUEL, 4), (AMMO, 6)], build: 11, tech: 12, tier: 3, ..UD },
+    UnitDef { key: "commando", name: "Commando furtif", hp: 380, speed: 36, radius: 90, weapons: &[47, 48], vision: 22, cost: &[(STEEL, 3), (PROCESSOR, 2), (CIRCUIT, 4)], build: 8, tech: T_ELECTRONIC_WARFARE, tier: 4, ..UD },
+    UnitDef { key: "jammer", name: "Brouilleur mobile", hp: 500, speed: 30, radius: 130, cost: &[(STEEL, 4), (PROCESSOR, 3), (CIRCUIT, 6)], build: 10, tech: T_ELECTRONIC_WARFARE, tier: 4, ..UD },
+    UnitDef { key: "deploy_turret", name: "Tourelle mobile déployable", hp: 2200, speed: 18, radius: 180, weapons: &[49], cost: &[(STEEL, 14), (ENGINE, 3), (AMMO, 6), (CIRCUIT, 4)], build: 16, tech: 14, tier: 4, ..UD },
+    UnitDef { key: "stealth_bomber", name: "Bombardier furtif", layer: Layer::Air, hp: 1400, speed: 120, radius: 230, weapons: &[50], cost: &[(STEEL, 14), (PROCESSOR, 4), (COMPOSITE, 6), (FUEL, 10)], build: 24, tech: T_ELECTRONIC_WARFARE, factory: FactoryKind::Air, tier: 4, altitude: 2816, ..UD },
+    UnitDef { key: "ew_plane", name: "Avion de guerre électronique", layer: Layer::Air, hp: 900, speed: 110, radius: 220, weapons: &[51], radar: 40, cost: &[(STEEL, 8), (PROCESSOR, 6), (FUEL, 8)], build: 18, tech: T_ELECTRONIC_WARFARE, factory: FactoryKind::Air, tier: 4, altitude: 2560, ..UD },
+    UnitDef { key: "heavy_transport", name: "Transport lourd", layer: Layer::Air, hp: 4000, speed: 80, radius: 330, weapons: &[52], carry: 16, cost: &[(STEEL, 24), (ENGINE, 8), (COMPOSITE, 6), (FUEL, 12)], build: 26, tech: 13, factory: FactoryKind::Air, tier: 4, altitude: 2304, ..UD },
+    UnitDef { key: "carrier", name: "Porte-avions", layer: Layer::Naval, hp: 9000, speed: 28, radius: 520, weapons: &[53], vision: 34, radar: 50, cost: &[(STEEL, 70), (ENGINE, 14), (PROCESSOR, 8), (FUEL, 20)], build: 50, tech: T_HEAVY_NAVY, factory: FactoryKind::Naval, tier: 5, ..UD },
+    UnitDef { key: "railgun_ship", name: "Cuirassé à canons de rail", layer: Layer::Naval, hp: 9500, speed: 26, radius: 500, weapons: &[54, 26], vision: 34, radar: 40, cost: &[(STEEL, 70), (COMPOSITE, 25), (PROCESSOR, 12), (ENGINE, 12)], build: 55, tech: T_HEAVY_NAVY, factory: FactoryKind::Naval, tier: 5, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

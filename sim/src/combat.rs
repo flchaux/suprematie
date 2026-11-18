@@ -42,6 +42,52 @@ fn visible(w: &World, team: u8, x: i32, y: i32, sub: bool) -> bool {
     }
 }
 
+/// Bits de la grille de vision (par équipe, cases de 4 × 4) : 1 vue, 2 radar, 4 détection (sonar, sonde
+/// déployée), 8 exploré, 16 détection rapprochée (à quelques cases d'une unité ou d'un bâtiment),
+/// 32 bulle de brouillage de cette équipe.
+pub const VIS_NEAR: u8 = 16;
+pub const VIS_JAM: u8 = 32;
+
+#[inline]
+fn vis_at(w: &World, team: usize, x: i32, y: i32) -> u8 {
+    let vw = w.vis_w;
+    let cx = (x / (4 * TILE)).clamp(0, vw - 1);
+    let cy = (y / (4 * TILE)).clamp(0, vw - 1);
+    w.vis.get(team).map(|v| v[(cy * vw + cx) as usize]).unwrap_or(0)
+}
+
+/// Commando furtif camouflé (il n'a pas tiré depuis quelques secondes).
+#[inline]
+pub fn cloaked(w: &World, s: usize) -> bool {
+    w.units.kind[s] == U_COMMANDO && w.units.cold[s].reveal == 0
+}
+
+/// Unité absente des radars ennemis : bombardier furtif, ou unité dans une bulle de brouillage alliée.
+#[inline]
+pub fn radar_stealth(w: &World, s: usize) -> bool {
+    if w.units.kind[s] == U_STEALTH_BOMBER {
+        return true;
+    }
+    let team = w.players[w.units.owner[s] as usize].team as usize;
+    vis_at(w, team, w.units.x[s], w.units.y[s]) & VIS_JAM != 0
+}
+
+/// L'équipe `team` voit-elle l'unité `s` (vue, radar, détection selon sa furtivité) ?
+pub fn unit_seen(w: &World, team: u8, s: usize) -> bool {
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    if layer_mask(w, s) == M_SUB {
+        return visible(w, team, x, y, true);
+    }
+    let v = vis_at(w, team as usize, x, y);
+    if cloaked(w, s) {
+        v & (4 | VIS_NEAR) != 0
+    } else if radar_stealth(w, s) {
+        v & 1 != 0
+    } else {
+        v & 3 != 0
+    }
+}
+
 /// Une unité ennemie est-elle une cible valide pour cette arme ?
 fn unit_target_ok(w: &World, team: u8, wi: usize, t: usize, x: i32, y: i32) -> bool {
     if !w.units.alive[t] || w.units.cold[t].carried_by != NONE || w.units.hp[t] <= 0 {
@@ -68,7 +114,7 @@ fn unit_target_ok(w: &World, team: u8, wi: usize, t: usize, x: i32, y: i32) -> b
     if sub && d2 < (15 * TILE as i64).pow(2) {
         return true;
     }
-    visible(w, team, tx, ty, sub)
+    unit_seen(w, team, t)
 }
 
 fn building_target_ok(w: &World, team: u8, wi: usize, b: usize, x: i32, y: i32) -> bool {
@@ -238,21 +284,27 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
             return;
         }
         w.shooter = src;
+        w.hit_from = (x, y);
         if wd.aoe > 0 {
             area_damage(w, tx, ty, wd.aoe, dmg, owner, wd.mask, false);
         } else {
             hit_ref(w, t, dmg, owner, wd.stun);
         }
         w.shooter = NONE;
+        w.hit_from = (i32::MIN, 0);
         return;
     }
     let per_tick = (wd.speed * TILE / 20).max(1);
-    let homing = wd.proj == crate::data::Proj::Missile || wd.proj == crate::data::Proj::Torpedo;
+    // une salve dispersée (roquettes à saturation) n'est pas guidée : chaque roquette tombe à son point
+    let homing = (wd.proj == crate::data::Proj::Missile || wd.proj == crate::data::Proj::Torpedo) && wd.spread == 0;
     // visée anticipée : un projectile non guidé vise l'endroit où sera une unité en mouvement à son arrivée
     let (tx, ty) = if homing { (tx, ty) } else { lead_point(w, t, x, y, tx, ty, per_tick) };
     for k in 0..wd.salvo.max(1) {
         let (mut ax, mut ay) = (tx, ty);
-        if k > 0 {
+        if wd.spread > 0 {
+            ax += w.rng.range(-wd.spread, wd.spread);
+            ay += w.rng.range(-wd.spread, wd.spread);
+        } else if k > 0 {
             ax += w.rng.range(-96, 96);
             ay += w.rng.range(-96, 96);
         }
@@ -275,6 +327,36 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         });
     }
     w.ev(EV_FIRE, wi as i32, x, y, owner as i32);
+}
+
+/// Unité qui ne tire que déployée (elle se déploie seule à l'arrêt quand elle a une cible).
+#[inline]
+pub fn needs_deploy(kind: u16) -> bool {
+    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET)
+}
+
+/// Blindage : Gardien touché de face (dans un cône de ±60° autour de sa direction) : -45 % ;
+/// tourelle mobile déployée : -30 %.
+fn armor(w: &World, s: usize, dmg: i32) -> i32 {
+    match w.units.kind[s] {
+        U_GUARDIAN if w.hit_from.0 != i32::MIN => {
+            let (x, y) = (w.units.x[s], w.units.y[s]);
+            let (fx, fy) = w.hit_from;
+            if fx == x && fy == y {
+                return dmg;
+            }
+            let a = w.trig.atan2((fy - y) as i64, (fx - x) as i64);
+            let diff = a.wrapping_sub(w.units.facing[s]) as i16;
+            // 60° = 65536 / 6
+            if (diff as i32).abs() <= 65536 / 6 {
+                dmg * 55 / 100
+            } else {
+                dmg
+            }
+        }
+        U_DEPLOY_TURRET if w.units.cold[s].deployed => dmg * 70 / 100,
+        _ => dmg,
+    }
 }
 
 pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
@@ -314,7 +396,7 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
             let a = w.trig.atan2((ty - y) as i64, (tx - x) as i64);
             w.units.cold[s].turret = a;
         }
-        if kind == U_HEAVY_ARTY && !w.units.cold[s].deployed {
+        if needs_deploy(kind) && !w.units.cold[s].deployed {
             continue;
         }
         if w.units.cold[s].cooldown[i] == 0 {
@@ -323,6 +405,10 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
             // vétérance : +5 % de dégâts par niveau
             let mult = 100 + 5 * w.units.cold[s].lvl as i32;
             let me = w.unit_id(s);
+            if kind == U_COMMANDO {
+                // le tir trahit le commando pendant 5 s
+                w.units.cold[s].reveal = 100;
+            }
             fire(w, owner, wi, x, y, t, mult, me);
         }
     }
@@ -434,7 +520,7 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     if !w.units.alive[s] || w.units.hp[s] <= 0 {
         return;
     }
-    let mut dmg = dmg;
+    let mut dmg = armor(w, s, dmg);
     if w.units.kind[s] == U_COMMANDER {
         let c = &mut w.units.cold[s];
         if c.shield > 0 && c.shield_down == 0 {
@@ -603,8 +689,10 @@ pub fn update_projectiles(w: &mut World) {
         }
         w.projectiles.swap_remove(i);
         w.shooter = p.src;
+        w.hit_from = (p.x0, p.y0);
         impact(w, &p);
         w.shooter = NONE;
+        w.hit_from = (i32::MIN, 0);
     }
 }
 
@@ -647,12 +735,14 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
         return true;
     }
     w.shooter = p.src;
+    w.hit_from = (p.x0, p.y0);
     if p.aoe > 0 {
         area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
     } else {
         hit_ref(w, p.target, p.dmg, p.owner, wd.stun);
     }
     w.shooter = NONE;
+    w.hit_from = (i32::MIN, 0);
     true
 }
 
@@ -935,6 +1025,13 @@ pub fn update_visibility(w: &mut World) {
         let (x, y) = (w.units.x[s], w.units.y[s]);
         let vis = &mut w.vis[team];
         stamp(vis, x, y, d.vision, 1 | 8);
+        // détection rapprochée : un commando camouflé est repéré à quelques cases
+        if d.vision > 0 {
+            stamp(vis, x, y, 3, VIS_NEAR);
+        }
+        if k == U_JAMMER {
+            stamp(vis, x, y, JAM_RADIUS, VIS_JAM);
+        }
         let deployed_sonde = k == U_SONDE && w.units.cold[s].deployed;
         if d.radar > 0 && (k != U_SONDE || deployed_sonde) {
             stamp(vis, x, y, d.radar, 2);
@@ -958,6 +1055,9 @@ pub fn update_visibility(w: &mut World) {
         let (x, y) = bb.center();
         let vis = &mut w.vis[team];
         stamp(vis, x, y, def.vision, 1 | 8);
+        if def.vision > 0 {
+            stamp(vis, x, y, 3, VIS_NEAR);
+        }
         if def.radar > 0 && bb.complete() && bb.working {
             stamp(vis, x, y, def.radar, 2);
         }
