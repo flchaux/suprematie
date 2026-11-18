@@ -670,8 +670,8 @@ export class Entities {
       if (strategic) continue;
       // tapis en virage : forme calculée par la simulation d'après les tapis voisins (mot auxiliaire)
       const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
-      // extracteur ou dépôt amélioré : modèle de son niveau
-      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot ? (buf[o + 5] >>> 24) & 3 : 0;
+      // extracteur, dépôt ou générateur amélioré : modèle de son niveau
+      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power ? (buf[o + 5] >>> 24) & 3 : 0;
       const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]);
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
@@ -749,7 +749,11 @@ export class Entities {
         else if (def.cls === BClass.Inserter) {
           const phase = (buf[o + 5] >> 8) & 0xff;
           const timer = (buf[o + 5] >> 16) & 0xff;
-          rot = phase === 1 ? Math.PI * (1 - timer / 6) : phase === 2 ? Math.PI : phase === 3 ? (Math.PI * timer) / 6 : 0;
+          // la pince est à l'avant du modèle (angle 0 : devant, sur la case de dépose) ; à la prise, elle est
+          // tournée d'un quart, d'un demi ou de trois quarts de tour (-sweep). Phase 1 : chargée, elle va
+          // de la prise à la dépose ; 2 : à la dépose ; 3 : à vide, elle revient ; 0 : elle attend à la prise.
+          const sweep = ((buf[o + 6] & 3 || 2) * Math.PI) / 2;
+          rot = phase === 1 ? (-sweep * timer) / 6 : phase === 2 ? 0 : phase === 3 ? -sweep * (1 - timer / 6) : -sweep;
         } else if (bflags & BF.WORKING && upg === 0) rot = performance.now() / 300;
         tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc), p.origin.z);
         tmpM2.multiply(new THREE.Matrix4().makeRotationY(rot));
@@ -1114,7 +1118,7 @@ export class Entities {
     const W = this.map.w;
     const DX = [1, 0, -1, 0];
     const DZ = [0, 1, 0, -1];
-    // tapis et bras : case -> direction (bras : 4 * portée + direction)
+    // tapis et bras : case -> direction (bras : 16 * quarts de tour + 4 * portée + direction)
     const links = new Map<number, number>();
     const curves = new Map<number, number>();
     let o = f.buildingOff;
@@ -1125,7 +1129,8 @@ export class Entities {
       if ((buf[o + 1] >>> 28) & 3) continue;
       const dir = (buf[o + 1] >> 16) & 3;
       const cell = ((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff);
-      links.set(cell, (bd.cls === BClass.Inserter ? 4 * Math.max(1, bd.reach ?? 1) : 0) + dir);
+      const arm = bd.cls === BClass.Inserter ? 16 * (buf[o + 6] & 3 || 2) + 4 * Math.max(1, bd.reach ?? 1) : 0;
+      links.set(cell, arm + dir);
       // virage : côté par lequel il est alimenté (tapis latéral ou bâtiment)
       const shape = bd.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
       if (shape) curves.set(cell, shape === 1 ? (dir + 1) & 3 : (dir + 3) & 3);
@@ -1204,10 +1209,12 @@ export class Entities {
             // virage alimenté par cette face
             else if (curves.get(oz * W + ox) === (side + 2) % 4) state = 2;
           } else if (code !== undefined) {
+            // bras : dépose devant lui, prise selon sa rotation
             const d = code & 3;
-            const r = code >> 2;
+            const r = (code >> 2) & 3;
+            const p = (d + (code >> 4)) & 3;
             if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
-            else if (inside(ox - r * DX[d], oz - r * DZ[d])) state = 2;
+            else if (inside(ox + r * DX[p], oz + r * DZ[p])) state = 2;
           }
           // transfert direct avec un bâtiment collé
           if (state === 0) {
@@ -1222,10 +1229,11 @@ export class Entities {
             const lx = ox + DX[side];
             const lz = oz + DZ[side];
             const lc = links.get(lz * W + lx);
-            if (lc !== undefined && lc >> 2 === 2) {
+            if (lc !== undefined && ((lc >> 2) & 3) === 2) {
               const d = lc & 3;
+              const p = (d + (lc >> 4)) & 3;
               if (inside(lx + 2 * DX[d], lz + 2 * DZ[d])) state = 1;
-              else if (inside(lx - 2 * DX[d], lz - 2 * DZ[d])) state = 2;
+              else if (inside(lx + 2 * DX[p], lz + 2 * DZ[p])) state = 2;
             }
           }
           const px = ex + 0.5 + DX[side] * face;

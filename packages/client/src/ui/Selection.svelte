@@ -31,6 +31,12 @@
       if (!dp || (info.level ?? 0) > 0) return null;
       return { label: "Agrandir le dépôt", cost: dp.upgradeCost, tech: dp.upgradeTech, time: dp.upgradeTime, gain: `réserve +${dp.cap[1] - dp.cap[0]} par objet, sorties filtrées` };
     }
+    if (bdef.cls === BClass.Power && d.generatorLevels && bdef.key === "generator") {
+      const l = info.level ?? 0;
+      const n = d.generatorLevels[l + 1];
+      if (!n) return null;
+      return { label: `Améliorer au niveau ${l + 2}`, cost: n.cost, tech: n.tech, time: n.time, gain: `production ${d.generatorLevels[l].prod} → ${n.prod} kW` };
+    }
     if (bdef.cls === BClass.Extractor) {
       const l = info.level ?? 0;
       const n = (d.extractorLevels ?? [])[l + 1];
@@ -96,7 +102,9 @@
   const flow = $derived.by(() => {
     if (!info || !bdef || info.build < 65536 || info.flow === undefined) return null;
     const unit = FLOW_UNIT[bdef.cls];
-    return unit ? { v: info.flow / 10, unit, item: rate?.item } : null;
+    // rendement : débit réel de la dernière minute rapporté au débit maximal (pleine énergie), calculé par la simulation
+    const pct = info.flowMax > 0 ? Math.min(100, Math.round((info.flow / info.flowMax) * 100)) : null;
+    return unit ? { v: info.flow / 10, unit, item: rate?.item, pct, max: (info.flowMax ?? 0) / 10 } : null;
   });
   /** Caractéristiques d'une recette dans ce bâtiment : durée d'un cycle (s), énergie par cycle (kJ), objets par minute. */
   const recipeSpec = (r: { time: number; output: [number, number] }) => {
@@ -169,8 +177,13 @@
       {#if rate}
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
       {/if}
+      {#if bdef.cls === BClass.Power && info.build >= 65536}
+        {@const gl = d.generatorLevels && bdef.key === "generator" ? d.generatorLevels : null}
+        {@const kw = info.upgrade > 0 ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd}
+        <div class="row small"><span class="kicker">Production</span> <span class="num">{kw}</span> kW{#if gl} <span class="dim">· niveau {(info.level ?? 0) + 1}/{gl.length}</span>{/if}{#if info.upgrade > 0} <span class="dim">(arrêtée pendant l'amélioration)</span>{/if}</div>
+      {/if}
       {#if flow}
-        <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min</div>
+        <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
       {/if}
       {#if bdef.cls === BClass.Crafter}
         <div class="rhead">
@@ -281,6 +294,13 @@
       {:else if bdef.cls === BClass.Shield}
         <div class="row">Bouclier : <b class="num">{info.shield}</b> <button onclick={() => client.toggleBuilding()}>{info.enabled ? "Couper" : "Activer"}</button></div>
       {:else if bdef.cls === BClass.Inserter}
+        <div class="row turn">
+          <span class="kicker">Rotation</span>
+          {#each [[1, "¼ tour", "prend à sa droite"], [2, "½ tour", "prend derrière"], [3, "¾ tour", "prend à sa gauche"]] as [k, label, hint]}
+            <button class="icon-btn" class:on={(info.turn ?? 2) === k} disabled={!mine} title={`${label} : ${hint}, dépose devant`} onclick={() => client.setTurn(k as number)}>{label}</button>
+          {/each}
+        </div>
+        <span class="dim small">Le bras dépose toujours devant lui ; il {(info.turn ?? 2) === 1 ? "prend à sa droite" : (info.turn ?? 2) === 3 ? "prend à sa gauche" : "prend derrière lui"}.</span>
         <div class="share">
           <div class="row">
             <span class="kicker">Part de la sortie</span>
@@ -522,6 +542,8 @@
   .detail { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border: 1px solid var(--line); }
   .pm { display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; color: var(--warn); }
   .pm.good { color: var(--good); }
+  .pct.good { color: var(--good); }
+  .pct.warn { color: var(--warn); }
   .units { display: grid; grid-template-columns: repeat(auto-fill, 52px); gap: 4px; }
   .ub { position: relative; width: 52px; height: 52px; padding: 2px; display: grid; place-items: center; }
   .ub img { width: 44px; height: 44px; object-fit: contain; }
@@ -543,4 +565,6 @@
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
   .sel :global(.key:empty) { display: none; }
   @keyframes blink { 50% { opacity: 0.3; } }
+  .turn .icon-btn { padding: 3px 9px; }
+  .turn .icon-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(62, 240, 255, 0.12); }
 </style>

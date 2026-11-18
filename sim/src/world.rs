@@ -277,6 +277,9 @@ pub struct Building {
     pub stash: Vec<u16>,
     /// bras : part de la sortie de sa source qu'il prend, en % (0 : automatique, partage du reste)
     pub share: u8,
+    /// bras : rotation de la prise à la dépose, en quarts de tour (1 : prend à droite, 2 : derrière,
+    /// 3 : à gauche ; 0 vaut 2, le demi-tour habituel)
+    pub turn: u8,
     /// bras : compteur de tour de rôle (ordonnancement à pas pondérés)
     pub pass: u64,
     /// source servie par plusieurs bras : temps virtuel du dernier service
@@ -298,7 +301,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn
 });
 
 impl Building {

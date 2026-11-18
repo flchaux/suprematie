@@ -114,6 +114,41 @@ function brasRobot(x: number, z: number, pivot: boolean, o: { yaw?: number; reac
   ];
 }
 
+/**
+ * Turbine couchée du générateur (axe avant-arrière, hélice vers +z) posée sur le socle, à l'échelle `k`
+ * (1 : turbine du générateur de base). 236 triangles.
+ */
+function turbine(x: number, z: number, k: number): Part[] {
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  const y = r(0.25 + 0.7 * k);
+  const at = (dz: number): Vec3 => [x, y, r(z + dz * k)];
+  const pale = (angle: number): Part => ({ shape: "box", size: [r(0.78 * k), r(0.09 * k), 0.02], pos: at(0.63), rot: [0, 0, angle], color: "metal" });
+  return [
+    { shape: "bevel", size: [r(1.0 * k), r(0.3 * k), r(1.3 * k)], pos: [x, r(0.25 + 0.15 * k), z], color: "light" },
+    { shape: "cylinder", sides: 8, radius: r(0.5 * k), height: r(1.2 * k), pos: at(0), rot: [90, 0, 0], color: "light" },
+    { shape: "cylinder", sides: 8, radius: r(0.53 * k), height: r(0.4 * k), pos: at(-0.2), rot: [90, 0, 0], color: "faction" },
+    { shape: "cylinder", sides: 8, radius: r(0.54 * k), height: r(0.08 * k), pos: at(0.1), rot: [90, 0, 0], color: "dark" },
+    { shape: "cylinder", sides: 8, radius: r(0.43 * k), height: r(0.04 * k), pos: at(0.6), rot: [90, 0, 0], color: "black" },
+    pale(20),
+    pale(80),
+    pale(140),
+    { shape: "cylinder", sides: 8, radius: r(0.09 * k), height: r(0.08 * k), pos: at(0.65), rot: [90, 0, 0], color: "amber" },
+  ];
+}
+
+/**
+ * Bobine du générateur : noyau sombre de hauteur `h` posé sur le socle, `n` anneaux lumineux espacés de 0,2
+ * à partir de y = 0,55, coiffe (avec pastille sombre, par défaut si elle est aux couleurs du camp).
+ */
+function bobine(x: number, z: number, rayon: number, h: number, n: number, coiffe: Part["color"], pastille = coiffe === "faction"): Part[] {
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  const out: Part[] = [{ shape: "cylinder", sides: 8, radius: rayon, height: h, pos: [x, r(0.3 + h / 2), z], color: "dark" }];
+  for (let i = 0; i < n; i++) out.push({ shape: "cylinder", sides: 8, radius: r(rayon + 0.03), height: 0.07, pos: [x, r(0.55 + 0.2 * i), z], color: "glow" });
+  out.push({ shape: "cylinder", sides: 8, radius: r(rayon + 0.06), height: 0.14, pos: [x, r(0.35 + h), z], color: coiffe });
+  if (pastille) out.push({ shape: "cylinder", sides: 8, radius: r((rayon * 2) / 3), height: 0.06, pos: [x, r(0.44 + h), z], color: "dark" });
+  return out;
+}
+
 /** Extracteur de base (niveau 1) ; les niveaux améliorés lui ajoutent des pièces. */
 const EXTRACTEUR_BASE: Part[] = [
       ...socle(2),
@@ -498,22 +533,9 @@ export const BUILDING_MODELS: Record<string, Model> = {
       ...socle(2),
       ...filets(2),
       // turbine (axe avant-arrière)
-      { shape: "bevel", size: [1.0,0.3,1.3], pos: [-0.38,0.4,0.05], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.5, height: 1.2, pos: [-0.38,0.95,0.05], rot: [90,0,0], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.53, height: 0.4, pos: [-0.38,0.95,-0.15], rot: [90,0,0], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.54, height: 0.08, pos: [-0.38,0.95,0.15], rot: [90,0,0], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.43, height: 0.04, pos: [-0.38,0.95,0.65], rot: [90,0,0], color: "black" },
-      { shape: "box", size: [0.78,0.09,0.02], pos: [-0.38,0.95,0.68], rot: [0,0,20], color: "metal" },
-      { shape: "box", size: [0.78,0.09,0.02], pos: [-0.38,0.95,0.68], rot: [0,0,80], color: "metal" },
-      { shape: "box", size: [0.78,0.09,0.02], pos: [-0.38,0.95,0.68], rot: [0,0,140], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.09, height: 0.08, pos: [-0.38,0.95,0.7], rot: [90,0,0], color: "amber" },
+      ...turbine(-0.38, 0.05, 1),
       // bobines
-      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.9, pos: [0.55,0.75,-0.45], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.07, pos: [0.55,0.55,-0.45], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.07, pos: [0.55,0.75,-0.45], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 0.33, height: 0.07, pos: [0.55,0.95,-0.45], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 0.36, height: 0.14, pos: [0.55,1.25,-0.45], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.06, pos: [0.55,1.34,-0.45], color: "dark" },
+      ...bobine(0.55, -0.45, 0.3, 0.9, 3, "faction"),
       { shape: "cylinder", sides: 8, radius: 0.27, height: 0.7, pos: [0.6,0.65,0.4], color: "dark" },
       { shape: "cylinder", sides: 8, radius: 0.3, height: 0.07, pos: [0.6,0.55,0.4], color: "glow" },
       { shape: "cylinder", sides: 8, radius: 0.3, height: 0.07, pos: [0.6,0.75,0.4], color: "glow" },
@@ -521,6 +543,75 @@ export const BUILDING_MODELS: Record<string, Model> = {
       // liaison et voyants
       { shape: "box", size: [0.4,0.14,0.14], pos: [0.1,0.95,-0.35], color: "metal" },
       { shape: "box", size: [0.08,0.06,0.03], pos: [0.1,0.42,0.71], color: "amber" },
+    ],
+  },
+  // generator_n2 (1128 triangles) : niveau 2, turbine agrandie à anneau lumineux d'entrée d'air, ailettes de
+  // refroidissement autour du carter et radiateur sur le dessus, trois bobines en rang (dont une haute à quatre
+  // anneaux), câbles épais
+  generator_n2: {
+    parts: [
+      ...socle(2),
+      ...filets(2),
+      // turbine agrandie
+      ...turbine(-0.33, 0, 1.08),
+      { shape: "cylinder", sides: 8, radius: 0.565, height: 0.04, pos: [-0.33,1.006,0.6], rot: [90,0,0], color: "glow" },
+      ...[0.27, 0.41].map((z): Part => ({ shape: "cylinder", sides: 8, radius: 0.58, height: 0.04, pos: [-0.33,1.006,z], rot: [90,0,0], color: "dark" })),
+      // radiateur à ailettes sur le carter
+      { shape: "box", size: [0.5,0.2,0.62], pos: [-0.33,1.5,-0.22], color: "dark" },
+      ...[-0.18, -0.06, 0.06, 0.18].map((dx): Part => ({ shape: "box", size: [0.05,0.14,0.56], pos: [-0.33 + dx,1.64,-0.22], color: "metal" })),
+      // bobines en rang sur la droite
+      ...bobine(0.6, -0.58, 0.27, 1.1, 4, "faction"),
+      ...bobine(0.62, 0.04, 0.25, 0.85, 3, "faction", false),
+      ...bobine(0.62, 0.63, 0.23, 0.6, 2, "light"),
+      // câbles épais de la turbine aux bobines, colliers
+      { shape: "cylinder", sides: 6, radius: 0.06, height: 0.42, pos: [0.15,1.42,-0.5], rot: [0,0,90], color: "black" },
+      { shape: "cylinder", sides: 6, radius: 0.06, height: 0.34, pos: [0.22,1.18,0.04], rot: [0,0,90], color: "black" },
+      { shape: "box", size: [0.06,0.16,0.16], pos: [0.2,1.42,-0.5], color: "amber" },
+      { shape: "box", size: [0.06,0.16,0.16], pos: [0.24,1.18,0.04], color: "amber" },
+      // voyants
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.1,0.42,0.71], color: "amber" },
+    ],
+  },
+  // generator_n3 (1436 triangles) : niveau 3, réacteur compact à turbine double sous un carénage à évents lumineux,
+  // tour de refroidissement, haute bobine à cinq anneaux et cheminée à l'arrière, plaque de base cerclée d'un rebord
+  // blindé à bande de danger
+  generator_n3: {
+    parts: [
+      ...socle(2),
+      ...filets(2),
+      // plaque renforcée : rebord blindé, bande de danger à l'avant, coins boulonnés
+      { shape: "box", size: [0.1,0.08,1.84], pos: [0.9,0.29,0], color: "metal", mirror: true },
+      { shape: "box", size: [1.84,0.08,0.1], pos: [0,0.29,-0.9], color: "metal" },
+      { shape: "box", size: [1.5,0.06,0.1], pos: [0,0.28,0.9], color: "hazard" },
+      { shape: "box", size: [0.2,0.14,0.2], pos: [0.88,0.32,0.88], color: "light", mirror: true },
+      { shape: "box", size: [0.2,0.14,0.2], pos: [0.88,0.32,-0.88], color: "light", mirror: true },
+      // turbine double, anneaux lumineux d'entrée d'air
+      ...turbine(-0.45, 0.3, 0.78),
+      ...turbine(0.45, 0.3, 0.78),
+      { shape: "cylinder", sides: 8, radius: 0.43, height: 0.04, pos: [0.45,0.796,0.73], rot: [90,0,0], color: "glow", mirror: true },
+      // carénage
+      { shape: "bevel", size: [1.82,0.5,0.56], pos: [0,1.0,0.04], color: "dark" },
+      { shape: "box", size: [1.6,0.1,0.46], pos: [0,1.28,0.04], color: "faction" },
+      { shape: "box", size: [0.5,0.05,0.03], pos: [0,1.1,0.33], color: "glow" },
+      { shape: "box", size: [0.5,0.05,0.03], pos: [0,0.96,0.33], color: "glow" },
+      // grille d'évent lumineuse sur le carénage
+      ...[-0.1, 0.04, 0.18].map((z): Part => ({ shape: "box", size: [1.2,0.04,0.06], pos: [0,1.35,z], color: "glow" })),
+      // tour de refroidissement
+      { shape: "cylinder", sides: 8, radius: 0.35, radiusTop: 0.26, height: 0.85, pos: [-0.52,0.675,-0.56], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.05, pos: [-0.52,1.03,-0.56], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.29, height: 0.14, pos: [-0.52,1.15,-0.56], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.26, radiusTop: 0.32, height: 0.55, pos: [-0.52,1.495,-0.56], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.02, pos: [-0.52,1.77,-0.56], color: "black" },
+      { shape: "sphere", radius: 0.27, pos: [-0.52,1.87,-0.56], scale: [1,0.45,1], color: "light" },
+      // haute bobine à cinq anneaux
+      ...bobine(0.55, -0.56, 0.26, 1.3, 5, "faction", false),
+      { shape: "sphere", radius: 0.1, pos: [0.55,1.76,-0.56], color: "glow" },
+      // cheminée
+      { shape: "cylinder", sides: 6, radius: 0.1, height: 2.1, pos: [0.03,1.3,-0.75], color: "dark" },
+      { shape: "cylinder", sides: 6, radius: 0.12, height: 0.2, pos: [0.03,1.9,-0.75], color: "faction" },
+      { shape: "cylinder", sides: 6, radius: 0.12, height: 0.05, pos: [0.03,2.1,-0.75], color: "glow" },
+      { shape: "cylinder", sides: 6, radius: 0.12, height: 0.05, pos: [0.03,1.6,-0.75], color: "glow" },
+      { shape: "cylinder", sides: 6, radius: 0.08, height: 0.02, pos: [0.03,2.35,-0.75], color: "black" },
     ],
   },
   // pylon : mât effilé sur pied d'équipe, traverse et isolateurs lumineux (126 triangles)

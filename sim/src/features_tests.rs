@@ -1294,6 +1294,46 @@ fn carrier_launches_interceptors_and_repairs_aircraft() {
     assert!(w.units.hp[w.unit(iid).unwrap()] > 100, "réparé");
 }
 
+/// Rotation du bras : il dépose devant lui et prend derrière (½ tour), à sa droite (¼) ou à sa gauche (¾).
+#[test]
+fn arm_turn_picks_from_the_chosen_side() {
+    use crate::orders::O_SET_TURN;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 96, 96, 0);
+    // bras tourné vers l'est en (100, 100), dépôt devant lui ; un tapis à sa droite (sud) et un à sa
+    // gauche (nord), chacun chargé d'un objet différent, qui partent vers l'ouest (ils ne touchent rien)
+    let arm = put(&mut w, 0, B_INSERTER, 100, 100, 0);
+    put(&mut w, 0, B_DEPOT, 101, 100, 0);
+    let right = put(&mut w, 0, B_BELT1, 100, 101, 2);
+    let left = put(&mut w, 0, B_BELT1, 100, 99, 2);
+    assert_eq!(crate::buildings::arm_ends(&w.buildings[arm]).0, (99, 100), "½ tour par défaut : derrière");
+    let r = w.building_ref(arm) as i32;
+    let stock = |w: &World, it: u8| w.players[0].stock[it as usize];
+    let (g0, c0) = (stock(&w, GEAR), stock(&w, CIRCUIT));
+    let mut feed = |w: &mut World| {
+        crate::belts::put_on_belt(w, right, GEAR);
+        crate::belts::put_on_belt(w, left, CIRCUIT);
+    };
+    feed(&mut w);
+    run(&mut w, 60);
+    assert_eq!((stock(&w, GEAR), stock(&w, CIRCUIT)), (g0, c0), "rien derrière : il ne prend rien");
+    // quart de tour : il prend à sa droite
+    w.step(&[4, O_SET_TURN, 0, r, 1]);
+    assert_eq!(crate::buildings::arm_ends(&w.buildings[arm]).0, (100, 101));
+    run(&mut w, 60);
+    assert_eq!((stock(&w, GEAR), stock(&w, CIRCUIT)), (g0 + 1, c0), "¼ tour : l'engrenage de droite");
+    // trois quarts de tour : il prend à sa gauche
+    w.step(&[4, O_SET_TURN, 0, r, 3]);
+    feed(&mut w);
+    run(&mut w, 60);
+    // les deux circuits posés à gauche (le premier y attendait encore)
+    assert_eq!((stock(&w, GEAR), stock(&w, CIRCUIT)), (g0 + 1, c0 + 2), "¾ tour : les circuits de gauche");
+    // valeur invalide : ignorée
+    w.step(&[4, O_SET_TURN, 0, r, 7]);
+    assert_eq!(w.buildings[arm].turn, 3);
+}
+
 /// Débit de la dernière minute : tranches de 10 s glissantes, remises à zéro après un silence.
 #[test]
 fn flow_averages_the_last_minute() {
@@ -1353,4 +1393,60 @@ fn belt_along_a_face_becomes_a_building_fed_curve() {
     let before = w.players[0].stock[IRON_PLATE as usize];
     run(&mut w, 4000);
     assert!(w.players[0].stock[IRON_PLATE as usize] - before > 10, "les plaques passent par le virage jusqu'au dépôt");
+}
+
+/// Un générateur s'améliore deux fois : sans production pendant le chantier, puis plus de puissance.
+#[test]
+fn generator_upgrade_raises_power_production() {
+    use crate::orders::O_UPGRADE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let g = put(&mut w, 0, B_GENERATOR, 100, 100, 0);
+    let r = w.building_ref(g) as i32;
+    for (it, n) in [(STEEL, 100), (GEAR, 50), (CIRCUIT, 50), (ENGINE, 50)] {
+        w.players[0].stock[it as usize] = n;
+    }
+    run(&mut w, 10);
+    assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[0].prod);
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert!(w.buildings[g].upgrade > 0);
+    run(&mut w, 10);
+    assert_eq!(w.players[0].power_prod, 0, "arrêté pendant le chantier");
+    run(&mut w, GENERATOR_LEVELS[1].time as u32 * 20);
+    assert_eq!(w.buildings[g].level, 1);
+    assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[1].prod);
+    // niveau 3, puis plus rien à améliorer
+    w.step(&[3, O_UPGRADE, 0, r]);
+    run(&mut w, GENERATOR_LEVELS[2].time as u32 * 20 + 10);
+    assert_eq!(w.buildings[g].level, 2);
+    assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[2].prod);
+    let steel = w.players[0].stock[STEEL as usize];
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert_eq!(w.buildings[g].upgrade, 0);
+    assert_eq!(w.players[0].stock[STEEL as usize], steel, "niveau maximal : rien n'est payé");
+}
+
+/// Débit maximal calculé : un assembleur toujours approvisionné et vidé l'atteint (à un tick près par cycle).
+#[test]
+fn assembler_fed_continuously_reaches_its_max_flow() {
+    use crate::buildings::{flow_max, flow_per_min};
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
+    let rid = RECIPES.iter().position(|r| r.key == "gear").unwrap() as i32;
+    let r = w.building_ref(a) as i32;
+    w.step(&[4, crate::orders::O_SET_RECIPE, 0, r, rid]);
+    for _ in 0..2400 {
+        for _ in 0..2 {
+            if crate::buildings::accepts(&w, a, IRON_PLATE) {
+                insert_item(&mut w, a, IRON_PLATE);
+            }
+        }
+        w.buildings[a].out = 0;
+        w.step(&[]);
+    }
+    let (now, max) = (flow_per_min(&w.buildings[a], w.tick), flow_max(&w, a));
+    assert!(max > 0);
+    assert!(now * 100 >= max * 85 && now <= max + max / 20, "réel {now}, max {max}");
 }
