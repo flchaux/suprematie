@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ui, hasTechUI } from "../game/state.svelte.ts";
   import { UNIT_TRAITS } from "../game/traits.ts";
+  import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { client } from "../game/client.ts";
   import { BClass, RECIPE_NONE, PACK1 } from "@supreme/shared";
   import Item from "./Item.svelte";
@@ -256,9 +257,8 @@
                 {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
-              <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
-                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}<Cost cost={u.cost} />
-                </div>
+              <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
+                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}<Cost cost={u.cost} /></div>
             </div>
           {/each}
         </div>
@@ -407,6 +407,7 @@
             <span class="dim">Milieu</span><span>{client.unitLayerName(st.u.layer)}</span>
             <span class="dim">Vision</span><span class="num">{st.u.vision} cases</span>
           </div>
+          {#if ui.selUnits.length === 1 && UNIT_DESCS[st.u.key]}<p class="udesc small">{UNIT_DESCS[st.u.key]}</p>{/if}
         </div>
       </div>
     {/each}
@@ -418,6 +419,7 @@
       <b class="title num">{total}</b>
       <span class="dim">unité{total > 1 ? "s" : ""}{#if ui.selUnits.length === 1} · {d.units[ui.selUnits[0].kind].name}{/if}</span>
     </div>
+    {#if ui.selUnits.length === 1 && UNIT_DESCS[d.units[ui.selUnits[0].kind].key]}<p class="udesc small">{UNIT_DESCS[d.units[ui.selUnits[0].kind].key]}</p>{/if}
     {#if ui.unitInfo && total === 1}
       {@const f = ui.unitInfo.hp / Math.max(1, ui.unitInfo.maxHp)}
       <div class="hpline own"><span class="hp" class:mid={f < 0.6} class:low={f < 0.3}><span style:width={f * 100 + "%"}></span></span><span class="num small">{ui.unitInfo.hp} / {ui.unitInfo.maxHp} PV</span></div>
@@ -543,6 +545,8 @@
   .pm { display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; color: var(--warn); }
   .pm.good { color: var(--good); }
   .pct.good { color: var(--good); }
+  .udesc { display: block; margin: 4px 0; line-height: 1.4; color: color-mix(in srgb, var(--text, #dfe8ee) 82%, transparent); max-width: 340px; }
+  p.udesc { margin: 2px 0 6px; }
   .pct.warn { color: var(--warn); }
   .units { display: grid; grid-template-columns: repeat(auto-fill, 52px); gap: 4px; }
   .ub { position: relative; width: 52px; height: 52px; padding: 2px; display: grid; place-items: center; }

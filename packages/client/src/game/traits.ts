@@ -7,7 +7,7 @@ export const UNIT_TRAITS: Record<string, string> = {
   deploy_turret: "Se déploie seule à l'arrêt face à une cible (3 s) et ne tire que déployée. Déployée : -30 % de dégâts reçus.",
   stealth_bomber: "Furtif : invisible au radar, repéré seulement à vue. Une bombe lourde.",
   ew_plane: "Impulsion électromagnétique : étourdit unités et bâtiments ennemis sur 5 cases pendant 6 s.",
-  heavy_transport: "16 places, emporte aussi les unités lourdes (marcheurs, artillerie lourde).",
+  heavy_transport: "16 places, emporte aussi le marcheur de siège (trop grand pour le transport simple).",
   carrier: "Lance jusqu'à 6 intercepteurs (payés sur la réserve) et répare l'aviation alliée proche.",
   railgun_ship: "Canons de rail à très longue portée (75 cases), contre la mer et la terre.",
 };
