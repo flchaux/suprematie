@@ -1034,8 +1034,9 @@ pub fn factory_trim(w: &mut World, b: usize) {
     }
 }
 
-/// Un dépôt collé à une usine lui donne un objet de la réserve du joueur toutes les `DEPOT_FEED_PERIOD` ticks (2 par seconde).
-pub const DEPOT_FEED_PERIOD: u32 = 10;
+/// Un dépôt collé à une usine lui donne un objet de la réserve du joueur toutes les `DEPOT_FEED_PERIOD` ticks
+/// (1 par seconde) : un appoint lent, bien en deçà d'un tapis. Un seul dépôt compte par usine.
+pub const DEPOT_FEED_PERIOD: u32 = 20;
 
 /// Usine en attente de composants depuis 10 s : alerte EV_FACTORY_STARVED pour son joueur.
 const FACTORY_ALERT_DELAY: u32 = 200;
@@ -1067,21 +1068,19 @@ pub fn touching_depots(w: &World, b: usize) -> u32 {
     v.len() as u32
 }
 
-/// Dépôts collés : l'usine puise dans la réserve du joueur (puis de son équipe) les composants de sa file,
+/// Dépôt collé (un seul compte, quel que soit leur nombre) : l'usine puise dans la réserve du joueur (puis de son équipe) les composants de sa file,
 /// à tour de rôle entre les objets de l'unité en tête, puis ceux des suivantes. `charge` garde le tick de la dernière prise.
 fn feed_from_depots(w: &mut World, b: usize) {
     let last = w.buildings[b].charge;
     if w.tick < last.saturating_add(DEPOT_FEED_PERIOD) {
         return;
     }
-    let n = touching_depots(w, b);
-    if n == 0 {
+    if touching_depots(w, b) == 0 {
         w.buildings[b].charge = w.tick;
         return;
     }
-    // au plus 6 objets par dépôt accumulés pendant un sommeil (SLEEP = 60 ticks)
-    let periods = ((w.tick - last) / DEPOT_FEED_PERIOD).min(SLEEP / DEPOT_FEED_PERIOD);
-    let mut budget = periods * n;
+    // au plus 3 objets accumulés pendant un sommeil (SLEEP = 60 ticks)
+    let mut budget = ((w.tick - last) / DEPOT_FEED_PERIOD).min(SLEEP / DEPOT_FEED_PERIOD);
     w.buildings[b].charge = w.tick;
     let owner = w.buildings[b].owner as usize;
     let kinds: Vec<u16> = w.buildings[b].queue.iter().map(|q| q.0).collect();

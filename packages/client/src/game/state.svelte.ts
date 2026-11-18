@@ -81,6 +81,8 @@ export const ui = $state({
   replaySpeed: 1,
   spectator: false,
   ping: 0,
+  /** vitesse de jeu (multiplicateur, partie solo seulement) */
+  speed: 1,
   gfx: loadGfx(),
   showGfx: false,
   showPerf: false,

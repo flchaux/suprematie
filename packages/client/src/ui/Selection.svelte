@@ -2,6 +2,7 @@
   import { ui, hasTechUI } from "../game/state.svelte.ts";
   import { UNIT_TRAITS } from "../game/traits.ts";
   import { UNIT_DESCS } from "../game/unitDescs.ts";
+  import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
   import { BClass, RECIPE_NONE, PACK1 } from "@supreme/shared";
   import Item from "./Item.svelte";
@@ -77,8 +78,10 @@
     if (bdef.cls === BClass.Extractor && info.out >= 5) return { text: "Sortie bloquée : le minerai n'est pas emporté", kind: "warn" };
     if (bdef.cls === BClass.Factory && info.queue.length && !info.working) {
       const u = d.units[info.queue[0][0]];
-      const miss = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n).map(([it, n]) => `${n - (info.stash[it] ?? 0)} ${d.items[it].name}`);
-      const how = info.depots ? "réserve du joueur épuisée pour ces objets" : "collez un dépôt à l'usine, ou amenez-les par tapis";
+      const lack = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n);
+      const miss = lack.map(([it, n]) => `${n - (info.stash[it] ?? 0)} ${d.items[it].name}`);
+      const empty = lack.some(([it]) => (ui.stock[it] ?? 0) <= 0);
+      const how = !info.depots ? "collez un dépôt à l'usine, ou amenez-les par tapis" : empty ? "réserve du joueur épuisée pour certains" : "apport lent du dépôt : un tapis va plus vite";
       if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
     if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
@@ -161,6 +164,7 @@
         {/if}
       </div>
     </div>
+    {#if BUILDING_DESCS[bdef.key]}<p class="udesc small">{BUILDING_DESCS[bdef.key]}</p>{/if}
     {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
     {#if mine && info}
       {#if info.build < 65536}
@@ -277,8 +281,8 @@
           <div class="row"><span class="kicker">En cours · {cur.name}</span>{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}</div>
         {/if}
         <span class="dim small"><Icon name="logistics" size={12} />
-          {#if info.depots}Alimentée depuis la réserve par {info.depots} dépôt{info.depots > 1 ? "s" : ""} collé{info.depots > 1 ? "s" : ""} ({2 * info.depots} objets/s).
-          {:else}Collez un dépôt à l'usine : il l'alimente depuis la réserve, sans tapis.{/if}
+          {#if info.depots}Alimentée lentement depuis la réserve par le dépôt collé (1 objet/s{info.depots > 1 ? " : un seul dépôt compte" : ""}).
+          {:else}Collez un dépôt à l'usine : il l'alimente lentement depuis la réserve (1 objet/s), sans tapis.{/if}
           Elle garde d'avance les composants de 2 unités.</span>
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}

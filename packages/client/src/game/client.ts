@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, hasTech } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import type { GfxSettings } from "../render/gfx.ts";
@@ -106,6 +106,29 @@ export class GameClient {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
   }
 
+  /** Partie solo : un seul joueur humain (la vitesse de jeu n'est réglable que dans ce cas). */
+  isSolo(): boolean {
+    return ui.players.length > 0 && ui.players.filter((p) => !p.bot).length === 1 && !ui.spectator;
+  }
+
+  /** Vitesse de jeu suivante (+1) ou précédente (-1) parmi GAME_SPEEDS ; le serveur l'applique et l'annonce. */
+  stepSpeed(delta: number): void {
+    if (!this.isSolo()) {
+      pushMessage("La vitesse ne se règle qu'en partie solo", "alert");
+      return;
+    }
+    // part de la dernière vitesse demandée : plusieurs appuis rapides s'enchaînent avant la réponse du serveur
+    const cur = performance.now() - this.speedAskedAt < 1000 ? this.speedAsked : ui.speed;
+    const k = GAME_SPEEDS.indexOf(cur);
+    const next = GAME_SPEEDS[Math.max(0, Math.min(GAME_SPEEDS.length - 1, (k < 0 ? GAME_SPEEDS.indexOf(1) : k) + delta))];
+    if (next === cur) return;
+    this.speedAsked = next;
+    this.speedAskedAt = performance.now();
+    this.send({ t: "speed", speed: next });
+  }
+  private speedAsked = 1;
+  private speedAskedAt = -1e9;
+
   lobbyAction(action: string, extra: Record<string, unknown> = {}): void {
     this.send({ t: "lobby", action, ...extra });
   }
@@ -131,10 +154,13 @@ export class GameClient {
         if (!m.lobby.running && ui.screen !== "game") ui.screen = "lobby";
         break;
       case "start":
+        ui.speed = 1;
         void this.begin(m.start, null);
         ui.stats = [];
         break;
       case "snapshot":
+        // la vitesse en cours (si elle n'est pas ×1) suit dans un message « speed »
+        ui.speed = 1;
         void this.begin(m.start, { tick: m.tick, data: Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0)) });
         ui.stats = m.stats ?? [];
         break;
@@ -166,6 +192,10 @@ export class GameClient {
         break;
       case "pong":
         ui.ping = Math.round(performance.now() - m.time);
+        break;
+      case "speed":
+        ui.speed = m.speed;
+        if (m.by) pushMessage(`Vitesse de jeu ×${String(m.speed).replace(".", ",")}`, "info");
         break;
       case "error":
         ui.error = m.message;
@@ -304,7 +334,7 @@ export class GameClient {
     this.fpsTime = now;
     this.fpsCount++;
     this.panCamera(dt);
-    const alpha = this.frame ? Math.min(1, (performance.now() - this.frameTime) / 50) : 0;
+    const alpha = this.frame ? Math.min(1, ((performance.now() - this.frameTime) * ui.speed) / 50) : 0;
     const myTeam = this.frame?.players[ui.me]?.team ?? -1;
     if (!NORENDER) sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator);
     // zone vue envoyée au Worker
@@ -1097,6 +1127,12 @@ export class GameClient {
       case "perf":
         ui.showPerf = !ui.showPerf;
         break;
+      case "speedUp":
+        this.stepSpeed(1);
+        break;
+      case "speedDown":
+        this.stepSpeed(-1);
+        break;
     }
   }
 
@@ -1764,12 +1800,16 @@ export class GameClient {
     const hdir = sx > 0 ? 0 : 2;
     const vdir = sy > 0 ? 1 : 3;
     const isBelt = def.cls === BClass.Belt;
+    // rails : orientés dans le sens de leur segment (la voie se relie par simple contact ; la direction
+    // ne sert qu'au modèle : direction 0, rails selon x ; direction 1, rails selon z)
+    const isRail = def.cls === BClass.Rail;
+    const along = (dir: number, horiz: boolean) => (isBelt ? dir : isRail ? (horiz ? 0 : 1) : ui.buildDir);
     if (horizFirst) {
-      for (let i = 0; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: a.y, dir: isBelt ? (dy !== 0 && i === Math.abs(dx) ? vdir : hdir) : ui.buildDir });
-      for (let j = step; j <= Math.abs(dy); j += step) out.push({ x: b.x, y: a.y + j * sy, dir: isBelt ? vdir : ui.buildDir });
+      for (let i = 0; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: a.y, dir: along(dy !== 0 && i === Math.abs(dx) ? vdir : hdir, dx !== 0 || dy === 0) });
+      for (let j = step; j <= Math.abs(dy); j += step) out.push({ x: b.x, y: a.y + j * sy, dir: along(vdir, false) });
     } else {
-      for (let j = 0; j <= Math.abs(dy); j += step) out.push({ x: a.x, y: a.y + j * sy, dir: isBelt ? (dx !== 0 && j === Math.abs(dy) ? hdir : vdir) : ui.buildDir });
-      for (let i = step; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: b.y, dir: isBelt ? hdir : ui.buildDir });
+      for (let j = 0; j <= Math.abs(dy); j += step) out.push({ x: a.x, y: a.y + j * sy, dir: along(dx !== 0 && j === Math.abs(dy) ? hdir : vdir, false) });
+      for (let i = step; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: b.y, dir: along(hdir, true) });
     }
     const cells = out.slice(0, 200);
     // fin de file tournée avec R pendant le tracé
@@ -1862,7 +1902,7 @@ export class GameClient {
     if (!g) return;
     const def = this.data.buildings[ui.buildKind];
     const cur = this.snapBuild(g);
-    const lineable = def.cls === BClass.Belt || def.cls === BClass.Wall || def.cls === BClass.Pylon;
+    const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon;
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
@@ -1939,7 +1979,7 @@ export class GameClient {
     this.ghostStart = null;
     if (!shift) {
       const def = this.data!.buildings[ui.buildKind];
-      if (!(def.cls === BClass.Belt || def.cls === BClass.Wall || def.cls === BClass.Pylon || def.cls === BClass.Inserter)) this.cancelMode();
+      if (!(def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || def.cls === BClass.Inserter)) this.cancelMode();
       else this.updateGhost();
     }
     this.scene?.showRange(0, 0, 0);

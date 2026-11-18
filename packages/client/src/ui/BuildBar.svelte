@@ -7,6 +7,7 @@
   import { BUILD_CATS as CATS } from "../game/catalog.ts";
   import { kb, keyOf } from "../game/keys.svelte.ts";
   import { plans } from "../game/plans.svelte.ts";
+  import { BUILDING_DESCS } from "../game/buildingDescs.ts";
 
   // catégorie affichée : partagée avec le menu au clavier (B, puis chiffre, puis chiffre)
   const cat = $derived(kb.buildCat);
@@ -48,6 +49,7 @@
           </button>
           <div class="tt">
             <b>{b.name}</b> <span class="dim num">{b.w}×{b.h}</span><br />
+            {#if BUILDING_DESCS[key]}<span class="bdesc">{BUILDING_DESCS[key]}</span><br />{/if}
             {#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche requise : {ui.data?.techs[b.tech].name}</span><br />{/if}
             <Cost cost={b.cost} />
             {#if b.powerUse}<span class="dim"><Icon name="power" size={12} /> Consomme {b.powerUse} kW</span><br />{/if}
@@ -98,4 +100,5 @@
     .card { width: 92px; height: 78px; } .grid { height: 166px; }
     .card img { width: 48px; height: 48px; }
   }
+  .bdesc { display: block; margin: 3px 0; line-height: 1.4; max-width: 340px; color: color-mix(in srgb, var(--text) 82%, transparent); }
 </style>

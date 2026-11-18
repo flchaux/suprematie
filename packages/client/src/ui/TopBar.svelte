@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ui } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
-  import { PACK1 } from "@supreme/shared";
+  import { PACK1, GAME_SPEEDS } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
   import Shortcuts from "./Shortcuts.svelte";
@@ -61,6 +61,13 @@
   <div class="grow"></div>
   <div class="panel right">
     <span class="clock num"><Icon name="clock" size={14} /> {time}</span>
+    {#if client.isSolo()}
+      <span class="speed">
+        <button class="ghost sp" disabled={ui.speed <= GAME_SPEEDS[0]} onclick={() => client.stepSpeed(-1)} title={t("Ralentir le jeu", "speedDown")}>−</button>
+        <span class="num sv" class:fast={ui.speed > 1} class:slow={ui.speed < 1} title="Vitesse de jeu (partie solo)">×{String(ui.speed).replace(".", ",")}</span>
+        <button class="ghost sp" disabled={ui.speed >= GAME_SPEEDS[GAME_SPEEDS.length - 1]} onclick={() => client.stepSpeed(1)} title={t("Accélérer le jeu", "speedUp")}>+</button>
+      </span>
+    {/if}
     <div class="sep"></div>
     <button class="ghost icon-btn" class:on={ui.showStats} onclick={() => (ui.showStats = !ui.showStats)} title={t("Statistiques", "stats")}><Icon name="stats" /></button>
     <button class="ghost icon-btn" class:on={ui.showRecipes} onclick={() => (ui.showRecipes = !ui.showRecipes)} title={t("Recettes débloquées", "recipes")}><Icon name="recipe" /></button>
@@ -128,6 +135,11 @@
   .rt .bar { height: 4px; }
   .rt .bar > span { display: block; height: 100%; background: var(--amber); box-shadow: 0 0 6px var(--amber); }
   .spect { display: flex; align-items: center; gap: 7px; color: var(--amber); letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; }
+  .speed { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
+  .speed .sp { min-width: 22px; padding: 0 4px; font-size: 15px; line-height: 20px; }
+  .speed .sv { min-width: 34px; text-align: center; font-size: 12.5px; color: var(--dim); }
+  .speed .sv.fast { color: var(--accent); }
+  .speed .sv.slow { color: var(--warn); }
   .clock { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
   .clock :global(.ic) { color: var(--accent); }
   .right .icon-btn { padding: 6px 7px; }

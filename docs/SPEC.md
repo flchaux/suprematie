@@ -32,6 +32,7 @@ Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste 
 - Chaque joueur commence avec son seul robot de commandement.
 - Quand le robot de commandement est détruit, il explose et endommage tout autour de lui. Le joueur est éliminé, et toutes ses unités et tous ses bâtiments sont détruits.
 - Les équipes sont fixées dans le lobby. La dernière équipe qui a encore au moins un robot de commandement gagne.
+- En partie solo (un seul joueur humain, contre des IA), la vitesse de jeu se règle de ×0,5 à ×4 (pavé ×/÷, ou boutons à côté de l'horloge) : le serveur cadence les ticks plus ou moins vite, la simulation est inchangée.
 
 ### Économie
 
@@ -40,7 +41,7 @@ Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste 
 - Transfert direct : un extracteur ou un fabricant donne ses produits, sans bras ni tapis, à un bâtiment collé à une de ses faces qui les accepte (dépôt, laboratoire, usine, fabricant dont la recette en cours les utilise), à tour de rôle avec ses autres sorties. Le contact ne change jamais la recette d'un fabricant voisin, sauf pour un extracteur qui amorce une fonderie vide.
 - L'énergie passe par un réseau électrique relié par des pylônes. Un bâtiment hors réseau ne fonctionne pas.
 - Le générateur s'améliore sur place, comme l'extracteur : 400 kW, puis 650 kW (automatisation), puis 1 000 kW (électronique). Il ne produit rien pendant le chantier.
-- Les usines d'unités reçoivent leurs composants par tapis, bras ou transfert direct. Un dépôt collé à une face d'une usine l'alimente depuis la réserve du joueur (2 objets par seconde par dépôt). L'usine garde d'avance les composants de 2 unités pour chaque type de sa file ; ce qui dépasse quand la file change retourne à la réserve. Une usine à l'arrêt faute de composants depuis 10 s déclenche une alerte.
+- Les usines d'unités reçoivent leurs composants par tapis, bras ou transfert direct. Un dépôt collé à une face d'une usine l'alimente lentement depuis la réserve du joueur (1 objet par seconde) ; un seul dépôt compte par usine. L'usine garde d'avance les composants de 2 unités pour chaque type de sa file ; ce qui dépasse quand la file change retourne à la réserve. Une usine à l'arrêt faute de composants depuis 10 s déclenche une alerte.
 - Les drones ingénieurs construisent les bâtiments avec un stock commun au joueur, alimenté par les dépôts : ce qui entre dans un dépôt devient disponible pour les ingénieurs sur toute la carte.
 - Cette réserve est plafonnée, objet par objet : 400 de base, plus 600 par dépôt terminé (2 000 pour un dépôt amélioré). Réserve pleine pour un objet : les dépôts le refusent (le tapis attend), le collecteur de surplus le laisse passer, les ingénieurs cessent de le ramasser ou de le recycler. Les remboursements ne sont pas plafonnés. Un dépôt amélioré (automatisation) gagne un étage et des sorties filtrées (jusqu'à 4 objets) : il pose ces objets, pris dans la réserve à tour de rôle, sur les tapis qui partent de ses faces, et les bras peuvent les y prendre.
 - Les unités détruites laissent des épaves que les ingénieurs recyclent en plaques de fer et en acier, comme dans Supreme Commander.

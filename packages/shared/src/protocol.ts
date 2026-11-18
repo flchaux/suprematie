@@ -80,6 +80,7 @@ export type ClientMsg =
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
   | { t: "chat"; text: string }
+  | { t: "speed"; speed: number }
   | { t: "ping"; time: number };
 
 export type ServerMsg =
@@ -95,10 +96,13 @@ export type ServerMsg =
   | { t: "end"; winner: number; replay: string; stats?: StatSample[] } // historique complet, tous les joueurs
   | { t: "saved"; name: string; by: string; auto: boolean }
   | { t: "pong"; time: number }
+  | { t: "speed"; speed: number; by: string } // vitesse de jeu (partie solo seulement)
   | { t: "error"; message: string };
 
 export const ORDER_DELAY = 3; // ticks
 export const TICK_MS = 50;
+/** Vitesses de jeu possibles (multiplicateur du rythme des ticks) ; réglables seulement en solo (un seul joueur humain). */
+export const GAME_SPEEDS = [0.5, 1, 1.5, 2, 3, 4];
 export const HASH_EVERY = 20;
 
 /** Paramètres d'init de la simulation à partir du lobby. */

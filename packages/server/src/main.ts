@@ -429,6 +429,10 @@ wss.on("connection", (ws, req) => {
       case "chat":
         broadcast({ t: "chat", from: client.name, text: String(msg.text).slice(0, 200) });
         return;
+      case "speed":
+        // vitesse de jeu : partie solo seulement (refusée sinon, sans message)
+        if (game && !game.setSpeed(client, Number(msg.speed))) client.send({ t: "error", message: "La vitesse ne se règle qu'en partie solo" });
+        return;
       case "ping":
         client.send({ t: "pong", time: msg.time });
         return;

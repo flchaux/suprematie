@@ -1,7 +1,7 @@
 // Partie en cours : relais lockstep, copie de référence de la simulation, bots, hash, replays,
 // sauvegardes (à la demande et automatiques) et reprise d'une sauvegarde.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { Sim, pack, validCmd, parseBotDump, ORDER_DELAY, HASH_EVERY, simParams } from "@supreme/shared";
+import { Sim, pack, validCmd, parseBotDump, ORDER_DELAY, HASH_EVERY, TICK_MS, GAME_SPEEDS, simParams } from "@supreme/shared";
 import type { LobbyState, GameStart, GameData, Cmd, SaveMeta, BotView, StatSample } from "@supreme/shared";
 import { createBot, type Bot, type MapInfo } from "./bots/index.ts";
 import { writeSave, pruneAutosaves, type SaveData } from "./saves.ts";
@@ -45,7 +45,11 @@ export class Game {
   lastWaitMsg = 0;
   botMs = 0;
   simMs = 0;
-  startedAt = Date.now();
+  /** horloge des ticks : le tick `clockTick` était dû à `clockAt` (ms), puis un tick toutes les TICK_MS / speed */
+  clockAt = Date.now();
+  clockTick = 0;
+  /** vitesse de jeu (partie solo seulement, voir setSpeed) */
+  speed = 1;
   hooks: GameHooks;
   wasmPath: string;
   dataDir: string;
@@ -103,7 +107,8 @@ export class Game {
       }
     }
     this.lastSave = this.tick;
-    this.startedAt = Date.now() - this.tick * 50;
+    this.clockAt = Date.now();
+    this.clockTick = this.tick;
     this.timer = setInterval(() => this.loop(), 10);
     return this.startInfo(-1);
   }
@@ -143,6 +148,7 @@ export class Game {
     const data = Buffer.from(this.sim.snapshot()).toString("base64");
     peer.ackTick = this.tick - 1;
     peer.send({ t: "snapshot", tick: this.tick - 1, data, start: this.startInfo(peer.slot), stats: this.history.map((s) => this.visibleTo(s, peer.slot)) });
+    if (this.speed !== 1) peer.send({ t: "speed", speed: this.speed, by: "" });
   }
 
   /** Relevé tel qu'un participant peut le voir : son équipe seulement pendant la partie, tout pour un spectateur. */
@@ -162,7 +168,7 @@ export class Game {
 
   private loop(): void {
     if (this.ended) return;
-    const due = this.startedAt + this.tick * 50;
+    const due = this.dueAt(this.tick);
     const now = Date.now();
     if (now < due) return;
     // attendre le client le plus lent
@@ -176,7 +182,7 @@ export class Game {
       if (!this.waitingSince) this.waitingSince = now;
       // un client bloqué plus de 20 s n'est plus attendu (il se resynchronisera)
       if (now - this.waitingSince > 20000) for (const p of late) p.ackTick = this.tick;
-      this.startedAt += now - due; // décaler l'horloge pendant l'attente
+      this.clockAt += now - due; // décaler l'horloge pendant l'attente
       return;
     }
     if (this.waitingSince) {
@@ -184,7 +190,31 @@ export class Game {
       this.hooks.broadcast({ t: "wait", who: [] });
     }
     // rattraper au plus 3 ticks d'un coup
-    for (let k = 0; k < 3 && Date.now() >= this.startedAt + this.tick * 50 && !this.ended; k++) this.produceTick();
+    for (let k = 0; k < 3 && Date.now() >= this.dueAt(this.tick) && !this.ended; k++) this.produceTick();
+  }
+
+  /** Heure (ms) à laquelle le tick `t` est dû, à la vitesse actuelle. */
+  private dueAt(t: number): number {
+    return this.clockAt + ((t - this.clockTick) * TICK_MS) / this.speed;
+  }
+
+  /** Partie solo : un seul joueur humain (les IA ne comptent pas). */
+  isSolo(): boolean {
+    return this.lobby.players.filter((p) => !p.bot).length === 1;
+  }
+
+  /**
+   * Vitesse de jeu demandée par un joueur : accordée seulement en solo, parmi GAME_SPEEDS. L'horloge repart
+   * du tick en cours, sans à-coup. Renvoie false si refusée.
+   */
+  setSpeed(peer: Peer, speed: number): boolean {
+    if (this.ended || peer.slot < 0 || !this.isSolo() || !GAME_SPEEDS.includes(speed)) return false;
+    const now = Date.now();
+    this.clockAt = Math.max(now, this.dueAt(this.tick));
+    this.clockTick = this.tick;
+    this.speed = speed;
+    this.hooks.broadcast({ t: "speed", speed, by: peer.name });
+    return true;
   }
 
   private produceTick(): void {

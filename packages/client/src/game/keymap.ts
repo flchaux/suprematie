@@ -78,6 +78,8 @@ export const ACTIONS: ActionDef[] = [
   { id: "help", label: "Aide", group: "Interface", ctx: "global" },
   { id: "chat", label: "Discussion", group: "Interface", ctx: "global" },
   { id: "perf", label: "Détail des performances", group: "Interface", ctx: "global" },
+  { id: "speedUp", label: "Accélérer le jeu (partie solo)", group: "Interface", ctx: "global" },
+  { id: "speedDown", label: "Ralentir le jeu (partie solo)", group: "Interface", ctx: "global" },
   ...Array.from({ length: FACTORY_SLOTS }, (_, i): ActionDef => ({ id: `factory${i + 1}`, label: `Unité ${i + 1} (Maj : ×5)`, group: "Usine", ctx: "factory", shiftFree: true })),
 ];
 
@@ -203,6 +205,8 @@ export function defaultBindings(layout: Layout): Record<string, Chord[]> {
     chat: [named("Enter")],
     // F3 sert aux marque-pages : les performances passent sur F9
     perf: [named("F9")],
+    speedUp: [named("NumpadMultiply")],
+    speedDown: [named("NumpadDivide")],
   };
   for (let i = 0; i < FACTORY_SLOTS; i++) out[`factory${i + 1}`] = i < FACTORY_ROW.length ? [named(FACTORY_ROW[i])] : [];
   return out;

@@ -1063,6 +1063,36 @@ fn depot_touching_a_factory_feeds_it_from_the_reserve() {
     assert_eq!(crate::buildings::factory_has(&w.buildings[f], IRON_PLATE), 0);
 }
 
+/// L'alimentation par dépôt est lente (1 objet par seconde) et un seul dépôt compte : en coller un
+/// second ne va pas plus vite.
+#[test]
+fn only_one_depot_feeds_a_factory_slowly() {
+    use crate::buildings::DEPOT_FEED_PERIOD;
+    use crate::orders::O_FACTORY_QUEUE;
+    let delivered = |depots: &[(i32, i32)]| {
+        let mut w = world(&[0]);
+        flatten(&mut w, 85, 85, 125, 125);
+        put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+        put(&mut w, 0, B_GENERATOR, 102, 96, 0);
+        let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
+        let r = w.building_ref(f) as i32;
+        // une grosse unité : la réserve de l'usine ne se remplit pas pendant la mesure
+        w.step(&[5, O_FACTORY_QUEUE, 0, r, unit_kind("light_tank"), 1]);
+        for it in [STEEL, GEAR, CIRCUIT] {
+            w.players[0].stock[it as usize] = 100;
+        }
+        for &(x, y) in depots {
+            put(&mut w, 0, B_DEPOT, x, y, 0);
+        }
+        run(&mut w, 10 * DEPOT_FEED_PERIOD);
+        // pris dans la réserve (une partie a déjà pu partir dans un char en construction)
+        [STEEL, GEAR, CIRCUIT].iter().map(|&it| (100 - w.players[0].stock[it as usize]) as u32).sum::<u32>()
+    };
+    let one = delivered(&[(98, 100)]);
+    assert!((9..=11).contains(&one), "un objet par période : {one}");
+    assert_eq!(delivered(&[(98, 100), (100, 103)]), one, "un second dépôt ne va pas plus vite");
+}
+
 /// L'usine garde d'avance les composants de deux unités pour chaque type de sa file ; ce qui dépasse
 /// quand la file change retourne à la réserve, et une unité abandonnée en cours rend ses composants.
 #[test]
