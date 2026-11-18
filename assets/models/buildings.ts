@@ -665,6 +665,15 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.03,0.5,0.03], pos: [0.13,0.6,0.185], color: "glow", mirror: true },
     ],
   },
+  // goulotte : petit tapis incliné entre la sortie d'un extracteur et le tapis voisin (étiré par le jeu)
+  goulotte: {
+    parts: [
+      { shape: "box", size: [0.5, 0.05, 1], pos: [0, 0.025, 0], color: "dark" },
+      { shape: "box", size: [0.38, 0.02, 0.98], pos: [0, 0.06, 0], color: "metal" },
+      { shape: "box", size: [0.05, 0.1, 1], pos: [0.225, 0.05, 0], color: "light", mirror: true },
+      { shape: "box", size: [0.025, 0.02, 0.5], pos: [0.225, 0.11, 0], color: "amber", mirror: true },
+    ],
+  },
   // wall_seg : pan de mur fin, du centre de la case vers le bord +x (tourné vers chaque voisin)
   wall_seg: {
     parts: [

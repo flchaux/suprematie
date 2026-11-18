@@ -327,6 +327,25 @@ pub fn logistics_demo() -> World {
             w.buildings[e].level = k as u8 + 1;
         }
     }
+    // goulottes : une file de tapis passe sous les deux extracteurs (arrivée latérale) ; un troisième
+    // extracteur, tourné vers l'est, débouche sur deux tapis qui partent dans le même sens
+    for x in x0 + 39..x0 + 48 {
+        put(&mut w, 0, B_BELT1, x, y0 + 39, 0);
+    }
+    put(&mut w, 0, B_DEPOT, x0 + 48, y0 + 39, 0);
+    let (ex, ey) = (x0 + 52, y0 + 34);
+    for dy in 0..2 {
+        for dx in 0..2 {
+            let i = w.map.idx(ex + dx, ey + dy);
+            w.map.deposit[i] = IRON_ORE;
+        }
+    }
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey });
+    put(&mut w, 0, B_EXTRACTOR, ex, ey, 0);
+    for x in ex + 2..ex + 7 {
+        put(&mut w, 0, B_BELT1, x, ey, 0);
+        put(&mut w, 0, B_BELT1, x, ey + 1, 0);
+    }
     for _ in 0..20 {
         w.step(&[]);
     }

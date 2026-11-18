@@ -185,6 +185,8 @@ export class Entities {
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
   wallSeg: KindMesh | null = null;
+  /** goulottes entre les sorties d'un extracteur et les tapis devant lui */
+  chute: KindMesh | null = null;
   /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
   levelPips: THREE.InstancedMesh;
   /** vue logistique (touche maintenue) : dalles colorées sur les tapis (remplissage) et sous les bâtiments en difficulté */
@@ -279,6 +281,7 @@ export class Entities {
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
       }
       if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, buildModel(BUILDING_MODELS.wall_seg), scale, TEX_PER_TILE_BUILDING);
+      if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
     this.itemColors = data.items.map((it) => new THREE.Color(it.color ?? 0xffffff));
@@ -463,6 +466,7 @@ export class Entities {
       d.begin();
     }
     this.wallSeg?.begin();
+    this.chute?.begin();
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
@@ -617,9 +621,13 @@ export class Entities {
     };
     // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
     const walls = new Map<number, number>();
+    // tapis du sol terminés : case -> direction (goulottes des extracteurs)
+    const groundBelts = new Map<number, number>();
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-      if (this.data.buildings[buf[o + 1] & 0xff]?.cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
+      const cls = this.data.buildings[buf[o + 1] & 0xff]?.cls;
+      if (cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
+      else if (cls === BClass.Belt && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0) groundBelts.set(buf[o + 2] >>> 0, (buf[o + 1] >> 16) & 3);
     }
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
@@ -697,6 +705,8 @@ export class Entities {
           this.levelPips.setMatrixAt(npip++, tmpM2);
         }
       }
+      // extracteur : une goulotte de chaque case de sortie (face avant) vers le tapis qui s'y trouve
+      if (def.cls === BClass.Extractor && build >= 1 && this.chute) this.drawChutes(this.chute, bx, bz, dir, def.w, def.h, groundBelts);
       const seg = this.wallSeg;
       if (def.cls === BClass.Wall && seg) {
         // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
@@ -857,6 +867,7 @@ export class Entities {
       d.end();
     }
     this.wallSeg?.end();
+    this.chute?.end();
     this.levelPips.count = npip;
     this.levelPips.instanceMatrix.needsUpdate = true;
     this.supports.count = nsup;
@@ -1374,6 +1385,52 @@ export class Entities {
   private unitHeightAt(wi: number, x: number, z: number): number {
     const kind = this.data.units.findIndex((u) => u.weapons.includes(wi));
     return kind >= 0 ? this.unitHeight(kind, x, z) : groundHeight(this.map, x, z);
+  }
+
+  /**
+   * Goulottes d'un extracteur posé en (bx, bz), tourné vers `dir` : pour chaque case devant sa face
+   * avant qui porte un tapis, un petit tapis incliné descend du socle jusqu'au tapis. Tapis dans le sens
+   * de la sortie : la goulotte rejoint son début ; en travers ou à contresens : elle s'arrête sur son
+   * bord (arrivée latérale).
+   */
+  private drawChutes(km: KindMesh, bx: number, bz: number, dir: number, w: number, h: number, belts: Map<number, number>): void {
+    const DX = [1, 0, -1, 0];
+    const DZ = [0, 1, 0, -1];
+    const bw = dir & 1 ? h : w;
+    const bh = dir & 1 ? w : h;
+    // cases devant la face avant (même ordre que la simulation : front_tiles)
+    const tiles: [number, number][] = [];
+    if (dir === 0) for (let z = bz; z < bz + bh; z++) tiles.push([bx + bw, z]);
+    else if (dir === 1) for (let x = bx; x < bx + bw; x++) tiles.push([x, bz + bh]);
+    else if (dir === 2) for (let z = bz; z < bz + bh; z++) tiles.push([bx - 1, z]);
+    else for (let x = bx; x < bx + bw; x++) tiles.push([x, bz - 1]);
+    const dx = DX[dir];
+    const dz = DZ[dir];
+    const yaw = Math.PI / 2 - (dir * Math.PI) / 2;
+    for (const [tx, tz] of tiles) {
+      const bd = belts.get((tx | (tz << 16)) >>> 0);
+      if (bd === undefined) continue;
+      // bord de la case du tapis côté extracteur, au milieu de la case
+      const ex = tx + 0.5 - dx * 0.5;
+      const ez = tz + 0.5 - dz * 0.5;
+      // départ dans le socle de l'extracteur ; arrivée au début du tapis (même sens) ou sur son bord
+      const reach = bd === dir ? 0.12 : 0.24;
+      const sx = ex - dx * 0.22;
+      const sz = ez - dz * 0.22;
+      const fx = ex + dx * reach;
+      const fz = ez + dz * reach;
+      const g = groundHeight(this.map, ex, ez);
+      const y0 = g + 0.24;
+      const y1 = g + 0.1;
+      const len = Math.hypot(fx - sx, fz - sz);
+      const pitch = Math.atan2(y0 - y1, len);
+      km.ensure(km.n + 1);
+      tmpQ2.setFromAxisAngle(UP, yaw).multiply(tmpQ3.setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch));
+      tmpM2.compose(tmpV.set((sx + fx) / 2, (y0 + y1) / 2 - 0.03, (sz + fz) / 2), tmpQ2, tmpS.set(1, 1, len / Math.cos(pitch)));
+      km.body!.mesh.setMatrixAt(km.n, tmpM2);
+      setTeamColor(km.body!, km.n, tmpC.setRGB(1, 1, 1));
+      km.n++;
+    }
   }
 
   /**

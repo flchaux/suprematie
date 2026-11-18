@@ -34,6 +34,22 @@ pub fn dims(kind: u16, dir: u8) -> (i32, i32) {
     }
 }
 
+/// Nombre de cases devant la face avant du bâtiment, et la `k`-ième (dans l'ordre de la face).
+#[inline]
+pub fn front_count(w: i32, h: i32, dir: u8) -> usize {
+    (if dir & 1 == 0 { h } else { w }) as usize
+}
+#[inline]
+pub fn front_tile_k(x: i32, y: i32, w: i32, h: i32, dir: u8, k: usize) -> (i32, i32) {
+    let k = k as i32;
+    match dir & 3 {
+        0 => (x + w, y + k),
+        1 => (x + k, y + h),
+        2 => (x - 1, y + k),
+        _ => (x + k, y - 1),
+    }
+}
+
 /// Case juste devant le bâtiment (sortie).
 pub fn front_tile(x: i32, y: i32, w: i32, h: i32, dir: u8) -> (i32, i32) {
     match dir & 3 {
@@ -1169,10 +1185,22 @@ fn tick_extractor(w: &mut World, b: usize) {
             let (bw, bh) = bb.size();
             (bb.x, bb.y, bw, bh, bb.dir)
         };
-        let (fx, fy) = front_tile(x, y, bw, bh, dir);
         let it = w.buildings[b].recipe;
         let before = w.buildings[b].out;
-        if push_to(w, fx, fy, it) {
+        // sorties : toutes les cases devant la face avant, servies à tour de rôle (le compteur `timer`
+        // de l'extracteur garde la prochaine) ; une case qui ne peut pas recevoir laisse passer l'autre
+        let n = front_count(bw, bh, dir).max(1);
+        let start = w.buildings[b].timer as usize % n;
+        let mut done = false;
+        for k in 0..n {
+            let (fx, fy) = front_tile_k(x, y, bw, bh, dir, (start + k) % n);
+            if push_to(w, fx, fy, it) {
+                w.buildings[b].timer = ((start + k + 1) % n) as _;
+                done = true;
+                break;
+            }
+        }
+        if done {
             w.buildings[b].out -= 1;
             wake_watchers(w, b);
         } else {
