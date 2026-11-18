@@ -668,3 +668,37 @@ fn direct_transfer_needs_matching_recipe() {
     feed(&mut w, 3000);
     assert!(w.players[0].produced[STEEL as usize] > 0, "la fonderie d'acier n'a pas reçu de plaques");
 }
+
+/// Ordre ROTATE : un tapis posé tourne d'un quart de tour sur place, et la file suit sa nouvelle
+/// direction (ici vers un second dépôt).
+#[test]
+fn rotate_order_turns_a_built_belt() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    // tapis vers l'est de 100 à 104, sans rien au bout ; tourné vers le sud, le dernier livre en
+    // (104, 101), dans le dépôt
+    for x in 100..=104 {
+        put(&mut w, B_BELT1, x, 100, 0);
+    }
+    let last = w.map.occ[w.map.idx(104, 100)] as usize - 1;
+    put(&mut w, B_DEPOT, 103, 101, 0);
+    let rf = w.building_ref(last) as i32;
+    let o = [4, crate::orders::O_ROTATE, 0, 1, rf];
+    w.step(&o);
+    for _ in 0..5 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[last].dir, 1, "le tapis n'a pas tourné");
+    let first = w.map.occ[w.map.idx(100, 100)] as usize - 1;
+    for _ in 0..10 {
+        crate::belts::put_on_belt(&mut w, first, IRON_PLATE);
+        for _ in 0..20 {
+            w.step(&[]);
+        }
+    }
+    for _ in 0..200 {
+        w.step(&[]);
+    }
+    assert!(w.players[0].stock[IRON_PLATE as usize] >= 310, "les plaques ne sont pas arrivées au dépôt du sud");
+}

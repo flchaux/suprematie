@@ -20,6 +20,8 @@ export const O = {
   CANCEL_GHOSTS: 41,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
+  /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
+  ROTATE: 24,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -184,6 +186,9 @@ export function upgrade(ref: number): Cmd {
 }
 export function setShare(ref: number, pct: number): Cmd {
   return [O.SET_SHARE, ref | 0, Math.max(0, Math.min(100, Math.round(pct)))];
+}
+export function rotate(refs: number[]): Cmd {
+  return [O.ROTATE, refs.length, ...refs.map((r) => r | 0)];
 }
 export function toggle(ref: number): Cmd {
   return [O.TOGGLE, ref | 0];

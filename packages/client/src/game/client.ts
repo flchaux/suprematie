@@ -937,7 +937,7 @@ export class GameClient {
       return;
     }
     const units = ui.me >= 0 && this.selectedUnits().length > 0;
-    const m = keymap.match(e, { units, build: ui.mode === "build" || ui.mode === "paste", factory: !units && this.myFactory() !== null });
+    const m = keymap.match(e, { units, build: ui.mode === "build" || ui.mode === "paste" || (!units && this.rotatableSelection().length > 0), factory: !units && this.myFactory() !== null });
     if (!m) return;
     e.preventDefault();
     if (e.repeat && !actionDef(m.id)?.repeat) return;
@@ -995,6 +995,14 @@ export class GameClient {
           this.beltForced = true;
           this.updateGhost();
         } else if (ui.mode === "paste") this.plans.rotate();
+        else {
+          // tapis, bras ou tapis de contrôle sélectionnés : un quart de tour sur place
+          const refs = this.rotatableSelection();
+          if (refs.length) {
+            this.cmd(Ord.rotate(refs));
+            sfx.click();
+          }
+        }
         break;
       case "copyPlan":
         this.plans.startCopy();
@@ -1653,6 +1661,19 @@ export class GameClient {
     return cells;
   }
 
+  /** Nos tapis, bras et tapis de contrôle terminés parmi la sélection (ordre ROTATE). */
+  private rotatableSelection(): number[] {
+    if (ui.me < 0 || !this.data) return [];
+    const out: number[] = [];
+    for (const id of this.selected) {
+      if (!Ord.isBuildingRef(id)) continue;
+      const b = this.findBuilding(id);
+      const cls = b ? this.data.buildings[b.kind]?.cls : -1;
+      if (b && b.owner === ui.me && (cls === BClass.Belt || cls === BClass.Inserter || cls === BClass.Router)) out.push(id);
+    }
+    return out;
+  }
+
   /** file de tapis en cours de tracé : direction de la dernière case choisie avec R (null : automatique) */
   lineEndDir: number | null = null;
 
@@ -1728,6 +1749,14 @@ export class GameClient {
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
+    /** un de nos tapis au sol sur la case, perpendiculaire à la direction `dir` */
+    const across = (c: { x: number; y: number; dir: number }): boolean => {
+      const e = this.map ? belts.get(c.y * this.map.w + c.x) : undefined;
+      return !!e && e.owner === ui.me && (e.dir & 1) !== (c.dir & 1);
+    };
+    // file qui finit en travers d'un de nos tapis : on veut s'y brancher (la file s'arrête juste avant
+    // et le nourrit par le côté), pas l'enjamber ni le tourner ; sauf si sa fin a été tournée avec R
+    if (isBelt && ui.buildFloor === 0 && cells.length > 1 && this.lineEndDir === null && across(cells[cells.length - 1])) cells.pop();
     const seq = ++this.ghostSeq;
     const rf = this.replaceFlag();
     const base = isBelt ? ui.buildFloor : 0;
@@ -1745,13 +1774,10 @@ export class GameClient {
       // qui la croise) et redescend ensuite ; les ascenseurs se forment aux changements de niveau
       const up1 = base < 2 ? await canAt(base + 1) : cells.map(() => false);
       const up2 = base < 1 ? await canAt(base + 2) : cells.map(() => false);
-      const crossing = (c: { x: number; y: number; dir: number }) => {
-        if (base !== 0 || !this.map) return false;
-        const e = belts.get(c.y * this.map.w + c.x);
-        // un de nos tapis au sol qui croise la file (perpendiculaire) : on passe au-dessus au lieu de le tourner
-        return !!e && (e.dir & 1) !== (c.dir & 1);
-      };
-      floors = cells.map((c, i) => (ok[i] && !crossing(c) ? base : up1[i] ? base + 1 : up2[i] ? base + 2 : base));
+      // un de nos tapis au sol qui croise la file (perpendiculaire) : on passe au-dessus au lieu de le
+      // tourner ; sauf la case de départ : partir d'un tapis, c'est le prolonger en faisant un angle
+      const crossing = (c: { x: number; y: number; dir: number }, i: number) => base === 0 && i > 0 && across(c);
+      floors = cells.map((c, i) => (ok[i] && !crossing(c, i) ? base : up1[i] ? base + 1 : up2[i] ? base + 2 : base));
       // un ascenseur relie deux cases alignées : un changement de niveau dans un angle remonte aussi la case d'avant
       for (let pass = 0; pass < 3; pass++) {
         for (let i = 1; i < cells.length; i++) {
@@ -1763,7 +1789,7 @@ export class GameClient {
           }
         }
       }
-      okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i]) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
+      okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i], i) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
     }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.scene.ghostLift = 0;

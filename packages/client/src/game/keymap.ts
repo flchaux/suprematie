@@ -50,7 +50,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "deploy", label: "Déployer", group: "Ordres", ctx: "units" },
   { id: "unload", label: "Décharger", group: "Ordres", ctx: "units" },
   { id: "buildMenu", label: "Menu de construction (puis catégorie, puis bâtiment)", group: "Ordres", ctx: "units" },
-  { id: "rotate", label: "Tourner le bâtiment ou le plan à poser (file de tapis en cours de tracé : sa fin)", group: "Ordres", ctx: "build" },
+  { id: "rotate", label: "Tourner le bâtiment ou le plan à poser (file de tapis en cours de tracé : sa fin ; tapis ou bras sélectionné : le tourner)", group: "Ordres", ctx: "build" },
   { id: "copyPlan", label: "Plan : copier une zone de vos bâtiments (glisser un cadre)", group: "Ordres", ctx: "global" },
   { id: "pastePlan", label: "Plan : coller le plan actif (Maj+clic : garder l'outil)", group: "Ordres", ctx: "global" },
   { id: "planLibrary", label: "Bibliothèque de plans", group: "Interface", ctx: "global" },
