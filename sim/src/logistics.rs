@@ -546,16 +546,19 @@ fn need_of(w: &World, b: usize) -> Option<(u8, u16)> {
 }
 
 /// Sortie bloquée d'un fabricant ou d'un extracteur (que les robots évacuent vers le stock).
+/// Seulement si la réserve du joueur a de la place pour cet objet (plafond des dépôts).
 fn blocked_output(w: &World, b: usize) -> bool {
     let bb = &w.buildings[b];
-    match bb.def().class {
+    let (blocked, it) = match bb.def().class {
         BClass::Crafter if bb.recipe != RECIPE_NONE => {
-            let on = RECIPES[bb.recipe as usize].output.1 as u16;
-            bb.out + on > (on * 3).max(4)
+            let r = &RECIPES[bb.recipe as usize];
+            let on = r.output.1 as u16;
+            (bb.out + on > (on * 3).max(4), r.output.0)
         }
-        BClass::Extractor => bb.out >= 5,
-        _ => false,
-    }
+        BClass::Extractor => (bb.out >= 5, bb.recipe),
+        _ => (false, 0),
+    };
+    blocked && w.stock_room(bb.owner as usize, it) > 0
 }
 
 /// Base de robots : énergie à chaque tick, distribution des tâches toutes les 20 ticks.
@@ -702,7 +705,9 @@ fn update_robot(w: &mut World, ci: usize) {
                             BClass::Crafter => RECIPES[w.buildings[t].recipe as usize].output.0,
                             _ => w.buildings[t].recipe,
                         };
-                        let k = w.buildings[t].out.min(CARRIERS[2].capacity);
+                        // pas plus que la place dans la réserve (le reste attend dans le bâtiment)
+                        let room = w.stock_room(owner, it).clamp(0, u16::MAX as i32) as u16;
+                        let k = w.buildings[t].out.min(CARRIERS[2].capacity).min(room);
                         w.buildings[t].out -= k;
                         w.carriers[ci].cargo[it as usize] += k;
                         w.carriers[ci].load += k;

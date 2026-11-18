@@ -911,7 +911,9 @@ fn collector_takes_only_the_surplus() {
     println!("envoyés {} (file libre : {}) mis en réserve {}", sent, free, kept);
     // la file en aval se remplit, puis le surplus part en réserve : l'amont va aussi vite qu'une file libre
     assert!(sent * 100 >= free * 97, "l'amont reste fluide : {} objets posés contre {} sur une file libre", sent, free);
-    assert!(kept >= sent - 40, "le surplus est mis en réserve : {} sur {}", kept, sent);
+    // tout ce qui ne tient pas sur la file (12 cases de 4 objets au plus) est mis en réserve
+    let on_belts = 12 * TILE / crate::belts::ITEM_GAP;
+    assert!(kept >= sent - on_belts, "le surplus est mis en réserve : {} sur {}", kept, sent);
     assert_eq!(w.buildings[col].out as i32, kept);
     // file qui avance jusqu'à un dépôt : le collecteur ne prend rien
     let mut w = world(&[0]);
@@ -1479,4 +1481,103 @@ fn assembler_fed_continuously_reaches_its_max_flow() {
     let (now, max) = (flow_per_min(&w.buildings[a], w.tick), flow_max(&w, a));
     assert!(max > 0);
     assert!(now * 100 >= max * 85 && now <= max + max / 20, "réel {now}, max {max}");
+}
+
+/// Un mur ennemi sur la trajectoire d'un tir direct prend le coup à la place de la cible ; un obus
+/// d'artillerie passe par-dessus.
+#[test]
+fn enemy_wall_stops_direct_fire() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let target = put(&mut w, 1, B_DEPOT, 110, 100, 0);
+    let walls = [put(&mut w, 1, B_WALL, 106, 100, 0), put(&mut w, 1, B_WALL, 106, 101, 0)];
+    let tank = w.spawn_unit(unit_kind("light_tank") as u16, 0, 100 * TILE + TILE / 2, 101 * TILE);
+    w.step(&[6, crate::orders::O_ATTACK, 0, 0, w.building_ref(target) as i32, 1, tank as i32]);
+    let mut fired = 0;
+    for _ in 0..300 {
+        w.step(&[]);
+        fired += w.events.chunks(5).filter(|e| e[0] == EV_FIRE).count();
+    }
+    assert!(fired > 3, "le char a tiré");
+    assert_eq!(w.buildings[target].hp, bdef(B_DEPOT).hp, "le dépôt derrière le mur n'est pas touché");
+    let lost: i32 = walls.iter().map(|&b| if w.buildings[b].alive { bdef(B_WALL).hp - w.buildings[b].hp } else { bdef(B_WALL).hp }).sum();
+    assert!(lost > 0, "le mur prend les tirs");
+}
+
+/// Le croiseur hyperespace ne saute que vers une de nos balises d'hyperespace alimentées.
+#[test]
+fn hyper_jump_needs_a_powered_beacon() {
+    use crate::orders::O_SPECIAL;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 125, 125, 165);
+    flatten(&mut w, 85, 85, 125, 125);
+    let depot = put(&mut w, 0, B_DEPOT, 110, 150, 0);
+    let s = w.spawn_unit(U_HYPER, 0, 100 * TILE, 95 * TILE);
+    let pos = |w: &World| w.unit(s).map(|u| (w.units.x[u], w.units.y[u])).unwrap();
+    let p0 = pos(&w);
+    w.step(&[6, O_SPECIAL, 0, s as i32, 0, 0, w.building_ref(depot) as i32]);
+    run(&mut w, 260);
+    assert!(crate::fixed::dist(p0.0, p0.1, pos(&w).0, pos(&w).1) < 20 * TILE, "pas de saut vers un dépôt");
+    put(&mut w, 0, B_GENERATOR, 104, 150, 0);
+    let beacon = put(&mut w, 0, B_BEACON, 107, 150, 0);
+    run(&mut w, 10);
+    assert!(w.buildings[beacon].working, "balise alimentée");
+    w.step(&[6, O_SPECIAL, 0, s as i32, 0, 0, w.building_ref(beacon) as i32]);
+    run(&mut w, 260);
+    let (bx, by) = w.buildings[beacon].center();
+    assert!(crate::fixed::dist(bx, by, pos(&w).0, pos(&w).1) <= 4 * TILE, "saut près de la balise");
+}
+
+/// Un tapis de contrôle ne reçoit que par son arrière : un tapis qui débouche sur son côté attend.
+#[test]
+fn router_takes_items_only_from_behind() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    // répartiteur tourné vers l'est en (105, 100) ; un tapis arrive du nord sur son côté
+    put(&mut w, 0, B_SPLITTER, 105, 100, 0);
+    for y in 96..100 {
+        put(&mut w, 0, B_BELT1, 105, y, 1);
+    }
+    let r = w.map.occ[w.map.idx(105, 100)] as usize - 1;
+    let start = w.map.occ[w.map.idx(105, 96)] as usize - 1;
+    for _ in 0..200 {
+        crate::belts::put_on_belt(&mut w, start, IRON_ORE);
+        w.step(&[]);
+    }
+    assert!(w.buildings[r].stash.is_empty(), "rien n'entre par le côté");
+    // par l'arrière : ça passe
+    for x in 101..105 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    let back = w.map.occ[w.map.idx(101, 100)] as usize - 1;
+    let mut got = false;
+    for _ in 0..200 {
+        crate::belts::put_on_belt(&mut w, back, COPPER_ORE);
+        w.step(&[]);
+        got |= !w.buildings[r].stash.is_empty();
+    }
+    assert!(got, "par l'arrière, les objets entrent");
+}
+
+/// Un bombardier qui survole un bouclier ennemi : ses bombes, larguées au-dessus de la bulle, la heurtent.
+#[test]
+fn bombs_dropped_over_a_shield_hit_the_shield() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 1, B_GENERATOR, 100, 96, 0);
+    let sg = put(&mut w, 1, B_SHIELD_GEN, 103, 100, 0);
+    let target = put(&mut w, 1, B_DEPOT, 103, 103, 0);
+    run(&mut w, 40);
+    let shield0 = w.buildings[sg].shield;
+    assert!(shield0 > 0, "bouclier actif");
+    let bomber = w.spawn_unit(unit_kind("bomber") as u16, 0, 90 * TILE, 104 * TILE);
+    w.step(&[6, crate::orders::O_ATTACK, 0, 0, w.building_ref(target) as i32, 1, bomber as i32]);
+    // le bouclier se recharge vite : on compte ses impacts
+    let mut hits = 0;
+    for _ in 0..600 {
+        w.step(&[]);
+        hits += w.events.chunks(5).filter(|e| e[0] == EV_SHIELD_HIT).count();
+    }
+    assert_eq!(w.buildings[target].hp, bdef(B_DEPOT).hp, "le dépôt sous le bouclier n'est pas touché");
+    assert!(hits > 0, "le bouclier a encaissé les bombes");
 }

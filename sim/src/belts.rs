@@ -529,7 +529,6 @@ fn output_item(w: &mut World, li: u32, pos: usize, floor: u8, item: u8) -> bool 
             if tl == NONE {
                 return false;
             }
-            let _ = li;
             let idx = b.line_idx as usize;
             let tline = &mut w.belts.lines[tl as usize];
             // entrée par l'arrière de la première case : au tout début de la ligne
@@ -545,6 +544,12 @@ fn output_item(w: &mut World, li: u32, pos: usize, floor: u8, item: u8) -> bool 
             true
         }
         _ => {
+            // tapis de contrôle : seulement par son arrière (la ligne avance dans sa direction)
+            if let Some(&last) = w.belts.lines[li as usize].tiles.last() {
+                if !crate::buildings::router_entry_ok(b, w.buildings[last as usize].dir) {
+                    return false;
+                }
+            }
             if crate::buildings::accepts(w, bi, item) {
                 crate::buildings::insert_item(w, bi, item);
                 true

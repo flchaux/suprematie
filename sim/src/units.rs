@@ -796,7 +796,9 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 pop_order(w, s);
                 return NONE;
             };
-            if kind != U_HYPER || w.buildings[b].owner != owner || !w.buildings[b].complete() {
+            // seulement vers une de nos balises d'hyperespace, terminée et alimentée (`working`)
+            let bb = &w.buildings[b];
+            if kind != U_HYPER || bb.owner != owner || !bb.complete() || bb.def().class != BClass::Beacon || !bb.working {
                 pop_order(w, s);
                 return NONE;
             }

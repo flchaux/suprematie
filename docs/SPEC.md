@@ -154,6 +154,12 @@ Les armes se rangent en trois familles, qui se distinguent à l'écran :
 - **Énergie** : traits lumineux (plasma, ions, traits rouges des unités inspirées de Star Wars, batteries du cuirassé stellaire).
 - **Rayons prolongés** : un rayon qui dure plusieurs secondes, suit sa cible et la touche à chaque tick (laser de l'araignée et du colosse, souffle de feu du Gros Chinois). Il s'éteint si la source est détruite ou paralysée, ou si la cible meurt ou sort de portée.
 
+Règles de protection :
+
+- **Boucliers** : une bulle absorbe les tirs ennemis qui retombent dedans quand ils viennent de l'extérieur ou du ciel (avions qui la survolent, bombes). Les tirs qui visent des avions passent. Un bouclier coupé ne consomme rien.
+- **Murs** : un mur ennemi arrête les tirs directs (balles, plasma, ions, traits, rails, rayons instantanés) qui le traversent et prend le coup. Obus, missiles, bombes, torpilles, rayons prolongés et tirs vers ou depuis le ciel passent par-dessus.
+- **Paralysie** (canon à ions, impulsion électromagnétique) : seulement les unités des couches que l'arme vise (sol et mer), et les bâtiments ; les avions ne sont pas touchés.
+
 ## Bâtiments
 
 Les bâtiments de production viennent de Factorio, les bâtiments militaires de Supreme Commander, et les bâtiments spéciaux reprennent des mécaniques de Stargate et de Star Wars. Le palier 0 signifie disponible dès le départ.

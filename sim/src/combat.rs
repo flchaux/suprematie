@@ -29,6 +29,54 @@ fn layer_mask(w: &World, s: usize) -> u8 {
     }
 }
 
+/// Tir qui passe au-dessus des boucliers : arme antiaérienne seule, ou cible en vol (un bouclier
+/// protège ce qui est au sol et sur l'eau, pas le ciel).
+fn passes_over_shields(w: &World, t: u32, wd: &WeaponDef) -> bool {
+    wd.mask == M_AIR || w.unit(t).is_some_and(|s| udef(w.units.kind[s]).layer == Layer::Air)
+}
+
+/// Tir venu du ciel (avion, bombe) : il heurte un bouclier même s'il part d'au-dessus de la bulle.
+fn from_air(w: &World, src: u32, wd: &WeaponDef) -> bool {
+    wd.proj == Proj::Bomb || w.unit(src).is_some_and(|s| udef(w.units.kind[s]).layer == Layer::Air)
+}
+
+/// Tir direct (balle, plasma, trait, rail, rayon instantané) : un mur ennemi sur sa trajectoire l'arrête.
+/// Obus, missiles, bombes et torpilles passent par-dessus ; rien n'arrête un tir depuis ou vers le ciel.
+fn wall_blocks(w: &World, src: u32, t: u32, wd: &WeaponDef) -> bool {
+    matches!(wd.proj, Proj::Bullet | Proj::Plasma | Proj::Ion | Proj::Laser | Proj::Blaster | Proj::Rail | Proj::Beam)
+        && wd.sustain == 0
+        && wd.mask != M_AIR
+        && !w.unit(src).is_some_and(|s| udef(w.units.kind[s]).layer == Layer::Air)
+        && !w.unit(t).is_some_and(|s| udef(w.units.kind[s]).layer == Layer::Air)
+}
+
+/// Premier mur terminé d'une autre équipe que `team` sur le segment (x0, y0) -> (x1, y1), par pas d'une
+/// demi-case, hors case de départ.
+fn wall_between(w: &World, team: u8, x0: i32, y0: i32, x1: i32, y1: i32) -> Option<usize> {
+    let steps = (dist(x0, y0, x1, y1) / (TILE / 2)).max(1) as i64;
+    let start = (x0 / TILE, y0 / TILE);
+    let mut last = start;
+    for k in 1..=steps {
+        let x = (x0 as i64 + (x1 - x0) as i64 * k / steps) as i32;
+        let y = (y0 as i64 + (y1 - y0) as i64 * k / steps) as i32;
+        let tile = (x / TILE, y / TILE);
+        if tile == last || !w.map.inside(tile.0, tile.1) {
+            continue;
+        }
+        last = tile;
+        let o = w.map.occ[w.map.idx(tile.0, tile.1)];
+        if o == 0 {
+            continue;
+        }
+        let b = (o - 1) as usize;
+        let bb = &w.buildings[b];
+        if bb.alive && bb.complete() && bb.def().class == BClass::Wall && w.team_of(bb.owner) != team {
+            return Some(b);
+        }
+    }
+    None
+}
+
 #[inline]
 fn visible(w: &World, team: u8, x: i32, y: i32, sub: bool) -> bool {
     let vw = w.vis_w;
@@ -256,6 +304,14 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
     let Some((tx, ty)) = target_point(w, t) else { return };
     let wd = &WEAPONS[wi];
     let dmg = wd.dmg * dmg_mult / 100;
+    // tir direct : un mur ennemi sur la trajectoire prend le coup à la place de la cible
+    let (t, tx, ty) = match wall_blocks(w, src, t, wd).then(|| wall_between(w, w.team_of(owner), x, y, tx, ty)).flatten() {
+        Some(wb) => {
+            let (cx, cy) = w.buildings[wb].center();
+            (w.building_ref(wb), cx, cy)
+        }
+        None => (t, tx, ty),
+    };
     if wd.sustain > 0 {
         // rayon prolongé : il dure `sustain` ticks et touche à chaque tick (voir beam_tick)
         w.projectiles.push(Projectile {
@@ -280,7 +336,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         // rayon instantané
         w.ev(EV_BEAM, x, y, tx, ty);
         let team = w.team_of(owner);
-        if shield_absorb(w, team, x, y, tx, ty, dmg) {
+        if !passes_over_shields(w, t, wd) && shield_absorb(w, team, x, y, tx, ty, dmg, from_air(w, src, wd)) {
             return;
         }
         w.shooter = src;
@@ -474,15 +530,16 @@ pub fn collect_shields(w: &mut World) {
     }
 }
 
-/// Un bouclier ennemi entre la source et l'impact absorbe le coup.
-fn shield_absorb(w: &mut World, team: u8, x0: i32, y0: i32, tx: i32, ty: i32, dmg: i32) -> bool {
+/// Un bouclier ennemi entre la source et l'impact absorbe le coup : impact dans la bulle, tiré du dehors
+/// ou venu du ciel (`from_air` : un avion ou une bombe au-dessus de la bulle la heurte aussi).
+fn shield_absorb(w: &mut World, team: u8, x0: i32, y0: i32, tx: i32, ty: i32, dmg: i32, from_air: bool) -> bool {
     for i in 0..w.shields.len() {
         let (sx, sy, r, st, rf) = w.shields[i];
         if st == team {
             continue;
         }
         let r2 = (r as i64) * (r as i64);
-        if dist2(sx, sy, tx, ty) <= r2 && dist2(sx, sy, x0, y0) > r2 {
+        if dist2(sx, sy, tx, ty) <= r2 && (from_air || dist2(sx, sy, x0, y0) > r2) {
             let down = if let Some(u) = w.unit(rf) {
                 let c = &mut w.units.cold[u];
                 c.shield -= dmg;
@@ -731,7 +788,7 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
     };
     p.tx = pos.0;
     p.ty = pos.1;
-    if wd.mask & M_AIR == 0 && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg) {
+    if !passes_over_shields(w, p.target, wd) && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg, from_air(w, p.src, wd)) {
         return true;
     }
     w.shooter = p.src;
@@ -762,7 +819,7 @@ fn impact(w: &mut World, p: &Projectile) {
         _ => {}
     }
     let wd = &WEAPONS[p.weapon as usize];
-    if wd.mask & M_AIR == 0 && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg) {
+    if !passes_over_shields(w, p.target, wd) && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg, from_air(w, p.src, wd)) {
         return;
     }
     let size = if p.aoe > 0 { p.aoe } else { 64 };
@@ -770,7 +827,7 @@ fn impact(w: &mut World, p: &Projectile) {
     if p.aoe > 0 {
         area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
         if wd.stun > 0 {
-            // étourdit tout dans la zone
+            // étourdit les ennemis de la zone que l'arme peut viser (les avions au-dessus passent)
             let r2 = (p.aoe as i64).pow(2);
             let mut stun_u = Vec::new();
             let units = &w.units;
@@ -780,14 +837,14 @@ fn impact(w: &mut World, p: &Projectile) {
                 }
             });
             for o in stun_u {
-                if w.team_of(w.units.owner[o]) != team {
+                if w.team_of(w.units.owner[o]) != team && layer_mask(w, o) & wd.mask != 0 {
                     w.units.cold[o].stun = w.units.cold[o].stun.max(wd.stun);
                 }
             }
             let mut stun_b = Vec::new();
             w.grid.query_buildings(p.tx, p.ty, p.aoe, |b| stun_b.push(b));
             for b in stun_b {
-                if w.buildings[b].alive && w.team_of(w.buildings[b].owner) != team {
+                if wd.mask & M_SURF != 0 && w.buildings[b].alive && w.team_of(w.buildings[b].owner) != team {
                     w.buildings[b].stun = w.buildings[b].stun.max(wd.stun);
                 }
             }

@@ -1730,6 +1730,12 @@ export class GameClient {
       case "teleport":
       case "jump": {
         const src = units.find((u) => (mode === "teleport" ? this.data!.units[u.kind].key === "commander" : this.data!.units[u.kind].key === "hyper_cruiser"));
+        // saut hyperespace : seulement vers une de nos balises (alimentée, vérifié par la simulation)
+        if (mode === "jump" && !(tb && tb.owner === ui.me && this.data!.buildings[tb.kind]?.cls === BClass.Beacon)) {
+          pushMessage("Saut hyperespace : cliquez sur une de vos balises d'hyperespace", "alert");
+          sfx.error();
+          return;
+        }
         if (src) this.cmd(Ord.special(src.id, gx, gy, tb ? tb.ref : 0));
         break;
       }

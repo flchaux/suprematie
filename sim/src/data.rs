@@ -240,7 +240,7 @@ pub const WEAPONS: [WeaponDef; 55] = [
     w!(32, 14, 14, Blaster, 40, 0, M_SURF, salvo: 2),                   // 17 canonnière
     w!(420, 3, 100, Bomb, 8, 768, M_SURF),                              // 18 bombes
     w!(85, 16, 16, Missile, 40, 0, M_AIR),                              // 19 chasseur de supériorité
-    w!(3200, 3, 200, Bomb, 8, 1280, M_SURF),                            // 20 bombe stratégique
+    w!(3200, 3, 200, Bomb, 8, 1280, M_SURF, prefer_buildings: true),    // 20 bombe stratégique
     w!(45, 26, 30, Bullet, 35, 128, M_SURF),                            // 21 frégate
     w!(15, 20, 12, Bullet, 50, 0, M_AIR),                               // 22 frégate AA
     w!(220, 20, 80, Torpedo, 12, 0, M_NAVAL | M_SUB),                   // 23 torpilles
@@ -303,14 +303,14 @@ pub const T_LOGISTICS3: u8 = 31;
 
 pub const TECHS: [TechDef; 48] = [
     t!("none", "Base", 0, 0, 0, [], ""),
-    t!("automation", "Automatisation", 1, 10, 5, [], "Assembleurs, bras long"),
+    t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur, collecteur de surplus ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
     t!("light_defense", "Défense légère", 1, 10, 5, [], "Tourelle légère, mur, radar"),
-    t!("electronics", "Électronique", 2, 20, 8, [1], "Usine aérienne, avion éclaireur, intercepteur, planeur d'attaque, transport"),
+    t!("electronics", "Électronique", 2, 20, 8, [1], "Usine aérienne, avion éclaireur, intercepteur, planeur d'attaque, transport, héliport de fret ; extracteur et générateur niveau 3"),
     t!("hydrocarbons", "Hydrocarbures", 2, 20, 8, [1], "Raffinerie, centrale à hydrocarbure"),
     t!("mobile_artillery", "Artillerie mobile", 2, 20, 8, [2], "Artillerie mobile, DCA mobile, sonde de détection"),
     t!("aa_turret", "Tourelle antiaérienne", 2, 15, 8, [3], "Tourelle antiaérienne"),
-    t!("logistics2", "Logistique rapide", 3, 30, 10, [4], "Tapis rapide, assembleur rapide"),
+    t!("logistics2", "Logistique rapide", 3, 30, 10, [4], "Tapis rapide, assembleur rapide, trieur, débordement"),
     t!("chemistry", "Chimie", 3, 30, 10, [5], "Usine chimique (composites)"),
     t!("engineer3", "Ingénierie avancée", 3, 25, 10, [4], "Drone ingénieur avancé"),
     t!("naval", "Marine", 3, 30, 10, [4], "Usine navale, frégate, sous-marin"),
@@ -553,7 +553,7 @@ pub const BUILDINGS: [BuildingDef; 46] = [
     BuildingDef { key: "roboport", name: "Base de robots logistiques", size: (2, 2), hp: 3000, power_use: 800, cost: &[(STEEL, 40), (PROCESSOR, 10), (COMPOSITE, 10)], build: 20, tech: 31, class: BClass::Roboport, ..BD },    // bras long : prend et pose à 2 cases, par-dessus la case intermédiaire (un tapis, par exemple)
     BuildingDef { key: "long_inserter", name: "Bras long", hp: 100, power_use: 20, cost: &[(IRON_PLATE, 3), (GEAR, 1), (COPPER_PLATE, 2)], build: 1, tech: 1, class: BClass::Inserter, passable: true, vision: 0, reach: 2, ..BD },
     // tapis surmonté d'un portique : il se pose sur un tapis (qu'il remplace) et met le surplus en réserve
-    BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, class: BClass::Belt, speed: 24, passable: true, vision: 0, collect: true, ..BD },
+    BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, class: BClass::Belt, speed: 72, passable: true, vision: 0, collect: true, ..BD }, // vitesse express : ne ralentit aucune file
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.

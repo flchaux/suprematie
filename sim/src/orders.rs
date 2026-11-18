@@ -520,7 +520,7 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
         }
         let k = w.units.kind[s];
         if k == U_HYPER {
-            if w.building(target).is_some() {
+            if w.building(target).is_some_and(|b| w.buildings[b].def().class == BClass::Beacon && w.buildings[b].owner == p) {
                 clear_orders(w, s);
                 w.units.cold[s].orders.push(Order::Jump { beacon: target });
             }

@@ -1217,7 +1217,15 @@ fn take_output(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
 }
 
 /// Pousse un objet vers la case (x, y) : tapis ou bâtiment qui l'accepte.
-fn push_to(w: &mut World, x: i32, y: i32, item: u8) -> bool {
+/// Un tapis de contrôle ne reçoit que par l'arrière : l'objet doit avancer dans sa direction.
+#[inline]
+pub fn router_entry_ok(bb: &Building, travel_dir: u8) -> bool {
+    bb.def().class != BClass::Router || bb.dir & 3 == travel_dir & 3
+}
+
+/// Pose l'objet sur la case (x, y) (tapis ou bâtiment qui l'accepte) ; `travel_dir` : direction dans
+/// laquelle il avance (un tapis de contrôle ne le prend que par l'arrière).
+fn push_to(w: &mut World, x: i32, y: i32, item: u8, travel_dir: u8) -> bool {
     if !w.map.inside(x, y) {
         return false;
     }
@@ -1232,7 +1240,7 @@ fn push_to(w: &mut World, x: i32, y: i32, item: u8) -> bool {
     if w.buildings[t].def().class == BClass::Belt {
         return belts::put_on_belt(w, t, item);
     }
-    if accepts(w, t, item) {
+    if router_entry_ok(&w.buildings[t], travel_dir) && accepts(w, t, item) {
         insert_item(w, t, item);
         wake_watchers(w, t);
         return true;
@@ -1338,7 +1346,7 @@ fn tick_router(w: &mut World, b: usize) {
     };
     for &k in order {
         let (dx, dy) = DIRS[outs[k]];
-        if push_to(w, x + dx, y + dy, item) {
+        if push_to(w, x + dx, y + dy, item, outs[k] as u8) {
             let bb = &mut w.buildings[b];
             bb.stash.remove(0);
             bb.working = true;
@@ -1585,7 +1593,7 @@ fn tick_extractor(w: &mut World, b: usize) {
         let mut done = false;
         for k in 0..n {
             let (fx, fy) = front_tile_k(x, y, bw, bh, dir, (start + k) % n);
-            if push_to(w, fx, fy, it) {
+            if push_to(w, fx, fy, it, dir) {
                 w.buildings[b].timer = ((start + k + 1) % n) as _;
                 done = true;
                 break;
@@ -1882,7 +1890,8 @@ pub fn bb_dir_angle(dir: u8) -> i32 {
 
 fn tick_shield(w: &mut World, b: usize) {
     let use_ = w.buildings[b].def().power_use;
-    let s = use_power(w, b, use_);
+    // bouclier coupé : il ne consomme rien (et ne se recharge pas)
+    let s = if w.buildings[b].enabled { use_power(w, b, use_) } else { 0 };
     let bb = &mut w.buildings[b];
     let max = bb.def().shield_hp;
     bb.working = s >= 512;
@@ -1930,10 +1939,9 @@ fn tick_ammo_builder(w: &mut World, b: usize, cost: &[(u8, u16)], max: u16, tick
 }
 
 fn tick_gate(w: &mut World, b: usize) {
-    let use_ = w.buildings[b].def().power_use;
     let open = w.buildings[b].enabled && w.building(w.buildings[b].link).is_some();
     if !open {
-        use_power(w, b, use_);
+        // porte fermée ou non reliée : elle ne consomme rien
         w.buildings[b].working = false;
         w.buildings[b].charge = 0;
         return;
@@ -2040,7 +2048,7 @@ fn tick_inserter(w: &mut World, b: usize) {
         }
         2 => {
             let item = w.buildings[b].hand;
-            if push_to(w, tx, ty, item) {
+            if push_to(w, tx, ty, item, w.buildings[b].dir) {
                 let tick = w.tick;
                 let bb = &mut w.buildings[b];
                 flow_add(bb, tick, 1);
