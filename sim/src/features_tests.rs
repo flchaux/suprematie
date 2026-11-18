@@ -854,3 +854,65 @@ fn single_tile_overpass_crosses_a_belt() {
     assert!(sent > 20);
     assert_eq!(w.players[0].stock[IRON_ORE as usize] - fe0, sent, "tout le fer doit passer par-dessus, jusqu'au dépôt de l'est");
 }
+
+/// Collecteur de surplus : sur une file bouchée, il met le surplus en réserve et la file reste fluide ;
+/// sur une file qui avance, il ne prend rien.
+#[test]
+fn collector_takes_only_the_surplus() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    // file bouchée : 12 tapis en cul-de-sac, collecteur à la 6e case
+    for x in 100..112 {
+        let k = if x == 105 { B_COLLECTOR } else { B_BELT1 };
+        put(&mut w, 0, k, x, 100, 0);
+    }
+    let start = w.map.occ[w.map.idx(100, 100)] as usize - 1;
+    let col = w.map.occ[w.map.idx(105, 100)] as usize - 1;
+    assert_eq!(w.buildings[col].kind, B_COLLECTOR);
+    let stock0 = w.players[0].stock[IRON_ORE as usize];
+    let mut sent = 0;
+    for t in 0..2000 {
+        if t % 3 == 0 && crate::belts::put_on_belt(&mut w, start, IRON_ORE) {
+            sent += 1;
+        }
+        w.step(&[]);
+    }
+    let kept = w.players[0].stock[IRON_ORE as usize] - stock0;
+    // référence : la même file, sans collecteur, qui se vide librement dans un dépôt
+    let mut r = world(&[0]);
+    flatten(&mut r, 85, 85, 125, 125);
+    for x in 100..112 {
+        put(&mut r, 0, B_BELT1, x, 100, 0);
+    }
+    put(&mut r, 0, B_DEPOT, 112, 100, 0);
+    let rs = r.map.occ[r.map.idx(100, 100)] as usize - 1;
+    let mut free = 0;
+    for t in 0..2000 {
+        if t % 3 == 0 && crate::belts::put_on_belt(&mut r, rs, IRON_ORE) {
+            free += 1;
+        }
+        r.step(&[]);
+    }
+    println!("envoyés {} (file libre : {}) mis en réserve {}", sent, free, kept);
+    // la file en aval se remplit, puis le surplus part en réserve : l'amont va aussi vite qu'une file libre
+    assert!(sent * 100 >= free * 97, "l'amont reste fluide : {} objets posés contre {} sur une file libre", sent, free);
+    assert!(kept >= sent - 40, "le surplus est mis en réserve : {} sur {}", kept, sent);
+    assert_eq!(w.buildings[col].out as i32, kept);
+    // file qui avance jusqu'à un dépôt : le collecteur ne prend rien
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    for x in 100..112 {
+        let k = if x == 105 { B_COLLECTOR } else { B_BELT1 };
+        put(&mut w, 0, k, x, 100, 0);
+    }
+    put(&mut w, 0, B_DEPOT, 112, 100, 0);
+    let start = w.map.occ[w.map.idx(100, 100)] as usize - 1;
+    let col = w.map.occ[w.map.idx(105, 100)] as usize - 1;
+    for t in 0..600 {
+        if t % 6 == 0 {
+            crate::belts::put_on_belt(&mut w, start, IRON_ORE);
+        }
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[col].out, 0, "rien à collecter sur une file fluide");
+}

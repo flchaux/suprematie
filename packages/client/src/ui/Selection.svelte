@@ -248,6 +248,9 @@
             {#if ok}<Cost cost={next.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[next.tech]?.name}</span>{/if}
           </div>
         {/if}
+      {:else if bdef.cls === BClass.Belt && bdef.collect}
+        <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part dans votre stock au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
+        <div class="row"><span class="kicker">Surplus mis en réserve</span> <span class="num">{info.out ?? 0}</span></div>
       {:else if bdef.cls === BClass.Depot}
         <span class="dim">Tout ce qui entre ici rejoint votre stock personnel, utilisé par vos ingénieurs.</span>
       {:else if bdef.cls === BClass.Warehouse}

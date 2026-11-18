@@ -153,6 +153,23 @@ export const BUILDING_MODELS: Record<string, Model> = {
   },
   // belt1 : rebords clairs, flèche sombre, voyants ambre (96 triangles)
   belt1: tapis("metal", "dark", "amber", 0.3),
+  // collector : collecteur de surplus, tapis surmonté d'un portique et d'une trémie qui aspire le surplus
+  collector: {
+    parts: [
+      ...tapis("metal", "dark", "amber", 0.3).parts,
+      // quatre pieds courts de part et d'autre du tapis
+      { shape: "box", size: [0.07, 0.42, 0.07], pos: [0.37, 0.21, 0.28], color: "dark", mirror: true },
+      { shape: "box", size: [0.07, 0.42, 0.07], pos: [0.37, 0.21, -0.28], color: "dark", mirror: true },
+      // capot au-dessus du tapis, bouche d'aspiration ambrée dessous, filets sur les flancs
+      { shape: "bevel", size: [0.84, 0.24, 0.7], pos: [0, 0.54, 0], color: "light" },
+      { shape: "box", size: [0.56, 0.02, 0.5], pos: [0, 0.415, 0], color: "amber" },
+      { shape: "bevel", size: [0.6, 0.07, 0.46], pos: [0, 0.69, 0], color: "faction" },
+      { shape: "box", size: [0.02, 0.05, 0.5], pos: [0.425, 0.55, 0], color: "glow", mirror: true },
+      // trémie de réserve sur le capot
+      { shape: "cylinder", sides: 6, radius: 0.13, radiusTop: 0.17, height: 0.2, pos: [0.12, 0.82, -0.08], color: "metal" },
+      { shape: "box", size: [0.1, 0.04, 0.03], pos: [-0.2, 0.75, 0.24], color: "amber" },
+    ],
+  },
   // belt1_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
   belt1_virage_g: tapisVirage("metal", "dark", "amber", -1),
   belt1_virage_d: tapisVirage("metal", "dark", "amber", 1),

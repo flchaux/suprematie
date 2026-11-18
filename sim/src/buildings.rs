@@ -364,7 +364,7 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         let team = w.team_of(owner);
         w.grid.add_building(slot as u32, x, y, bw, bh, team);
     }
-    if needs_tick(def.class) {
+    if needs_tick(def.class) || def.collect {
         if let Err(p) = w.active.binary_search(&(slot as u32)) {
             w.active.insert(p, slot as u32);
         }
@@ -1065,6 +1065,7 @@ pub fn update_buildings(w: &mut World) {
         }
         match bb.def().class {
             BClass::Extractor => tick_extractor(w, b),
+            BClass::Belt if bb.def().collect => tick_collector(w, b),
             BClass::Inserter => tick_inserter(w, b),
             BClass::Crafter => tick_crafter(w, b),
             BClass::Lab => tick_lab(w, b),
@@ -1175,6 +1176,68 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
     w.buildings[b].level = next as u8;
     w.buildings[b].wake = 0;
     true
+}
+
+/// Objets prélevés au plus par tick par un collecteur (au-delà du débit d'un tapis express).
+const COLLECT_PER_TICK: usize = 2;
+
+/**
+ * Collecteur de surplus (tapis surmonté d'un portique) : quand la file est bouchée en aval, les objets
+ * à l'arrêt sur sa case (tassés à l'avant de la ligne) partent dans le stock du joueur ; la file reste
+ * fluide en amont. Tant que la file avance, il ne prend rien. Compteur des objets mis en réserve : `out`.
+ */
+fn tick_collector(w: &mut World, b: usize) {
+    let (li, idx, owner) = {
+        let bb = &w.buildings[b];
+        if bb.line == NONE {
+            return;
+        }
+        (bb.line as usize, bb.line_idx as i32, bb.owner as usize)
+    };
+    for _ in 0..COLLECT_PER_TICK {
+        let l = &mut w.belts.lines[li];
+        let n = l.tiles.len() as i32;
+        // la case occupe [a, a + TILE) en distance depuis l'avant de la ligne
+        let a = (n - 1 - idx) * TILE;
+        let packed = (l.moving as usize).min(l.items.len());
+        // premier objet sur la case (ou derrière) et position de l'objet qui le précède
+        let mut pos = 0;
+        let mut prev: Option<(usize, i32)> = None;
+        let mut found = None;
+        for k in 0..l.items.len() {
+            let p = pos + l.items[k].1;
+            if p >= a {
+                if p < a + TILE {
+                    found = Some(k);
+                }
+                break;
+            }
+            prev = Some((k, p));
+            pos = p;
+        }
+        let Some(k) = found else { return };
+        // surplus : la file arrêtée en aval remonte jusqu'à la case (l'objet suivant s'y arrêterait),
+        // ou la case est au bout de la ligne et sa sortie est bloquée
+        let blocked = match prev {
+            Some((pk, pp)) => pk < packed && pp + crate::belts::ITEM_GAP >= a,
+            None => k < packed,
+        };
+        if !blocked {
+            return;
+        }
+        let (it, gap) = l.items.remove(k).unwrap_or((0, 0));
+        // l'objet suivant reprend l'écart de l'objet retiré ; il peut de nouveau avancer
+        if let Some(next) = l.items.get_mut(k) {
+            next.1 += gap;
+        }
+        l.moving = k as u32;
+        if it != 0 {
+            w.players[owner].stock[it as usize] += 1;
+            let bb = &mut w.buildings[b];
+            bb.out = bb.out.wrapping_add(1);
+            bb.working = true;
+        }
+    }
 }
 
 fn tick_extractor(w: &mut World, b: usize) {
