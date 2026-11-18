@@ -21,32 +21,34 @@
     <div class="grow"></div>
     {#if d}<span class="dim num">{doneCount}/{d.techs.length - 1} terminées</span>{/if}
   </div>
-  <p class="dim intro">Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.
-    <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite. {#if ui.researchQueue.length}<button class="ghost small linkish" onclick={() => client.clearResearchQueue()}>Vider la file ({ui.researchQueue.length})</button>{/if}</p>
-  {#if d}
-    <div class="cols">
-      {#each tiers as tier}
-        <div class="col">
-          <h3><Item id={PACK1 + tier - 1} size={26} /> <span>Palier {tier}</span></h3>
-          {#each d.techs.map((t, i) => ({ t, i })).filter(({ t }) => t.tier === tier) as { t, i }}
-            {@const done = hasTechUI(i)}
-            {@const avail = !done && t.prereq.every((p) => hasTechUI(p))}
-            {@const cur = ui.research === i}
-            {@const qn = ui.researchQueue.indexOf(i) + 1}
-            <button class="tech" class:done class:cur class:avail class:queued={qn > 0} disabled={done || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
-              <span class="tt-head">
-                <b>{t.name}</b>
-                {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if qn}<span class="qn num" title="Position dans la file">{qn}</span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
-              </span>
-              <span class="desc">{t.desc}</span>
-              <span class="meta num">{t.count} × {t.time} s{#if t.prereq.length}<span class="faint"> · après {t.prereq.map((p) => d.techs[p].name).join(", ")}</span>{/if}</span>
-              {#if cur}<span class="bar amber"><span style:width={(ui.researchProgress / t.count) * 100 + "%"}></span></span>{/if}
-            </button>
-          {/each}
-        </div>
-      {/each}
-    </div>
-  {/if}
+  <div class="modal-body">
+    <p class="dim intro">Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.
+      <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite. {#if ui.researchQueue.length}<button class="ghost small linkish" onclick={() => client.clearResearchQueue()}>Vider la file ({ui.researchQueue.length})</button>{/if}</p>
+    {#if d}
+      <div class="cols">
+        {#each tiers as tier}
+          <div class="col">
+            <h3><Item id={PACK1 + tier - 1} size={26} /> <span>Palier {tier}</span></h3>
+            {#each d.techs.map((t, i) => ({ t, i })).filter(({ t }) => t.tier === tier) as { t, i }}
+              {@const done = hasTechUI(i)}
+              {@const avail = !done && t.prereq.every((p) => hasTechUI(p))}
+              {@const cur = ui.research === i}
+              {@const qn = ui.researchQueue.indexOf(i) + 1}
+              <button class="tech" class:done class:cur class:avail class:queued={qn > 0} disabled={done || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
+                <span class="tt-head">
+                  <b>{t.name}</b>
+                  {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if qn}<span class="qn num" title="Position dans la file">{qn}</span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
+                </span>
+                <span class="desc">{t.desc}</span>
+                <span class="meta num">{t.count} × {t.time} s{#if t.prereq.length}<span class="faint"> · après {t.prereq.map((p) => d.techs[p].name).join(", ")}</span>{/if}</span>
+                {#if cur}<span class="bar amber"><span style:width={(ui.researchProgress / t.count) * 100 + "%"}></span></span>{/if}
+              </button>
+            {/each}
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style>

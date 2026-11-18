@@ -25,62 +25,64 @@
       <h2>Aide</h2>
     </div>
   </div>
-  <div class="two">
-    <div>
-      <h3>But</h3>
-      <p>Détruire le robot de commandement de chaque adversaire. Quand il est détruit, il explose et son joueur est éliminé. La dernière équipe qui a encore un robot de commandement gagne.</p>
-      <h3>Économie</h3>
-      <ul>
-        <li>Les ingénieurs (et le robot de commandement) construisent avec le <b>stock commun</b>, affiché en haut.</li>
-        <li>Le stock se remplit uniquement par les <b>dépôts</b> : tout objet qui y entre (par tapis ou bras) devient disponible partout.</li>
-        <li>Chaîne de base : <b>extracteur</b> sur un gisement → <b>tapis</b> → <b>fonderie</b> → tapis → <b>dépôt</b>.</li>
-        <li><b>Dépôts et réserve</b> : votre réserve garde au plus 400 de chaque objet, plus 600 par dépôt (2 000 pour un dépôt amélioré). Réserve pleine : les dépôts refusent l'objet et les tapis attendent. Un dépôt amélioré (automatisation) gagne un étage et des sorties filtrées, réglées dans sa fiche : il pose ces objets, pris dans la réserve, sur les tapis qui partent de lui.</li>
-        <li><b>Collecteur de surplus</b> (automatisation) : posé sur un tapis, qu'il remplace ; quand la file est bouchée plus loin, ce qui arrive sous lui part dans votre stock, et l'amont ne s'arrête jamais.</li>
-        <li><b>Trappes</b> : un tapis qui entre dans un bâtiment le livre directement (trappe cyan) ; un tapis qui part d'une face reçoit ses produits (trappe ambre). Sans tapis, la trappe reste fermée.</li>
-        <li>Les <b>bras</b> restent utiles pour prendre sur un tapis qui passe le long d'un bâtiment : un bras prend sur la case derrière lui et pose sur la case devant, seulement ce que la cible accepte. Quand un bâtiment a plusieurs sorties (bras et tapis), elles reçoivent ses produits à tour de rôle ; la part d'un bras se règle en le sélectionnant.</li>
-        <li>Tout bâtiment qui consomme de l'énergie doit être dans la zone d'un <b>pylône</b> ou d'un générateur relié au réseau.</li>
-        <li>Les <b>assembleurs</b> ont besoin d'une recette (panneau de sélection). Les fonderies choisissent seules selon ce qu'elles reçoivent.</li>
-        <li>Les <b>usines</b> reçoivent les composants des unités par des bras. Les <b>laboratoires</b> consomment les lots de recherche.</li>
-        <li>Les épaves se recyclent en plaques de fer et en acier.</li>
-      </ul>
-      <h3>Furtivité et radar</h3>
-      <ul>
-        <li>Une unité ennemie apparaît à vue, ou en écho au <b>radar</b>. Le <b>bombardier furtif</b> n'apparaît jamais au radar ; un <b>brouilleur mobile</b> en fait autant pour les alliés dans sa bulle (12 cases).</li>
-        <li>Le <b>commando furtif</b> est invisible tant qu'il ne tire pas (5 s après chaque tir). Toute unité ou tout bâtiment le repère à quelques cases, une sonde déployée à 25 cases.</li>
-        <li>Le <b>Gardien</b> encaisse mieux de face (-45 %) ; la <b>tourelle mobile</b> ne tire que déployée et encaisse alors mieux (-30 %).</li>
-      </ul>
-      <h3>Souris</h3>
-      <table>
-        <tbody>
-          <tr><td>Clic gauche / glisser</td><td>Sélectionner / sélection par cadre (Maj : ajouter)</td></tr>
-          <tr><td>Double-clic</td><td>Toutes les unités du même type à l'écran</td></tr>
-          <tr><td>Clic droit</td><td>Déplacer, attaquer, assister, recycler, charger, ralliement (selon la cible)</td></tr>
-          <tr><td>Maj + ordre</td><td>Mettre l'ordre en file</td></tr>
-          <tr><td>Molette</td><td>Zoom continu (vue stratégique avec icônes de loin)</td></tr>
-          <tr><td>J maintenu</td><td>Vue logistique : remplissage de chaque tapis (vide, fluide, chargé, saturé) et bâtiments bloqués, affamés ou sans énergie</td></tr>
-          <tr><td>Molette (pose de tapis)</td><td>Niveau du tapis : sol, étage 1 ou étage 2. Un tapis surélevé passe au-dessus des tapis et des bâtiments ; entre deux niveaux, un ascenseur se forme tout seul. Un tapis ne livre un bâtiment qu'au sol.</td></tr>
-          <tr><td>Clic milieu glissé</td><td>Tourner / incliner la caméra</td></tr>
-          <tr><td>Clic droit glissé (unités sélectionnées)</td><td>Formation orientée : les unités se placent en lignes autour du point cliqué, face à la direction du glisser (Maj : en file)</td></tr>
-          <tr><td>Clic droit glissé (sans unité), bords</td><td>Déplacer la caméra</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div>
-      <div class="kh">
-        <h3>Clavier</h3>
-        <button class="icon-btn" onclick={customize}><Icon name="settings" size={14} /> Personnaliser les raccourcis</button>
+  <div class="modal-body">
+    <div class="two">
+      <div>
+        <h3>But</h3>
+        <p>Détruire le robot de commandement de chaque adversaire. Quand il est détruit, il explose et son joueur est éliminé. La dernière équipe qui a encore un robot de commandement gagne.</p>
+        <h3>Économie</h3>
+        <ul>
+          <li>Les ingénieurs (et le robot de commandement) construisent avec le <b>stock commun</b>, affiché en haut.</li>
+          <li>Le stock se remplit uniquement par les <b>dépôts</b> : tout objet qui y entre (par tapis ou bras) devient disponible partout.</li>
+          <li>Chaîne de base : <b>extracteur</b> sur un gisement → <b>tapis</b> → <b>fonderie</b> → tapis → <b>dépôt</b>.</li>
+          <li><b>Dépôts et réserve</b> : votre réserve garde au plus 400 de chaque objet, plus 600 par dépôt (2 000 pour un dépôt amélioré). Réserve pleine : les dépôts refusent l'objet et les tapis attendent. Un dépôt amélioré (automatisation) gagne un étage et des sorties filtrées, réglées dans sa fiche : il pose ces objets, pris dans la réserve, sur les tapis qui partent de lui.</li>
+          <li><b>Collecteur de surplus</b> (automatisation) : posé sur un tapis, qu'il remplace ; quand la file est bouchée plus loin, ce qui arrive sous lui part dans votre stock, et l'amont ne s'arrête jamais.</li>
+          <li><b>Trappes</b> : un tapis qui entre dans un bâtiment le livre directement (trappe cyan) ; un tapis qui part d'une face reçoit ses produits (trappe ambre). Sans tapis, la trappe reste fermée.</li>
+          <li>Les <b>bras</b> restent utiles pour prendre sur un tapis qui passe le long d'un bâtiment : un bras prend sur la case derrière lui et pose sur la case devant, seulement ce que la cible accepte. Quand un bâtiment a plusieurs sorties (bras et tapis), elles reçoivent ses produits à tour de rôle ; la part d'un bras se règle en le sélectionnant.</li>
+          <li>Tout bâtiment qui consomme de l'énergie doit être dans la zone d'un <b>pylône</b> ou d'un générateur relié au réseau.</li>
+          <li>Les <b>assembleurs</b> ont besoin d'une recette (panneau de sélection). Les fonderies choisissent seules selon ce qu'elles reçoivent.</li>
+          <li>Les <b>usines</b> reçoivent les composants des unités par des bras. Les <b>laboratoires</b> consomment les lots de recherche.</li>
+          <li>Les épaves se recyclent en plaques de fer et en acier.</li>
+        </ul>
+        <h3>Furtivité et radar</h3>
+        <ul>
+          <li>Une unité ennemie apparaît à vue, ou en écho au <b>radar</b>. Le <b>bombardier furtif</b> n'apparaît jamais au radar ; un <b>brouilleur mobile</b> en fait autant pour les alliés dans sa bulle (12 cases).</li>
+          <li>Le <b>commando furtif</b> est invisible tant qu'il ne tire pas (5 s après chaque tir). Toute unité ou tout bâtiment le repère à quelques cases, une sonde déployée à 25 cases.</li>
+          <li>Le <b>Gardien</b> encaisse mieux de face (-45 %) ; la <b>tourelle mobile</b> ne tire que déployée et encaisse alors mieux (-30 %).</li>
+        </ul>
+        <h3>Souris</h3>
+        <table>
+          <tbody>
+            <tr><td>Clic gauche / glisser</td><td>Sélectionner / sélection par cadre (Maj : ajouter)</td></tr>
+            <tr><td>Double-clic</td><td>Toutes les unités du même type à l'écran</td></tr>
+            <tr><td>Clic droit</td><td>Déplacer, attaquer, assister, recycler, charger, ralliement (selon la cible)</td></tr>
+            <tr><td>Maj + ordre</td><td>Mettre l'ordre en file</td></tr>
+            <tr><td>Molette</td><td>Zoom continu (vue stratégique avec icônes de loin)</td></tr>
+            <tr><td>J maintenu</td><td>Vue logistique : remplissage de chaque tapis (vide, fluide, chargé, saturé) et bâtiments bloqués, affamés ou sans énergie</td></tr>
+            <tr><td>Molette (pose de tapis)</td><td>Niveau du tapis : sol, étage 1 ou étage 2. Un tapis surélevé passe au-dessus des tapis et des bâtiments ; entre deux niveaux, un ascenseur se forme tout seul. Un tapis ne livre un bâtiment qu'au sol.</td></tr>
+            <tr><td>Clic milieu glissé</td><td>Tourner / incliner la caméra</td></tr>
+            <tr><td>Clic droit glissé (unités sélectionnées)</td><td>Formation orientée : les unités se placent en lignes autour du point cliqué, face à la direction du glisser (Maj : en file)</td></tr>
+            <tr><td>Clic droit glissé (sans unité), bords</td><td>Déplacer la caméra</td></tr>
+          </tbody>
+        </table>
       </div>
-      <table class="keys">
-        {#each GROUPS as g}
-          {@const list = rows.filter((r) => r.group === g)}
-          {#if list.length}
-            <tbody>
-              <tr class="gh"><th colspan="2">{g}</th></tr>
-              {#each list as r}<tr><td>{r.keys}</td><td>{r.label}</td></tr>{/each}
-            </tbody>
-          {/if}
-        {/each}
-      </table>
+      <div>
+        <div class="kh">
+          <h3>Clavier</h3>
+          <button class="icon-btn" onclick={customize}><Icon name="settings" size={14} /> Personnaliser les raccourcis</button>
+        </div>
+        <table class="keys">
+          {#each GROUPS as g}
+            {@const list = rows.filter((r) => r.group === g)}
+            {#if list.length}
+              <tbody>
+                <tr class="gh"><th colspan="2">{g}</th></tr>
+                {#each list as r}<tr><td>{r.keys}</td><td>{r.label}</td></tr>{/each}
+              </tbody>
+            {/if}
+          {/each}
+        </table>
+      </div>
     </div>
   </div>
 </div>

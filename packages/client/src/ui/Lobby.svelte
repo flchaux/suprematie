@@ -192,7 +192,7 @@
         <span class="dim"><Icon name="user" size={13} /> {ui.name}</span>
       </footer>
       {#if showSaves}
-        <div class="panel saves">
+        <div class="panel saves"><div class="in">
           {#each saves as m (m.id)}
             <div class="save" class:cur={loaded?.id === m.id}>
               <div class="grow">
@@ -206,14 +206,14 @@
             </div>
           {:else}<span class="dim">Aucune sauvegarde. En partie : panneau Statistiques (Tab), bouton Sauvegarder ; une sauvegarde automatique est faite toutes les 5 minutes de jeu.</span>{/each}
           {#if !isHost && saves.length}<p class="dim small">Seul l'hôte peut charger une sauvegarde.</p>{/if}
-        </div>
+        </div></div>
       {/if}
       {#if showReplays}
-        <div class="panel replays">
+        <div class="panel replays"><div class="in">
           {#each replays as r}
             <button class="icon-btn" onclick={() => client.loadReplay("/replays/" + r)}><Icon name="play" size={12} /> <span class="num">{r.replace("partie-", "").replace(".json", "")}</span></button>
           {:else}<span class="dim">Aucun replay pour l'instant.</span>{/each}
-        </div>
+        </div></div>
       {/if}
     {/if}
   </div>
@@ -262,11 +262,13 @@
   .loaded :global(.ic) { color: var(--amber); }
   .badge.free { border-color: var(--amber); color: var(--amber); }
   .small { font-size: 11.5px; }
-  .saves { padding: 12px; display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow: auto; }
+  /* le cadre ne défile pas (voir .modal) : seule la liste intérieure défile */
+  .saves, .replays { padding: 12px; }
+  .saves .in { display: flex; flex-direction: column; gap: 6px; max-height: 256px; overflow: auto; }
   .save { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid rgba(255, 255, 255, 0.05); }
   .save.cur { border-color: var(--amber); }
   .side .launch:disabled { opacity: 0.45; filter: grayscale(0.8); cursor: not-allowed; box-shadow: none; }
-  .replays { padding: 12px; display: flex; flex-wrap: wrap; gap: 6px; max-height: 200px; overflow: auto; }
+  .replays .in { display: flex; flex-wrap: wrap; gap: 6px; max-height: 176px; overflow: auto; }
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
   @keyframes blink { 50% { opacity: 0.25; } }
   @media (max-width: 760px) {

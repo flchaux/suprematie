@@ -93,39 +93,41 @@
     {#if view.count}<span class="warnc"><Icon name="alert" size={14} /> {view.count} conflit{view.count > 1 ? "s" : ""}</span>{/if}
     <button class="icon-btn" onclick={resetAll} title="Revenir aux touches par défaut de cette disposition"><Icon name="replay" size={14} /> Réinitialiser</button>
   </div>
-  <p class="dim intro">
-    Cliquez sur « Modifier » (ou sur une touche) puis appuyez sur la nouvelle touche, avec Maj, Ctrl ou Alt si besoin ; Échap annule.
-    Les chiffres restent réservés aux groupes de contrôle : chiffre = sélectionner, Maj+chiffre (ou Ctrl+chiffre) = créer.
-  </p>
-  {#if error}<p class="err"><Icon name="alert" size={14} /> {error}</p>{/if}
-  <div class="cols">
-    {#each GROUPS as g}
-      <section>
-        <h3>{g}</h3>
-        {#each view.rows.filter((r) => r.a.group === g) as r (r.a.id)}
-          {@const notes = r.conflicts.map((c) => note(r.a.id, c))}
-          <div class="row" class:bad={notes.some((n) => n.warn)}>
-            <span class="lbl">{r.a.label}</span>
-            <span class="chords">
-              {#each r.chords as c, i}
-                <span class="chip" class:cap={capture?.id === r.a.id && capture.index === i}>
-                  <button class="ck num" onclick={() => start(r.a.id, i)} title="Modifier cette touche">{capture?.id === r.a.id && capture.index === i ? "Appuyez…" : keymap.label(c)}</button>
-                  <button class="rm ghost" onclick={() => remove(r.a.id, i)} title="Retirer cette touche"><Icon name="close" size={10} /></button>
-                </span>
-              {/each}
-              {#if capture?.id === r.a.id && capture.index === r.chords.length}<span class="chip cap"><span class="ck num">Appuyez…</span></span>{/if}
-              {#if !r.chords.length && !(capture?.id === r.a.id)}<span class="faint">—</span>{/if}
-            </span>
-            <span class="acts">
-              <button class="mini" onclick={() => start(r.a.id, 0)}>Modifier</button>
-              <button class="mini ghost" onclick={() => start(r.a.id, r.chords.length)} title="Ajouter une autre touche"><Icon name="plus" size={12} /></button>
-              <button class="mini ghost" disabled={r.isDefault} onclick={() => resetOne(r.a.id)} title="Touche par défaut"><Icon name="replay" size={12} /></button>
-            </span>
-            {#each notes as n}<span class="note" class:warn={n.warn}>{#if n.warn}<Icon name="alert" size={12} />{/if} {n.text}</span>{/each}
-          </div>
-        {/each}
-      </section>
-    {/each}
+  <div class="modal-body">
+    <p class="dim intro">
+      Cliquez sur « Modifier » (ou sur une touche) puis appuyez sur la nouvelle touche, avec Maj, Ctrl ou Alt si besoin ; Échap annule.
+      Les chiffres restent réservés aux groupes de contrôle : chiffre = sélectionner, Maj+chiffre (ou Ctrl+chiffre) = créer.
+    </p>
+    {#if error}<p class="err"><Icon name="alert" size={14} /> {error}</p>{/if}
+    <div class="cols">
+      {#each GROUPS as g}
+        <section>
+          <h3>{g}</h3>
+          {#each view.rows.filter((r) => r.a.group === g) as r (r.a.id)}
+            {@const notes = r.conflicts.map((c) => note(r.a.id, c))}
+            <div class="row" class:bad={notes.some((n) => n.warn)}>
+              <span class="lbl">{r.a.label}</span>
+              <span class="chords">
+                {#each r.chords as c, i}
+                  <span class="chip" class:cap={capture?.id === r.a.id && capture.index === i}>
+                    <button class="ck num" onclick={() => start(r.a.id, i)} title="Modifier cette touche">{capture?.id === r.a.id && capture.index === i ? "Appuyez…" : keymap.label(c)}</button>
+                    <button class="rm ghost" onclick={() => remove(r.a.id, i)} title="Retirer cette touche"><Icon name="close" size={10} /></button>
+                  </span>
+                {/each}
+                {#if capture?.id === r.a.id && capture.index === r.chords.length}<span class="chip cap"><span class="ck num">Appuyez…</span></span>{/if}
+                {#if !r.chords.length && !(capture?.id === r.a.id)}<span class="faint">—</span>{/if}
+              </span>
+              <span class="acts">
+                <button class="mini" onclick={() => start(r.a.id, 0)}>Modifier</button>
+                <button class="mini ghost" onclick={() => start(r.a.id, r.chords.length)} title="Ajouter une autre touche"><Icon name="plus" size={12} /></button>
+                <button class="mini ghost" disabled={r.isDefault} onclick={() => resetOne(r.a.id)} title="Touche par défaut"><Icon name="replay" size={12} /></button>
+              </span>
+              {#each notes as n}<span class="note" class:warn={n.warn}>{#if n.warn}<Icon name="alert" size={12} />{/if} {n.text}</span>{/each}
+            </div>
+          {/each}
+        </section>
+      {/each}
+    </div>
   </div>
 </div>
 
