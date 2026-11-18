@@ -1,8 +1,10 @@
 // Descriptions des unités. Clé = clé de l'unité dans les données du jeu (sim/src/data.rs).
 // Généré depuis des descriptions de pièces simples (voir types.ts et kit.ts) ; aucune géométrie brute.
 import type { Model, Part, Vec3 } from "./types.ts";
+import { hyper_cruiser } from "./experimentales/hyper_cruiser.ts";
 import { roach } from "./experimentales/roach.ts";
 import { spider } from "./experimentales/spider.ts";
+import { star_cruiser } from "./experimentales/star_cruiser.ts";
 
 /**
  * Place une pièce le long d'un axe incliné (canon, rampe) : `base` = origine de l'axe, `elev` = angle
@@ -51,16 +53,6 @@ function griffeDragon(k: number, z: number, w: number): Part[] {
   return [
     { shape: "box", size: [0.2,0.6,0.2], pos: [x,0.0,z], rot: [0,0,20], color: "light", mirror: true, parent: n },
     { shape: "cone", sides: 5, radius: 0.09, height: 0.35, pos: [+(x + 0.12).toFixed(3),-0.38,+(z + 0.15).toFixed(3)], rot: [90,0,0], color: "metal", mirror: true, parent: n },
-  ];
-}
-
-/** Tourelle de batterie du cuirassé : socle pivotant et deux tubes. */
-function batterie(name: string, x: number, z: number): Part[] {
-  return [
-    { shape: "bevel", size: [0.42,0.2,0.42], pos: [x,1.47,z], color: "metal", pivot: name },
-    { shape: "box", size: [0.05,0.05,0.5], pos: [+(x + 0.08).toFixed(3),1.52,+(z + 0.33).toFixed(3)], color: "dark", parent: name },
-    { shape: "box", size: [0.05,0.05,0.5], pos: [+(x - 0.08).toFixed(3),1.52,+(z + 0.33).toFixed(3)], color: "dark", parent: name },
-    { shape: "box", size: [0.2,0.04,0.04], pos: [x,1.58,+(z - 0.1).toFixed(3)], color: "glow", parent: name },
   ];
 }
 
@@ -829,44 +821,7 @@ export const UNIT_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.9,0.05,0.7], pos: [0,0.35,-5.95], color: "glow", parent: "ondule11" },
     ],
   },
-  // star_cruiser : cuirassé stellaire, coque en triangle (deux demi-coques biseautées), superstructure
-  // en gradins, tour de commandement à passerelle et deux globes, réacteurs, batteries pivotantes
-  star_cruiser: {
-    parts: [
-      // coque (deux moitiés triangulaires : pointe vers l'avant, au centre)
-      { shape: "wedge", size: [0.7,2.7,10], pos: [1.35,1.0,0], rot: [0,0,-90], color: "light", mirror: true },
-      { shape: "wedge", size: [0.5,2.4,9], pos: [1.2,0.45,-0.45], rot: [0,0,-90], color: "dark", mirror: true },
-      { shape: "box", size: [0.04,0.04,9], pos: [1.2,1.37,0], rot: [0,-15,0], color: "glow", mirror: true },
-      { shape: "box", size: [0.35,0.03,4.0], pos: [0.85,1.36,-1.6], rot: [0,-15,0], color: "faction", mirror: true },
-      { shape: "bevel", size: [0.9,0.4,7.0], pos: [0,1.45,-1.0], color: "light" },
-      { shape: "box", size: [1.0,0.04,1.2], pos: [0,0.19,-0.5], color: "glow" },
-      // superstructure en gradins
-      { shape: "bevel", size: [3.0,0.4,2.6], pos: [0,1.55,-3.2], color: "light" },
-      { shape: "bevel", size: [2.2,0.4,2.0], pos: [0,1.95,-3.4], color: "metal" },
-      { shape: "bevel", size: [1.4,0.4,1.4], pos: [0,2.35,-3.6], color: "faction" },
-      { shape: "box", size: [2.9,0.05,0.04], pos: [0,1.6,-1.89], color: "glow" },
-      // tour de commandement
-      { shape: "bevel", size: [0.5,0.9,0.5], pos: [0,3.0,-3.9], color: "dark" },
-      { shape: "bevel", size: [2.2,0.35,0.6], pos: [0,3.55,-3.9], color: "light" },
-      { shape: "box", size: [1.8,0.06,0.04], pos: [0,3.58,-3.59], color: "glow" },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 0.3, pos: [0.85,3.82,-3.9], color: "metal", mirror: true },
-      { shape: "sphere", radius: 0.28, detail: 1, pos: [0.85,4.05,-3.9], color: "metal", mirror: true },
-      // réacteurs
-      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.5, pos: [0,1.0,-5.2], rot: [90,0,0], color: "metal" },
-      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.5, pos: [1.1,1.0,-5.2], rot: [90,0,0], color: "metal", mirror: true },
-      { shape: "cylinder", sides: 6, radius: 0.2, height: 0.4, pos: [1.9,0.95,-5.15], rot: [90,0,0], color: "metal", mirror: true },
-      { shape: "box", size: [0.7,0.7,0.04], pos: [0,1.0,-5.46], color: "glow" },
-      { shape: "box", size: [0.48,0.48,0.04], pos: [1.1,1.0,-5.46], color: "glow", mirror: true },
-      { shape: "box", size: [0.3,0.3,0.04], pos: [1.9,0.95,-5.36], color: "glow", mirror: true },
-      // batteries pivotantes le long des flancs
-      ...batterie("tourelle_1d", 1.6, -1.6),
-      ...batterie("tourelle_1g", -1.6, -1.6),
-      ...batterie("tourelle_2d", 1.0, 0.8),
-      ...batterie("tourelle_2g", -1.0, 0.8),
-      ...batterie("tourelle_3d", 0.45, 2.8),
-      ...batterie("tourelle_3g", -0.45, 2.8),
-    ],
-  },
+  star_cruiser,
   // colossus : mécha géant, blindage clair sur ossature sombre, visière cyan, épaulières massives, canons d'avant-bras (1328 triangles)
   colossus: {
     parts: [
@@ -986,36 +941,5 @@ export const UNIT_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.6,0.26,0.04], pos: [1.0,0.85,-4.31], color: "glow", mirror: true },
     ],
   },
-  // hyper_cruiser : long croiseur à proue effilée, blindage étagé clair et sombre, deux grandes nacelles motrices latérales (996 triangles)
-  hyper_cruiser: {
-    parts: [
-      { shape: "bevel", size: [1.8,0.8,5.6], pos: [0,0.9,-0.6], color: "dark" },
-      { shape: "wedge", size: [0.8,0.9,3.2], pos: [0.45,0.85,3.8], rot: [0,0,-90], color: "dark", mirror: true },
-      { shape: "wedge", size: [0.3,0.75,2.8], pos: [0.375,1.3,3.5], rot: [0,0,-90], color: "light", mirror: true },
-      { shape: "bevel", size: [1.5,0.4,4.8], pos: [0,1.4,-0.6], color: "light" },
-      { shape: "bevel", size: [0.9,0.25,4.2], pos: [0,1.7,-0.4], color: "faction" },
-      { shape: "box", size: [0.03,0.05,4.5], pos: [0.91,0.8,-0.5], color: "glow", mirror: true },
-      { shape: "box", size: [2.5,0.03,0.05], pos: [0.45,1.31,3.8], rot: [0,74,0], color: "glow", mirror: true },
-      { shape: "box", size: [1.2,0.05,0.05], pos: [0,0.5,1.0], color: "glow" },
-      // passerelle et blocs de pont
-      { shape: "bevel", size: [0.8,0.5,1.2], pos: [0,2.0,-1.4], color: "light" },
-      { shape: "box", size: [0.6,0.06,0.03], pos: [0,2.08,-0.79], color: "glow" },
-      { shape: "box", size: [0.5,0.12,0.6], pos: [0,2.3,-1.5], color: "dark" },
-      { shape: "box", size: [0.4,0.25,0.5], pos: [0.4,1.95,1.2], color: "light", mirror: true },
-      { shape: "box", size: [0.4,0.25,0.5], pos: [0.4,1.95,0.4], color: "dark", mirror: true },
-      { shape: "box", size: [0.08,0.06,0.06], pos: [0.62,1.62,2.0], color: "amber", mirror: true },
-      { shape: "box", size: [0.08,0.06,0.06], pos: [0.62,1.62,-2.6], color: "amber", mirror: true },
-      // ailes et nacelles
-      { shape: "bevel", size: [1.2,0.3,3.0], pos: [1.4,0.9,-1.4], color: "dark", mirror: true },
-      { shape: "bevel", size: [1.0,0.12,2.4], pos: [1.4,1.1,-1.3], color: "faction", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 0.45, height: 3.2, pos: [2.3,1.0,-1.6], rot: [90,0,0], color: "light", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 0.47, height: 0.3, pos: [2.3,1.0,-0.4], rot: [90,0,0], color: "dark", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 0.47, height: 0.3, pos: [2.3,1.0,-2.6], rot: [90,0,0], color: "dark", mirror: true },
-      { shape: "cone", sides: 8, radius: 0.45, height: 0.5, pos: [2.3,1.0,0.25], rot: [90,0,0], color: "dark", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 0.38, height: 0.05, pos: [2.3,1.0,-3.22], rot: [90,0,0], color: "glow", mirror: true },
-      // propulseurs centraux
-      { shape: "cylinder", sides: 8, radius: 0.35, height: 0.5, pos: [0.45,0.95,-3.5], rot: [90,0,0], color: "dark", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 0.28, height: 0.05, pos: [0.45,0.95,-3.76], rot: [90,0,0], color: "glow", mirror: true },
-    ],
-  },
+  hyper_cruiser,
 };
