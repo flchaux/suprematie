@@ -719,7 +719,7 @@ pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
                     } else {
                         255
                     };
-                    if cb.dir == face {
+                    if face != 255 && belts::takes_from_face(w, c, face) {
                         v.push(c);
                     }
                 }
@@ -755,7 +755,7 @@ fn has_direct_outlet(w: &World, b: usize) -> bool {
             return false;
         }
         let tc = tb.def().class;
-        (tc == BClass::Belt && class == BClass::Crafter && tb.dir == d) || (direct_receiver(tc) && tb.owner == bb.owner)
+        (tc == BClass::Belt && class == BClass::Crafter && belts::takes_from_face(w, (o - 1) as usize, d)) || (direct_receiver(tc) && tb.owner == bb.owner)
     };
     (bb.x..bb.x + bw).any(|x| probe(x, bb.y - 1, 3) || probe(x, bb.y + bh, 1)) || (bb.y..bb.y + bh).any(|y| probe(bb.x - 1, y, 2) || probe(bb.x + bw, y, 0))
 }
@@ -1555,6 +1555,11 @@ fn tick_extractor(w: &mut World, b: usize) {
 
 /// Tapis qui partent d'une face du bâtiment `b` (case voisine d'un bord, tapis tourné vers l'extérieur) :
 /// les « trappes de sortie ». Par ordre de case (déterministe).
+/// Bâtiment qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt amélioré à sorties filtrées).
+pub fn feeds_belts(bb: &Building) -> bool {
+    bb.alive && bb.complete() && (bb.def().class == BClass::Crafter || (bb.def().class == BClass::Depot && bb.level > 0))
+}
+
 pub fn out_belts(w: &World, b: usize) -> Vec<usize> {
     let bb = &w.buildings[b];
     let (bw, bh) = bb.size();
@@ -1570,7 +1575,7 @@ pub fn out_belts(w: &World, b: usize) -> Vec<usize> {
         }
         let t = (o - 1) as usize;
         let tb = &w.buildings[t];
-        if tb.alive && tb.complete() && tb.def().class == BClass::Belt && tb.dir == d {
+        if tb.alive && tb.complete() && tb.def().class == BClass::Belt && belts::takes_from_face(w, t, d) {
             v.push(t);
         }
     };

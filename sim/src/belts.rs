@@ -265,10 +265,69 @@ pub fn belt_shape(w: &World, b: usize) -> u8 {
         }
     }
     if count == 1 {
+        return shape;
+    }
+    if count == 0 {
+        return building_fed_shape(w, b);
+    }
+    0
+}
+
+/// Bâtiment au sol en (x, y) qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt amélioré).
+fn feeder_at(w: &World, x: i32, y: i32) -> bool {
+    if !w.map.inside(x, y) {
+        return false;
+    }
+    let o = w.map.occ[w.map.idx(x, y)];
+    o != 0 && crate::buildings::feeds_belts(&w.buildings[(o - 1) as usize])
+}
+
+/// Virage alimenté par un bâtiment : un tapis au sol sans tapis qui l'alimente, posé le long de la face
+/// d'un bâtiment qui dépose sur ses tapis (et pas devant une face qui le fait partir tout droit), reçoit
+/// ses produits par le côté. 0 : droit ; 1 ou 2 : comme belt_shape.
+fn building_fed_shape(w: &World, b: usize) -> u8 {
+    let bb = &w.buildings[b];
+    if bb.floor != 0 {
+        return 0;
+    }
+    let d = bb.dir as usize;
+    let (bx, by) = DIRS[(d + 2) % 4];
+    if feeder_at(w, bb.x + bx, bb.y + by) {
+        return 0;
+    }
+    let mut shape = 0;
+    let mut count = 0;
+    for (k, sd) in [(1u8, (d + 1) % 4), (2u8, (d + 3) % 4)] {
+        let (sx, sy) = DIRS[sd];
+        if feeder_at(w, bb.x + sx, bb.y + sy) {
+            shape = k;
+            count += 1;
+        }
+    }
+    if count == 1 {
         shape
     } else {
         0
     }
+}
+
+/// Le tapis `t` reçoit-il les produits du bâtiment dont il touche la face `face` (direction vers
+/// l'extérieur) ? Oui s'il en part tout droit, ou s'il fait un virage alimenté par ce côté.
+pub fn takes_from_face(w: &World, t: usize, face: u8) -> bool {
+    let tb = &w.buildings[t];
+    if tb.dir == face {
+        return true;
+    }
+    if tb.dir == (face + 2) & 3 {
+        return false;
+    }
+    let sd = match building_fed_shape(w, t) {
+        1 => (tb.dir + 1) & 3,
+        2 => (tb.dir + 3) & 3,
+        _ => return false,
+    };
+    // le côté qui alimente le virage regarde le bâtiment
+    sd == (face + 2) & 3 && main_pred(w, t).is_none()
 }
 
 /// Reconstruit les lignes autour des cases modifiées en conservant les objets.
