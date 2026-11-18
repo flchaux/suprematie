@@ -1,6 +1,8 @@
 // Descriptions des unités. Clé = clé de l'unité dans les données du jeu (sim/src/data.rs).
 // Généré depuis des descriptions de pièces simples (voir types.ts et kit.ts) ; aucune géométrie brute.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
+import { colossus } from "./experimentales/colossus.ts";
+import { fortress } from "./experimentales/fortress.ts";
 
 /**
  * Place une pièce le long d'un axe incliné (canon, rampe) : `base` = origine de l'axe, `elev` = angle
@@ -982,95 +984,8 @@ export const UNIT_MODELS: Record<string, Model> = {
       ...batterie("tourelle_3g", -0.45, 2.8),
     ],
   },
-  // colossus : mécha géant, blindage clair sur ossature sombre, visière cyan, épaulières massives, canons d'avant-bras (1328 triangles)
-  colossus: {
-    parts: [
-      // jambes
-      { shape: "bevel", size: [0.8,1.0,0.9], pos: [0.75,1.75,0], color: "light", mirror: true },
-      { shape: "box", size: [0.7,0.4,0.6], pos: [0.8,1.2,0.25], color: "faction", mirror: true },
-      { shape: "bevel", size: [0.9,1.1,1.0], pos: [0.8,0.7,0.05], color: "dark", mirror: true },
-      { shape: "bevel", size: [0.6,0.7,0.2], pos: [0.8,0.75,0.58], color: "light", mirror: true },
-      { shape: "box", size: [0.06,0.4,0.03], pos: [0.8,0.75,0.69], color: "glow", mirror: true },
-      { shape: "bevel", size: [1.2,0.3,1.6], pos: [0.8,0.15,0.2], color: "dark", mirror: true },
-      { shape: "bevel", size: [2.0,0.7,1.3], pos: [0,2.3,0], color: "dark" },
-      // torse (pivot)
-      { shape: "bevel", size: [2.6,1.4,1.6], pos: [0,3.2,0], color: "faction", pivot: "torse" },
-      { shape: "bevel", size: [1.8,0.9,0.35], pos: [0,3.25,0.8], color: "light", parent: "torse" },
-      { shape: "bevel", size: [1.2,0.5,0.3], pos: [0,2.62,0.7], color: "light", parent: "torse" },
-      { shape: "sphere", radius: 0.3, detail: 1, pos: [0,3.2,0.95], color: "glow", parent: "torse" },
-      { shape: "bevel", size: [0.8,0.6,0.75], pos: [0,4.2,0.25], color: "light", parent: "torse" },
-      { shape: "box", size: [0.6,0.1,0.05], pos: [0,4.25,0.63], color: "glow", parent: "torse" },
-      { shape: "box", size: [0.1,0.3,0.6], pos: [0,4.58,0.15], color: "dark", parent: "torse" },
-      // épaules
-      { shape: "bevel", size: [1.1,0.9,1.3], pos: [1.75,3.7,0], color: "light", mirror: true, parent: "torse" },
-      { shape: "bevel", size: [0.9,0.2,1.1], pos: [1.75,4.2,0], color: "faction", mirror: true, parent: "torse" },
-      { shape: "box", size: [0.12,0.06,0.04], pos: [1.6,3.85,0.66], color: "amber", mirror: true, parent: "torse" },
-      { shape: "box", size: [0.5,0.3,0.3], pos: [1.75,3.6,-0.72], color: "dark", mirror: true, parent: "torse" },
-      // bras
-      { shape: "box", size: [0.6,1.0,0.6], pos: [2.0,2.9,0.1], color: "dark", mirror: true, parent: "torse" },
-      { shape: "bevel", size: [0.9,1.2,1.0], pos: [2.05,1.95,0.35], color: "light", mirror: true, parent: "torse" },
-      { shape: "box", size: [0.03,0.7,0.06], pos: [2.51,1.95,0.35], color: "glow", mirror: true, parent: "torse" },
-      { shape: "bevel", size: [0.75,0.6,0.8], pos: [2.05,1.15,0.4], color: "dark", mirror: true, parent: "torse" },
-      { shape: "cylinder", sides: 8, radius: 0.16, height: 1.2, pos: [2.05,1.95,1.2], rot: [90,0,0], color: "metal", mirror: true, parent: "torse" },
-      { shape: "box", size: [0.22,0.22,0.04], pos: [2.05,1.95,1.81], color: "glow", mirror: true, parent: "torse" },
-      // dos
-      { shape: "bevel", size: [1.6,1.2,0.7], pos: [0,3.4,-1.0], color: "dark", parent: "torse" },
-      { shape: "box", size: [0.3,0.5,0.04], pos: [0.45,3.3,-1.36], color: "glow", mirror: true, parent: "torse" },
-    ],
-  },
-  // fortress : forteresse sur quatre pattes, coque étagée, tourelle principale à double canon, deux tourelles secondaires (1692 triangles)
-  fortress: {
-    parts: [
-      // pattes
-      { shape: "bevel", size: [0.9,0.7,0.9], pos: [1.95,1.65,1.6], rot: [0,0,-25], color: "light", mirror: true },
-      { shape: "bevel", size: [0.9,0.7,0.9], pos: [1.95,1.65,-1.6], rot: [0,0,-25], color: "light", mirror: true },
-      { shape: "box", size: [0.7,0.5,0.7], pos: [2.3,1.2,1.65], color: "faction", mirror: true },
-      { shape: "box", size: [0.7,0.5,0.7], pos: [2.3,1.2,-1.65], color: "faction", mirror: true },
-      { shape: "bevel", size: [0.9,1.2,1.0], pos: [2.35,0.65,1.7], color: "dark", mirror: true },
-      { shape: "bevel", size: [0.9,1.2,1.0], pos: [2.35,0.65,-1.7], color: "dark", mirror: true },
-      { shape: "box", size: [0.04,0.6,0.06], pos: [2.81,0.7,1.7], color: "glow", mirror: true },
-      { shape: "box", size: [0.04,0.6,0.06], pos: [2.81,0.7,-1.7], color: "glow", mirror: true },
-      { shape: "bevel", size: [1.3,0.3,1.4], pos: [2.4,0.15,1.8], color: "black", mirror: true },
-      { shape: "bevel", size: [1.3,0.3,1.4], pos: [2.4,0.15,-1.7], color: "black", mirror: true },
-      // coque
-      { shape: "bevel", size: [4.0,0.7,4.4], pos: [0,1.9,0], color: "dark" },
-      { shape: "bevel", size: [3.4,1.0,4.0], pos: [0,2.6,0], color: "faction" },
-      { shape: "bevel", size: [0.4,0.8,3.6], pos: [1.85,2.5,0], color: "light", mirror: true },
-      { shape: "bevel", size: [3.0,0.7,0.5], pos: [0,2.4,2.1], color: "light" },
-      { shape: "box", size: [2.0,0.06,0.04], pos: [0,2.5,2.36], color: "glow" },
-      { shape: "box", size: [0.04,0.06,2.8], pos: [2.06,2.5,0], color: "glow", mirror: true },
-      { shape: "box", size: [0.12,0.08,0.04], pos: [1.2,2.25,2.36], color: "amber", mirror: true },
-      // château arrière
-      { shape: "bevel", size: [1.8,0.9,1.8], pos: [0,3.5,-1.1], color: "light" },
-      { shape: "box", size: [1.4,0.15,1.3], pos: [0,4.0,-1.2], color: "faction" },
-      { shape: "box", size: [1.2,0.08,0.04], pos: [0,3.65,-0.19], color: "glow" },
-      { shape: "box", size: [0.08,0.7,0.08], pos: [0.5,4.4,-1.5], color: "metal", mirror: true },
-      { shape: "cylinder", sides: 6, radius: 0.18, height: 0.6, pos: [0.4,3.4,-2.2], color: "dark", mirror: true },
-      // nacelles de canons avant (fixes)
-      { shape: "box", size: [0.4,0.3,0.6], pos: [1.5,3.25,1.6], color: "dark", mirror: true },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 0.8, pos: [1.5,3.25,2.2], rot: [90,0,0], color: "metal", mirror: true },
-      // tourelle principale
-      { shape: "cylinder", sides: 8, radius: 0.9, height: 0.25, pos: [0,3.2,1.0], color: "metal", pivot: "tourelle" },
-      { shape: "bevel", size: [1.6,0.75,1.7], pos: [0,3.6,0.95], color: "light", parent: "tourelle" },
-      { shape: "bevel", size: [1.2,0.2,1.2], pos: [0,4.02,0.85], color: "faction", parent: "tourelle" },
-      { shape: "box", size: [0.08,0.05,0.04], pos: [0.5,3.75,1.81], color: "amber", mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.32,0.36,0.8], pos: [0.4,3.62,1.9], color: "dark", mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.03,0.05,0.6], pos: [0.57,3.62,1.9], color: "glow", mirror: true, parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.13, height: 2.2, pos: [0.4,3.64,3.4], rot: [90,0,0], color: "metal", mirror: true, parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.18, height: 0.3, pos: [0.4,3.64,4.45], rot: [90,0,0], color: "dark", mirror: true, parent: "tourelle" },
-      // tourelles secondaires (une par côté, chacune son pivot)
-      { shape: "cylinder", sides: 6, radius: 0.45, height: 0.2, pos: [1.35,3.2,-0.4], color: "metal", pivot: "tourelle2" },
-      { shape: "bevel", size: [0.7,0.4,0.8], pos: [1.35,3.48,-0.42], color: "light", parent: "tourelle2" },
-      { shape: "box", size: [0.5,0.04,0.5], pos: [1.35,3.69,-0.5], color: "faction", parent: "tourelle2" },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 1.0, pos: [1.25,3.5,0.4], rot: [90,0,0], color: "metal", parent: "tourelle2" },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 1.0, pos: [1.45,3.5,0.4], rot: [90,0,0], color: "metal", parent: "tourelle2" },
-      { shape: "cylinder", sides: 6, radius: 0.45, height: 0.2, pos: [-1.35,3.2,-0.4], color: "metal", pivot: "tourelle3" },
-      { shape: "bevel", size: [0.7,0.4,0.8], pos: [-1.35,3.48,-0.42], color: "light", parent: "tourelle3" },
-      { shape: "box", size: [0.5,0.04,0.5], pos: [-1.35,3.69,-0.5], color: "faction", parent: "tourelle3" },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 1.0, pos: [-1.25,3.5,0.4], rot: [90,0,0], color: "metal", parent: "tourelle3" },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 1.0, pos: [-1.45,3.5,0.4], rot: [90,0,0], color: "metal", parent: "tourelle3" },
-    ],
-  },
+  colossus,
+  fortress,
   // mothership : soucoupe géante en gradins (coques aplaties), anneaux lumineux, dôme central sombre à feux orange (832 triangles)
   mothership: {
     parts: [
