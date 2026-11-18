@@ -1,6 +1,8 @@
 // Descriptions des unités. Clé = clé de l'unité dans les données du jeu (sim/src/data.rs).
 // Généré depuis des descriptions de pièces simples (voir types.ts et kit.ts) ; aucune géométrie brute.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
+import { dragon } from "./experimentales/dragon.ts";
+import { mothership } from "./experimentales/mothership.ts";
 
 /**
  * Place une pièce le long d'un axe incliné (canon, rampe) : `base` = origine de l'axe, `elev` = angle
@@ -81,28 +83,6 @@ function patteBlatte(name: string, side: 1 | -1, z: number, yaw: number): Part[]
     { shape: "box", size: [0.05,0.05,0.7], pos: [x(2.0),1.35,z], rot: [0,r(yaw),0], color: "glow", parent: name },
     { shape: "box", size: [1.5,0.16,0.16], pos: [x(2.7),0.73,z], rot: [0,r(yaw),r(-75)], color: "faction", parent: name },
     { shape: "cone", sides: 5, radius: 0.08, height: 0.4, pos: [x(2.62),1.05,z], rot: [0,0,r(-40)], color: "metal", parent: name },
-  ];
-}
-
-/** Anneau du corps du dragon (pivot « onduleN ») : écailles, ventre clair, crête, filets. */
-function anneauDragon(k: number, z: number, w: number): Part[] {
-  const n = `ondule${k}`;
-  const out: Part[] = [
-    { shape: "bevel", size: [w, w * 0.85, 1.05], pos: [0,0.35,z], color: "faction", pivot: n },
-    { shape: "bevel", size: [+(w * 0.72).toFixed(3), 0.2, 0.95], pos: [0,+(0.35 - w * 0.42).toFixed(3),z], color: "light", parent: n },
-    { shape: "wedge", size: [0.08, +(0.2 + w * 0.25).toFixed(3), 0.75], pos: [0,+(0.35 + w * 0.5).toFixed(3),z], color: "amber", parent: n },
-    { shape: "box", size: [0.03,0.06,0.8], pos: [+(w / 2 + 0.01).toFixed(3),0.42,z], color: "glow", mirror: true, parent: n },
-  ];
-  return out;
-}
-
-/** Patte griffue du dragon, portée par un anneau. */
-function griffeDragon(k: number, z: number, w: number): Part[] {
-  const n = `ondule${k}`;
-  const x = +(w / 2 + 0.12).toFixed(3);
-  return [
-    { shape: "box", size: [0.2,0.6,0.2], pos: [x,0.0,z], rot: [0,0,20], color: "light", mirror: true, parent: n },
-    { shape: "cone", sides: 5, radius: 0.09, height: 0.35, pos: [+(x + 0.12).toFixed(3),-0.38,+(z + 0.15).toFixed(3)], rot: [90,0,0], color: "metal", mirror: true, parent: n },
   ];
 }
 
@@ -912,38 +892,7 @@ export const UNIT_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.07,0.07,2.2], pos: [0.67,1.37,3.8], rot: [-15,20,0], color: "metal", mirror: true, parent: "tourelle" },
     ],
   },
-  // dragon : « Gros Chinois », dragon robot volant ; tête pivotante (pivot « laser » : souffle de feu),
-  // corps en anneaux qui ondulent (pivots ondule2…ondule11), crête ambre, moustaches, perle d'énergie
-  dragon: {
-    parts: [
-      { shape: "bevel", size: [1.4,1.05,1.82], pos: [0.0,0.4,4.2], color: "faction", pivot: "laser" },
-      { shape: "bevel", size: [1.05,0.63,1.26], pos: [0.0,0.26,5.32], color: "light", parent: "laser" },
-      { shape: "bevel", size: [0.91,0.28,1.4], pos: [0.0,-0.16,5.18], rot: [8,0,0], color: "dark", parent: "laser" },
-      { shape: "box", size: [0.77,0.084,0.7], pos: [0.0,0.022,5.53], color: "amber", parent: "laser" },
-      { shape: "sphere", radius: 0.112, pos: [0.308,0.47,5.908], color: "glow", mirror: true, parent: "laser" },
-      { shape: "sphere", radius: 0.168, pos: [0.588,0.708,4.69], color: "glow", mirror: true, parent: "laser" },
-      { shape: "cone", sides: 5, radius: 0.14, height: 1.54, pos: [0.42,1.422,3.164], rot: [-55,0,0], color: "metal", mirror: true, parent: "laser" },
-      { shape: "box", size: [0.056,0.056,2.24], pos: [1.092,0.036,4.872], rot: [-12,-38,0], color: "amber", mirror: true, parent: "laser" },
-      { shape: "bevel", size: [0.84,0.49,1.26], pos: [0.0,1.03,3.29], color: "light", parent: "laser" },
-      { shape: "sphere", radius: 0.42, detail: 1, pos: [0.0,-0.65,6.58], color: "glow", parent: "laser" },
-      // corps
-      ...anneauDragon(2, 3.1, 1.42),
-      ...anneauDragon(3, 2.15, 1.38),
-      ...griffeDragon(3, 2.15, 1.38),
-      ...anneauDragon(4, 1.2, 1.32),
-      ...anneauDragon(5, 0.25, 1.26),
-      ...anneauDragon(6, -0.7, 1.2),
-      ...anneauDragon(7, -1.65, 1.11),
-      ...griffeDragon(7, -1.65, 1.11),
-      ...anneauDragon(8, -2.6, 1.02),
-      ...anneauDragon(9, -3.55, 0.9),
-      ...anneauDragon(10, -4.5, 0.78),
-      // queue : dernier anneau et nageoire lumineuse
-      { shape: "bevel", size: [0.63,0.54,0.9], pos: [0,0.35,-5.4], color: "faction", pivot: "ondule11" },
-      { shape: "wedge", size: [0.08,0.7,1.2], pos: [0,0.8,-5.6], color: "amber", parent: "ondule11" },
-      { shape: "box", size: [0.9,0.05,0.7], pos: [0,0.35,-5.95], color: "glow", parent: "ondule11" },
-    ],
-  },
+  dragon,
   // star_cruiser : cuirassé stellaire, coque en triangle (deux demi-coques biseautées), superstructure
   // en gradins, tour de commandement à passerelle et deux globes, réacteurs, batteries pivotantes
   star_cruiser: {
@@ -1071,36 +1020,7 @@ export const UNIT_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 6, radius: 0.06, height: 1.0, pos: [-1.45,3.5,0.4], rot: [90,0,0], color: "metal", parent: "tourelle3" },
     ],
   },
-  // mothership : soucoupe géante en gradins (coques aplaties), anneaux lumineux, dôme central sombre à feux orange (832 triangles)
-  mothership: {
-    parts: [
-      { shape: "cylinder", sides: 8, radius: 1.5, radiusTop: 2.2, height: 0.4, pos: [0,0.6,0], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 1.1, height: 0.04, pos: [0,0.4,0], color: "glow" },
-      { shape: "sphere", radius: 1, detail: 1, pos: [0,0.9,0], scale: [4.4,0.45,4.4], color: "dark" },
-      { shape: "sphere", radius: 1, detail: 1, pos: [0,0.92,0], scale: [4.47,0.06,4.47], color: "glow" },
-      { shape: "sphere", radius: 1, detail: 1, pos: [0,1.15,0], scale: [3.7,0.5,3.7], color: "faction" },
-      { shape: "sphere", radius: 1, detail: 1, pos: [0,1.4,0], scale: [2.6,0.55,2.6], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 2.6, height: 0.05, pos: [0,1.55,0], color: "glow" },
-      { shape: "sphere", radius: 1, detail: 1, pos: [0,1.65,0], scale: [1.3,0.7,1.3], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 1.35, height: 0.04, pos: [0,1.92,0], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.15, pos: [0,2.38,0], color: "metal" },
-      { shape: "sphere", radius: 0.12, pos: [0,2.5,0], color: "amber" },
-      // panneaux clairs de l'anneau extérieur
-      { shape: "box", size: [0.7,0.12,0.45], pos: [1.1,1.44,2.86], rot: [0,21,0], color: "light", mirror: true },
-      { shape: "box", size: [0.7,0.12,0.45], pos: [2.86,1.44,1.1], rot: [0,69,0], color: "light", mirror: true },
-      { shape: "box", size: [0.7,0.12,0.45], pos: [2.86,1.44,-1.1], rot: [0,-69,0], color: "light", mirror: true },
-      { shape: "box", size: [0.7,0.12,0.45], pos: [1.1,1.44,-2.86], rot: [0,-21,0], color: "light", mirror: true },
-      // feux orange de l'anneau intérieur
-      { shape: "box", size: [0.15,0.1,0.15], pos: [0.77,1.78,1.85], color: "amber", mirror: true },
-      { shape: "box", size: [0.15,0.1,0.15], pos: [1.85,1.78,0.77], color: "amber", mirror: true },
-      { shape: "box", size: [0.15,0.1,0.15], pos: [1.85,1.78,-0.77], color: "amber", mirror: true },
-      { shape: "box", size: [0.15,0.1,0.15], pos: [0.77,1.78,-1.85], color: "amber", mirror: true },
-      // hangar avant et propulseurs arrière
-      { shape: "box", size: [1.0,0.16,0.5], pos: [0,0.75,4.0], color: "glow" },
-      { shape: "box", size: [0.8,0.4,0.8], pos: [1.0,0.85,-3.9], color: "metal", mirror: true },
-      { shape: "box", size: [0.6,0.26,0.04], pos: [1.0,0.85,-4.31], color: "glow", mirror: true },
-    ],
-  },
+  mothership,
   // hyper_cruiser : long croiseur à proue effilée, blindage étagé clair et sombre, deux grandes nacelles motrices latérales (996 triangles)
   hyper_cruiser: {
     parts: [
