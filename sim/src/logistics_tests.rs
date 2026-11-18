@@ -152,3 +152,34 @@ fn snapshot_with_carriers_in_flight_is_deterministic() {
         assert_eq!(w.step(&[]), w2.step(&[]));
     }
 }
+
+/// Objets par voyage réglés sur la gare : le train charge au plus ce nombre et attend de l'avoir pour
+/// partir ; en automatique, il part dès qu'il a quelque chose.
+#[test]
+fn train_trip_size_is_configurable() {
+    use crate::orders::O_SET_LOT;
+    let (mut w, a, b) = rail_world();
+    w.buildings[a].stash[IRON_PLATE as usize] = 30;
+    let ra = w.building_ref(a) as i32;
+    w.step(&[4, O_SET_LOT, 0, ra, 100]);
+    assert_eq!(w.buildings[a].lot, 100);
+    // 30 plaques seulement : le train attend à quai
+    run(&mut w, 600);
+    assert_eq!(w.carriers[0].state, 0, "il attend un voyage complet");
+    assert_eq!(w.buildings[b].stash[N + IRON_PLATE as usize], 0);
+    // 250 de plus : il part avec 100, pas plus
+    w.buildings[a].stash[IRON_PLATE as usize] += 250;
+    run(&mut w, 40);
+    assert_eq!(w.carriers[0].state, 1, "parti");
+    assert_eq!(w.carriers[0].load, 100, "un voyage de 100");
+    // automatique : il part dès qu'il a quelque chose
+    w.step(&[4, O_SET_LOT, 0, ra, 0]);
+    run(&mut w, 3000);
+    assert_eq!(w.buildings[b].stash[N + IRON_PLATE as usize], 280, "tout est livré");
+    // borné par la capacité ; seulement pour une gare ou un héliport du joueur
+    w.step(&[4, O_SET_LOT, 0, ra, 9999]);
+    assert_eq!(w.buildings[a].lot, CARRIERS[0].capacity);
+    let rb = w.building_ref(b) as i32;
+    w.step(&[4, O_SET_LOT, 0, rb, 50]);
+    assert_eq!(w.buildings[b].lot, 0, "la gare de l'allié n'est pas à nous");
+}

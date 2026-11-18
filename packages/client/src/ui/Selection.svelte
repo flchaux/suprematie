@@ -374,7 +374,17 @@
         <div class="row"><span class="kicker">Robots en vol</span> <b class="num">{flying}</b> / 8</div>
       {:else if isStation}
         {@const air = bdef.cls === BClass.CargoPad}
-        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage." : "Trains : sur les rails de l'équipe, 400 objets par voyage."} Les bras déposent dans « À envoyer » et prennent dans « Reçus ». Une gare alliée peut être la destination.</span>
+        {@const capa = d.carriers?.[air ? 1 : 0]?.capacity ?? (air ? 25 : 400)}
+        {@const step = air ? 1 : 25}
+        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage au plus." : "Trains : sur les rails de l'équipe, 400 objets par voyage au plus."} Les bras déposent dans « À envoyer » et prennent dans « Reçus ». Une gare alliée peut être la destination.</span>
+        <div class="share">
+          <div class="row">
+            <span class="kicker">Objets par voyage</span>
+            <b class="num">{info.lot ? info.lot : "Auto"}</b>
+            <span class="dim small">{info.lot ? `il attend d'en avoir ${info.lot} pour partir` : "il part dès qu'il a quelque chose"}</span>
+          </div>
+          <input type="range" min="0" max={capa} {step} value={info.lot ?? 0} disabled={!mine} title="0 : automatique" onchange={(e) => client.setLot(Number((e.target as HTMLInputElement).value))} />
+        </div>
         <div class="row wrap"><span class="kicker">À envoyer</span>{#each stashList(false) as x}<Item id={x.i} n={x.n} size={16} />{:else}<span class="dim small">vide</span>{/each}</div>
         <div class="row wrap"><span class="kicker">Reçus</span>{#each stashList(true) as x}<Item id={x.i} n={x.n} size={16} />{:else}<span class="dim small">vide</span>{/each}</div>
         <div class="row wrap"><span class="kicker">{air ? "Drones" : "Trains"}</span>
