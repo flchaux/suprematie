@@ -24,7 +24,13 @@ const defs: { key: string; name: string; size: number; w: number; h: number }[] 
       : data.buildings.map((b: { key: string; name: string; w: number; h: number; reach?: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h) * Math.max(1, b.reach ?? 1), w: b.w, h: b.h }));
 const models = set === "decor" ? DECOR_MODELS : set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
 // variantes de modèles sans définition propre (virages des tapis…) : affichées si demandées par leur clé
-const variants = (only ?? []).filter((k) => models[k] && !defs.some((d) => d.key === k)).map((k) => ({ key: k, name: k, size: 1, w: 1, h: 1 }));
+// (un modèle de niveau amélioré, clé_n2…, prend la taille de son bâtiment)
+const variants = (only ?? [])
+  .filter((k) => models[k] && !defs.some((d) => d.key === k))
+  .map((k) => {
+    const base = defs.find((d) => d.key === k.replace(/_n\d+$/, ""));
+    return base ? { ...base, key: k, name: `${base.name} ${k.slice(-1)}` } : { key: k, name: k, size: 1, w: 1, h: 1 };
+  });
 const list = only ? [...defs.filter((d) => only.includes(d.key)), ...variants] : defs;
 // les objets sont teintés de leur propre couleur (et non de celle d'un joueur)
 const itemColor = (key: string) => (data.items as { key: string; color: number }[]).find((it) => it.key === key)?.color ?? 0xffffff;

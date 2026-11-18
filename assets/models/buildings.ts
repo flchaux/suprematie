@@ -114,10 +114,8 @@ function brasRobot(x: number, z: number, pivot: boolean, o: { yaw?: number; reac
   ];
 }
 
-export const BUILDING_MODELS: Record<string, Model> = {
-  // extractor : tour de forage centrale, foret hélicoïdal au sol, deux cuves (828 triangles)
-  extractor: {
-    parts: [
+/** Extracteur de base (niveau 1) ; les niveaux améliorés lui ajoutent des pièces. */
+const EXTRACTEUR_BASE: Part[] = [
       ...socle(2),
       ...filets(2),
       // puits : cratère sombre, anneau lumineux
@@ -149,6 +147,67 @@ export const BUILDING_MODELS: Record<string, Model> = {
       // conduite vers l'avant
       { shape: "box", size: [0.12,0.12,0.8], pos: [0.66,0.36,0.1], color: "dark" },
       { shape: "bevel", size: [0.3,0.22,0.3], pos: [0.66,0.36,0.62], color: "metal" },
+    ];
+
+/** Ajouts du niveau 2 (repris en partie par le niveau 3). */
+const EXTRACTEUR_N2: Part[] = [
+  // anneau lumineux au puits, bande de danger sur la tour
+  { shape: "cylinder", sides: 8, radius: 0.56, height: 0.03, pos: [0,0.255,0.3], color: "glow" },
+  { shape: "box", size: [0.66,0.1,0.54], pos: [0,0.85,-0.4], color: "hazard" },
+  { shape: "box", size: [0.66,0.1,0.54], pos: [0,1.55,-0.4], color: "hazard" },
+  // troisième cuve à l'avant gauche
+  { shape: "cylinder", sides: 8, radius: 0.2, height: 0.5, pos: [-0.66,0.45,0.58], color: "light" },
+  { shape: "cylinder", sides: 8, radius: 0.22, height: 0.06, pos: [-0.66,0.72,0.58], color: "glow" },
+  { shape: "box", size: [0.1,0.1,0.4], pos: [-0.66,0.3,0.25], color: "dark" },
+  // rehausse de la tour, coiffe aux couleurs du camp, balise ambre
+  { shape: "bevel", size: [0.5,0.7,0.42], pos: [0,2.58,-0.4], color: "metal" },
+  { shape: "box", size: [0.04,0.5,0.03], pos: [0.18,2.58,-0.18], color: "glow", mirror: true },
+  { shape: "bevel", size: [0.6,0.16,0.5], pos: [0,3.0,-0.4], color: "faction" },
+  { shape: "sphere", radius: 0.1, pos: [0,3.16,-0.4], color: "amber" },
+];
+
+export const BUILDING_MODELS: Record<string, Model> = {
+  // extractor : tour de forage centrale, foret hélicoïdal au sol, deux cuves (828 triangles)
+  extractor: { parts: EXTRACTEUR_BASE },
+  // extractor_n2 (1092 triangles) : niveau 2, tour rehaussée et cerclée de bandes de danger, balise, anneau lumineux au
+  // puits, troisième cuve à l'avant gauche
+  extractor_n2: {
+    parts: [
+      ...EXTRACTEUR_BASE,
+      ...EXTRACTEUR_N2,
+    ],
+  },
+  // extractor_n3 (1520 triangles) : niveau 3, derrick à treillis lumineux autour de la tour, couronne aux couleurs du camp,
+  // bobines d'énergie autour du foret, second foret à l'avant gauche
+  extractor_n3: {
+    parts: [
+      ...EXTRACTEUR_BASE,
+      ...EXTRACTEUR_N2.filter((p) => p.pos?.[1] === undefined || p.pos[1] < 2.4),
+      // derrick : quatre montants à filet cyan, entretoises, couronne et antenne
+      ...[[-0.44, -0.12], [0.44, -0.12], [-0.44, -0.68], [0.44, -0.68]].flatMap(([x, z]): Part[] => [
+        { shape: "box", size: [0.08,3.0,0.08], pos: [x,1.75,z], color: "metal" },
+        { shape: "box", size: [0.03,2.4,0.03], pos: [x + Math.sign(x) * 0.05,1.8,z], color: "glow" },
+      ]),
+      ...[0.9, 1.7, 2.5].flatMap((y): Part[] => [
+        { shape: "box", size: [0.92,0.06,0.06], pos: [0,y,-0.12], color: "dark" },
+        { shape: "box", size: [0.92,0.06,0.06], pos: [0,y,-0.68], color: "dark" },
+        { shape: "box", size: [0.06,0.06,0.6], pos: [0.44,y,-0.4], color: "dark", mirror: true },
+      ]),
+      { shape: "box", size: [0.06,1.0,0.06], pos: [0.22,2.1,-0.12], rot: [0,0,28], color: "metal", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.5, height: 0.2, pos: [0,3.3,-0.4], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.52, height: 0.05, pos: [0,3.22,-0.4], color: "glow" },
+      { shape: "cone", sides: 8, radius: 0.3, height: 0.4, pos: [0,3.6,-0.4], color: "light" },
+      { shape: "cylinder", sides: 5, radius: 0.025, height: 0.6, pos: [0,4.05,-0.4], color: "metal" },
+      { shape: "sphere", radius: 0.08, pos: [0,4.38,-0.4], color: "amber" },
+      // bobines d'énergie autour du foret
+      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.03, pos: [0,0.62,0.3], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.4, height: 0.03, pos: [0,0.98,0.3], color: "glow" },
+      { shape: "box", size: [0.06,0.5,0.06], pos: [0.42,0.8,0.3], color: "metal", mirror: true },
+      // second foret (tourne aussi) à l'avant gauche
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.08, pos: [-0.62,0.32,0.62], color: "dark" },
+      { shape: "cone", sides: 6, radius: 0.15, height: 0.5, pos: [-0.62,0.6,0.62], rot: [180,0,0], color: "metal", pivot: "foret2" },
+      { shape: "box", size: [0.3,0.05,0.05], pos: [-0.62,0.7,0.62], rot: [0,0,12], color: "dark", parent: "foret2" },
+      { shape: "cylinder", sides: 8, radius: 0.16, height: 0.12, pos: [-0.62,0.92,0.62], color: "faction" },
     ],
   },
   // belt1 : rebords clairs, flèche sombre, voyants ambre (96 triangles)
