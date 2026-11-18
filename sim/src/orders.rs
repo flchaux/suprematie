@@ -37,6 +37,8 @@ pub const O_UPGRADE: i32 = 40;
 pub const O_CANCEL_GHOSTS: i32 = 41;
 /// filtres de sortie d'un dépôt amélioré : [réf., n, objet...] (n <= MAX_FILTERS)
 pub const O_SET_FILTERS: i32 = 42;
+/// rotation d'un bras : [réf., quarts de tour (1 à 3)]
+pub const O_SET_TURN: i32 = 43;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
@@ -449,6 +451,16 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if let Some(b) = own_building(w, p, r) {
                 if w.buildings[b].def().class == crate::data::BClass::Inserter {
                     w.buildings[b].share = v;
+                    w.buildings[b].wake = 0;
+                }
+            }
+        }
+        O_SET_TURN => {
+            let r = c.next();
+            let k = c.next();
+            if let Some(b) = own_building(w, p, r) {
+                if w.buildings[b].def().class == crate::data::BClass::Inserter && (1..=3).contains(&k) {
+                    w.buildings[b].turn = k as u8;
                     w.buildings[b].wake = 0;
                 }
             }

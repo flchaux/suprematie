@@ -343,6 +343,12 @@ pub fn logistics_demo() -> World {
     for y in y0 + 41..y0 + 47 {
         put(&mut w, 0, B_BELT1, x0 + 49, y, 1);
     }
+    // bras en quart de tour : tourné vers le sud, il prend sur ce tapis (à sa droite) et dépose devant lui
+    let arm = put(&mut w, 0, B_INSERTER, x0 + 50, y0 + 44, 1);
+    if arm != usize::MAX {
+        w.buildings[arm].turn = 1;
+    }
+    put(&mut w, 0, B_DEPOT, x0 + 50, y0 + 45, 0);
     let (ex, ey) = (x0 + 52, y0 + 34);
     for dy in 0..2 {
         for dx in 0..2 {

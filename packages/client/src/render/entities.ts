@@ -749,7 +749,11 @@ export class Entities {
         else if (def.cls === BClass.Inserter) {
           const phase = (buf[o + 5] >> 8) & 0xff;
           const timer = (buf[o + 5] >> 16) & 0xff;
-          rot = phase === 1 ? Math.PI * (1 - timer / 6) : phase === 2 ? Math.PI : phase === 3 ? (Math.PI * timer) / 6 : 0;
+          // la pince est à l'avant du modèle (angle 0 : devant, sur la case de dépose) ; à la prise, elle est
+          // tournée d'un quart, d'un demi ou de trois quarts de tour (-sweep). Phase 1 : chargée, elle va
+          // de la prise à la dépose ; 2 : à la dépose ; 3 : à vide, elle revient ; 0 : elle attend à la prise.
+          const sweep = ((buf[o + 6] & 3 || 2) * Math.PI) / 2;
+          rot = phase === 1 ? (-sweep * timer) / 6 : phase === 2 ? 0 : phase === 3 ? -sweep * (1 - timer / 6) : -sweep;
         } else if (bflags & BF.WORKING && upg === 0) rot = performance.now() / 300;
         tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc), p.origin.z);
         tmpM2.multiply(new THREE.Matrix4().makeRotationY(rot));
@@ -1114,7 +1118,7 @@ export class Entities {
     const W = this.map.w;
     const DX = [1, 0, -1, 0];
     const DZ = [0, 1, 0, -1];
-    // tapis et bras : case -> direction (bras : 4 * portée + direction)
+    // tapis et bras : case -> direction (bras : 16 * quarts de tour + 4 * portée + direction)
     const links = new Map<number, number>();
     let o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
@@ -1123,7 +1127,8 @@ export class Entities {
       // un tapis surélevé ne touche pas les bâtiments
       if ((buf[o + 1] >>> 28) & 3) continue;
       const dir = (buf[o + 1] >> 16) & 3;
-      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (bd.cls === BClass.Inserter ? 4 * Math.max(1, bd.reach ?? 1) : 0) + dir);
+      const arm = bd.cls === BClass.Inserter ? 16 * (buf[o + 6] & 3 || 2) + 4 * Math.max(1, bd.reach ?? 1) : 0;
+      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), arm + dir);
     }
     // transfert direct : case -> bâtiment (fabricants, extracteurs et receveurs), pour ouvrir la trappe
     // entre deux bâtiments collés qui s'échangent des objets
@@ -1197,10 +1202,12 @@ export class Entities {
             if (code === side) state = 2;
             else if (code === (side + 2) % 4) state = 1;
           } else if (code !== undefined) {
+            // bras : dépose devant lui, prise selon sa rotation
             const d = code & 3;
-            const r = code >> 2;
+            const r = (code >> 2) & 3;
+            const p = (d + (code >> 4)) & 3;
             if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
-            else if (inside(ox - r * DX[d], oz - r * DZ[d])) state = 2;
+            else if (inside(ox + r * DX[p], oz + r * DZ[p])) state = 2;
           }
           // transfert direct avec un bâtiment collé
           if (state === 0) {
@@ -1215,10 +1222,11 @@ export class Entities {
             const lx = ox + DX[side];
             const lz = oz + DZ[side];
             const lc = links.get(lz * W + lx);
-            if (lc !== undefined && lc >> 2 === 2) {
+            if (lc !== undefined && ((lc >> 2) & 3) === 2) {
               const d = lc & 3;
+              const p = (d + (lc >> 4)) & 3;
               if (inside(lx + 2 * DX[d], lz + 2 * DZ[d])) state = 1;
-              else if (inside(lx - 2 * DX[d], lz - 2 * DZ[d])) state = 2;
+              else if (inside(lx + 2 * DX[p], lz + 2 * DZ[p])) state = 2;
             }
           }
           const px = ex + 0.5 + DX[side] * face;

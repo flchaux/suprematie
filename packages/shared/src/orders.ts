@@ -20,6 +20,8 @@ export const O = {
   CANCEL_GHOSTS: 41,
   /** objets remis en sortie par un dépôt amélioré : [réf., n, objet…] */
   SET_FILTERS: 42,
+  /** rotation d'un bras : [réf., quarts de tour 1 à 3] (1 : prend à droite, 2 : derrière, 3 : à gauche) */
+  SET_TURN: 43,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
@@ -187,6 +189,9 @@ export function cancelGhosts(x0: number, y0: number, x1: number, y1: number): Cm
 }
 export function upgrade(ref: number): Cmd {
   return [O.UPGRADE, ref | 0];
+}
+export function setTurn(ref: number, quarters: number): Cmd {
+  return [O.SET_TURN, ref | 0, Math.max(1, Math.min(3, quarters | 0))];
 }
 export function setFilters(ref: number, items: number[]): Cmd {
   const l = items.filter((i) => i > 0).slice(0, 4);
