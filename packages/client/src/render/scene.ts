@@ -110,7 +110,7 @@ export class GameScene {
     this.renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL });
     // courbe de tons « cinéma » : les hautes lumières (tirs, explosions) gardent du détail au lieu de saturer
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 0.92;
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.canvasParent.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
@@ -119,8 +119,8 @@ export class GameScene {
     this.scene.background = new THREE.Color(0x0b1016);
     // ambiance : environnement réfléchi (métal) et lumière d'appoint froide, faible
     this.scene.environment = environmentTexture();
-    this.scene.environmentIntensity = 0.65;
-    this.scene.add(new THREE.HemisphereLight(0xb8cff0, 0x2e2820, 0.45));
+    this.scene.environmentIntensity = 0.45;
+    this.scene.add(new THREE.HemisphereLight(0xc4d6f0, 0x3a3326, 0.8));
     // soleil : l'ombre suit la caméra et couvre seulement la zone vue
     const sun = this.sun;
     sun.castShadow = true;
@@ -162,7 +162,7 @@ export class GameScene {
       const ldr = renderOutput(hdr);
       // étalonnage : un peu plus de contraste, couleurs légèrement désaturées (rendu « métal »), coins assombris
       const lum = dot(ldr.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const sat = mix(vec3(lum, lum, lum), ldr.rgb, float(0.86));
+      const sat = mix(vec3(lum, lum, lum), ldr.rgb, float(0.94));
       const con = sat.sub(0.5).mul(1.08).add(0.5);
       const vig = float(1).sub(smoothstep(0.45, 0.95, length(screenUV.sub(0.5)).mul(1.25)).mul(0.22));
       post.outputNode = fxaa(vec4(con.mul(vig).clamp(0, 1), float(1)));
