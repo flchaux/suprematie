@@ -37,6 +37,8 @@ export const ui = $state({
   // sélection
   selUnits: [] as SelUnitGroup[],
   selBuilding: null as null | { ref: number; kind: number; owner: number },
+  /** tous les bâtiments sélectionnés (plusieurs : seule la démolition est possible) */
+  selBuildings: [] as { ref: number; kind: number; owner: number }[],
   /** unités sélectionnées appartenant à un autre joueur : fiche de statistiques, sans ordres */
   selForeign: -1,
   /** gisement sélectionné (clic sur un gisement libre ou exploité) */

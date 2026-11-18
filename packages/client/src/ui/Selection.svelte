@@ -54,6 +54,12 @@
   const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
   const lockedRecipes = $derived(allRecipes.length - recipes.length);
   const total = $derived(ui.selUnits.reduce((s, g) => s + g.count, 0));
+  /** bâtiments sélectionnés regroupés par type, dans l'ordre des types */
+  const groupByKind = (list: { ref: number; kind: number; owner: number }[]) => {
+    const m = new Map<number, { ref: number; kind: number; owner: number }[]>();
+    for (const b of list) m.set(b.kind, [...(m.get(b.kind) ?? []), b]);
+    return [...m].sort((a, b) => a[0] - b[0]);
+  };
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   // diagnostic : ce qui bloque le bâtiment, en clair
   const status = $derived.by(() => {
@@ -379,6 +385,31 @@
         </div>
         {#if d.carriers?.[air ? 1 : 0]}<span class="dim small">Coût d'un {air ? "drone" : "train"} : <Cost cost={d.carriers[air ? 1 : 0].cost} /></span>{/if}
       {/if}
+    {/if}
+  </div>
+{:else if ui.selBuildings.length > 1 && d}
+  <!-- plusieurs bâtiments : un aperçu par type, et seulement la démolition -->
+  {@const own = ui.selBuildings.filter((b) => b.owner === ui.me)}
+  {@const bgroups = groupByKind(ui.selBuildings)}
+  <div class="panel sel">
+    <div class="uhead">
+      <span class="kicker">Sélection</span>
+      <b class="title num">{ui.selBuildings.length}</b>
+      <span class="dim">bâtiments</span>
+    </div>
+    <div class="groups">
+      {#each bgroups as [kind, list] (kind)}
+        <button class="grp tip" onclick={() => client.selectIds(list.map((b) => b.ref))}>
+          {#if sprite("buildings", d.buildings[kind].key)}<img src={sprite("buildings", d.buildings[kind].key)} alt="" />{:else}<span class="ab">{abbrev(d.buildings[kind].name)}</span>{/if}
+          <span class="cnt num">{list.length}</span>
+          <span class="tt"><b>{d.buildings[kind].name}</b><br /><span class="dim">Clic : ne garder que ce type</span></span>
+        </button>
+      {/each}
+    </div>
+    {#if own.length}
+      <div class="row">
+        <button class="icon-btn danger" title="Démontés par vos constructeurs, matériaux rendus au stock ; les chantiers sont annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+      </div>
     {/if}
   </div>
 {:else if ui.selUnits.length && d && ui.selForeign >= 0}

@@ -599,19 +599,31 @@ export class GameClient {
       groups.get(k)!.push(id);
       lvls.set(k, Math.max(lvls.get(k) ?? 0, (f.buf[o + 1] >>> 24) & 7));
     }
-    let selB: typeof ui.selBuilding = null;
+    // bâtiments sélectionnés : un seul passage sur l'image quand il y en a beaucoup
+    const selBs: { ref: number; kind: number; owner: number }[] = [];
+    let nb = 0;
+    for (const id of this.selected) if (Ord.isBuildingRef(id)) nb++;
+    const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number }>() : null;
+    if (byRef) {
+      for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+        const ref = f.buf[o] >>> 0;
+        if (this.selected.has(ref)) byRef.set(ref, { ref, kind: f.buf[o + 1] & 0xff, owner: (f.buf[o + 1] >> 8) & 0xff });
+      }
+    }
     for (const id of this.selected) {
       if (Ord.isBuildingRef(id)) {
-        const bw = this.findBuilding(id);
+        const bw = byRef ? byRef.get(id) : this.findBuilding(id);
         if (bw) {
           alive.add(id);
-          selB = bw;
+          selBs.push({ ref: bw.ref, kind: bw.kind, owner: bw.owner });
         } else if (!this.frame || this.scene?.strategic) alive.add(id);
       }
     }
+    const selB: typeof ui.selBuilding = selBs.length === 1 ? selBs[0] : null;
     for (const id of [...this.selected]) if (!alive.has(id)) this.selected.delete(id);
     ui.selUnits = [...groups.entries()].map(([kind, ids]) => ({ kind, count: ids.length, ids, lvl: lvls.get(kind) ?? 0 })).sort((a, b) => a.kind - b.kind);
     ui.selBuilding = selB;
+    ui.selBuildings = selBs;
     // unités d'un autre joueur (sans aucune des nôtres) : fiche de statistiques seulement
     ui.selForeign = this.selOwn.size === 0 && ui.selUnits.length ? foreign : -1;
     if (this.selected.size) {
@@ -1266,7 +1278,11 @@ export class GameClient {
           if (v.owner === ui.me && v.kind === u.kind && this.scene!.project(v.x, v.y, v.z, p) && p.x >= 0 && p.y >= 0 && p.x <= el.clientWidth && p.y <= el.clientHeight) this.selected.add(v.id);
         }
       } else if (add && this.selected.has(u.id)) this.selected.delete(u.id);
-      else this.selected.add(u.id);
+      else {
+        // sélection homogène : des unités ou des bâtiments, pas les deux
+        for (const id of [...this.selected]) if (Ord.isBuildingRef(id)) this.selected.delete(id);
+        this.selected.add(u.id);
+      }
       this.lastClick = { time: now, id: u.id };
       sfx.click();
     } else {
@@ -1274,8 +1290,17 @@ export class GameClient {
       if (g) {
         const b = this.buildingAtTile(Math.floor(g.x), Math.floor(g.z));
         if (b) {
+          const now = performance.now();
           if (!add) this.selected.clear();
-          this.selected.add(b.ref);
+          // plusieurs bâtiments (Maj+clic, double-clic, cadre) : la sélection n'a plus d'unités
+          for (const id of [...this.selected]) if (!Ord.isBuildingRef(id)) this.selected.delete(id);
+          if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350) {
+            // double-clic : tous nos bâtiments de ce type à l'écran
+            const el = this.canvasEl!;
+            for (const ref of this.ownBuildingsInRect(0, 0, el.clientWidth, el.clientHeight, b.kind)) this.selected.add(ref);
+          } else if (add && this.selected.has(b.ref)) this.selected.delete(b.ref);
+          else this.selected.add(b.ref);
+          this.lastClick = { time: now, id: b.ref };
           sfx.click();
         } else if (!add) {
           const tx = Math.floor(g.x);
@@ -1352,8 +1377,36 @@ export class GameClient {
         n++;
       }
     }
+    if (n) {
+      for (const id of [...this.selected]) if (Ord.isBuildingRef(id)) this.selected.delete(id);
+    } else if (![...this.selected].some((id) => !Ord.isBuildingRef(id))) {
+      // aucune unité dans le cadre : nos bâtiments (seule la démolition sera possible s'il y en a plusieurs)
+      for (const ref of this.ownBuildingsInRect(ax, ay, bx, by)) {
+        this.selected.add(ref);
+        n++;
+      }
+    }
     if (n) sfx.click();
     this.updateUi();
+  }
+
+  /** Nos bâtiments dont le centre est dans le rectangle d'écran (pixels), d'un type donné si `kind` est fourni. */
+  private ownBuildingsInRect(ax: number, ay: number, bx: number, by: number, kind?: number): number[] {
+    const sc = this.scene;
+    const f = this.frame;
+    const out: number[] = [];
+    if (!sc || !f || !this.data || !this.map) return out;
+    const p = { x: 0, y: 0 };
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const w1 = f.buf[o + 1];
+      if (((w1 >> 8) & 0xff) !== ui.me || (kind !== undefined && (w1 & 0xff) !== kind)) continue;
+      const d = this.data.buildings[w1 & 0xff];
+      const dir = (w1 >> 16) & 3;
+      const x = (f.buf[o + 2] & 0xffff) + (dir & 1 ? d.h : d.w) / 2;
+      const z = ((f.buf[o + 2] >>> 16) & 0xffff) + (dir & 1 ? d.w : d.h) / 2;
+      if (sc.project(x, groundHeight(this.map, x, z) + 0.3, z, p) && p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) out.push(f.buf[o] >>> 0);
+    }
+    return out;
   }
 
   selectIds(ids: number[]): void {
@@ -1726,7 +1779,8 @@ export class GameClient {
 
   /** Nos tapis, bras et tapis de contrôle terminés parmi la sélection (ordre ROTATE). */
   private rotatableSelection(): number[] {
-    if (ui.me < 0 || !this.data) return [];
+    // plusieurs bâtiments sélectionnés : seule la démolition est possible
+    if (ui.me < 0 || !this.data || this.selected.size !== 1) return [];
     const out: number[] = [];
     for (const id of this.selected) {
       if (!Ord.isBuildingRef(id)) continue;
@@ -1980,6 +2034,10 @@ export class GameClient {
       this.cancelPlan();
       return;
     }
+    if (ui.selBuildings.length > 1) {
+      this.demolishMany(ui.selBuildings.filter((b) => b.owner === ui.me).map((b) => b.ref));
+      return;
+    }
     const sb = ui.selBuilding;
     if (sb && sb.owner === ui.me) {
       const f = this.frame;
@@ -2078,6 +2136,39 @@ export class GameClient {
       else sfx.error();
       return;
     }
+    this.assignReclaim(targets, queue);
+  }
+
+  /** Démolit plusieurs de nos bâtiments : chantiers annulés tout de suite, les autres répartis entre les constructeurs. */
+  private demolishMany(refs: number[]): void {
+    const f = this.frame;
+    if (!f || !this.data) return;
+    const want = new Set(refs);
+    const targets: { ref: number; x: number; y: number }[] = [];
+    let cancelled = 0;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const ref = f.buf[o] >>> 0;
+      if (!want.has(ref)) continue;
+      const w1 = f.buf[o + 1];
+      const d = this.data.buildings[w1 & 0xff];
+      const dir = (w1 >> 16) & 3;
+      const x = (f.buf[o + 2] & 0xffff) + (dir & 1 ? d.h : d.w) / 2;
+      const y = ((f.buf[o + 2] >>> 16) & 0xffff) + (dir & 1 ? d.w : d.h) / 2;
+      if (f.buf[o + 4] < 65536) {
+        this.cmd(Ord.cancel(ref));
+        cancelled++;
+      } else targets.push({ ref, x, y });
+    }
+    if (targets.length) this.assignReclaim(targets, false);
+    else if (cancelled) sfx.confirm();
+    else sfx.error();
+  }
+
+  /**
+   * Répartit des cibles de recyclage entre les constructeurs sélectionnés (sinon les 3 plus proches) :
+   * chacun enchaîne les plus proches de sa position précédente, avec une charge équilibrée.
+   */
+  private assignReclaim(targets: { ref: number; x: number; y: number }[], queue: boolean): void {
     const sel = new Set(this.engineers());
     let builders = this.ownBuilders().filter((b) => sel.has(b.id));
     if (!builders.length) {
