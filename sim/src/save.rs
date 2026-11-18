@@ -31,6 +31,7 @@ pub fn snapshot(w: &World) -> Vec<u8> {
     w.vis.ser(&mut o);
     w.team_stock.ser(&mut o);
     w.carriers.ser(&mut o);
+    w.ghosts.ser(&mut o);
     o.buf
 }
 
@@ -58,10 +59,14 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
     w.vis = Ser::de(&mut r);
     w.team_stock = Ser::de(&mut r);
     w.carriers = Ser::de(&mut r);
+    w.ghosts = Ser::de(&mut r);
     w.events.clear();
     // reconstruire l'occupation, la passabilité, la grille des bâtiments
     for i in 0..w.map.occ.len() {
         w.map.occ[i] = 0;
+    }
+    for v in w.map.occ_up.iter_mut() {
+        *v = 0;
     }
     for y in 0..w.map.h {
         for x in 0..w.map.w {
@@ -78,6 +83,12 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
         let passable = bb.def().passable;
         let (x, y) = (bb.x, bb.y);
         let cls = bb.def().class;
+        if bb.floor > 0 {
+            // tapis surélevé : seule l'occupation de son niveau
+            let (i, f) = (w.map.idx(x, y), bb.floor);
+            w.map.set_occ_floor(i, f, b as u32 + 1);
+            continue;
+        }
         for ty in y..y + bh {
             for tx in x..x + bw {
                 let i = w.map.idx(tx, ty);

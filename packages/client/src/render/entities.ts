@@ -84,6 +84,20 @@ const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BCl
 const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
+const tmpQ2 = new THREE.Quaternion();
+const tmpQ3 = new THREE.Quaternion();
+// vue logistique : tapis vide, fluide, chargé, saturé ; bâtiment bloqué, affamé, sans énergie, en marche
+const LOGI_EMPTY = new THREE.Color(0.25, 0.32, 0.45);
+const LOGI_FLOW = new THREE.Color(0.25, 1.1, 0.45);
+const LOGI_BUSY = new THREE.Color(1.3, 1.05, 0.2);
+const LOGI_FULL = new THREE.Color(1.5, 0.18, 0.12);
+const LOGI_BLOCKED = new THREE.Color(1.5, 0.18, 0.12);
+const LOGI_STARVED = new THREE.Color(1.4, 0.75, 0.1);
+const LOGI_POWER = new THREE.Color(0.85, 0.35, 1.5);
+const LOGI_OK = new THREE.Color(0.2, 0.6, 0.3);
+/** hauteur d'un niveau de tapis (cases du monde) : niveau 1 au-dessus des bâtiments bas, niveau 2 encore au-dessus */
+export const FLOOR_H = 1.6;
+const tmpV2 = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const tmpC = new THREE.Color();
@@ -167,6 +181,16 @@ export class Entities {
   buildingMeshes: KindMesh[] = [];
   /** virages des tapis par type : [entrée à gauche, entrée à droite] (forme 1 et 2 de la simulation) */
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
+  /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
+  wallSeg: KindMesh | null = null;
+  /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
+  levelPips: THREE.InstancedMesh;
+  /** vue logistique (touche maintenue) : dalles colorées sur les tapis (remplissage) et sous les bâtiments en difficulté */
+  logistics = false;
+  logiPads: THREE.InstancedMesh;
+  /** tapis surélevés : piliers, et cages d'ascenseur (montants et traverse) là où un tapis change de niveau */
+  supports: THREE.InstancedMesh;
+  liftGlow: THREE.InstancedMesh;
   teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
@@ -252,6 +276,7 @@ export class Entities {
         const d = BUILDING_MODELS[b.key + "_virage_d"];
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
       }
+      if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, buildModel(BUILDING_MODELS.wall_seg), scale, TEX_PER_TILE_BUILDING);
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
     this.itemColors = data.items.map((it) => new THREE.Color(it.color ?? 0xffffff));
@@ -276,6 +301,26 @@ export class Entities {
       m.setColorAt(0, new THREE.Color());
       this.group.add(m);
     }
+    this.levelPips = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.08, 0.06), new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0xffb547).multiplyScalar(1.8) }), 2000);
+    this.levelPips.count = 0;
+    this.levelPips.frustumCulled = false;
+    this.group.add(this.levelPips);
+    // boîte unité posée sur y = 0 (étirée en hauteur pour les piliers et les montants)
+    const post = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+    this.supports = new THREE.InstancedMesh(post, new THREE.MeshStandardNodeMaterial({ color: 0x3a4250, roughness: 0.45, metalness: 0.7 }), 8000);
+    this.supports.castShadow = true;
+    this.liftGlow = new THREE.InstancedMesh(post, new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0x3ef0ff).multiplyScalar(1.6) }), 2000);
+    for (const m of [this.supports, this.liftGlow]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
+    this.logiPads = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ transparent: true, opacity: 0.72, depthTest: false, depthWrite: false }), 20000);
+    this.logiPads.count = 0;
+    this.logiPads.frustumCulled = false;
+    this.logiPads.renderOrder = 6;
+    this.logiPads.setColorAt(0, new THREE.Color());
+    this.group.add(this.logiPads);
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
     for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
@@ -415,6 +460,7 @@ export class Entities {
       g.begin();
       d.begin();
     }
+    this.wallSeg?.begin();
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
@@ -554,6 +600,25 @@ export class Entities {
       }
     }
     // ----- bâtiments -----
+    let npip = 0;
+    let nsup = 0;
+    let nlift = 0;
+    /** pilier ou montant : boîte de (sx, h, sz) posée en (x, y0, z), tournée de q */
+    const support = (x: number, y0: number, z: number, sx: number, h: number, sz: number, q: THREE.Quaternion, glow = false) => {
+      const m = glow ? this.liftGlow : this.supports;
+      const n = glow ? nlift : nsup;
+      if (n >= (glow ? 2000 : 8000) || h <= 0) return;
+      tmpM2.compose(tmpV.set(x, y0, z), q, tmpS.set(sx, h, sz));
+      m.setMatrixAt(n, tmpM2);
+      if (glow) nlift++;
+      else nsup++;
+    };
+    // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
+    const walls = new Map<number, number>();
+    o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      if (this.data.buildings[buf[o + 1] & 0xff]?.cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
+    }
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = buf[o + 1] & 0xff;
@@ -585,14 +650,68 @@ export class Entities {
       const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : this.buildingMeshes[kind];
       km.ensure(km.n + 1);
       const build = buf[o + 4] / 65536;
-      const y = groundHeight(this.map, cx, cz);
+      const ground = groundHeight(this.map, cx, cz);
+      // tapis surélevé (bits 28-29) ; montée ou descente vers le niveau des bits 3-4 du mot auxiliaire
+      const floor = def.cls === BClass.Belt ? (buf[o + 1] >>> 28) & 3 : 0;
+      const ramp = def.cls === BClass.Belt && (buf[o + 5] & 4) !== 0 ? (buf[o + 5] >> 3) & 3 : -1;
+      const y = ground + (ramp >= 0 ? ((floor + ramp) / 2) * FLOOR_H : floor * FLOOR_H);
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
       const sc = km.scale;
       const sy = build >= 1 ? sc : sc * Math.max(0.08, build);
-      tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
+      let szz = sc;
+      tmpQ3.copy(tmpQ);
+      if (ramp >= 0) {
+        // rampe : le tapis s'incline vers l'avant (+z du modèle) et s'allonge pour couvrir la case
+        const pitch = Math.atan2((ramp - floor) * FLOOR_H, 1);
+        tmpQ3.multiply(tmpQ2.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitch));
+        szz = sc / Math.cos(pitch);
+      }
+      tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ3, tmpS.set(sc, sy, szz));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
+      // tapis surélevé : pilier sous la case ; rampe : cage d'ascenseur (deux montants, traverse, filets)
+      if (def.cls === BClass.Belt && (floor > 0 || ramp >= 0)) {
+        if (ramp < 0) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
+        else {
+          const top = Math.max(floor, ramp) * FLOOR_H + 0.4;
+          for (const side of [-1, 1]) {
+            tmpV2.set(side * 0.4, 0, 0).applyQuaternion(tmpQ);
+            support(cx + tmpV2.x, ground, cz + tmpV2.z, 0.1, top, 0.1, tmpQ);
+            support(cx + tmpV2.x * 1.12, ground + 0.15, cz + tmpV2.z * 1.12, 0.025, top - 0.3, 0.025, tmpQ, true);
+          }
+          support(cx, ground + top, cz, 0.9, 0.08, 0.12, tmpQ);
+        }
+      }
+      // extracteur amélioré : barres de niveau sur la façade avant (repère du bâtiment)
+      const lvl = def.cls === BClass.Extractor ? (buf[o + 5] >>> 24) & 3 : 0;
+      if (lvl > 0 && build >= 1 && npip + lvl <= 2000) {
+        const bw = dir & 1 ? def.h : def.w;
+        const bh = dir & 1 ? def.w : def.h;
+        for (let k = 0; k < lvl; k++) {
+          // avant du modèle = +z local ; décalage latéral centré
+          tmpV2.set((k - (lvl - 1) / 2) * 0.42, 0.34, Math.max(bw, bh) / 2 - 0.02).applyQuaternion(tmpQ);
+          tmpM2.compose(tmpV.set(cx + tmpV2.x, y + tmpV2.y, cz + tmpV2.z), tmpQ, tmpS.set(1, 1, 1));
+          this.levelPips.setMatrixAt(npip++, tmpM2);
+        }
+      }
+      const seg = this.wallSeg;
+      if (def.cls === BClass.Wall && seg) {
+        // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
+        const team = teamOf(owner);
+        const ys = def.water ? this.map.waterLevel * HSCALE : y;
+        for (let d = 0; d < 4; d++) {
+          const nx = bx + [1, 0, -1, 0][d];
+          const nz = bz + [0, 1, 0, -1][d];
+          if (nx < 0 || nz < 0 || walls.get((nx | (nz << 16)) >>> 0) !== team) continue;
+          seg.ensure(seg.n + 1);
+          tmpQ2.setFromAxisAngle(UP, (-d * Math.PI) / 2);
+          tmpM2.compose(tmpV.set(cx, ys, cz), tmpQ2, tmpS.set(seg.scale, sy * (seg.scale / sc), seg.scale));
+          seg.body!.mesh.setMatrixAt(seg.n, tmpM2);
+          setTeamColor(seg.body!, seg.n, c);
+          seg.n++;
+        }
+      }
       // extracteur : pièces teintées selon la ressource exploitée
       const ore = def.cls === BClass.Extractor ? oreTint(buf[o + 5] & 0xff, this.data) : null;
       if (ore) setAccentColor(km.body!, km.n, ore);
@@ -735,6 +854,14 @@ export class Entities {
       g.end();
       d.end();
     }
+    this.wallSeg?.end();
+    this.levelPips.count = npip;
+    this.levelPips.instanceMatrix.needsUpdate = true;
+    this.supports.count = nsup;
+    this.supports.instanceMatrix.needsUpdate = true;
+    this.updateLogistics(f, strategic, myTeam, spectator);
+    this.liftGlow.count = nlift;
+    this.liftGlow.instanceMatrix.needsUpdate = true;
     this.updateHatches(f, strategic, myTeam, spectator);
     this.updateLogos(f, strategic, myTeam, spectator);
     for (const ic of this.icons) {
@@ -754,14 +881,16 @@ export class Entities {
       o = f.itemOff;
       tmpQ.setFromAxisAngle(UP, 0.45);
       for (let i = 0; i < f.nItems && ni < 20000; i++, o += ITEM_WORDS) {
-        const kind = buf[o + 2];
+        const kind = buf[o + 2] & 0xff;
         const km = this.itemMesh(kind);
         if (!km) continue;
         const x = buf[o] / TILE;
         const z = buf[o + 1] / TILE;
+        // élévation sur un tapis surélevé ou dans un ascenseur (1/256 de niveau)
+        const elev = ((buf[o + 2] >> 8) / 256) * FLOOR_H;
         km.ensure(km.n + 1);
         const s = km.scale;
-        tmpM.compose(tmpV.set(x, groundHeight(this.map, x, z) + 0.15, z), tmpQ, tmpS.set(s, s, s));
+        tmpM.compose(tmpV.set(x, groundHeight(this.map, x, z) + 0.15 + elev, z), tmpQ, tmpS.set(s, s, s));
         km.body!.mesh.setMatrixAt(km.n, tmpM);
         setTeamColor(km.body!, km.n, this.itemColors[kind]);
         km.n++;
@@ -946,6 +1075,8 @@ export class Entities {
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const bd = this.data.buildings[buf[o + 1] & 0xff];
       if (bd.cls !== BClass.Belt && bd.cls !== BClass.Inserter) continue;
+      // un tapis surélevé ne touche pas les bâtiments
+      if ((buf[o + 1] >>> 28) & 3) continue;
       const dir = (buf[o + 1] >> 16) & 3;
       links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (bd.cls === BClass.Inserter ? 4 * Math.max(1, bd.reach ?? 1) : 0) + dir);
     }
@@ -1199,6 +1330,63 @@ export class Entities {
   private unitHeightAt(wi: number, x: number, z: number): number {
     const kind = this.data.units.findIndex((u) => u.weapons.includes(wi));
     return kind >= 0 ? this.unitHeight(kind, x, z) : groundHeight(this.map, x, z);
+  }
+
+  /**
+   * Vue logistique : sur chaque tapis, une dalle selon son remplissage (objets sur la case : vide,
+   * fluide, chargé, saturé) ; sous les bâtiments, une dalle s'ils sont bloqués (sortie pleine), affamés
+   * (entrée manquante) ou sans énergie suffisante ; vert pâle s'ils tournent.
+   */
+  private updateLogistics(f: Frame, strategic: boolean, myTeam: number, spectator: boolean): void {
+    const m = this.logiPads;
+    if (!this.logistics || strategic) {
+      m.count = 0;
+      return;
+    }
+    const buf = f.buf;
+    // objets par case de tapis (cases du monde, tous niveaux)
+    const fill = new Map<number, number>();
+    for (let i = 0, o = f.itemOff; i < f.nItems; i++, o += ITEM_WORDS) {
+      const key = Math.floor(buf[o + 1] / TILE) * 65536 + Math.floor(buf[o] / TILE);
+      fill.set(key, (fill.get(key) ?? 0) + 1);
+    }
+    let n = 0;
+    const put = (x: number, y: number, z: number, w: number, h: number, c: THREE.Color) => {
+      if (n >= 20000) return;
+      tmpM.compose(tmpV.set(x, y, z), tmpQ.identity(), tmpS.set(w, 1, h));
+      m.setMatrixAt(n, tmpM);
+      m.setColorAt(n, c);
+      n++;
+    };
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const kind = buf[o + 1] & 0xff;
+      const def = this.data.buildings[kind];
+      const owner = (buf[o + 1] >> 8) & 0xff;
+      if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
+      if (buf[o + 4] < 65536) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      const flags = (buf[o + 1] >> 20) & 0xff;
+      const x = buf[o + 2] & 0xffff;
+      const z = (buf[o + 2] >>> 16) & 0xffff;
+      const bw = dir & 1 ? def.h : def.w;
+      const bh = dir & 1 ? def.w : def.h;
+      const cx = x + bw / 2;
+      const cz = z + bh / 2;
+      const g = groundHeight(this.map, cx, cz);
+      if (def.cls === BClass.Belt) {
+        const floor = (buf[o + 1] >>> 28) & 3;
+        const k = fill.get(z * 65536 + x) ?? 0;
+        put(cx, g + floor * FLOOR_H + 0.14, cz, 0.62, 0.92, k >= 4 ? LOGI_FULL : k === 3 ? LOGI_BUSY : k > 0 ? LOGI_FLOW : LOGI_EMPTY);
+        continue;
+      }
+      if (def.cls === BClass.Wall || def.cls === BClass.Pylon || def.cls === BClass.Inserter) continue;
+      const c =
+        flags & BF.OUT_BLOCKED ? LOGI_BLOCKED : flags & BF.NO_INPUT ? LOGI_STARVED : flags & (BF.UNPOWERED | BF.LOW_POWER) && def.powerUse > 0 ? LOGI_POWER : flags & BF.WORKING ? LOGI_OK : null;
+      if (c) put(cx, g + 0.06, cz, bw * 1.04, bh * 1.04, c);
+    }
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
   }
 
   /** Maillage des objets d'un type (modèle de assets/models/items.ts, un quart de case de large). */

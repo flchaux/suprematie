@@ -20,8 +20,10 @@ pub struct Line {
     pub moving: u32,
     /// Case (indice de carte) dans laquelle la ligne débouche, ou -1.
     pub out_pos: i32,
+    /// Niveau de cette case (un tapis surélevé ne livre qu'à un tapis de son niveau ou d'un niveau voisin).
+    pub out_floor: u8,
 }
-crate::ser_struct!(Line { alive, tiles, items, speed, moving, out_pos });
+crate::ser_struct!(Line { alive, tiles, items, speed, moving, out_pos, out_floor });
 
 #[derive(Default)]
 pub struct Belts {
@@ -122,12 +124,12 @@ impl Line {
     }
 }
 
-/// Direction d'un tapis à la case (x, y), s'il y en a un (complet).
-fn belt_at(w: &World, x: i32, y: i32) -> Option<(usize, u8)> {
-    if !w.map.inside(x, y) {
+/// Direction d'un tapis à la case (x, y) au niveau `floor`, s'il y en a un (complet).
+fn belt_at(w: &World, x: i32, y: i32, floor: u8) -> Option<(usize, u8)> {
+    if !w.map.inside(x, y) || floor >= crate::map::FLOORS {
         return None;
     }
-    let o = w.map.occ[w.map.idx(x, y)];
+    let o = w.map.occ_floor(w.map.idx(x, y), floor);
     if o == 0 {
         return None;
     }
@@ -139,32 +141,71 @@ fn belt_at(w: &World, x: i32, y: i32) -> Option<(usize, u8)> {
     }
 }
 
-/// Tapis suivant (celui dans lequel débouche ce tapis), s'il n'est pas en sens opposé.
-fn next_belt(w: &World, b: usize) -> Option<usize> {
+/// Tapis suivant (celui dans lequel débouche ce tapis), s'il n'est pas en sens opposé : au même
+/// niveau, sinon au niveau voisin, tout droit (ascenseur : montée ou descente automatique).
+pub fn next_belt(w: &World, b: usize) -> Option<usize> {
     let bb = &w.buildings[b];
     let (dx, dy) = DIRS[bb.dir as usize];
-    let (nb, nd) = belt_at(w, bb.x + dx, bb.y + dy)?;
-    if (nd + 2) % 4 == bb.dir {
-        return None;
+    let (x, y) = (bb.x + dx, bb.y + dy);
+    if let Some((nb, nd)) = belt_at(w, x, y, bb.floor) {
+        return if (nd + 2) % 4 == bb.dir { None } else { Some(nb) };
     }
-    Some(nb)
+    for g in [bb.floor + 1, bb.floor.wrapping_sub(1)] {
+        if let Some((nb, nd)) = belt_at(w, x, y, g) {
+            // ascenseur : seulement tout droit
+            if nd == bb.dir {
+                return Some(nb);
+            }
+        }
+    }
+    None
+}
+
+/// Tapis d'un autre niveau, juste derrière et dans le même sens, qui monte ou descend vers `b`
+/// (aucun tapis de son propre niveau ne le prolonge sur la case de `b`).
+fn elevator_pred(w: &World, b: usize) -> Option<usize> {
+    let bb = &w.buildings[b];
+    let (bx, by) = DIRS[(bb.dir as usize + 2) % 4];
+    for g in [bb.floor + 1, bb.floor.wrapping_sub(1)] {
+        if let Some((pb, pd)) = belt_at(w, bb.x + bx, bb.y + by, g) {
+            if pd == bb.dir && belt_at(w, bb.x, bb.y, g).is_none() {
+                return Some(pb);
+            }
+        }
+    }
+    None
+}
+
+/// Niveau visé par un tapis qui monte ou descend (sa case suivante est à un autre niveau), sinon None.
+pub fn ramp_to(w: &World, b: usize) -> Option<u8> {
+    let nb = next_belt(w, b)?;
+    let f = w.buildings[nb].floor;
+    if f != w.buildings[b].floor {
+        Some(f)
+    } else {
+        None
+    }
 }
 
 /// Prédécesseur principal : le tapis derrière s'il pointe vers celui-ci, sinon l'unique tapis latéral (virage).
 fn main_pred(w: &World, b: usize) -> Option<usize> {
     let bb = &w.buildings[b];
     let d = bb.dir as usize;
+    let f = bb.floor;
     let (bx, by) = DIRS[(d + 2) % 4];
-    if let Some((pb, pd)) = belt_at(w, bb.x + bx, bb.y + by) {
+    if let Some((pb, pd)) = belt_at(w, bb.x + bx, bb.y + by, f) {
         if pd as usize == d {
             return Some(pb);
         }
+    }
+    if let Some(p) = elevator_pred(w, b) {
+        return Some(p);
     }
     let mut side = None;
     let mut count = 0;
     for sd in [(d + 1) % 4, (d + 3) % 4] {
         let (sx, sy) = DIRS[sd];
-        if let Some((pb, pd)) = belt_at(w, bb.x + sx, bb.y + sy) {
+        if let Some((pb, pd)) = belt_at(w, bb.x + sx, bb.y + sy, f) {
             // le tapis latéral doit pointer vers nous
             if (pd as usize + 2) % 4 == sd {
                 side = Some(pb);
@@ -174,7 +215,7 @@ fn main_pred(w: &World, b: usize) -> Option<usize> {
     }
     if count == 1 {
         // pas de tapis derrière qui pointe vers nous
-        if let Some((_, pd)) = belt_at(w, bb.x + bx, bb.y + by) {
+        if let Some((_, pd)) = belt_at(w, bb.x + bx, bb.y + by, f) {
             if pd as usize == d {
                 return None;
             }
@@ -191,17 +232,22 @@ fn main_pred(w: &World, b: usize) -> Option<usize> {
 pub fn belt_shape(w: &World, b: usize) -> u8 {
     let bb = &w.buildings[b];
     let d = bb.dir as usize;
+    let f = bb.floor;
     let (bx, by) = DIRS[(d + 2) % 4];
-    if let Some((_, pd)) = belt_at(w, bb.x + bx, bb.y + by) {
+    if let Some((_, pd)) = belt_at(w, bb.x + bx, bb.y + by, f) {
         if pd as usize == d {
             return 0;
         }
+    }
+    // arrivée par un ascenseur : droit
+    if elevator_pred(w, b).is_some() {
+        return 0;
     }
     let mut shape = 0;
     let mut count = 0;
     for (k, sd) in [(1u8, (d + 1) % 4), (2u8, (d + 3) % 4)] {
         let (sx, sy) = DIRS[sd];
-        if let Some((_, pd)) = belt_at(w, bb.x + sx, bb.y + sy) {
+        if let Some((_, pd)) = belt_at(w, bb.x + sx, bb.y + sy, f) {
             if (pd as usize + 2) % 4 == sd {
                 shape = k;
                 count += 1;
@@ -226,18 +272,20 @@ pub fn rebuild_around(w: &mut World, changed: &[(i32, i32)]) {
                 if !w.map.inside(x, y) {
                     continue;
                 }
-                let o = w.map.occ[w.map.idx(x, y)];
-                if o == 0 {
-                    continue;
-                }
-                let b = &w.buildings[(o - 1) as usize];
-                if b.def().class != BClass::Belt {
-                    continue;
-                }
-                if b.line != NONE {
-                    lines_hit.push(b.line);
-                } else if b.complete() {
-                    tiles.push(o - 1);
+                for floor in 0..crate::map::FLOORS {
+                    let o = w.map.occ_floor(w.map.idx(x, y), floor);
+                    if o == 0 {
+                        continue;
+                    }
+                    let b = &w.buildings[(o - 1) as usize];
+                    if b.def().class != BClass::Belt {
+                        continue;
+                    }
+                    if b.line != NONE {
+                        lines_hit.push(b.line);
+                    } else if b.complete() {
+                        tiles.push(o - 1);
+                    }
                 }
             }
         }
@@ -302,10 +350,13 @@ pub fn rebuild_around(w: &mut World, changed: &[(i32, i32)]) {
                 chain.push(nx as u32);
                 cur = nx;
             }
-            let last = &w.buildings[*chain.last().unwrap_or(&0) as usize];
+            let last_i = *chain.last().unwrap_or(&0) as usize;
+            let last = &w.buildings[last_i];
             let (dx, dy) = DIRS[last.dir as usize];
             let (ox, oy) = (last.x + dx, last.y + dy);
             let out_pos = if w.map.inside(ox, oy) { w.map.idx(ox, oy) as i32 } else { -1 };
+            // sortie : le tapis suivant (éventuellement par un ascenseur), sinon le même niveau
+            let out_floor = next_belt(w, last_i).map(|nb| w.buildings[nb].floor).unwrap_or(last.floor);
             let li = if let Some(f) = w.belts.free.pop() {
                 f
             } else {
@@ -317,7 +368,7 @@ pub fn rebuild_around(w: &mut World, changed: &[(i32, i32)]) {
                 b.line = li;
                 b.line_idx = k as u16;
             }
-            w.belts.lines[li as usize] = Line { alive: true, tiles: chain, items: VecDeque::new(), speed, moving: 0, out_pos };
+            w.belts.lines[li as usize] = Line { alive: true, tiles: chain, items: VecDeque::new(), speed, moving: 0, out_pos, out_floor };
             new_lines.push(li);
         }
     }
@@ -369,7 +420,8 @@ pub fn update_belts(w: &mut World) {
         let (front_item, front_gap) = w.belts.lines[li].items[0];
         if front_gap == 0 {
             let out = w.belts.lines[li].out_pos;
-            if out >= 0 && output_item(w, li as u32, out as usize, front_item) {
+            let floor = w.belts.lines[li].out_floor;
+            if out >= 0 && output_item(w, li as u32, out as usize, floor, front_item) {
                 let l = &mut w.belts.lines[li];
                 l.items.pop_front();
                 l.moving = 0;
@@ -390,9 +442,10 @@ pub fn update_belts(w: &mut World) {
     }
 }
 
-/// Fait sortir un objet de l'extrémité d'une ligne vers la case `pos`.
-fn output_item(w: &mut World, li: u32, pos: usize, item: u8) -> bool {
-    let o = w.map.occ[pos];
+/// Fait sortir un objet de l'extrémité d'une ligne vers la case `pos` au niveau `floor` (au-dessus du
+/// sol, seuls des tapis peuvent le recevoir).
+fn output_item(w: &mut World, li: u32, pos: usize, floor: u8, item: u8) -> bool {
+    let o = w.map.occ_floor(pos, floor);
     if o == 0 {
         return false;
     }
@@ -470,7 +523,7 @@ mod tests {
     use super::*;
     #[test]
     fn line_insert_take() {
-        let mut l = Line { alive: true, tiles: vec![0, 1, 2, 3], items: VecDeque::new(), speed: 24, moving: 0, out_pos: -1 };
+        let mut l = Line { alive: true, tiles: vec![0, 1, 2, 3], items: VecDeque::new(), speed: 24, moving: 0, out_pos: -1, out_floor: 0 };
         assert!(l.insert_at(IRON_ORE, 128));
         assert!(!l.insert_at(IRON_ORE, 150));
         assert!(l.insert_at(COPPER_ORE, 400));

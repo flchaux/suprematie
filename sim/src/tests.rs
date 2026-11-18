@@ -544,3 +544,76 @@ fn commander_collects_items_from_belt() {
     let cs = w.unit(cmd).unwrap();
     assert!(!matches!(w.units.cold[cs].orders.first(), Some(Order::Collect { target }) if *target == rd as u32));
 }
+
+/// Recherches nécessairement acquises avant de pouvoir lancer `t` : elle-même, ses prérequis, et
+/// les recherches des recettes des lots qu'elle consomme (lots 1 à son palier), récursivement.
+fn implied_techs(t: u8, out: &mut Vec<u8>) {
+    if out.contains(&t) {
+        return;
+    }
+    out.push(t);
+    let d = &TECHS[t as usize];
+    for &p in d.prereq {
+        implied_techs(p, out);
+    }
+    for k in 0..d.tier {
+        let pack = PACK1 + k;
+        if let Some(r) = RECIPES.iter().find(|r| r.output.0 == pack) {
+            implied_techs(r.tech, out);
+        }
+    }
+}
+
+/// Recettes débloquées par les recherches : tout ce qu'une recherche, une unité ou un bâtiment exige
+/// (lots, coûts) se fabrique avec des recettes que ses recherches impliquent déjà.
+#[test]
+fn recipes_follow_the_tech_tree() {
+    let makeable = |item: u8, techs: &[u8]| {
+        let rs: Vec<_> = RECIPES.iter().filter(|r| r.output.0 == item).collect();
+        // objet brut (minerai, cristal, hydrocarbure...) : il vient des extracteurs
+        rs.is_empty() || rs.iter().any(|r| r.tech == 0 || techs.contains(&r.tech))
+    };
+    // chaque recette : ses ingrédients sont fabricables avec ce que sa recherche implique
+    for r in RECIPES.iter() {
+        let mut t = Vec::new();
+        implied_techs(r.tech, &mut t);
+        for &(it, _) in r.inputs {
+            assert!(makeable(it, &t), "recette {} : ingrédient {} non fabricable", r.key, it);
+        }
+    }
+    // chaque unité et chaque bâtiment : son coût est fabricable
+    for u in UNITS.iter() {
+        let mut t = Vec::new();
+        implied_techs(u.tech, &mut t);
+        for &(it, _) in u.cost {
+            assert!(makeable(it, &t), "unité {} : objet {} non fabricable avec ses recherches", u.key, it);
+        }
+    }
+    for b in BUILDINGS.iter() {
+        let mut t = Vec::new();
+        implied_techs(b.tech, &mut t);
+        for &(it, _) in b.cost {
+            assert!(makeable(it, &t), "bâtiment {} : objet {} non fabricable avec ses recherches", b.key, it);
+        }
+    }
+    // au moins une recette verrouillée par recherche hors cristal, et les recettes de base restent libres
+    assert!(RECIPES.iter().filter(|r| r.tech != 0).count() >= 8);
+    for k in ["iron_plate", "copper_plate", "gear", "cable", "circuit", "pack1"] {
+        assert_eq!(RECIPES.iter().find(|r| r.key == k).unwrap().tech, 0, "{} reste de base", k);
+    }
+}
+
+/// La simulation refuse une recette dont la recherche n'est pas faite.
+#[test]
+fn locked_recipe_is_refused() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = 1 | (1 << T_AUTOMATION);
+    flatten(&mut w, 85, 85, 125, 125);
+    let a = put(&mut w, B_ASSEMBLER1, 100, 100, 0);
+    let rid = |k: &str| RECIPES.iter().position(|r| r.key == k).unwrap() as i32;
+    let rf = w.building_ref(a) as i32;
+    w.step(&[4, crate::orders::O_SET_RECIPE, 0, rf, rid("processor")]);
+    assert_eq!(w.buildings[a].recipe, RECIPE_NONE, "processeur : électronique non faite");
+    w.step(&[4, crate::orders::O_SET_RECIPE, 0, rf, rid("pack2")]);
+    assert_eq!(w.buildings[a].recipe as i32, rid("pack2"), "lot 2 : automatisation faite");
+}

@@ -585,7 +585,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             clear_goal(w, s);
             // bâtiment identique déjà en chantier à cet endroit ?
             if w.map.inside(x, y) {
-                let o = w.map.occ[w.map.idx(x, y)];
+                let o = w.map.occ_floor(w.map.idx(x, y), buildings::floor_of(dir));
                 if o != 0 {
                     let b = (o - 1) as usize;
                     let bb = &w.buildings[b];

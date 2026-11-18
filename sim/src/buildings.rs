@@ -45,12 +45,13 @@ pub fn front_tile(x: i32, y: i32, w: i32, h: i32, dir: u8) -> (i32, i32) {
 }
 
 /// Bit de la direction d'une pose : la pose peut remplacer les tapis et tapis de contrôle du joueur
-/// sur son emprise (pose par le joueur ; les IA posent sans ce bit).
+/// sur son emprise (pose par le joueur, quel que soit le bâtiment ; les IA posent sans ce bit).
 pub const DIR_REPLACE: u8 = 4;
 
-/// Bâtiments logistiques qui peuvent prendre la place d'un tapis.
-fn replaces_belts(class: BClass) -> bool {
-    matches!(class, BClass::Belt | BClass::Router | BClass::Inserter)
+/// Bâtiments qui peuvent prendre la place des tapis du joueur (pose avec le bit DIR_REPLACE) : tous.
+/// Un bâtiment posé sur des tapis les démonte (coût et objets rendus) au lieu d'être refusé.
+fn replaces_belts(_class: BClass) -> bool {
+    true
 }
 
 /// Bâtiment (indice) remplaçable sur la case `i` par une pose logistique du joueur `owner`.
@@ -64,10 +65,120 @@ fn replaceable_at(w: &World, owner: u8, i: usize) -> Option<usize> {
     (bb.alive && bb.owner == owner && matches!(bb.def().class, BClass::Belt | BClass::Router)).then_some(b)
 }
 
+/// Fantômes au plus par joueur (les plus anciens sont oubliés au-delà).
+const MAX_GHOSTS: usize = 300;
+/// Distance de recherche d'un ingénieur inactif pour reconstruire (sous-unités).
+const GHOST_RANGE: i32 = 40 * TILE;
+
+/// Note un bâtiment détruit comme fantôme à reconstruire (type, position, direction et niveau, recette).
+pub fn add_ghost(w: &mut World, b: usize) {
+    let bb = &w.buildings[b];
+    let g = Ghost {
+        owner: bb.owner,
+        kind: bb.kind,
+        x: bb.x,
+        y: bb.y,
+        dir: bb.dir | bb.floor << 3,
+        recipe: if bb.def().class == BClass::Crafter { bb.recipe } else { RECIPE_NONE },
+        taken: NONE,
+    };
+    let owner = g.owner;
+    if w.ghosts.iter().filter(|o| o.owner == owner).count() >= MAX_GHOSTS {
+        if let Some(i) = w.ghosts.iter().position(|o| o.owner == owner) {
+            w.ghosts.remove(i);
+        }
+    }
+    w.ghosts.push(g);
+}
+
+/// L'ingénieur `id` a-t-il encore l'ordre de construire ce fantôme ?
+fn ghost_taken_by(w: &World, id: u32, g: &Ghost) -> bool {
+    let Some(s) = w.unit(id) else { return false };
+    w.units.cold[s].orders.iter().any(|o| matches!(*o, Order::Build { kind, x, y, .. } if kind == g.kind && x == g.x && y == g.y))
+}
+
+/// Ingénieur inactif (sans ordre, non transporté) du joueur le plus proche de (x, y), à portée.
+fn idle_engineer(w: &World, owner: u8, x: i32, y: i32) -> Option<usize> {
+    let mut best = None;
+    let mut bd = i64::MAX;
+    for s in 0..w.units.alive.len() {
+        if !w.units.alive[s] || w.units.owner[s] != owner || udef(w.units.kind[s]).build_power == 0 {
+            continue;
+        }
+        let c = &w.units.cold[s];
+        if !c.orders.is_empty() || c.carried_by != NONE {
+            continue;
+        }
+        let d = crate::fixed::dist2(x, y, w.units.x[s], w.units.y[s]);
+        if d <= (GHOST_RANGE as i64) * (GHOST_RANGE as i64) && d < bd {
+            bd = d;
+            best = Some(s);
+        }
+    }
+    best
+}
+
+/**
+ * Reconstruction automatique (toutes les secondes) : un fantôme dont la case est libre est confié à
+ * l'ingénieur inactif le plus proche ; un fantôme reconstruit reprend sa recette et disparaît ; un
+ * fantôme dont la place est prise par autre chose est oublié.
+ */
+pub fn rebuild_ghosts(w: &mut World) {
+    let mut assigned = 0;
+    let mut i = 0;
+    while i < w.ghosts.len() {
+        let g = w.ghosts[i];
+        let floor = floor_of(g.dir);
+        if !w.map.inside(g.x, g.y) {
+            w.ghosts.remove(i);
+            continue;
+        }
+        let o = w.map.occ_floor(w.map.idx(g.x, g.y), floor);
+        if o != 0 {
+            let b = (o - 1) as usize;
+            let bb = &w.buildings[b];
+            if bb.kind == g.kind && bb.x == g.x && bb.y == g.y && bb.owner == g.owner {
+                if !bb.complete() {
+                    i += 1;
+                    continue;
+                }
+                // reconstruit : sa recette d'avant
+                if g.recipe != RECIPE_NONE && bb.def().class == BClass::Crafter && bb.recipe == RECIPE_NONE && w.players[g.owner as usize].has_tech(RECIPES[g.recipe as usize].tech) {
+                    w.buildings[b].recipe = g.recipe;
+                    w.buildings[b].wake = 0;
+                }
+            }
+            w.ghosts.remove(i);
+            continue;
+        }
+        if g.taken != NONE {
+            if ghost_taken_by(w, g.taken, &g) {
+                i += 1;
+                continue;
+            }
+            w.ghosts[i].taken = NONE;
+        }
+        if assigned < 16 && can_place(w, g.owner, g.kind, g.x, g.y, g.dir) {
+            let (bw, bh) = dims(g.kind, g.dir);
+            let (cx, cy) = (g.x * TILE + bw * TILE / 2, g.y * TILE + bh * TILE / 2);
+            if let Some(s) = idle_engineer(w, g.owner, cx, cy) {
+                crate::orders::give(w, s, false, Order::Build { kind: g.kind, x: g.x, y: g.y, dir: g.dir, bid: 0 });
+                w.ghosts[i].taken = w.unit_id(s);
+                assigned += 1;
+            }
+        }
+        i += 1;
+    }
+}
+
 /// Libère l'emprise d'une pose avec remplacement. Un tapis du même type sur la même case est
 /// simplement réorienté (renvoie son indice : rien à construire) ; sinon les tapis remplacés sont
 /// démontés, leur coût et les objets qu'ils portent rendus au stock (renvoie None : poser le chantier).
 pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
+    // tapis surélevé : jamais de remplacement (il ne doit pas toucher aux tapis du sol en dessous)
+    if floor_of(dir) > 0 {
+        return None;
+    }
     if dir & DIR_REPLACE == 0 || !replaces_belts(bdef(kind).class) {
         return None;
     }
@@ -119,6 +230,12 @@ pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, di
     None
 }
 
+/// Niveau demandé dans l'octet de direction d'une pose (bits 3-4 ; 0 : sol).
+#[inline]
+pub fn floor_of(dir: u8) -> u8 {
+    ((dir >> 3) & 3).min(crate::map::FLOORS - 1)
+}
+
 pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bool {
     if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
         return false;
@@ -130,6 +247,11 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
     let (bw, bh) = dims(kind, dir);
     if x < 1 || y < 1 || x + bw > w.map.w - 1 || y + bh > w.map.h - 1 {
         return false;
+    }
+    // tapis surélevé : seule sa case à son niveau compte (il passe au-dessus du sol, de l'eau, des falaises)
+    let floor = floor_of(dir);
+    if floor > 0 {
+        return def.class == BClass::Belt && w.map.occ_floor(w.map.idx(x, y), floor) == 0;
     }
     let replace = dir & DIR_REPLACE != 0 && replaces_belts(def.class);
     for ty in y..y + bh {
@@ -189,11 +311,13 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         }
     }
     let (fx, fy) = front_tile(x, y, bw, bh, dir);
+    let floor = floor_of(dir);
     w.buildings[slot] = Building {
         alive: true,
         gen,
         kind,
         owner,
+        floor,
         dir: dir & 3,
         x,
         y,
@@ -211,8 +335,8 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     for ty in y..y + bh {
         for tx in x..x + bw {
             let i = w.map.idx(tx, ty);
-            w.map.occ[i] = slot as u32 + 1;
-            if !def.passable {
+            w.map.set_occ_floor(i, floor, slot as u32 + 1);
+            if !def.passable && floor == 0 {
                 w.map.update_pass_with(tx, ty, true);
             }
         }
@@ -257,13 +381,16 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     let (x, y, kind) = (w.buildings[b].x, w.buildings[b].y, w.buildings[b].kind);
     let (bw, bh) = w.buildings[b].size();
     let def = bdef(kind);
+    let floor = w.buildings[b].floor;
     w.buildings[b].alive = false;
     for ty in y..y + bh {
         for tx in x..x + bw {
             let i = w.map.idx(tx, ty);
-            if w.map.occ[i] == b as u32 + 1 {
-                w.map.occ[i] = 0;
-                w.map.update_pass_with(tx, ty, false);
+            if w.map.occ_floor(i, floor) == b as u32 + 1 {
+                w.map.set_occ_floor(i, floor, 0);
+                if floor == 0 {
+                    w.map.update_pass_with(tx, ty, false);
+                }
             }
         }
     }
@@ -929,6 +1056,29 @@ fn tick_router(w: &mut World, b: usize) {
     bb.wake = w.tick + 4;
 }
 
+/**
+ * Améliore l'extracteur `b` d'un niveau (ordre UPGRADE) : il doit être terminé, sous le niveau
+ * maximal, la recherche du niveau suivant faite et son coût disponible (payé aussitôt).
+ */
+pub fn upgrade(w: &mut World, b: usize) -> bool {
+    let bb = &w.buildings[b];
+    if !bb.alive || bb.def().class != BClass::Extractor || !bb.complete() {
+        return false;
+    }
+    let next = bb.level as usize + 1;
+    let Some(lvl) = EXTRACTOR_LEVELS.get(next) else { return false };
+    let owner = bb.owner as usize;
+    if !w.players[owner].has_tech(lvl.tech) || !lvl.cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
+        return false;
+    }
+    for &(it, n) in lvl.cost {
+        w.pay(owner, it, n as i32);
+    }
+    w.buildings[b].level = next as u8;
+    w.buildings[b].wake = 0;
+    true
+}
+
 fn tick_extractor(w: &mut World, b: usize) {
     let owner = w.buildings[b].owner as usize;
     if w.buildings[b].out > 0 {
@@ -950,11 +1100,13 @@ fn tick_extractor(w: &mut World, b: usize) {
             }
         }
     }
-    let s = use_power(w, b, bdef(B_EXTRACTOR).power_use);
+    let lvl = &EXTRACTOR_LEVELS[(w.buildings[b].level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
+    let s = use_power(w, b, bdef(B_EXTRACTOR).power_use * lvl.power / 100);
     let mult = w.players[owner].res_mult as u32;
     let bb = &mut w.buildings[b];
     bb.working = s > 0;
-    bb.progress += s as u32 * mult;
+    // niveau d'amélioration : vitesse en % du niveau 0
+    bb.progress += s as u32 * mult * lvl.speed / 100;
     if bb.progress >= 30 * RECIPE_SCALE {
         bb.progress -= 30 * RECIPE_SCALE;
         bb.out += 1;

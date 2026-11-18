@@ -160,13 +160,17 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Orbital => ((bb.charge as u64 * 1000 / (60 * 20 * 1024)) as i32, 0),
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
-        BClass::Extractor => (bb.recipe as i32 | (bb.out as i32) << 8, (bb.progress / 1024) as i32),
-        BClass::Belt if bb.complete() => (crate::belts::belt_shape(w, b) as i32, 0),
+        BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress / 1024) as i32),
+        // tapis : forme (bits 0-1), montée ou descente (bit 2) vers le niveau des bits 3-4
+        BClass::Belt if bb.complete() => {
+            let ramp = crate::belts::ramp_to(w, b).map(|f| 4 | (f as i32) << 3).unwrap_or(0);
+            (crate::belts::belt_shape(w, b) as i32 | ramp, 0)
+        }
         _ => (0, 0),
     };
     out.extend_from_slice(&[
         w.building_ref(b) as i32,
-        bb.kind as i32 | (bb.owner as i32) << 8 | (bb.dir as i32) << 16 | flags << 20,
+        bb.kind as i32 | (bb.owner as i32) << 8 | (bb.dir as i32) << 16 | flags << 20 | (bb.floor as i32 & 3) << 28,
         bb.x | bb.y << 16,
         bb.hp,
         bb.build as i32,
@@ -243,7 +247,12 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
                     let r = TILE / 2;
                     (kx - (dx * c + sx * s) * r / 16384, ky - (dy * c + sy * s) * r / 16384)
                 };
-                out.extend_from_slice(&[cx, cy, it as i32]);
+                // élévation (1/256 de niveau) : niveau du tapis, interpolé sur une case d'ascenseur
+                let mut elev = bb.floor as i32 * 256;
+                if let Some(g) = crate::belts::ramp_to(w, l.tiles[idx] as usize) {
+                    elev += (g as i32 - bb.floor as i32) * 256 * (TILE - off.clamp(0, TILE)) / TILE;
+                }
+                out.extend_from_slice(&[cx, cy, it as i32 | elev << 8]);
                 ni += 1;
             }
         }
@@ -407,13 +416,16 @@ pub fn info_building(w: &World, r: u32) -> String {
     let (extract_now, extract_max) = if bb.def().class == crate::data::BClass::Extractor {
         let mult = w.players[bb.owner as usize].res_mult.max(0) as u64;
         let per = |s: u64| (1200 * 10 * s * mult / (30 * crate::buildings::RECIPE_SCALE as u64)) as i32;
+        // niveau d'amélioration : même multiplicateur que tick_extractor
+        let lvl = crate::data::EXTRACTOR_LEVELS[(bb.level as usize).min(crate::data::EXTRACTOR_LEVELS.len() - 1)].speed as u64;
+        let per = |s: u64| per(s) * lvl as i32 / 100;
         (per(sat.clamp(0, 1024) as u64), per(1024))
     } else {
         (0, 0)
     };
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{}}}",
-        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{}}}",
+        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level
     )
 }
 
@@ -494,6 +506,12 @@ pub fn planned_builds(w: &World, player: i32) -> Vec<i32> {
                     list.push((kind, x, y, dir & 3));
                 }
             }
+        }
+    }
+    // bâtiments détruits à reconstruire
+    for g in &w.ghosts {
+        if g.owner as i32 == player {
+            list.push((g.kind, g.x, g.y, g.dir & 3));
         }
     }
     list.sort_unstable();

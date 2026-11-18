@@ -3,6 +3,7 @@
 import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
+import { FLOOR_H } from "../render/entities.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, hasTech } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
@@ -59,7 +60,7 @@ export class GameClient {
   reqId = 0;
   pending = new Map<number, (r: unknown) => void>();
   lastTick = 0;
-  ghostCells: { x: number; y: number; dir: number; ok: boolean }[] = [];
+  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[] = [];
   ghostStart: { x: number; y: number } | null = null;
   lastUiUpdate = 0;
   lastMinimap = 0;
@@ -337,6 +338,12 @@ export class GameClient {
       this.lastPowerShow = 0;
       sc.power?.hide();
     }
+    // vue logistique : tant que la touche est maintenue
+    const logi = keymap.held("logisticsView", this.keys);
+    if (logi !== ui.logisticsView) ui.logisticsView = logi;
+    if (sc.entities) sc.entities.logistics = logi;
+    // points de vie de l'unité sélectionnée seule
+    if (ui.unitInfo && now - this.unitInfoAt > 400) this.refreshUnitInfo();
     // curseur : les unités bougent sous une souris immobile, la sélection change
     if (now - this.cursorAt > 150) this.updateCursor();
     // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
@@ -592,9 +599,9 @@ export class GameClient {
     // unités d'un autre joueur (sans aucune des nôtres) : fiche de statistiques seulement
     ui.selForeign = this.selOwn.size === 0 && ui.selUnits.length ? foreign : -1;
     if (this.selected.size) ui.selDeposit = null;
-    if (ui.selForeign >= 0 && ui.selUnits.length === 1 && ui.selUnits[0].count === 1) {
-      void this.query<{ hp: number; maxHp: number; lvl: number } | null>("unit", [ui.selUnits[0].ids[0]]).then((r) => (ui.unitInfo = r));
-    } else ui.unitInfo = null;
+    // une seule unité (la nôtre ou une autre) : ses points de vie (rafraîchis dans la boucle d'affichage)
+    if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1) this.refreshUnitInfo();
+    else ui.unitInfo = null;
     ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0 && ui.selForeign < 0;
     if (!ui.canBuild && kb.buildStep) kb.buildStep = "";
     if (selB) {
@@ -616,16 +623,21 @@ export class GameClient {
   buildingAtTile(tx: number, tz: number): { ref: number; kind: number; owner: number; x: number; y: number; build: number; hp: number } | null {
     const f = this.frame;
     if (!f || !this.data) return null;
+    // plusieurs niveaux sur une case (tapis surélevé au-dessus) : le plus haut d'abord
+    let best: { ref: number; kind: number; owner: number; x: number; y: number; build: number; hp: number } | null = null;
+    let bestFloor = -1;
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = f.buf[o + 1] & 0xff;
       const def = this.data.buildings[kind];
       const x = f.buf[o + 2] & 0xffff;
       const y = (f.buf[o + 2] >>> 16) & 0xffff;
-      if (tx >= x && tx < x + def.w && tz >= y && tz < y + def.h) {
-        return { ref: f.buf[o] >>> 0, kind, owner: (f.buf[o + 1] >> 8) & 0xff, x, y, build: f.buf[o + 4], hp: f.buf[o + 3] };
+      const floor = (f.buf[o + 1] >>> 28) & 3;
+      if (tx >= x && tx < x + def.w && tz >= y && tz < y + def.h && floor > bestFloor) {
+        best = { ref: f.buf[o] >>> 0, kind, owner: (f.buf[o + 1] >> 8) & 0xff, x, y, build: f.buf[o + 4], hp: f.buf[o + 3] };
+        bestFloor = floor;
       }
     }
-    return null;
+    return best;
   }
 
   teamOf(p: number): number {
@@ -689,6 +701,7 @@ export class GameClient {
     if (e.button === 0 && ui.mode === "build") {
       const g = this.groundAt(x, y);
       if (g) this.ghostStart = this.snapBuild(g);
+      this.lineEndDir = null;
     }
     if (e.button === 0) this.plans.down();
     // clic droit sur le terrain avec des unités : le glisser oriente la formation (sinon : caméra)
@@ -840,6 +853,16 @@ export class GameClient {
     e.preventDefault();
     const sc = this.scene;
     if (!sc) return;
+    // pose de tapis : la molette choisit le niveau (sol, étage 1, étage 2) au lieu du zoom
+    if (ui.mode === "build" && this.isBeltKind() && !e.ctrlKey) {
+      const f = Math.max(0, Math.min(2, ui.buildFloor + (e.deltaY < 0 ? 1 : -1)));
+      if (f !== ui.buildFloor) {
+        ui.buildFloor = f;
+        sfx.click();
+        this.updateGhost();
+      }
+      return;
+    }
     const [x, y] = this.localXY(e);
     const before = this.groundAt(x, y);
     const f = Math.exp(Math.sign(e.deltaY) * Math.min(0.5, Math.abs(e.deltaY) / 400));
@@ -906,7 +929,7 @@ export class GameClient {
     if (e.code === "Escape" && !e.ctrlKey && !e.altKey) {
       if (kb.buildStep) kb.buildStep = "";
       else if (ui.mode) this.cancelMode();
-      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = plans.show = false;
+      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = false;
       else {
         this.selected.clear();
         this.updateUi();
@@ -959,6 +982,13 @@ export class GameClient {
         break;
       case "rotate":
         if (ui.mode === "build") {
+          // file de tapis en cours de tracé : R tourne la fin de la file (d'un quart de tour à chaque appui)
+          if (this.isBeltKind() && this.mouse.down && this.ghostStart && this.ghostCells.length > 1) {
+            const end = this.ghostCells[this.ghostCells.length - 1].dir;
+            this.lineEndDir = (end + 1) % 4;
+            this.updateGhost();
+            break;
+          }
           // tapis : la direction (donc la forme) est automatique jusqu'au premier R, qui la force
           const cur = this.ghostCells.length === 1 ? this.ghostCells[0].dir : ui.buildDir;
           ui.buildDir = ((this.isBeltKind() && !this.beltForced ? cur : ui.buildDir) + 1) % 4;
@@ -1010,6 +1040,9 @@ export class GameClient {
         break;
       case "stats":
         ui.showStats = !ui.showStats;
+        break;
+      case "recipes":
+        ui.showRecipes = !ui.showRecipes;
         break;
       case "help":
         ui.showHelp = !ui.showHelp;
@@ -1299,6 +1332,22 @@ export class GameClient {
   }
   engineers(): number[] {
     return this.selectedUnits().filter((u) => this.data!.units[u.kind].buildPower > 0).map((u) => u.id);
+  }
+
+  private unitInfoAt = 0;
+  /** Points de vie et vétérance de l'unité sélectionnée seule (fiche de sélection). */
+  private refreshUnitInfo(): void {
+    this.unitInfoAt = performance.now();
+    const g = ui.selUnits.length === 1 && ui.selUnits[0].count === 1 ? ui.selUnits[0] : null;
+    if (!g) {
+      ui.unitInfo = null;
+      return;
+    }
+    const id = g.ids[0];
+    void this.query<{ hp: number; maxHp: number; lvl: number } | null>("unit", [id]).then((r) => {
+      // la sélection a pu changer pendant la requête
+      if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
+    });
   }
 
   // ---------- curseur contextuel ----------
@@ -1598,8 +1647,14 @@ export class GameClient {
       for (let j = 0; j <= Math.abs(dy); j += step) out.push({ x: a.x, y: a.y + j * sy, dir: isBelt ? (dx !== 0 && j === Math.abs(dy) ? hdir : vdir) : ui.buildDir });
       for (let i = step; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: b.y, dir: isBelt ? hdir : ui.buildDir });
     }
-    return out.slice(0, 200);
+    const cells = out.slice(0, 200);
+    // fin de file tournée avec R pendant le tracé
+    if (isBelt && this.lineEndDir !== null && cells.length > 1) cells[cells.length - 1].dir = this.lineEndDir;
+    return cells;
   }
+
+  /** file de tapis en cours de tracé : direction de la dernière case choisie avec R (null : automatique) */
+  lineEndDir: number | null = null;
 
   /** pose de tapis : direction forcée par R (sinon déduite des tapis voisins) */
   beltForced = false;
@@ -1607,9 +1662,9 @@ export class GameClient {
     return this.data?.buildings[ui.buildKind]?.cls === BClass.Belt;
   }
   /** Pose logistique (tapis, tapis de contrôle, bras) : elle peut remplacer nos tapis existants. */
+  /** Toute pose du joueur peut remplacer ses tapis (un bâtiment posé dessus les démonte). */
   private replaceFlag(): number {
-    const c = this.data?.buildings[ui.buildKind]?.cls;
-    return c === BClass.Belt || c === BClass.Router || c === BClass.Inserter ? 4 : 0;
+    return ui.buildKind >= 0 ? 4 : 0;
   }
   /** Tapis complets visibles (toutes équipes) : case -> { direction, propriétaire }. */
   private beltTiles(): Map<number, { dir: number; owner: number }> {
@@ -1619,6 +1674,7 @@ export class GameClient {
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = f.buf[o + 1] & 0xff;
       if (this.data.buildings[kind]?.cls !== BClass.Belt || f.buf[o + 4] < 65536) continue;
+      if ((f.buf[o + 1] >>> 28) & 3) continue; // tapis surélevé
       const x = f.buf[o + 2] & 0xffff;
       const y = (f.buf[o + 2] >>> 16) & 0xffff;
       m.set(y * this.map.w + x, { dir: (f.buf[o + 1] >> 16) & 3, owner: (f.buf[o + 1] >> 8) & 0xff });
@@ -1673,12 +1729,45 @@ export class GameClient {
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
     const seq = ++this.ghostSeq;
-    const args = [ui.me, ui.buildKind];
     const rf = this.replaceFlag();
-    for (const c of cells) args.push(c.x, c.y, c.dir | rf);
-    const ok = await this.query<boolean[]>("canPlaceMany", args);
+    const base = isBelt ? ui.buildFloor : 0;
+    // pose possible de chaque case à un niveau donné
+    const canAt = async (floor: number): Promise<boolean[]> => {
+      const args = [ui.me, ui.buildKind];
+      for (const c of cells) args.push(c.x, c.y, c.dir | rf | ((floor & 3) << 3));
+      return (await this.query<boolean[]>("canPlaceMany", args)) ?? [];
+    };
+    const ok = await canAt(base);
+    let floors = cells.map(() => base);
+    let okAt = ok;
+    if (isBelt && cells.length > 1) {
+      // file de tapis : elle monte d'elle-même au-dessus des obstacles (bâtiment, eau, falaise, autre file
+      // qui la croise) et redescend ensuite ; les ascenseurs se forment aux changements de niveau
+      const up1 = base < 2 ? await canAt(base + 1) : cells.map(() => false);
+      const up2 = base < 1 ? await canAt(base + 2) : cells.map(() => false);
+      const crossing = (c: { x: number; y: number; dir: number }) => {
+        if (base !== 0 || !this.map) return false;
+        const e = belts.get(c.y * this.map.w + c.x);
+        // un de nos tapis au sol qui croise la file (perpendiculaire) : on passe au-dessus au lieu de le tourner
+        return !!e && (e.dir & 1) !== (c.dir & 1);
+      };
+      floors = cells.map((c, i) => (ok[i] && !crossing(c) ? base : up1[i] ? base + 1 : up2[i] ? base + 2 : base));
+      // un ascenseur relie deux cases alignées : un changement de niveau dans un angle remonte aussi la case d'avant
+      for (let pass = 0; pass < 3; pass++) {
+        for (let i = 1; i < cells.length; i++) {
+          if (floors[i] !== floors[i - 1] && cells[i].dir !== cells[i - 1].dir) {
+            const lo = floors[i] > floors[i - 1] ? i - 1 : i;
+            const hi = floors[i] > floors[i - 1] ? i : i - 1;
+            const target = floors[hi];
+            if ((target === base + 1 && up1[lo]) || (target === base + 2 && up2[lo])) floors[lo] = target;
+          }
+        }
+      }
+      okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i]) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
+    }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
-    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!ok?.[i] }));
+    this.scene.ghostLift = 0;
+    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0 }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
@@ -1701,7 +1790,8 @@ export class GameClient {
       return;
     }
     const rf = this.replaceFlag();
-    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf, shift || i > 0)));
+    // niveau propre à chaque case (montée automatique au-dessus des obstacles)
+    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf | ((c.floor ?? 0) & 3) << 3, shift || i > 0)));
     sfx.confirm();
     this.ghostStart = null;
     if (!shift) {
@@ -1770,6 +1860,13 @@ export class GameClient {
     if (ui.selBuilding) this.cmd(Ord.toggle(ui.selBuilding.ref));
   }
   /** Part de la sortie de sa source prise par le bras sélectionné (%, 0 : automatique). */
+  /** Améliore le bâtiment sélectionné d'un niveau (extracteur). */
+  upgradeBuilding(): void {
+    if (ui.selBuilding) {
+      this.cmd(Ord.upgrade(ui.selBuilding.ref));
+      sfx.confirm();
+    }
+  }
   setShare(pct: number): void {
     if (ui.selBuilding) this.cmd(Ord.setShare(ui.selBuilding.ref, pct));
   }
@@ -1845,6 +1942,13 @@ export class GameClient {
     const inBox = (x: number, z: number) => sc.project(x, groundHeight(this.map!, x, z) + 0.3, z, p) && p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by;
     const targets: { ref: number; x: number; y: number }[] = [];
     let cancelled = 0;
+    // bâtiments à reconstruire (fantômes) du cadre : oubliés
+    const corners = [this.groundAt(ax, ay), this.groundAt(bx, ay), this.groundAt(ax, by), this.groundAt(bx, by)].filter((c): c is NonNullable<typeof c> => !!c);
+    if (corners.length) {
+      const xs = corners.map((c) => c.x);
+      const zs = corners.map((c) => c.z);
+      this.cmd(Ord.cancelGhosts(Math.floor(Math.min(...xs)), Math.floor(Math.min(...zs)), Math.floor(Math.max(...xs)), Math.floor(Math.max(...zs))));
+    }
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const w1 = f.buf[o + 1];
       if (((w1 >> 8) & 0xff) !== ui.me) continue;

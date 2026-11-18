@@ -62,6 +62,7 @@
     <span class="clock num"><Icon name="clock" size={14} /> {time}</span>
     <div class="sep"></div>
     <button class="ghost icon-btn" class:on={ui.showStats} onclick={() => (ui.showStats = !ui.showStats)} title={t("Statistiques", "stats")}><Icon name="stats" /></button>
+    <button class="ghost icon-btn" class:on={ui.showRecipes} onclick={() => (ui.showRecipes = !ui.showRecipes)} title={t("Recettes débloquées", "recipes")}><Icon name="recipe" /></button>
     <button class="ghost icon-btn" class:on={ui.showHelp} onclick={() => (ui.showHelp = !ui.showHelp)} title={t("Aide", "help")}><Icon name="help" /></button>
     <button class="ghost icon-btn" class:on={ui.showGfx} onclick={() => (ui.showGfx = !ui.showGfx)} title="Réglages"><Icon name="settings" /></button>
     <button class="ghost perf num" onclick={() => (ui.showPerf = !ui.showPerf)} title={t("Détail des performances", "perf")}>{ui.fps} i/s · {ui.backend} · {ui.ping} ms</button>

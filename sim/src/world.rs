@@ -277,11 +277,15 @@ pub struct Building {
     pub pass: u64,
     /// source servie par plusieurs bras : temps virtuel du dernier service
     pub vpass: u64,
+    /// niveau d'amélioration (extracteur : voir EXTRACTOR_LEVELS)
+    pub level: u8,
+    /// étage d'un tapis (0 : sol ; 1 et 2 : surélevé, voir map::FLOORS)
+    pub floor: u8,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass
+    share, pass, vpass, level, floor
 });
 
 impl Building {
@@ -312,6 +316,20 @@ impl Building {
 }
 
 // ---------- Projectiles et épaves ----------
+/// Bâtiment détruit à reconstruire : type, position, direction (bits de niveau compris), recette, et
+/// l'ingénieur qui s'en charge (NONE : personne).
+#[derive(Clone, Copy, Default)]
+pub struct Ghost {
+    pub owner: u8,
+    pub kind: u16,
+    pub x: i32,
+    pub y: i32,
+    pub dir: u8,
+    pub recipe: u8,
+    pub taken: u32,
+}
+crate::ser_struct!(Ghost { owner, kind, x, y, dir, recipe, taken });
+
 #[derive(Clone, Copy, Default)]
 pub struct Projectile {
     pub weapon: u8,
@@ -419,6 +437,8 @@ pub struct World {
     pub team_stock: Vec<[i32; NUM_ITEMS]>,
     /// trains et drones de fret
     pub carriers: Vec<crate::logistics::Carrier>,
+    /// bâtiments détruits à reconstruire (fantômes) : les ingénieurs inactifs s'en chargent
+    pub ghosts: Vec<Ghost>,
     /// unité qui tire (pendant la résolution d'un tir ou d'un impact), pour créditer la destruction
     pub shooter: u32,
     /// prochain tick où un événement « attaque subie » peut être émis, par joueur et par type
@@ -499,6 +519,7 @@ impl World {
             n_teams,
             team_stock: vec![[0i32; NUM_ITEMS]; 8],
             carriers: Vec::new(),
+            ghosts: Vec::new(),
             shooter: NONE,
             attack_ev: Vec::new(),
         };
@@ -699,6 +720,9 @@ impl World {
     }
 
     pub fn step(&mut self, orders: &[i32]) -> u32 {
+        if self.tick % 20 == 7 && !self.ghosts.is_empty() {
+            crate::buildings::rebuild_ghosts(self);
+        }
         self.events.clear();
         if self.tick.is_multiple_of(100) {
             self.expire_wrecks();
@@ -771,6 +795,11 @@ impl World {
                 h.add(b.progress as u64 | (b.out as u64) << 32);
                 h.add(b.hand as u64 | (b.timer as u64) << 8);
             }
+        }
+        h.add(self.ghosts.len() as u64);
+        for g in &self.ghosts {
+            h.add(g.kind as u64 | (g.owner as u64) << 16 | (g.dir as u64) << 24 | (g.taken as u64) << 32);
+            h.add_i32(g.x | g.y << 16);
         }
         for l in &self.belts.lines {
             if l.alive {

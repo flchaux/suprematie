@@ -282,6 +282,51 @@ pub fn logistics_demo() -> World {
     if asm != usize::MAX {
         w.buildings[asm].recipe = 4;
     }
+    // tapis surélevés : une ligne monte par un ascenseur, passe au-dessus d'une ligne au sol et d'un
+    // générateur, puis redescend vers un dépôt
+    for x in x0 + 40..x0 + 43 {
+        put(&mut w, 0, B_BELT1, x, y0 + 50, 0);
+    }
+    for x in x0 + 43..x0 + 51 {
+        put(&mut w, 0, B_BELT1, x, y0 + 50, 1 << 3);
+    }
+    for x in x0 + 51..x0 + 54 {
+        put(&mut w, 0, B_BELT1, x, y0 + 50, 0);
+    }
+    put(&mut w, 0, B_DEPOT, x0 + 54, y0 + 50, 0);
+    for y in y0 + 45..y0 + 55 {
+        put(&mut w, 0, B_BELT1, x0 + 46, y, 1);
+    }
+    put(&mut w, 0, B_GENERATOR, x0 + 48, y0 + 49, 0);
+    let start = w.map.occ[w.map.idx(x0 + 40, y0 + 50)];
+    let cross = w.map.occ[w.map.idx(x0 + 46, y0 + 45)];
+    for k in 0..12 {
+        if start != 0 && k % 2 == 0 {
+            crate::belts::put_on_belt(&mut w, start as usize - 1, IRON_ORE);
+        }
+        if cross != 0 {
+            crate::belts::put_on_belt(&mut w, cross as usize - 1, COPPER_ORE);
+        }
+        w.step(&[]);
+        w.step(&[]);
+        w.step(&[]);
+    }
+    // extracteurs améliorés (niveaux 2 et 3) sur un gisement de démonstration
+    put(&mut w, 0, B_GENERATOR, x0 + 44, y0 + 34, 0);
+    for (k, x) in [x0 + 40, x0 + 47].into_iter().enumerate() {
+        let y = y0 + 37;
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.map.idx(x + dx, y + dy);
+                w.map.deposit[i] = COPPER_ORE;
+            }
+        }
+        w.map.spots.push(crate::map::Spot { kind: COPPER_ORE, x, y });
+        let e = put(&mut w, 0, B_EXTRACTOR, x, y, 1);
+        if e != usize::MAX {
+            w.buildings[e].level = k as u8 + 1;
+        }
+    }
     for _ in 0..20 {
         w.step(&[]);
     }
@@ -331,6 +376,17 @@ pub fn weapons_demo() -> World {
     }
     for k in 0..4 {
         if let Some(b) = place_building(&mut w, 1, B_HEAVY_TURRET, x0 + 68, y0 + 10 + k * 12, 0) {
+            complete_building(&mut w, b);
+        }
+    }
+    // un mur continu devant les tourelles, avec un retour en angle
+    for y in y0 + 6..y0 + 56 {
+        if let Some(b) = place_building(&mut w, 1, B_WALL, x0 + 66, y, 0) {
+            complete_building(&mut w, b);
+        }
+    }
+    for x in x0 + 67..x0 + 72 {
+        if let Some(b) = place_building(&mut w, 1, B_WALL, x, y0 + 6, 0) {
             complete_building(&mut w, b);
         }
     }

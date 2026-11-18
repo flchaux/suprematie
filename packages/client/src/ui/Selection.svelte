@@ -22,7 +22,10 @@
   const deployable = $derived(has("sonde") || has("heavy_artillery"));
   // même ordre que la rangée de touches de l'usine (factory1, factory2…)
   const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory).map((i) => ({ u: d.units[i], i })) : []);
-  const recipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
+  const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
+  // seulement les recettes débloquées par nos recherches (les autres apparaissent dans l'écran des recettes)
+  const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
+  const lockedRecipes = $derived(allRecipes.length - recipes.length);
   const total = $derived(ui.selUnits.reduce((s, g) => s + g.count, 0));
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   // diagnostic : ce qui bloque le bâtiment, en clair
@@ -155,6 +158,7 @@
             </div>
           {/each}
         </div>
+        {#if lockedRecipes}<button class="ghost rlock small" onclick={() => (ui.showRecipes = true)}><Icon name="lock" size={12} /> {lockedRecipes} recette{lockedRecipes > 1 ? "s" : ""} à débloquer par la recherche</button>{/if}
         {/if}
         {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe] && !picking}
           {@const r = d.recipes[info.recipe]}
@@ -231,7 +235,19 @@
           <span class="dim small">Les bras qui se servent au même bâtiment alternent. En automatique, ils se partagent à égalité ce que les parts réglées laissent.</span>
         </div>
       {:else if bdef.cls === BClass.Extractor}
+        {@const levels = d.extractorLevels ?? []}
+        {@const lvl = info.level ?? 0}
+        {@const next = levels[lvl + 1]}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
+        <div class="row"><span class="kicker">Niveau</span> <span class="num">{lvl + 1} / {levels.length || 1}</span>{#if levels[lvl]}<span class="dim small num">· vitesse ×{(levels[lvl].speed / 100).toFixed(1)} · énergie ×{(levels[lvl].power / 100).toFixed(1)}</span>{/if}</div>
+        {#if next && info.owner === ui.me && info.build >= 65536}
+          {@const ok = hasTechUI(next.tech)}
+          <div class="upgrade">
+            <button class="icon-btn" disabled={!ok || next.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name="plus" size={14} /> Améliorer au niveau {lvl + 2}</button>
+            <span class="dim small num">vitesse ×{(next.speed / 100).toFixed(1)}, énergie ×{(next.power / 100).toFixed(1)}</span>
+            {#if ok}<Cost cost={next.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[next.tech]?.name}</span>{/if}
+          </div>
+        {/if}
       {:else if bdef.cls === BClass.Depot}
         <span class="dim">Tout ce qui entre ici rejoint votre stock personnel, utilisé par vos ingénieurs.</span>
       {:else if bdef.cls === BClass.Warehouse}
@@ -311,6 +327,10 @@
       <b class="title num">{total}</b>
       <span class="dim">unité{total > 1 ? "s" : ""}{#if ui.selUnits.length === 1} · {d.units[ui.selUnits[0].kind].name}{/if}</span>
     </div>
+    {#if ui.unitInfo && total === 1}
+      {@const f = ui.unitInfo.hp / Math.max(1, ui.unitInfo.maxHp)}
+      <div class="hpline own"><span class="hp" class:mid={f < 0.6} class:low={f < 0.3}><span style:width={f * 100 + "%"}></span></span><span class="num small">{ui.unitInfo.hp} / {ui.unitInfo.maxHp} PV</span></div>
+    {/if}
     <div class="groups">
       {#each ui.selUnits as g}
         <button class="grp tip" onclick={() => client.selectIds(g.ids)}>
@@ -365,6 +385,7 @@
   .ht { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
   .title { font-size: 15px; font-weight: 600; letter-spacing: 0.04em; }
   .hpline { display: flex; align-items: center; gap: 8px; }
+  .hpline.own { margin: 4px 0 6px; }
   .hpline .hp { flex: 1; display: block; }
   .hpline .hp > span { display: block; height: 100%; background: linear-gradient(90deg, var(--good), #a8ffd8); box-shadow: 0 0 6px rgba(77, 255, 176, 0.5); }
   .hpline .hp.mid > span { background: linear-gradient(90deg, var(--amber), #ffd28a); }
@@ -379,6 +400,8 @@
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .upgrade { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .rlock { margin-top: 6px; font-size: 11px; opacity: 0.75; }
   .rhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .rhead .icon-btn { font-size: 11px; padding: 3px 8px; }
   .share { display: flex; flex-direction: column; gap: 6px; }

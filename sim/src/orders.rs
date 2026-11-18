@@ -31,6 +31,10 @@ pub const O_SURRENDER: i32 = 20;
 pub const O_SET_SHARE: i32 = 21;
 /// File de recherche : ajoute une technologie (ou la retire si elle y est déjà) ; 0 vide la file.
 pub const O_RESEARCH_QUEUE: i32 = 22;
+/// améliorer un bâtiment (extracteur) d'un niveau : [réf. du bâtiment]
+pub const O_UPGRADE: i32 = 40;
+/// oublier les fantômes à reconstruire d'une zone : [x0, y0, x1, y1] (cases, bornes comprises)
+pub const O_CANCEL_GHOSTS: i32 = 41;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 
@@ -144,7 +148,8 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if let Some(s) = own_unit(w, p, id) {
                     if udef(w.units.kind[s]).build_power > 0 {
                         // bit 4 : pose avec remplacement des tapis (voir buildings::DIR_REPLACE)
-                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 7) as u8, bid: 0 });
+                        // bits 0-1 : direction ; 2 : remplacement ; 3-4 : niveau d'un tapis
+                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 31) as u8, bid: 0 });
                     }
                 }
             }
@@ -211,6 +216,17 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let (b, f) = (c.next(), c.next());
             if let Some(b) = own_building(w, p, b) {
                 w.buildings[b].repeat = f != 0;
+            }
+        }
+        O_CANCEL_GHOSTS => {
+            let (x0, y0, x1, y1) = (c.next(), c.next(), c.next(), c.next());
+            let me = p;
+            w.ghosts.retain(|g| g.owner != me || g.x < x0 || g.x > x1 || g.y < y0 || g.y > y1);
+        }
+        O_UPGRADE => {
+            let b = c.next();
+            if let Some(b) = own_building(w, p, b) {
+                crate::buildings::upgrade(w, b);
             }
         }
         O_SET_RECIPE => {

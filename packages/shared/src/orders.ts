@@ -14,6 +14,10 @@ export const O = {
   RESEARCH: 10,
   /** file de recherche : ajoute (ou retire si déjà en file) ; 0 vide la file */
   RESEARCH_QUEUE: 22,
+  /** améliorer un bâtiment (extracteur) d'un niveau */
+  UPGRADE: 40,
+  /** oublier les bâtiments à reconstruire (fantômes) d'une zone */
+  CANCEL_GHOSTS: 41,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   RALLY: 11,
@@ -172,6 +176,12 @@ export function special(src: number, x: number, y: number, tgt: number): Cmd {
   return [O.SPECIAL, src | 0, x | 0, y | 0, tgt | 0];
 }
 /** Part de la sortie de sa source prise par un bras, en % (0 : automatique). */
+export function cancelGhosts(x0: number, y0: number, x1: number, y1: number): Cmd {
+  return [O.CANCEL_GHOSTS, x0 | 0, y0 | 0, x1 | 0, y1 | 0];
+}
+export function upgrade(ref: number): Cmd {
+  return [O.UPGRADE, ref | 0];
+}
 export function setShare(ref: number, pct: number): Cmd {
   return [O.SET_SHARE, ref | 0, Math.max(0, Math.min(100, Math.round(pct)))];
 }
