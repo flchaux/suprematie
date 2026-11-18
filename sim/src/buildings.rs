@@ -45,12 +45,13 @@ pub fn front_tile(x: i32, y: i32, w: i32, h: i32, dir: u8) -> (i32, i32) {
 }
 
 /// Bit de la direction d'une pose : la pose peut remplacer les tapis et tapis de contrôle du joueur
-/// sur son emprise (pose par le joueur ; les IA posent sans ce bit).
+/// sur son emprise (pose par le joueur, quel que soit le bâtiment ; les IA posent sans ce bit).
 pub const DIR_REPLACE: u8 = 4;
 
-/// Bâtiments logistiques qui peuvent prendre la place d'un tapis.
-fn replaces_belts(class: BClass) -> bool {
-    matches!(class, BClass::Belt | BClass::Router | BClass::Inserter)
+/// Bâtiments qui peuvent prendre la place des tapis du joueur (pose avec le bit DIR_REPLACE) : tous.
+/// Un bâtiment posé sur des tapis les démonte (coût et objets rendus) au lieu d'être refusé.
+fn replaces_belts(_class: BClass) -> bool {
+    true
 }
 
 /// Bâtiment (indice) remplaçable sur la case `i` par une pose logistique du joueur `owner`.

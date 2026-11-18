@@ -9,13 +9,16 @@ import { DEFAULT_GFX, type GfxSettings } from "./gfx.ts";
 import type { GameData, Frame } from "@supreme/shared";
 import { BClass } from "@supreme/shared";
 import { Terrain, groundHeight, type MapData } from "./terrain.ts";
-import { Entities } from "./entities.ts";
+import { Entities, FLOOR_H } from "./entities.ts";
 import { Decorations } from "./decor.ts";
 import { buildingScale, buildModel, fallbackModel } from "../models/generator.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
 import { CommandOverlay } from "./overlay.ts";
 import { PowerCoverage } from "./power.ts";
+
+const PAD_OK = new THREE.Color(0.2, 0.75, 0.35);
+const PAD_BAD = new THREE.Color(1.6, 0.12, 0.1);
 
 /** Statistiques du rendu de la dernière image. */
 export interface RenderStats {
@@ -277,9 +280,12 @@ export class GameScene {
 
   /** Fantôme de placement d'un bâtiment (ou d'une ligne de bâtiments). */
   /** Fantôme de pose ; `shape` (tapis) : 1 et 2 pour les virages (modèles « _virage_g » et « _virage_d »). */
-  /** hauteur du fantôme de pose (tapis surélevé : niveau x FLOOR_H) */
+  /** hauteur du fantôme de pose (tapis surélevé : niveau x FLOOR_H), si les cases n'ont pas leur niveau */
   ghostLift = 0;
-  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number }[]): void {
+  /** dalles sous les cases du fantôme : vert pâle si la pose est possible, rouge si la case est occupée */
+  ghostPads: THREE.InstancedMesh | null = null;
+  private padN = 0;
+  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number; floor?: number }[]): void {
     if (kind < 0) return this.setGhosts([]);
     const groups = [0, 1, 2].map((variant) => ({ kind, variant, cells: cells.filter((c) => (c.shape ?? 0) === variant) }));
     this.setGhosts(groups);
@@ -289,10 +295,21 @@ export class GameScene {
    * Fantômes de plusieurs types à la fois (plans) : vert si la case est libre, rouge sinon,
    * ou la teinte donnée (aperçu d'une copie). Les types absents de la liste sont cachés.
    */
-  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean }[]; tint?: number }[]): void {
+  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[]; tint?: number }[]): void {
     const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind * 4 + (g.variant ?? 0)));
     for (const [k, g] of this.ghostMeshes) g.mesh.visible = shown.has(k);
+    if (!this.ghostPads) {
+      this.ghostPads = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ transparent: true, opacity: 0.5, depthTest: false, depthWrite: false }), 4096);
+      this.ghostPads.frustumCulled = false;
+      this.ghostPads.renderOrder = 8;
+      this.ghostPads.setColorAt(0, new THREE.Color());
+      this.scene.add(this.ghostPads);
+    }
+    this.padN = 0;
     for (const { kind, cells, tint, variant } of groups) if (kind >= 0 && cells.length) this.fillGhost(kind, cells, tint, variant ?? 0);
+    this.ghostPads.count = this.padN;
+    this.ghostPads.instanceMatrix.needsUpdate = true;
+    if (this.ghostPads.instanceColor) this.ghostPads.instanceColor.needsUpdate = true;
     this.fillArmArrows(groups);
   }
 
@@ -341,7 +358,7 @@ export class GameScene {
     }
   }
 
-  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean }[], tint?: number, variant = 0): void {
+  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[], tint?: number, variant = 0): void {
     const key = kind * 4 + variant;
     let g = this.ghostMeshes.get(key);
     if (!g || g.mesh.count === undefined) {
@@ -371,7 +388,18 @@ export class GameScene {
       const cx = c.x + (c.dir & 1 ? def.h : def.w) / 2;
       const cz = c.y + (c.dir & 1 ? def.w : def.h) / 2;
       const y = def.water ? this.map.waterLevel * 0.08 : groundHeight(this.map, cx, cz);
-      m.compose(new THREE.Vector3(cx, y + 0.05 + this.ghostLift, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
+      const lift = c.floor !== undefined ? c.floor * FLOOR_H : this.ghostLift;
+      // dalle de l'emprise : rouge vif si la case est occupée (aperçu d'une copie teintée : seulement le rouge)
+      const pads = this.ghostPads;
+      if (pads && this.padN < 4096 && (tint === undefined || !c.ok)) {
+        const fw = c.dir & 1 ? def.h : def.w;
+        const fh = c.dir & 1 ? def.w : def.h;
+        m.compose(new THREE.Vector3(cx, y + 0.04 + lift, cz), new THREE.Quaternion(), new THREE.Vector3(fw * 0.96, 1, fh * 0.96));
+        pads.setMatrixAt(this.padN, m);
+        pads.setColorAt(this.padN, c.ok ? PAD_OK : PAD_BAD);
+        this.padN++;
+      }
+      m.compose(new THREE.Vector3(cx, y + 0.05 + lift, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
       g.mesh.setMatrixAt(n, m);
       setTeamColor(g, n, c.ok ? good : bad);
       n++;

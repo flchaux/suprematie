@@ -60,7 +60,7 @@ export class GameClient {
   reqId = 0;
   pending = new Map<number, (r: unknown) => void>();
   lastTick = 0;
-  ghostCells: { x: number; y: number; dir: number; ok: boolean }[] = [];
+  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[] = [];
   ghostStart: { x: number; y: number } | null = null;
   lastUiUpdate = 0;
   lastMinimap = 0;
@@ -1652,20 +1652,15 @@ export class GameClient {
   /** file de tapis en cours de tracé : direction de la dernière case choisie avec R (null : automatique) */
   lineEndDir: number | null = null;
 
-  /** Niveau du tapis à poser dans l'octet de direction (bits 3-4) ; 0 pour les autres bâtiments. */
-  private floorBits(): number {
-    return this.isBeltKind() ? (ui.buildFloor & 3) << 3 : 0;
-  }
-
   /** pose de tapis : direction forcée par R (sinon déduite des tapis voisins) */
   beltForced = false;
   isBeltKind(): boolean {
     return this.data?.buildings[ui.buildKind]?.cls === BClass.Belt;
   }
   /** Pose logistique (tapis, tapis de contrôle, bras) : elle peut remplacer nos tapis existants. */
+  /** Toute pose du joueur peut remplacer ses tapis (un bâtiment posé dessus les démonte). */
   private replaceFlag(): number {
-    const c = this.data?.buildings[ui.buildKind]?.cls;
-    return c === BClass.Belt || c === BClass.Router || c === BClass.Inserter ? 4 : 0;
+    return ui.buildKind >= 0 ? 4 : 0;
   }
   /** Tapis complets visibles (toutes équipes) : case -> { direction, propriétaire }. */
   private beltTiles(): Map<number, { dir: number; owner: number }> {
@@ -1675,6 +1670,7 @@ export class GameClient {
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = f.buf[o + 1] & 0xff;
       if (this.data.buildings[kind]?.cls !== BClass.Belt || f.buf[o + 4] < 65536) continue;
+      if ((f.buf[o + 1] >>> 28) & 3) continue; // tapis surélevé
       const x = f.buf[o + 2] & 0xffff;
       const y = (f.buf[o + 2] >>> 16) & 0xffff;
       m.set(y * this.map.w + x, { dir: (f.buf[o + 1] >> 16) & 3, owner: (f.buf[o + 1] >> 8) & 0xff });
@@ -1729,13 +1725,45 @@ export class GameClient {
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
     const seq = ++this.ghostSeq;
-    const args = [ui.me, ui.buildKind];
-    const rf = this.replaceFlag() | this.floorBits();
-    for (const c of cells) args.push(c.x, c.y, c.dir | rf);
-    this.scene.ghostLift = this.isBeltKind() ? ui.buildFloor * FLOOR_H : 0;
-    const ok = await this.query<boolean[]>("canPlaceMany", args);
+    const rf = this.replaceFlag();
+    const base = isBelt ? ui.buildFloor : 0;
+    // pose possible de chaque case à un niveau donné
+    const canAt = async (floor: number): Promise<boolean[]> => {
+      const args = [ui.me, ui.buildKind];
+      for (const c of cells) args.push(c.x, c.y, c.dir | rf | ((floor & 3) << 3));
+      return (await this.query<boolean[]>("canPlaceMany", args)) ?? [];
+    };
+    const ok = await canAt(base);
+    let floors = cells.map(() => base);
+    let okAt = ok;
+    if (isBelt && cells.length > 1) {
+      // file de tapis : elle monte d'elle-même au-dessus des obstacles (bâtiment, eau, falaise, autre file
+      // qui la croise) et redescend ensuite ; les ascenseurs se forment aux changements de niveau
+      const up1 = base < 2 ? await canAt(base + 1) : cells.map(() => false);
+      const up2 = base < 1 ? await canAt(base + 2) : cells.map(() => false);
+      const crossing = (c: { x: number; y: number; dir: number }) => {
+        if (base !== 0 || !this.map) return false;
+        const e = belts.get(c.y * this.map.w + c.x);
+        // un de nos tapis au sol qui croise la file (perpendiculaire) : on passe au-dessus au lieu de le tourner
+        return !!e && (e.dir & 1) !== (c.dir & 1);
+      };
+      floors = cells.map((c, i) => (ok[i] && !crossing(c) ? base : up1[i] ? base + 1 : up2[i] ? base + 2 : base));
+      // un ascenseur relie deux cases alignées : un changement de niveau dans un angle remonte aussi la case d'avant
+      for (let pass = 0; pass < 3; pass++) {
+        for (let i = 1; i < cells.length; i++) {
+          if (floors[i] !== floors[i - 1] && cells[i].dir !== cells[i - 1].dir) {
+            const lo = floors[i] > floors[i - 1] ? i - 1 : i;
+            const hi = floors[i] > floors[i - 1] ? i : i - 1;
+            const target = floors[hi];
+            if ((target === base + 1 && up1[lo]) || (target === base + 2 && up2[lo])) floors[lo] = target;
+          }
+        }
+      }
+      okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i]) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
+    }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
-    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!ok?.[i] }));
+    this.scene.ghostLift = 0;
+    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0 }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
@@ -1757,8 +1785,9 @@ export class GameClient {
       sfx.error();
       return;
     }
-    const rf = this.replaceFlag() | this.floorBits();
-    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf, shift || i > 0)));
+    const rf = this.replaceFlag();
+    // niveau propre à chaque case (montée automatique au-dessus des obstacles)
+    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf | ((c.floor ?? 0) & 3) << 3, shift || i > 0)));
     sfx.confirm();
     this.ghostStart = null;
     if (!shift) {

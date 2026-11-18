@@ -253,9 +253,10 @@ fn belt_replacement_rotates_or_swaps_with_refund() {
     // sans le bit de remplacement : refusé (les IA ne remplacent jamais) ; avec : accepté
     assert!(!crate::buildings::can_place(&w, 0, B_SPLITTER, 100, 100, 0));
     assert!(crate::buildings::can_place(&w, 0, B_SPLITTER, 100, 100, crate::buildings::DIR_REPLACE));
-    // jamais le tapis d'un autre joueur, ni un bâtiment non logistique
+    // jamais le tapis d'un autre joueur ; n'importe quel bâtiment du joueur peut remplacer ses tapis
     assert!(!crate::buildings::can_place(&w, 0, B_BELT2, 105, 100, crate::buildings::DIR_REPLACE));
-    assert!(!crate::buildings::can_place(&w, 0, B_DEPOT, 100, 100, crate::buildings::DIR_REPLACE));
+    assert!(crate::buildings::can_place(&w, 0, B_DEPOT, 100, 100, crate::buildings::DIR_REPLACE));
+    assert!(!crate::buildings::can_place(&w, 0, B_DEPOT, 104, 100, crate::buildings::DIR_REPLACE), "tapis d'un autre joueur");
     // même type, autre direction : réorienté sur place, sans chantier
     build_with(&mut w, 0, B_BELT1, 100, 100, 1 | crate::buildings::DIR_REPLACE);
     assert_eq!(building_at(&w, 100, 100), Some(b));
@@ -717,4 +718,24 @@ fn elevated_belts_survive_snapshot() {
         w2.step(&[]);
     }
     assert_eq!(w.hash(), w2.hash(), "même suite après restauration");
+}
+
+/// Un bâtiment posé sur des tapis du joueur les démonte (coût rendu) au lieu d'être refusé.
+#[test]
+fn building_over_belts_replaces_them() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    for x in 98..103 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    let iron = w.players[0].stock[IRON_PLATE as usize];
+    let belt_iron: i32 = bdef(B_BELT1).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
+    let depot_iron: i32 = bdef(B_DEPOT).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
+    // dépôt 2 x 2 sur les tapis de x = 100 et 101
+    build_with(&mut w, 0, B_DEPOT, 100, 100, crate::buildings::DIR_REPLACE);
+    let d = building_at(&w, 100, 100).expect("dépôt posé");
+    assert_eq!(w.buildings[d].kind, B_DEPOT);
+    assert_eq!(building_at(&w, 101, 100), Some(d));
+    assert_eq!(w.buildings[building_at(&w, 99, 100).unwrap()].kind, B_BELT1, "les autres tapis restent");
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], iron + 2 * belt_iron - depot_iron, "deux tapis remboursés, dépôt payé");
 }
