@@ -78,8 +78,10 @@ class KindMesh {
   }
 }
 
-/** Bâtiments qui reçoivent des objets (et ont donc des trappes). */
+/** Bâtiments qui reçoivent des objets (et ont donc des trappes) ; ce sont aussi ceux qui reçoivent par transfert direct. */
 const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad]);
+const RECIPE_NONE = 255;
+const CRAFTER_ASSEMBLER = 1;
 
 const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
@@ -1080,6 +1082,40 @@ export class Entities {
       const dir = (buf[o + 1] >> 16) & 3;
       links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), (bd.cls === BClass.Inserter ? 4 * Math.max(1, bd.reach ?? 1) : 0) + dir);
     }
+    // transfert direct : case -> bâtiment (fabricants, extracteurs et receveurs), pour ouvrir la trappe
+    // entre deux bâtiments collés qui s'échangent des objets
+    const cells = new Map<number, number>();
+    o = f.buildingOff;
+    for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const def = this.data.buildings[buf[o + 1] & 0xff];
+      if ((def.cls !== BClass.Extractor && !RECEIVERS.has(def.cls)) || buf[o + 4] < 65536) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      const bx = buf[o + 2] & 0xffff;
+      const bz = (buf[o + 2] >>> 16) & 0xffff;
+      const w = dir & 1 ? def.h : def.w;
+      const h = dir & 1 ? def.w : def.h;
+      for (let z = bz; z < bz + h; z++) for (let x = bx; x < bx + w; x++) cells.set(z * W + x, o);
+    }
+    const recipes = this.data.recipes;
+    /** objet donné par un fabricant ou un extracteur (0 : aucun) */
+    const gives = (b: number): number => {
+      const cls = this.data.buildings[buf[b + 1] & 0xff].cls;
+      const v = buf[b + 5] & 0xff;
+      if (cls === BClass.Extractor) return v;
+      if (cls === BClass.Crafter && v !== RECIPE_NONE) return recipes[v]?.output[0] ?? 0;
+      return 0;
+    };
+    /** `t` reçoit-il directement l'objet `it` de `s` (même règle, simplifiée, que direct_ok dans la simulation) ? */
+    const takes = (s: number, t: number, it: number): boolean => {
+      if (!it || ((buf[s + 1] >> 8) & 0xff) !== ((buf[t + 1] >> 8) & 0xff)) return false;
+      const td = this.data.buildings[buf[t + 1] & 0xff];
+      if (td.cls === BClass.Lab) return it >= PACK1 && it < PACK1 + 6;
+      if (td.cls !== BClass.Crafter) return true;
+      const r = buf[t + 5] & 0xff;
+      if (r !== RECIPE_NONE) return recipes[r]?.inputs.some((x) => x[0] === it) ?? false;
+      // fabricant sans recette : seul un extracteur l'amorce (fonderie, raffinerie…)
+      return this.data.buildings[buf[s + 1] & 0xff].cls === BClass.Extractor && td.crafter !== CRAFTER_ASSEMBLER && recipes.some((x) => x.crafter === td.crafter && x.inputs.some((y) => y[0] === it));
+    };
     const inCol = new THREE.Color(0.5, 2.2, 2.6);
     const outCol = new THREE.Color(2.8, 1.7, 0.35);
     const q = new THREE.Quaternion();
@@ -1119,6 +1155,14 @@ export class Entities {
             const r = code >> 2;
             if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
             else if (inside(ox - r * DX[d], oz - r * DZ[d])) state = 2;
+          }
+          // transfert direct avec un bâtiment collé
+          if (state === 0) {
+            const nb = cells.get(oz * W + ox);
+            if (nb !== undefined && nb !== o) {
+              if (takes(nb, o, gives(nb))) state = 1;
+              else if (takes(o, nb, gives(o))) state = 2;
+            }
           }
           // bras long posé à 2 cases de la face (par-dessus la case voisine)
           if (state === 0) {

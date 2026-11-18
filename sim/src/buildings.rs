@@ -598,13 +598,47 @@ pub fn takers_of(w: &World, sb: usize) -> Vec<usize> {
     v
 }
 
-/// Sorties d'un bâtiment : les bras qui s'y servent et, pour un bâtiment de fabrication, les tapis qui
-/// partent de ses faces (trappes), par indice croissant ; un seul parcours du pourtour. Elles reçoivent
-/// ses produits à tour de rôle, selon leur part (voir `next_outlet`).
+/// Bâtiments qui reçoivent directement les produits d'un voisin collé (transfert direct, sans bras).
+fn direct_receiver(c: BClass) -> bool {
+    matches!(c, BClass::Depot | BClass::Warehouse | BClass::Station | BClass::CargoPad | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Silo | BClass::AntiMissile)
+}
+
+/// Bâtiments qui donnent directement leurs produits à un voisin collé.
+fn direct_giver(c: BClass) -> bool {
+    matches!(c, BClass::Crafter | BClass::Extractor)
+}
+
+/// La case (x, y) touche-t-elle une face du rectangle (bx, by, bw, bh) (case voisine d'un bord, hors coins) ?
+fn on_face(bx: i32, by: i32, bw: i32, bh: i32, x: i32, y: i32) -> bool {
+    ((x == bx - 1 || x == bx + bw) && y >= by && y < by + bh) || ((y == by - 1 || y == by + bh) && x >= bx && x < bx + bw)
+}
+
+/// Le voisin collé `c` peut-il recevoir directement l'objet `it` de `sb` ? Même propriétaire, et un
+/// fabricant ne reçoit d'un autre fabricant que les ingrédients de sa recette en cours (pas de
+/// changement de recette par simple contact : deux fonderies de fer côte à côte restent de fer).
+fn direct_ok(w: &World, sb: usize, c: usize, it: u8) -> bool {
+    let (sbb, cb) = (&w.buildings[sb], &w.buildings[c]);
+    if cb.owner != sbb.owner || !accepts(w, c, it) {
+        return false;
+    }
+    if cb.def().class == BClass::Crafter && sbb.def().class == BClass::Crafter {
+        return cb.recipe != RECIPE_NONE && RECIPES[cb.recipe as usize].inputs.iter().any(|x| x.0 == it);
+    }
+    true
+}
+
+/// Sorties d'un bâtiment, par indice croissant, en un seul parcours du pourtour :
+/// - les bras qui s'y servent ;
+/// - pour un bâtiment de fabrication, les tapis qui partent de ses faces (trappes) ;
+/// - pour un fabricant ou un extracteur, les bâtiments collés à une face qui reçoivent des objets
+///   (transfert direct).
+///
+/// Elles reçoivent ses produits à tour de rôle, selon leur part (voir `next_outlet`).
 pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
     let bb = &w.buildings[sb];
     let (bw, bh) = bb.size();
     let belts_too = bb.def().class == BClass::Crafter;
+    let direct = direct_giver(bb.def().class);
     let inside = |x: i32, y: i32| x >= bb.x && x < bb.x + bw && y >= bb.y && y < bb.y + bh;
     let mut v = Vec::new();
     let r = ARM_REACH_MAX;
@@ -646,12 +680,41 @@ pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
                         v.push(c);
                     }
                 }
+                cl if direct && c != sb && direct_receiver(cl) && cb.owner == bb.owner && on_face(bb.x, bb.y, bw, bh, tx, ty) => v.push(c),
                 _ => {}
             }
         }
     }
     v.sort_unstable();
+    v.dedup();
     v
+}
+
+/// Le bâtiment `b` a-t-il une sortie sans bras : tapis de sortie (fabricant) ou voisin collé qui reçoit
+/// des objets ? Test rapide (cases des faces seulement) avant le calcul complet des sorties.
+fn has_direct_outlet(w: &World, b: usize) -> bool {
+    let bb = &w.buildings[b];
+    let class = bb.def().class;
+    if !direct_giver(class) {
+        return false;
+    }
+    let (bw, bh) = bb.size();
+    let probe = |x: i32, y: i32, d: u8| -> bool {
+        if !w.map.inside(x, y) {
+            return false;
+        }
+        let o = w.map.occ[w.map.idx(x, y)];
+        if o == 0 || (o - 1) as usize == b {
+            return false;
+        }
+        let tb = &w.buildings[(o - 1) as usize];
+        if !tb.alive || !tb.complete() {
+            return false;
+        }
+        let tc = tb.def().class;
+        (tc == BClass::Belt && class == BClass::Crafter && tb.dir == d) || (direct_receiver(tc) && tb.owner == bb.owner)
+    };
+    (bb.x..bb.x + bw).any(|x| probe(x, bb.y - 1, 3) || probe(x, bb.y + bh, 1)) || (bb.y..bb.y + bh).any(|y| probe(bb.x - 1, y, 2) || probe(bb.x + bw, y, 0))
 }
 
 /// Poids des sorties (millièmes de %) : les parts réglées des bras, puis le reste à égalité entre les
@@ -702,13 +765,13 @@ fn arm_powered(w: &World, c: usize) -> bool {
     n != 0 && n < w.nets.len() && w.nets[n].sat >= ARM_MIN_SAT
 }
 
-/// La sortie `c` (bras ou tapis) peut-elle recevoir l'objet `it` maintenant ? Un bras sans courant ne
-/// compte pas : il ne prendrait jamais son tour et bloquerait les autres sorties.
-fn outlet_ready(w: &World, c: usize, it: u8) -> bool {
-    if w.buildings[c].def().class == BClass::Belt {
-        belts::belt_has_room(w, c)
-    } else {
-        arm_powered(w, c) && taker_ready(w, c, it)
+/// La sortie `c` de `sb` (bras, tapis ou voisin collé) peut-elle recevoir l'objet `it` maintenant ? Un
+/// bras sans courant ne compte pas : il ne prendrait jamais son tour et bloquerait les autres sorties.
+fn outlet_ready(w: &World, sb: usize, c: usize, it: u8) -> bool {
+    match w.buildings[c].def().class {
+        BClass::Belt => belts::belt_has_room(w, c),
+        BClass::Inserter => arm_powered(w, c) && taker_ready(w, c, it),
+        _ => direct_ok(w, sb, c, it),
     }
 }
 
@@ -721,13 +784,13 @@ fn outlet_ready(w: &World, c: usize, it: u8) -> bool {
 fn next_outlet(w: &World, sb: usize, outs: &[usize], me: Option<usize>) -> Option<(usize, u64)> {
     let it = output_of(&w.buildings[sb]);
     if outs.len() <= 1 {
-        return outs.first().filter(|&&c| Some(c) == me || outlet_ready(w, c, it)).map(|&c| (c, 0));
+        return outs.first().filter(|&&c| Some(c) == me || outlet_ready(w, sb, c, it)).map(|&c| (c, 0));
     }
     let weights = share_weights(w, outs);
     let v = w.buildings[sb].vpass;
     let mut best: Option<(usize, u64, u64)> = None;
     for (i, &c) in outs.iter().enumerate() {
-        if Some(c) != me && !outlet_ready(w, c, it) {
+        if Some(c) != me && !outlet_ready(w, sb, c, it) {
             continue;
         }
         let k = w.buildings[c].pass.max(v);
@@ -751,7 +814,8 @@ fn advance_outlet(w: &mut World, sb: usize, c: usize, stride: u64) {
 
 /**
  * Tour du bras `me` sur sa source `sb` : renvoie son pas s'il peut prendre, sinon None après avoir
- * réveillé la sortie prioritaire (un autre bras, ou la source elle-même si c'est un de ses tapis).
+ * réveillé la sortie prioritaire (un autre bras, ou la source elle-même si c'est un de ses tapis ou
+ * un voisin collé : c'est elle qui les sert).
  */
 fn share_turn(w: &mut World, me: usize, sb: usize) -> Option<u64> {
     let outs = outlets_of(w, sb);
@@ -761,7 +825,7 @@ fn share_turn(w: &mut World, me: usize, sb: usize) -> Option<u64> {
     match next_outlet(w, sb, &outs, Some(me)) {
         Some((c, st)) if c == me => Some(st),
         Some((c, _)) => {
-            let target = if w.buildings[c].def().class == BClass::Belt { sb } else { c };
+            let target = if w.buildings[c].def().class == BClass::Inserter { c } else { sb };
             w.buildings[target].wake = 0;
             None
         }
@@ -770,7 +834,7 @@ fn share_turn(w: &mut World, me: usize, sb: usize) -> Option<u64> {
 }
 
 /// Part effective d'un bras dans la sortie de sa source (millièmes) et nombre de sorties de cette source
-/// (bras et tapis).
+/// (bras, tapis et voisins collés).
 pub fn share_info(w: &World, b: usize) -> (u64, usize) {
     let ((sx, sy), _) = arm_ends(&w.buildings[b]);
     if !w.map.inside(sx, sy) {
@@ -1089,11 +1153,14 @@ fn tick_extractor(w: &mut World, b: usize) {
         };
         let (fx, fy) = front_tile(x, y, bw, bh, dir);
         let it = w.buildings[b].recipe;
+        let before = w.buildings[b].out;
         if push_to(w, fx, fy, it) {
             w.buildings[b].out -= 1;
             wake_watchers(w, b);
         } else {
-            if w.buildings[b].out >= 5 {
+            // sinon, transfert direct vers un voisin collé (à tour de rôle avec les bras)
+            push_out(w, b);
+            if w.buildings[b].out >= before && w.buildings[b].out >= 5 {
                 w.buildings[b].wake = w.tick + 5;
                 w.buildings[b].working = false;
                 return;
@@ -1147,13 +1214,13 @@ pub fn out_belts(w: &World, b: usize) -> Vec<usize> {
     v
 }
 
-/// Pose un produit du bâtiment sur un de ses tapis de sortie quand c'est le tour d'un tapis (les bras
-/// et les tapis de sortie alternent, voir `next_outlet`) ; si c'est le tour d'un bras, le réveille.
-/// Renvoie vrai si le bâtiment a au moins un tapis de sortie.
-fn push_out_belts(w: &mut World, b: usize) -> bool {
+/// Sert la sortie dont c'est le tour quand c'est un tapis de sortie (pose du produit) ou un voisin collé
+/// (transfert direct) ; si c'est le tour d'un bras, le réveille. Renvoie vrai si le bâtiment a au moins
+/// une sortie sans bras.
+fn push_out(w: &mut World, b: usize) -> bool {
     let it = output_of(&w.buildings[b]);
-    // test rapide d'abord (faces seulement) : la plupart des bâtiments n'ont pas de tapis de sortie
-    if it == 0 || out_belts(w, b).is_empty() {
+    // test rapide d'abord (faces seulement) : la plupart des bâtiments n'ont que des bras
+    if it == 0 || !has_direct_outlet(w, b) {
         return false;
     }
     let outs = outlets_of(w, b);
@@ -1165,15 +1232,24 @@ fn push_out_belts(w: &mut World, b: usize) -> bool {
                 wake_watchers(w, b);
             }
         }
-        Some((c, _)) => w.buildings[c].wake = 0,
+        Some((c, _)) if w.buildings[c].def().class == BClass::Inserter => w.buildings[c].wake = 0,
+        Some((c, st)) => {
+            // voisin collé : next_outlet ne le choisit que s'il accepte l'objet (direct_ok)
+            insert_item(w, c, it);
+            wake_watchers(w, c);
+            advance_outlet(w, b, c, st);
+            w.buildings[b].out -= 1;
+            wake_watchers(w, b);
+        }
         None => {}
     }
     true
 }
 
 fn tick_crafter(w: &mut World, b: usize) {
-    // trappes de sortie : un tapis qui part du bâtiment reçoit ses produits sans bras
-    let outlets = w.buildings[b].out > 0 && push_out_belts(w, b);
+    // trappes de sortie et transfert direct : un tapis qui part du bâtiment, ou un voisin collé qui
+    // reçoit des objets, prend ses produits sans bras
+    let outlets = w.buildings[b].out > 0 && push_out(w, b);
     tick_crafter_work(w, b);
     if outlets && w.buildings[b].out > 0 {
         // produits en attente : revenir bientôt les poser (le tapis avance)

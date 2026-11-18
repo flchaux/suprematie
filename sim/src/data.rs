@@ -605,7 +605,7 @@ pub const U_DRAGON: u16 = 37;
 pub const U_STAR_CRUISER: u16 = 38;
 
 pub const UNITS: [UnitDef; 39] = [
-    UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 17, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, ..UD },
+    UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, tier: 3, altitude: 170, ..UD },
     UnitDef { key: "eng5", name: "Drone ingénieur suprême", layer: Layer::Hover, hp: 1400, speed: 50, radius: 120, cost: &[(STEEL, 8), (PROCESSOR, 4), (ENGINE, 4)], build: 14, tech: T_LOGISTICS3, build_power: 50, tier: 5, altitude: 180, ..UD },

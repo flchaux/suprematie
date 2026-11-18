@@ -37,6 +37,7 @@ Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste 
 
 - Cinq ressources brutes sont extraites sur des gisements : minerai de fer, minerai de cuivre, silicium, hydrocarbure et cristal.
 - Les ressources circulent physiquement, comme dans Factorio : extracteurs, tapis, bras, fonderies, assembleurs.
+- Transfert direct : un extracteur ou un fabricant donne ses produits, sans bras ni tapis, à un bâtiment collé à une de ses faces qui les accepte (dépôt, laboratoire, usine, fabricant dont la recette en cours les utilise), à tour de rôle avec ses autres sorties. Le contact ne change jamais la recette d'un fabricant voisin, sauf pour un extracteur qui amorce une fonderie vide.
 - L'énergie passe par un réseau électrique relié par des pylônes. Un bâtiment hors réseau ne fonctionne pas.
 - Les usines d'unités reçoivent leurs composants par tapis.
 - Les drones ingénieurs construisent les bâtiments avec un stock commun au joueur, alimenté par les dépôts : ce qui entre dans un dépôt devient disponible pour les ingénieurs sur toute la carte.

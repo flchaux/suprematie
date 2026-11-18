@@ -617,3 +617,54 @@ fn locked_recipe_is_refused() {
     w.step(&[4, crate::orders::O_SET_RECIPE, 0, rf, rid("pack2")]);
     assert_eq!(w.buildings[a].recipe as i32, rid("pack2"), "lot 2 : automatisation faite");
 }
+
+/// Transfert direct : un extracteur donne son minerai à la fonderie collée à son flanc, qui donne ses
+/// plaques au dépôt collé à elle, sans bras ni tapis.
+#[test]
+fn direct_transfer_between_touching_buildings() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    spot(&mut w, IRON_ORE, 100, 100);
+    // extracteur tourné vers le nord (case vide) : la fonderie est sur son flanc est
+    let ext = put(&mut w, B_EXTRACTOR, 100, 100, 3);
+    let f = put(&mut w, B_FURNACE, 102, 100, 0);
+    put(&mut w, B_DEPOT, 104, 100, 0);
+    put(&mut w, B_GENERATOR, 100, 104, 0);
+    assert_eq!(crate::buildings::outlets_of(&w, ext), vec![f]);
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    for _ in 0..4000 {
+        w.step(&[]);
+    }
+    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    let mined = w.players[0].produced[IRON_ORE as usize] as i32;
+    assert!(got > 30, "{} plaques seulement ({} minerais extraits)", got, mined);
+    assert_eq!(w.players[0].stock[IRON_ORE as usize], 0, "le minerai doit aller à la fonderie, pas au stock");
+    assert!(w.buildings[ext].out < 5, "extracteur bloqué");
+}
+
+/// Deux fonderies collées : celle qui n'a pas de recette ne prend pas les plaques de sa voisine (pas
+/// de changement de recette par simple contact) ; réglée sur l'acier, elle les reçoit.
+#[test]
+fn direct_transfer_needs_matching_recipe() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, B_GENERATOR, 100, 96, 0);
+    let f1 = put(&mut w, B_FURNACE, 100, 100, 0);
+    let f2 = put(&mut w, B_FURNACE, 102, 100, 0);
+    let feed = |w: &mut World, n: u32| {
+        for _ in 0..n {
+            if crate::buildings::accepts(w, f1, IRON_ORE) {
+                crate::buildings::insert_item(w, f1, IRON_ORE);
+            }
+            w.step(&[]);
+        }
+    };
+    feed(&mut w, 1500);
+    assert_eq!(w.buildings[f2].recipe, RECIPE_NONE, "la fonderie voisine a changé de recette");
+    assert!(w.buildings[f1].out > 0);
+    set_recipe(&mut w, f2, "steel");
+    feed(&mut w, 3000);
+    assert!(w.players[0].produced[STEEL as usize] > 0, "la fonderie d'acier n'a pas reçu de plaques");
+}
