@@ -376,7 +376,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
                     let k = w.units.kind[s];
-                    if k == U_SONDE || k == U_HEAVY_ARTY {
+                    if k == U_SONDE || crate::combat::needs_deploy(k) {
                         clear_orders(w, s);
                         let cd = &mut w.units.cold[s];
                         cd.deployed = !cd.deployed;

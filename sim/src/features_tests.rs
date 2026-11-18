@@ -1116,3 +1116,179 @@ fn starved_factory_raises_one_alert() {
     assert_eq!(alerts.len(), 1, "une seule alerte par attente");
     assert_eq!(alerts[0], (0, IRON_PLATE as i32), "joueur et premier composant manquant");
 }
+
+/// Gardien : -45 % de dégâts reçus de face, rien de dos ; tourelle mobile : -30 % une fois déployée.
+#[test]
+fn guardian_front_armor_and_deployed_turret_armor() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 90, 90, 130, 130);
+    let id = w.spawn_unit(U_GUARDIAN, 0, 110 * TILE, 110 * TILE);
+    let g = w.unit(id).unwrap();
+    w.units.facing[g] = 0; // tourné vers +x
+    let hit = |w: &mut World, s: usize, from: (i32, i32)| {
+        let h0 = w.units.hp[s];
+        w.hit_from = from;
+        crate::combat::damage_unit(w, s, 100, 1);
+        w.hit_from = (i32::MIN, 0);
+        h0 - w.units.hp[s]
+    };
+    assert_eq!(hit(&mut w, g, (120 * TILE, 112 * TILE)), 55, "de face");
+    assert_eq!(hit(&mut w, g, (100 * TILE, 110 * TILE)), 100, "de dos");
+    assert_eq!(hit(&mut w, g, (110 * TILE, 120 * TILE)), 100, "de flanc");
+    assert_eq!(hit(&mut w, g, (i32::MIN, 0)), 100, "origine inconnue");
+    let id = w.spawn_unit(U_DEPLOY_TURRET, 0, 115 * TILE, 115 * TILE);
+    let t = w.unit(id).unwrap();
+    assert_eq!(hit(&mut w, t, (120 * TILE, 115 * TILE)), 100);
+    w.units.cold[t].deployed = true;
+    assert_eq!(hit(&mut w, t, (120 * TILE, 115 * TILE)), 70);
+}
+
+/// Tourelle mobile : elle ne tire qu'une fois déployée (seule, à l'arrêt, avec une cible).
+#[test]
+fn deploy_turret_fires_only_when_deployed() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 80, 80, 150, 150);
+    let t = w.spawn_unit(U_DEPLOY_TURRET, 0, 100 * TILE, 110 * TILE);
+    // une cible sans arme dans son champ de vision (20 cases)
+    w.spawn_unit(U_JAMMER, 1, 118 * TILE, 110 * TILE);
+    let fired = |w: &World| w.projectiles.iter().any(|p| p.weapon == 49);
+    for _ in 0..30 {
+        w.step(&[]);
+        assert!(!fired(&w), "pas de tir avant le déploiement");
+    }
+    let mut ok = false;
+    for _ in 0..120 {
+        w.step(&[]);
+        ok |= fired(&w);
+    }
+    assert!(w.units.cold[w.unit(t).unwrap()].deployed, "déployée");
+    assert!(ok, "tire une fois déployée");
+}
+
+/// Lance-roquettes : 16 roquettes non guidées, dispersées autour du point visé.
+#[test]
+fn rocket_salvo_is_scattered() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 80, 80, 150, 150);
+    w.spawn_unit(U_ROCKET_BATTERY, 0, 100 * TILE, 110 * TILE);
+    w.spawn_unit(U_DEPLOY_TURRET, 1, 116 * TILE, 110 * TILE);
+    let mut shots = Vec::new();
+    for _ in 0..60 {
+        w.step(&[]);
+        shots = w.projectiles.iter().filter(|p| p.weapon == 46).map(|p| (p.tx, p.ty, p.target)).collect();
+        if !shots.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(shots.len(), 16);
+    let (xmin, xmax) = (shots.iter().map(|s| s.0).min().unwrap(), shots.iter().map(|s| s.0).max().unwrap());
+    assert!(xmax - xmin > 3 * TILE, "dispersées sur plusieurs cases : {}", xmax - xmin);
+    assert!(shots.iter().all(|s| s.2 == NONE), "non guidées");
+}
+
+/// Commando furtif : invisible (ni ciblé ni affiché) tant qu'il ne tire pas, sauf de tout près.
+#[test]
+fn commando_is_cloaked_until_it_fires_or_is_approached() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 80, 80, 150, 150);
+    let c = w.spawn_unit(U_COMMANDO, 0, 100 * TILE, 110 * TILE);
+    let tank = w.spawn_unit(U_GUARDIAN, 1, 116 * TILE, 110 * TILE);
+    let cs = w.unit(c).unwrap();
+    w.update_vis_all();
+    assert!(!crate::combat::unit_seen(&w, 1, cs), "camouflé à 16 cases");
+    let shown = |w: &World| {
+        let buf = crate::render::render(w, 0, 0, 512, 512, 2, 1, false);
+        let o = crate::render::HEADER + w.players.len() * crate::render::PLAYER_WORDS;
+        (0..buf[3] as usize).any(|i| buf[o + i * crate::render::UNIT_WORDS] as u32 == c)
+    };
+    assert!(!shown(&w), "absent du rendu de l'adversaire");
+    let hp0 = w.units.hp[cs];
+    for _ in 0..100 {
+        w.step(&[]);
+    }
+    assert_eq!(w.units.hp[w.unit(c).unwrap()], hp0, "jamais pris pour cible");
+    // un tir le trahit
+    let cs = w.unit(c).unwrap();
+    w.units.cold[cs].reveal = 100;
+    w.update_vis_all();
+    assert!(crate::combat::unit_seen(&w, 1, cs) && shown(&w));
+    // camouflé de nouveau, mais repéré de tout près
+    w.units.cold[cs].reveal = 0;
+    let ts = w.unit(tank).unwrap();
+    w.units.x[ts] = 102 * TILE;
+    w.units.y[ts] = 110 * TILE;
+    w.update_vis_all();
+    assert!(crate::combat::unit_seen(&w, 1, cs), "repéré à 2 cases");
+}
+
+/// Brouilleur : ses alliés disparaissent du radar ennemi (pas de la vue directe) ; le bombardier
+/// furtif n'apparaît jamais au radar.
+#[test]
+fn jammer_and_stealth_bomber_hide_from_radar() {
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 80, 80, 180, 150);
+    let id = w.spawn_unit(U_EW_PLANE, 1, 100 * TILE, 110 * TILE);
+    let ew = w.unit(id).unwrap();
+    let id = w.spawn_unit(U_GUARDIAN, 0, 132 * TILE, 110 * TILE);
+    let tank = w.unit(id).unwrap();
+    let id = w.spawn_unit(U_STEALTH_BOMBER, 0, 132 * TILE, 118 * TILE);
+    let bomber = w.unit(id).unwrap();
+    w.update_vis_all();
+    assert!(crate::combat::unit_seen(&w, 1, tank), "au radar");
+    assert!(!crate::combat::unit_seen(&w, 1, bomber), "furtif : absent du radar");
+    let id = w.spawn_unit(U_JAMMER, 0, 134 * TILE, 110 * TILE);
+    let jam = w.unit(id).unwrap();
+    w.update_vis_all();
+    assert!(!crate::combat::unit_seen(&w, 1, tank), "brouillé");
+    assert!(!crate::combat::unit_seen(&w, 1, jam));
+    // à vue, plus rien ne le cache
+    w.units.x[ew] = 126 * TILE;
+    w.update_vis_all();
+    assert!(crate::combat::unit_seen(&w, 1, tank));
+    assert!(crate::combat::unit_seen(&w, 1, bomber));
+}
+
+/// Transport lourd : il emporte un marcheur de siège, que le transport ordinaire refuse.
+#[test]
+fn heavy_transport_carries_heavy_units() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 130, 130);
+    let id = w.spawn_unit(U_TRANSPORT, 0, 110 * TILE, 110 * TILE);
+    let t = w.unit(id).unwrap();
+    let id = w.spawn_unit(U_HEAVY_TRANSPORT, 0, 112 * TILE, 110 * TILE);
+    let h = w.unit(id).unwrap();
+    let id = w.spawn_unit(U_SIEGE_WALKER, 0, 115 * TILE, 115 * TILE);
+    let sw = w.unit(id).unwrap();
+    crate::units::load_unit(&mut w, t, sw);
+    assert!(w.units.cold[t].cargo.is_empty(), "trop lourd pour le transport");
+    crate::units::load_unit(&mut w, h, sw);
+    assert_eq!(w.units.cold[h].cargo.len(), 1);
+}
+
+/// Porte-avions : il lance jusqu'à 6 intercepteurs (payés sur la réserve) et répare l'aviation proche.
+#[test]
+fn carrier_launches_interceptors_and_repairs_aircraft() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 130, 130);
+    for it in [STEEL, CIRCUIT, FUEL] {
+        w.players[0].stock[it as usize] = 200;
+    }
+    let c = w.spawn_unit(U_CARRIER, 0, 110 * TILE, 110 * TILE);
+    for _ in 0..200 * 8 {
+        w.step(&[]);
+    }
+    let wing: Vec<usize> = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_INTERCEPTOR && w.units.cold[s].parent == c).collect();
+    assert_eq!(wing.len(), CARRIER_WING as usize);
+    assert_eq!(w.players[0].stock[STEEL as usize], 200 - 4 * CARRIER_WING as i32, "payés");
+    // réparation : un intercepteur abîmé près du porte-avions
+    let cs = w.unit(c).unwrap();
+    let i = wing[0];
+    let iid = w.unit_id(i);
+    w.units.x[i] = w.units.x[cs] + 2 * TILE;
+    w.units.y[i] = w.units.y[cs];
+    w.units.hp[i] = 100;
+    for _ in 0..40 {
+        w.step(&[]);
+    }
+    assert!(w.units.hp[w.unit(iid).unwrap()] > 100, "réparé");
+}

@@ -388,7 +388,7 @@ export class Effects {
   /** Éclair de départ d'un tir. */
   muzzle(x: number, y: number, z: number, proj: number, big: number): void {
     if (!this.inView(x, z, 2)) return;
-    const colors: Record<number, [number, number, number]> = { 5: [1.5, 3.5, 4], 6: [1.4, 4, 4], 7: [2, 2.4, 5], 8: [4, 1, 1] };
+    const colors: Record<number, [number, number, number]> = { 5: [1.5, 3.5, 4], 6: [1.4, 4, 4], 7: [2, 2.4, 5], 8: [4, 1, 1], 11: [2.4, 3.6, 5] };
     const c = colors[proj] ?? [4, 3, 1.6];
     this.fire.spawn({ x, y, z, life: 0.07, s0: 0.55 * big, s1: 0.9 * big, c0: c });
     if (proj === 1 || proj === 2) {
@@ -446,6 +446,9 @@ export class Effects {
       this.fire.spawn({ x, y, z, life: 0.05, s0: 0.4 * big, s1: 0.25 * big, c0: [4, 2.4, 0.9] });
     } else if (proj === 1) {
       if (Math.random() < dt * 25 * this.quality) this.smoke.spawn({ x, y, z, life: 0.5, s0: 0.12, s1: 0.35, c0: [0.6, 0.58, 0.55], a: 0.35 });
+    } else if (proj === 11) {
+      // canon de rail : sillage ionisé bleuté qui s'attarde
+      if (Math.random() < dt * 90 * this.quality) this.fire.spawn({ x, y, z, life: rnd(0.25, 0.45), s0: 0.22 * big, s1: 0.05, c0: [1.6, 2.6, 4], c1: [0.4, 0.8, 1.8] });
     } else if (proj === 4) {
       // torpille : bulles
       if (Math.random() < dt * 20 * this.quality) this.smoke.spawn({ x, y: this.map.waterLevel * 0.08 + 0.02, z, life: 0.8, s0: 0.15, s1: 0.4, c0: [0.8, 0.9, 0.95], a: 0.6 });

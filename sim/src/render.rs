@@ -60,6 +60,8 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     if !c.cargo.is_empty() {
         flags |= 128;
     }
+    // bit 27 du mot : camouflé (commando) ; bit 28 : absent des radars ennemis (furtif, brouillé)
+    let stealth = (crate::combat::cloaked(w, s) as i32) << 27 | (crate::combat::radar_stealth(w, s) as i32) << 28;
     let aux = match c.orders.first() {
         Some(o) => {
             let (tx, ty) = match *o {
@@ -79,7 +81,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     };
     out.extend_from_slice(&[
         w.unit_id(s) as i32,
-        w.units.kind[s] as i32 | (w.units.owner[s] as i32) << 8 | flags << 16 | (c.lvl as i32) << 24,
+        w.units.kind[s] as i32 | (w.units.owner[s] as i32) << 8 | flags << 16 | (c.lvl as i32) << 24 | stealth,
         w.units.x[s],
         w.units.y[s],
         w.units.px[s],
@@ -204,10 +206,18 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
     out[1] = w.tick as i32;
     out[2] = w.players.len() as i32;
     player_block(w, &mut out);
-    // unités : toutes (pour la minicarte et les icônes)
+    // unités : toutes (pour la minicarte et les icônes), sauf les unités ennemies furtives que
+    // l'équipe du joueur ne repère pas (commando camouflé, unité brouillée ou furtive vue au seul radar)
+    let viewer_team = if player >= 0 && (player as usize) < w.players.len() { Some(w.players[player as usize].team) } else { None };
     let mut nu = 0;
     for s in 0..w.units.alive.len() {
         if w.units.alive[s] && w.units.cold[s].carried_by == NONE {
+            if let Some(t) = viewer_team {
+                let stealthy = crate::combat::cloaked(w, s) || crate::combat::radar_stealth(w, s);
+                if stealthy && w.team_of(w.units.owner[s]) != t && !crate::combat::unit_seen(w, t, s) {
+                    continue;
+                }
+            }
             unit_words(w, s, &mut out);
             nu += 1;
         }
@@ -451,7 +461,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let Some(s) = w.unit(id) else { return "null".into() };
     let c = &w.units.cold[s];
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -463,7 +473,9 @@ pub fn info_unit(w: &World, id: u32) -> String {
         c.children,
         c.xp,
         c.lvl,
-        w.max_hp(s)
+        w.max_hp(s),
+        crate::combat::cloaked(w, s),
+        crate::combat::radar_stealth(w, s)
     )
 }
 

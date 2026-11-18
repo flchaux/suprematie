@@ -32,7 +32,7 @@ pub fn pass_mask(layer: Layer) -> u8 {
 #[inline]
 pub fn fixed_wing(kind: u16) -> bool {
     let d = udef(kind);
-    d.layer == Layer::Air && !matches!(kind, U_TRANSPORT | U_MOTHERSHIP | U_HYPER | U_DRAGON | U_STAR_CRUISER) && d.key != "gunship"
+    d.layer == Layer::Air && !matches!(kind, U_TRANSPORT | U_HEAVY_TRANSPORT | U_MOTHERSHIP | U_HYPER | U_DRAGON | U_STAR_CRUISER) && d.key != "gunship"
 }
 /// Unité à pattes (robots, marcheurs) : elle change de direction en marchant, sans pivoter sur place,
 /// et le haut de son corps vise sa prochaine cible pendant la marche.
@@ -846,7 +846,9 @@ pub fn load_unit(w: &mut World, carrier: usize, t: usize) {
     if cap == 0 || w.units.cold[carrier].cargo.len() >= cap || w.units.owner[carrier] != w.units.owner[t] {
         return;
     }
-    if !matches!(td.layer, Layer::Land | Layer::Hover) || td.radius > 300 || td.tier == 6 {
+    // le transport lourd emporte aussi les unités lourdes (marcheurs, artillerie lourde), jamais les expérimentales
+    let max_r = if w.units.kind[carrier] == U_HEAVY_TRANSPORT { 520 } else { 300 };
+    if !matches!(td.layer, Layer::Land | Layer::Hover) || td.radius > max_r || td.tier == 6 {
         return;
     }
     if w.units.kind[carrier] == U_SIEGE_WALKER && tk != U_LINE_ROBOT {
@@ -911,17 +913,45 @@ fn gate_check(w: &mut World, s: usize) {
     }
 }
 
+/// Porte-avions : chaque seconde, les appareils alliés à moins de 8 cases regagnent 1 % de leurs points de vie.
+fn carrier_repair(w: &mut World, s: usize) {
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    let owner = w.units.owner[s];
+    let r = 8 * TILE;
+    let mut near = Vec::new();
+    let units = &w.units;
+    w.grid.fine.query(x, y, r, |o| {
+        if units.alive[o] && units.owner[o] == owner && dist2(x, y, units.x[o], units.y[o]) <= (r as i64) * (r as i64) {
+            near.push(o);
+        }
+    });
+    near.sort_unstable();
+    for o in near {
+        let d = udef(w.units.kind[o]);
+        if d.layer == Layer::Air && w.units.cold[o].carried_by == NONE {
+            let max = w.max_hp(o);
+            w.units.hp[o] = (w.units.hp[o] + (max / 100).max(1)).min(max);
+        }
+    }
+}
+
 /// Capacités propres à certaines unités.
 fn special(w: &mut World, s: usize) {
     let kind = w.units.kind[s];
     let owner = w.units.owner[s] as usize;
     match kind {
-        U_FORTRESS | U_MOTHERSHIP => {
-            let child = if kind == U_FORTRESS { U_LINE_ROBOT } else { U_GLIDER };
-            let period = if kind == U_FORTRESS { 200 } else { 120 };
+        U_FORTRESS | U_MOTHERSHIP | U_CARRIER => {
+            let (child, period, max) = match kind {
+                U_FORTRESS => (U_LINE_ROBOT, 200, 12),
+                U_MOTHERSHIP => (U_GLIDER, 120, 12),
+                _ => (U_INTERCEPTOR, 200, CARRIER_WING),
+            };
+            if kind == U_CARRIER && w.tick.is_multiple_of(20) {
+                carrier_repair(w, s);
+            }
             let c = &mut w.units.cold[s];
             c.timer += 1;
-            if c.timer >= period && c.children < 12 && w.players[owner].unit_count < UNIT_CAP {
+            if c.timer >= period && c.children < max && w.players[owner].unit_count < UNIT_CAP {
                 let cost = udef(child).cost;
                 if cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
                     for &(it, n) in cost {
@@ -940,7 +970,11 @@ fn special(w: &mut World, s: usize) {
                 }
             }
         }
-        U_HEAVY_ARTY => {
+        U_COMMANDO => {
+            let c = &mut w.units.cold[s];
+            c.reveal = c.reveal.saturating_sub(1);
+        }
+        U_HEAVY_ARTY | U_DEPLOY_TURRET => {
             let c = &mut w.units.cold[s];
             let wants = c.wtarget[0] != NONE || matches!(c.orders.first(), Some(Order::AttackGround { .. }) | Some(Order::Attack { .. }));
             if wants && !c.deployed && w.units.px[s] == w.units.x[s] && w.units.py[s] == w.units.y[s] {

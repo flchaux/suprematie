@@ -216,8 +216,10 @@ pub struct UnitCold {
     pub lvl: u8,
     /// dernière unité qui l'a touché (crédit de la destruction)
     pub last_hit: u32,
+    /// commando furtif : ticks pendant lesquels il reste visible après avoir tiré (0 : camouflé)
+    pub reveal: u16,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -449,6 +451,8 @@ pub struct World {
     pub ghosts: Vec<Ghost>,
     /// unité qui tire (pendant la résolution d'un tir ou d'un impact), pour créditer la destruction
     pub shooter: u32,
+    /// origine du tir en cours de résolution (blindage frontal du Gardien) ; i32::MIN : inconnue
+    pub hit_from: (i32, i32),
     /// prochain tick où un événement « attaque subie » peut être émis, par joueur et par type
     /// (sortie pour l'interface seulement : ni hachée ni sauvegardée)
     pub attack_ev: Vec<u32>,
@@ -530,6 +534,7 @@ impl World {
             carriers: Vec::new(),
             ghosts: Vec::new(),
             shooter: NONE,
+            hit_from: (i32::MIN, 0),
             attack_ev: Vec::new(),
         };
         for p in 0..np {
