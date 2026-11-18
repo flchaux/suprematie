@@ -126,6 +126,133 @@ interface Flat {
   pivot?: string;
   parent?: string;
   pivotPos?: THREE.Vector3;
+  /** volume plein de la pièce (occlusion ambiante) */
+  vol?: Vol;
+}
+
+/**
+ * Volume approché d'une pièce pour le calcul d'occlusion : boîte (forme 0), cylindre ou cône
+ * d'axe y (forme 1) ou sphère (forme 2), dans son repère local (`inv` : modèle -> pièce).
+ */
+interface Vol {
+  inv: THREE.Matrix4;
+  hx: number;
+  hy: number;
+  hz: number;
+  round: 0 | 1 | 2;
+  box: THREE.Box3;
+}
+
+function partVolume(part: Part, m: THREE.Matrix4): Vol {
+  let hx = 0.5, hy = 0.5, hz = 0.5;
+  let round: 0 | 1 | 2 = 0;
+  if (part.shape === "cylinder" || part.shape === "cone") {
+    const r = Math.max(part.radius ?? 0.5, part.radiusTop ?? 0);
+    hx = hz = r;
+    hy = (part.height ?? 1) / 2;
+    round = 1;
+  } else if (part.shape === "sphere") {
+    hx = hy = hz = part.radius ?? 0.5;
+    round = 2;
+  } else {
+    const s = part.size ?? [1, 1, 1];
+    hx = s[0] / 2;
+    hy = s[1] / 2;
+    hz = s[2] / 2;
+  }
+  const box = new THREE.Box3(new THREE.Vector3(-hx, -hy, -hz), new THREE.Vector3(hx, hy, hz)).applyMatrix4(m);
+  return { inv: m.clone().invert(), hx, hy, hz, round, box };
+}
+
+const tmpP = new THREE.Vector3();
+function insideVol(v: Vol, p: THREE.Vector3): boolean {
+  if (!v.box.containsPoint(p)) return false;
+  const q = tmpP.copy(p).applyMatrix4(v.inv);
+  if (v.round === 2) return q.lengthSq() <= v.hx * v.hx;
+  if (Math.abs(q.y) > v.hy) return false;
+  if (v.round === 1) return q.x * q.x + q.z * q.z <= v.hx * v.hx;
+  return Math.abs(q.x) <= v.hx && Math.abs(q.z) <= v.hz;
+}
+
+/** Directions de l'hémisphère (repère local, z = normale), réparties en spirale et pondérées vers la normale. */
+const AO_DIRS: THREE.Vector3[] = (() => {
+  const out: THREE.Vector3[] = [];
+  const n = 10;
+  for (let i = 0; i < n; i++) {
+    const z = Math.sqrt(1 - (i + 0.5) / n); // cosinus : plus de directions près de la normale
+    const r = Math.sqrt(1 - z * z);
+    const a = i * 2.399963;
+    out.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, z));
+  }
+  return out;
+})();
+/** distances de test (unités du modèle) et poids : un obstacle proche assombrit davantage */
+const AO_STEPS: [number, number][] = [[0.15, 1], [0.5, 0.6]];
+
+/**
+ * Occlusion ambiante cuite dans les sommets (attribut `ao`, 1 = à découvert) : depuis chaque sommet,
+ * des directions de l'hémisphère de la face testent si elles rencontrent une autre pièce du modèle ou le
+ * sol (y < 0). Calculée une fois au chargement, sans coût au rendu ; les creux, jointures et bas de
+ * caisse s'assombrissent. Grille de répartition des volumes pour limiter les tests.
+ */
+function bakeAO(geos: { g: THREE.BufferGeometry; self: number }[], vols: (Vol | undefined)[], bounds: THREE.Box3): void {
+  const N = 10;
+  const size = bounds.getSize(new THREE.Vector3()).addScalar(1.6);
+  const min = bounds.min.clone().subScalar(0.8);
+  const cell = (v: number, k: 0 | 1 | 2) => Math.max(0, Math.min(N - 1, Math.floor(((v - min.getComponent(k)) / size.getComponent(k)) * N)));
+  const grid: number[][] = Array.from({ length: N * N * N }, () => []);
+  vols.forEach((v, i) => {
+    if (!v) return;
+    for (let x = cell(v.box.min.x, 0); x <= cell(v.box.max.x, 0); x++)
+      for (let y = cell(v.box.min.y, 1); y <= cell(v.box.max.y, 1); y++)
+        for (let z = cell(v.box.min.z, 2); z <= cell(v.box.max.z, 2); z++) grid[(x * N + y) * N + z].push(i);
+  });
+  const occluded = (p: THREE.Vector3, self: number): boolean => {
+    if (p.y < 0) return true;
+    if (p.x < min.x || p.y < min.y || p.z < min.z || p.x > min.x + size.x || p.y > min.y + size.y || p.z > min.z + size.z) return false;
+    for (const i of grid[(cell(p.x, 0) * N + cell(p.y, 1)) * N + cell(p.z, 2)]) if (i !== self && insideVol(vols[i]!, p)) return true;
+    return false;
+  };
+  const t = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const nrm = new THREE.Vector3();
+  const d = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  const a = new THREE.Vector3();
+  const e1 = new THREE.Vector3();
+  const e2 = new THREE.Vector3();
+  for (const { g, self } of geos) {
+    const pos = g.getAttribute("position");
+    const ao = new Float32Array(pos.count).fill(1);
+    for (let i = 0; i + 2 < pos.count; i += 3) {
+      // normale de la face
+      a.fromBufferAttribute(pos, i);
+      e1.fromBufferAttribute(pos, i + 1).sub(a);
+      e2.fromBufferAttribute(pos, i + 2).sub(a);
+      nrm.crossVectors(e1, e2);
+      if (nrm.lengthSq() < 1e-12) continue;
+      nrm.normalize();
+      t.set(Math.abs(nrm.y) < 0.9 ? 0 : 1, Math.abs(nrm.y) < 0.9 ? 1 : 0, 0).cross(nrm).normalize();
+      b.crossVectors(nrm, t);
+      for (let k = 0; k < 3; k++) {
+        const o = new THREE.Vector3().fromBufferAttribute(pos, i + k).addScaledVector(nrm, 0.01);
+        let occ = 0;
+        for (const dir of AO_DIRS) {
+          d.set(0, 0, 0).addScaledVector(t, dir.x).addScaledVector(b, dir.y).addScaledVector(nrm, dir.z);
+          for (const [dist, w] of AO_STEPS) {
+            p.copy(o).addScaledVector(d, dist);
+            if (occluded(p, self)) {
+              occ += w;
+              break;
+            }
+          }
+        }
+        // occ / directions : part pondérée des directions bouchées (1 par direction au plus)
+        ao[i + k] = Math.max(0.3, 1 - 0.85 * (occ / AO_DIRS.length));
+      }
+    }
+    g.setAttribute("ao", new THREE.BufferAttribute(ao, 1));
+  }
 }
 
 /** Symétrie par rapport au plan x = 0 (copie `mirror`). */
@@ -176,7 +303,7 @@ function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inheri
           p.setXYZ(i + 2, x, y, z);
         }
       }
-      const f: Flat = { geo: g, color: inherit.color && !part.color ? inherit.color : part.color ?? inherit.color ?? "metal", pivot, parent };
+      const f: Flat = { geo: g, color: inherit.color && !part.color ? inherit.color : part.color ?? inherit.color ?? "metal", pivot, parent, vol: partVolume(part, m) };
       if (part.pivot && !mirror) f.pivotPos = new THREE.Vector3().setFromMatrixPosition(m);
       out.push(f);
     }
@@ -213,6 +340,7 @@ function emptyGeometry(): THREE.BufferGeometry {
   g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(9), 3));
   g.setAttribute("mask", new THREE.BufferAttribute(new Float32Array(3), 1));
   g.setAttribute("mat", new THREE.BufferAttribute(new Float32Array(3), 1));
+  g.setAttribute("ao", new THREE.BufferAttribute(new Float32Array(3).fill(1), 1));
   return g;
 }
 
@@ -225,11 +353,17 @@ export function buildModel(model: Model): BuiltModel {
   const pivotParts = new Map<string, THREE.BufferGeometry[]>();
   const box = new THREE.Box3();
   let triangles = 0;
-  for (const f of flats) {
-    if (!f.geo.getAttribute("position")) continue;
+  // géométries colorées dans le repère du modèle, puis occlusion ambiante (avant le recentrage des pivots)
+  const colored: { g: THREE.BufferGeometry; self: number; f: Flat }[] = [];
+  flats.forEach((f, i) => {
+    if (!f.geo.getAttribute("position")) return;
     const g = colorize(f.geo, f.color);
     g.computeBoundingBox();
     if (g.boundingBox) box.union(g.boundingBox);
+    colored.push({ g, self: i, f });
+  });
+  if (!box.isEmpty()) bakeAO(colored, flats.map((f) => f.vol), box);
+  for (const { g, f } of colored) {
     triangles += g.getAttribute("position").count / 3;
     const key = f.pivot ?? f.parent;
     if (key && pivotOrigins.has(key)) {
