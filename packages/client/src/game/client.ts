@@ -363,7 +363,13 @@ export class GameClient {
         if (performance.now() - this.researchEdit < 2000) return;
         if (q.length !== ui.researchQueue.length || q.some((x, i) => x !== ui.researchQueue[i])) ui.researchQueue = q;
       });
-      void this.query<Int32Array | null>("planned", [ui.me]).then((r) => sc.overlay?.setPlanned(r ?? []));
+      void this.query<Int32Array | null>("planned", [ui.me]).then((r) => {
+        this.planned = r ?? [];
+        // fantôme sélectionné disparu (chantier posé, annulé…) : fiche refermée
+        const p = ui.selPlan;
+        if (p && !this.plannedAt(p.x, p.y, (k, x, y) => k === p.kind && x === p.x && y === p.y)) ui.selPlan = null;
+        sc.overlay?.setPlanned(this.planned, ui.selPlan);
+      });
     }
     if (now - this.lastMinimap > 200) {
       this.lastMinimap = now;
@@ -598,7 +604,10 @@ export class GameClient {
     ui.selBuilding = selB;
     // unités d'un autre joueur (sans aucune des nôtres) : fiche de statistiques seulement
     ui.selForeign = this.selOwn.size === 0 && ui.selUnits.length ? foreign : -1;
-    if (this.selected.size) ui.selDeposit = null;
+    if (this.selected.size) {
+      ui.selDeposit = null;
+      ui.selPlan = null;
+    }
     // une seule unité (la nôtre ou une autre) : ses points de vie (rafraîchis dans la boucle d'affichage)
     if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1) this.refreshUnitInfo();
     else ui.unitInfo = null;
@@ -932,6 +941,11 @@ export class GameClient {
       else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = false;
       else {
         this.selected.clear();
+        ui.selDeposit = null;
+        if (ui.selPlan) {
+          ui.selPlan = null;
+          this.scene?.overlay?.setPlanned(this.planned, null);
+        }
         this.updateUi();
       }
       return;
@@ -1254,9 +1268,19 @@ export class GameClient {
           this.selected.add(b.ref);
           sfx.click();
         } else if (!add) {
-          // gisement (2 x 2 cases) sous le curseur : fiche du gisement
           const tx = Math.floor(g.x);
           const tz = Math.floor(g.z);
+          // construction prévue (fantôme) sous le curseur : sa fiche, d'où on peut l'annuler
+          const pl = this.plannedAt(tx, tz);
+          ui.selPlan = pl;
+          this.scene?.overlay?.setPlanned(this.planned, pl);
+          if (pl) {
+            ui.selDeposit = null;
+            sfx.click();
+            this.updateUi();
+            return;
+          }
+          // gisement (2 x 2 cases) sous le curseur : fiche du gisement
           const s = this.map?.spots.find((p) => tx >= p.x && tx < p.x + 2 && tz >= p.y && tz < p.y + 2);
           ui.selDeposit = s ? { kind: s.kind, x: s.x, y: s.y } : null;
           if (s) sfx.click();
@@ -1264,6 +1288,35 @@ export class GameClient {
       }
     }
     this.updateUi();
+  }
+
+  /** constructions prévues de notre camp (liste plate : type, x, y, direction), rafraîchie avec l'affichage */
+  private planned: Int32Array | number[] = [];
+  /** Construction prévue qui couvre la case (tx, tz) (et vérifie `ok`, si donné). */
+  private plannedAt(tx: number, tz: number, ok?: (kind: number, x: number, y: number) => boolean): { kind: number; x: number; y: number; dir: number } | null {
+    const l = this.planned;
+    for (let i = 0; i + 3 < l.length; i += 4) {
+      const [kind, x, y, dir] = [l[i], l[i + 1], l[i + 2], l[i + 3]];
+      const d = this.data?.buildings[kind];
+      if (!d) continue;
+      if (ok) {
+        if (ok(kind, x, y)) return { kind, x, y, dir };
+        continue;
+      }
+      const w = dir & 1 ? d.h : d.w;
+      const h = dir & 1 ? d.w : d.h;
+      if (tx >= x && tx < x + w && tz >= y && tz < y + h) return { kind, x, y, dir };
+    }
+    return null;
+  }
+  /** Annule la construction prévue sélectionnée (touche Suppr ou bouton de sa fiche). */
+  cancelPlan(): void {
+    const p = ui.selPlan;
+    if (!p) return;
+    this.cmd(Ord.cancelPlan(p.x, p.y));
+    ui.selPlan = null;
+    this.scene?.overlay?.setPlanned(this.planned, null);
+    sfx.confirm();
   }
 
   /** Bâtiment posé sur le gisement sélectionné (un extracteur), s'il y en a un. */
@@ -1905,6 +1958,10 @@ export class GameClient {
    * d'abord) ; un chantier est annulé tout de suite. Avec des ingénieurs sélectionnés : recyclage en zone.
    */
   demolishSelected(): void {
+    if (ui.selPlan && !this.selected.size) {
+      this.cancelPlan();
+      return;
+    }
     const sb = ui.selBuilding;
     if (sb && sb.owner === ui.me) {
       const f = this.frame;

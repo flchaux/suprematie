@@ -702,3 +702,29 @@ fn rotate_order_turns_a_built_belt() {
     }
     assert!(w.players[0].stock[IRON_PLATE as usize] >= 310, "les plaques ne sont pas arrivées au dépôt du sud");
 }
+
+/// Ordre CANCEL_PLAN : la construction prévue sous la case est annulée (ordre non commencé du
+/// commandant, même s'il est en cours de trajet, et bâtiment à reconstruire) ; les autres restent.
+#[test]
+fn cancel_plan_removes_planned_builds_and_ghosts() {
+    let mut w = World::new(&params(1, 512));
+    w.players[0].researched = u64::MAX;
+    let cmd = w.players[0].commander as i32;
+    // deux dépôts loin du commandant (chantiers pas encore posés)
+    let (sx, sy) = w.map.starts[0];
+    let (ax, ay) = (sx + 40, sy);
+    for (k, x) in [(0, ax), (1, ax + 10)] {
+        w.step(&[9, crate::orders::O_BUILD, 0, k, B_DEPOT as i32, x, ay, 0, 1, cmd]);
+    }
+    w.ghosts.push(Ghost { owner: 0, kind: B_DEPOT, x: ax + 20, y: ay, dir: 0, recipe: RECIPE_NONE, taken: 0 });
+    w.step(&[]);
+    let s = w.unit(cmd as u32).unwrap();
+    assert_eq!(w.units.cold[s].orders.len(), 2);
+    // case du second carré du premier dépôt (2 x 2) : l'ordre en cours disparaît
+    w.step(&[4, crate::orders::O_CANCEL_PLAN, 0, ax + 1, ay + 1]);
+    let left: Vec<i32> = w.units.cold[s].orders.iter().filter_map(|o| if let Order::Build { x, .. } = *o { Some(x) } else { None }).collect();
+    assert_eq!(left, vec![ax + 10], "seul le second dépôt reste prévu");
+    w.step(&[4, crate::orders::O_CANCEL_PLAN, 0, ax + 20, ay]);
+    assert!(w.ghosts.is_empty(), "le bâtiment à reconstruire est oublié");
+    assert_eq!(w.units.cold[s].orders.len(), 1);
+}

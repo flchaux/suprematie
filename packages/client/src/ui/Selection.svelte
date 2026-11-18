@@ -376,6 +376,20 @@
     {/if}
     {#if anyEng}<span class="dim small">Choisissez un bâtiment à droite. Clic droit sur une épave : recycler.</span>{/if}
   </div>
+{:else if ui.selPlan && d}
+  <!-- construction prévue (fantôme) : on peut l'annuler -->
+  {@const pd = d.buildings[ui.selPlan.kind]}
+  <div class="panel sel">
+    <div class="head" style:--pc="#58d8ff">
+      <div class="thumb">{#if sprite("buildings", pd.key)}<img src={sprite("buildings", pd.key)} alt="" />{/if}</div>
+      <div class="ht">
+        <div class="kicker">Construction prévue</div>
+        <b class="title">{pd.name}</b>
+        <span class="dim small">Pas encore commencée · case {ui.selPlan.x}, {ui.selPlan.y}</span>
+      </div>
+    </div>
+    <button class="icon-btn danger" title="Retire ce bâtiment des constructions prévues (rien n'est dépensé)" onclick={() => client.cancelPlan()}><Icon name="close" size={14} /> Annuler {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+  </div>
 {:else if dep && d}
   <!-- gisement : ce qu'il contient, s'il est exploité -->
   <div class="panel sel">

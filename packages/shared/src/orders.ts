@@ -22,6 +22,8 @@ export const O = {
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
   ROTATE: 24,
+  /** annuler les constructions prévues (fantômes, ordres non commencés) qui couvrent une case : [x, y] */
+  CANCEL_PLAN: 25,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -186,6 +188,9 @@ export function upgrade(ref: number): Cmd {
 }
 export function setShare(ref: number, pct: number): Cmd {
   return [O.SET_SHARE, ref | 0, Math.max(0, Math.min(100, Math.round(pct)))];
+}
+export function cancelPlan(x: number, y: number): Cmd {
+  return [O.CANCEL_PLAN, x | 0, y | 0];
 }
 export function rotate(refs: number[]): Cmd {
   return [O.ROTATE, refs.length, ...refs.map((r) => r | 0)];

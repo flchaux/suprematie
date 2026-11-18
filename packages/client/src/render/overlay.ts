@@ -53,7 +53,7 @@ export class CommandOverlay {
   }
 
   /** Constructions prévues (liste plate : type, x, y, direction). */
-  setPlanned(list: Int32Array | number[]): void {
+  setPlanned(list: Int32Array | number[], sel: { kind: number; x: number; y: number } | null = null): void {
     const by = new Map<number, [number, number, number][]>();
     for (let i = 0; i + 3 < list.length; i += 4) {
       const k = list[i];
@@ -63,6 +63,7 @@ export class CommandOverlay {
     for (const [k, g] of this.planned) if (!by.has(k)) g.tm.mesh.count = 0;
     const m = new THREE.Matrix4();
     const tint = new THREE.Color(0.35, 0.75, 1.3);
+    const selTint = new THREE.Color(1.6, 1.05, 0.35);
     for (const [kind, cells] of by) {
       let g = this.planned.get(kind);
       const def = this.data.buildings[kind];
@@ -90,7 +91,8 @@ export class CommandOverlay {
         const s = g.scale;
         m.compose(new THREE.Vector3(cx, gy + 0.04, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
         g.tm.mesh.setMatrixAt(n, m);
-        setTeamColor(g.tm, n, tint);
+        // fantôme sélectionné : ambre, plus vif
+        setTeamColor(g.tm, n, sel && sel.kind === kind && sel.x === x && sel.y === y ? selTint : tint);
         n++;
       }
       g.tm.mesh.count = n;

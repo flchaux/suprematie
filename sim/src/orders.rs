@@ -39,6 +39,9 @@ pub const O_CANCEL_GHOSTS: i32 = 41;
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
 pub const O_ROTATE: i32 = 24;
+/// annuler les constructions prévues (non commencées) qui couvrent la case [x, y] : bâtiments à
+/// reconstruire (fantômes) et ordres de construction de nos unités dont le chantier n'est pas posé
+pub const O_CANCEL_PLAN: i32 = 25;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -411,6 +414,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 }
             }
         }
+        O_CANCEL_PLAN => cancel_plan(w, p, c.next(), c.next()),
         O_ROTATE => {
             let n = c.next().clamp(0, 256);
             for _ in 0..n {
@@ -566,4 +570,32 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
         _ => {}
     }
     let _ = pop_order;
+}
+
+/// Ordre CANCEL_PLAN : retire les constructions prévues du joueur `p` qui couvrent la case (tx, ty).
+fn cancel_plan(w: &mut World, p: u8, tx: i32, ty: i32) {
+    let covers = |kind: u16, x: i32, y: i32, dir: u8| {
+        let (bw, bh) = buildings::dims(kind, dir & 3);
+        tx >= x && tx < x + bw && ty >= y && ty < y + bh
+    };
+    w.ghosts.retain(|g| g.owner != p || !covers(g.kind, g.x, g.y, g.dir));
+    for s in 0..w.units.alive.len() {
+        if !w.units.alive[s] || w.units.owner[s] != p {
+            continue;
+        }
+        // de la fin vers le début : les indices restent valides ; l'ordre en cours passe par pop_order
+        let mut i = w.units.cold[s].orders.len();
+        while i > 0 {
+            i -= 1;
+            let Order::Build { kind, x, y, dir, bid } = w.units.cold[s].orders[i] else { continue };
+            if w.building(bid).is_some() || !covers(kind, x, y, dir) {
+                continue;
+            }
+            if i == 0 {
+                pop_order(w, s);
+            } else {
+                w.units.cold[s].orders.remove(i);
+            }
+        }
+    }
 }

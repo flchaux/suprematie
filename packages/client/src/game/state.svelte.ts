@@ -39,6 +39,8 @@ export const ui = $state({
   selForeign: -1,
   /** gisement sélectionné (clic sur un gisement libre ou exploité) */
   selDeposit: null as null | { kind: number; x: number; y: number },
+  /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
+  selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
   unitInfo: null as null | { hp: number; maxHp: number; lvl: number },
   buildingInfo: null as null | Record<string, unknown>,
