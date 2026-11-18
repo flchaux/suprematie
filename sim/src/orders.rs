@@ -37,6 +37,8 @@ pub const O_UPGRADE: i32 = 40;
 pub const O_CANCEL_GHOSTS: i32 = 41;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
+/// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
+pub const O_ROTATE: i32 = 24;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -406,6 +408,14 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     if ok && w.units.kind[s] == crate::data::U_COMMANDER {
                         give(w, s, q, Order::Collect { target });
                     }
+                }
+            }
+        }
+        O_ROTATE => {
+            let n = c.next().clamp(0, 256);
+            for _ in 0..n {
+                if let Some(b) = own_building(w, p, c.next()) {
+                    buildings::rotate(w, b);
                 }
             }
         }

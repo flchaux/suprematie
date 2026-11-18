@@ -373,6 +373,24 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     Some(slot)
 }
 
+/// Tourne d'un quart de tour un tapis, un bras ou un tapis de contrôle terminé (ordre ROTATE), sur place
+/// et sans reconstruction ; les objets du tapis restent dessus.
+pub fn rotate(w: &mut World, b: usize) {
+    let bb = &w.buildings[b];
+    if !bb.alive || !bb.complete() || !matches!(bb.def().class, BClass::Belt | BClass::Inserter | BClass::Router) {
+        return;
+    }
+    let (x, y, class) = (bb.x, bb.y, bb.def().class);
+    let bb = &mut w.buildings[b];
+    bb.dir = (bb.dir + 1) & 3;
+    // un bras en plein geste le termine : il dépose l'objet tenu du côté de sa nouvelle direction
+    bb.wake = 0;
+    if class != BClass::Inserter {
+        belts::rebuild_around(w, &[(x, y)]);
+    }
+    wake_watchers(w, b);
+}
+
 pub fn complete_building(w: &mut World, b: usize) {
     let bb = &mut w.buildings[b];
     bb.build = BUILD_FULL;
