@@ -786,3 +786,34 @@ fn destroyed_buildings_are_rebuilt_by_idle_engineers() {
     }
     assert_eq!(w.map.occ[w.map.idx(100, 100)], 0, "rien n'est reconstruit");
 }
+
+/// Un extracteur de 2 x 2 sort par ses deux cases de face, à tour de rôle.
+#[test]
+fn extractor_uses_both_front_outputs() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    for dy in 0..2 {
+        for dx in 0..2 {
+            let i = w.map.idx(100 + dx, 100 + dy);
+            w.map.deposit[i] = IRON_ORE;
+        }
+    }
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 100, y: 100 });
+    // sortie vers le sud (dir 1) : deux tapis en cul-de-sac sous l'extracteur, l'un sous chaque colonne
+    put(&mut w, 0, B_EXTRACTOR, 100, 100, 1);
+    let left = put(&mut w, 0, B_BELT1, 100, 102, 1);
+    let right = put(&mut w, 0, B_BELT1, 101, 102, 1);
+    for y in 103..110 {
+        put(&mut w, 0, B_BELT1, 100, y, 1);
+        put(&mut w, 0, B_BELT1, 101, y, 1);
+    }
+    put(&mut w, 0, B_GENERATOR, 96, 100, 0);
+    for _ in 0..1200 {
+        w.step(&[]);
+    }
+    let count = |w: &World, b: usize| w.belts.lines[w.buildings[b].line as usize].items.len();
+    let (l, r) = (count(&w, left), count(&w, right));
+    println!("gauche {} droite {}", l, r);
+    assert!(l + r >= 10, "l'extracteur produit : {} + {}", l, r);
+    assert!(l.abs_diff(r) <= 1, "les deux sorties servent à tour de rôle : {} contre {}", l, r);
+}
