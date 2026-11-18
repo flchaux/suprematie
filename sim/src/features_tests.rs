@@ -882,6 +882,8 @@ fn collector_takes_only_the_surplus() {
     let start = w.map.occ[w.map.idx(100, 100)] as usize - 1;
     let col = w.map.occ[w.map.idx(105, 100)] as usize - 1;
     assert_eq!(w.buildings[col].kind, B_COLLECTOR);
+    // un dépôt à l'écart : la réserve a de la place pour tout le surplus
+    put(&mut w, 0, B_DEPOT, 100, 110, 0);
     let stock0 = w.players[0].stock[IRON_ORE as usize];
     let mut sent = 0;
     for t in 0..2000 {
@@ -960,4 +962,68 @@ fn assembler_upgrade_takes_time_and_can_be_cancelled() {
     assert_eq!(w.buildings[a].kind, B_ASSEMBLER1 + 1, "devenu assembleur rapide");
     assert_eq!(w.buildings[a].recipe as i32, rid, "recette gardée");
     assert_eq!(w.buildings[a].hp, bdef(B_ASSEMBLER1 + 1).hp, "points de vie à la même proportion");
+}
+
+/// La réserve est plafonnée par les dépôts : une file qui livre un dépôt s'arrête quand la réserve est
+/// pleine ; un dépôt amélioré agrandit la réserve et pose sur ses tapis de sortie les objets filtrés.
+#[test]
+fn depots_cap_the_reserve_and_upgraded_depot_outputs_filtered_items() {
+    use crate::orders::{O_SET_FILTERS, O_UPGRADE};
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    assert_eq!(w.players[0].stock_cap, STOCK_BASE);
+    for x in 100..106 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    let d = put(&mut w, 0, B_DEPOT, 106, 100, 0);
+    assert_eq!(w.players[0].stock_cap, STOCK_BASE + DEPOT_CAP[0]);
+    let start = w.map.occ[w.map.idx(100, 100)] as usize - 1;
+    let cap = w.players[0].stock_cap;
+    w.players[0].stock[IRON_ORE as usize] = cap - 5;
+    for t in 0..600 {
+        if t % 4 == 0 {
+            crate::belts::put_on_belt(&mut w, start, IRON_ORE);
+        }
+        w.step(&[]);
+    }
+    assert_eq!(w.players[0].stock[IRON_ORE as usize], cap, "réserve pleine : le dépôt n'accepte plus");
+    assert!(w.belts.lines.iter().any(|l| !l.items.is_empty()), "la file attend devant le dépôt");
+    // amélioration : plus de place, la file repart
+    for (it, n) in DEPOT_UPGRADE_COST {
+        w.players[0].stock[*it as usize] = *n as i32;
+    }
+    let r = w.building_ref(d) as i32;
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert!(w.buildings[d].upgrade > 0, "amélioration lancée");
+    for _ in 0..DEPOT_UPGRADE_TIME as u32 * 20 + 5 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[d].level, 1);
+    assert_eq!(w.players[0].stock_cap, STOCK_BASE + DEPOT_CAP[1]);
+    run(&mut w, 100);
+    assert!(w.players[0].stock[IRON_ORE as usize] > cap, "la file a repris");
+    // sortie filtrée : un tapis qui part de la face est du dépôt
+    for x in 108..114 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    w.players[0].stock[GEAR as usize] = 30;
+    w.players[0].stock[COPPER_PLATE as usize] = 0;
+    w.step(&[6, O_SET_FILTERS, 0, r, 2, GEAR as i32, COPPER_PLATE as i32]);
+    assert_eq!(w.buildings[d].filters, vec![GEAR, COPPER_PLATE]);
+    run(&mut w, 400);
+    // les engrenages quittent la réserve pour le tapis en cul-de-sac (pas de cuivre : il n'y en a pas)
+    let on_belts = |w: &World, it: u8| -> i32 { w.belts.lines.iter().map(|l| l.items.iter().filter(|i| i.0 == it).count() as i32).sum() };
+    let g = on_belts(&w, GEAR);
+    assert!(g > 5, "des engrenages sortent sur le tapis : {}", g);
+    assert_eq!(w.players[0].stock[GEAR as usize], 30 - g);
+    assert_eq!(on_belts(&w, COPPER_PLATE), 0);
+    let out = put(&mut w, 0, B_DEPOT, 100, 110, 0);
+    // les filtres d'un dépôt simple sont refusés
+    let r2 = w.building_ref(out) as i32;
+    w.step(&[5, O_SET_FILTERS, 0, r2, 1, GEAR as i32]);
+    assert!(w.buildings[out].filters.is_empty());
+    // destruction : la réserve rétrécit
+    let before = w.players[0].stock_cap;
+    crate::buildings::remove_building(&mut w, d, false);
+    assert_eq!(w.players[0].stock_cap, before - DEPOT_CAP[1]);
 }

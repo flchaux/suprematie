@@ -20,6 +20,8 @@ export const ui = $state({
   stock: [] as number[],
   /** stock commun de l'équipe (entrepôts d'équipe) */
   teamStock: [] as number[],
+  /** plafond de la réserve, par objet (dépôts) */
+  stockCap: 0,
   produced: [] as number[],
   consumed: [] as number[],
   powerProd: 0,

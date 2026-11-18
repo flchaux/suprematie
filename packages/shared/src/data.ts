@@ -19,6 +19,8 @@ export interface GameData {
   items: ItemDef[]; recipes: RecipeDef[]; weapons: WeaponDef[]; techs: TechDef[]; buildings: BuildingDef[]; units: UnitDef[];
   missileCost: [number, number][]; interceptorCost: [number, number][];
   /** niveaux d'un extracteur : vitesse et consommation en % du niveau 0, coût et recherche du passage à ce niveau */
+  /** dépôts : réserve de base, capacité par niveau, amélioration (sorties filtrées) */
+  depot?: { base: number; cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number };
   extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; /** durée de l'amélioration vers ce niveau (s) */ time?: number }[];
   /** améliorations des assembleurs sur place : [type actuel, type visé, durée (s)] ; coût et recherche du type visé */
   assemblerUpgrades?: [number, number, number][];

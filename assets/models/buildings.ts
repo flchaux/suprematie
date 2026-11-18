@@ -456,6 +456,42 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.3,0.08,0.36], pos: [0,1.45,-0.05], color: "dark" },
     ],
   },
+  // depot_n2 : dépôt amélioré, rehaussé d'un étage de stockage à hublots, deux goulottes de sortie filtrée à
+  // l'avant, toit plat cerclé d'une rambarde où s'affichent les objets filtrés
+  depot_n2: {
+    parts: [
+      ...socle(2),
+      ...filets(2),
+      { shape: "bevel", size: [1.76,0.95,1.6], pos: [0,0.72,-0.05], color: "dark" },
+      // rideau à lames
+      { shape: "bevel", size: [1.04,0.78,0.1], pos: [0,0.66,0.77], bevel: 0.03, color: "black" },
+      { shape: "box", size: [0.92,0.04,0.04], pos: [0,0.42,0.82], color: "dark" },
+      { shape: "box", size: [0.92,0.04,0.04], pos: [0,0.58,0.82], color: "dark" },
+      { shape: "box", size: [0.92,0.04,0.04], pos: [0,0.74,0.82], color: "dark" },
+      { shape: "box", size: [1.0,0.04,0.03], pos: [0,1.09,0.77], color: "glow" },
+      // goulottes de sortie filtrée de part et d'autre du rideau
+      { shape: "bevel", size: [0.24,0.5,0.22], pos: [0.7,0.55,0.8], color: "light", mirror: true },
+      { shape: "box", size: [0.16,0.05,0.04], pos: [0.7,0.42,0.92], color: "amber", mirror: true },
+      { shape: "box", size: [0.16,0.05,0.04], pos: [0.7,0.7,0.92], color: "glow", mirror: true },
+      // ceinture entre les deux étages
+      { shape: "bevel", size: [1.86,0.14,1.7], pos: [0,1.24,-0.05], color: "metal" },
+      { shape: "box", size: [1.6,0.05,0.03], pos: [0,1.24,0.81], color: "amber" },
+      // étage de stockage, hublots lumineux et nervures
+      { shape: "bevel", size: [1.66,0.86,1.5], pos: [0,1.74,-0.05], color: "dark" },
+      { shape: "bevel", size: [0.36,0.6,0.36], pos: [0.74,1.72,0.62], color: "light", mirror: true },
+      { shape: "bevel", size: [0.36,0.6,0.36], pos: [0.74,1.72,-0.72], color: "light", mirror: true },
+      { shape: "box", size: [0.26,0.18,0.03], pos: [-0.26,1.8,0.71], color: "glow" },
+      { shape: "box", size: [0.26,0.18,0.03], pos: [0.26,1.8,0.71], color: "glow" },
+      { shape: "box", size: [0.04,0.6,1.1], pos: [0.84,1.74,-0.05], color: "metal", mirror: true },
+      { shape: "box", size: [0.03,0.04,0.9], pos: [0.86,1.98,-0.05], color: "glow", mirror: true },
+      // toit plat d'équipe et rambarde
+      { shape: "bevel", size: [1.74,0.12,1.58], pos: [0,2.23,-0.05], color: "faction" },
+      { shape: "box", size: [1.7,0.1,0.04], pos: [0,2.36,0.72], color: "metal" },
+      { shape: "box", size: [1.7,0.1,0.04], pos: [0,2.36,-0.82], color: "metal" },
+      { shape: "box", size: [0.04,0.1,1.5], pos: [0.85,2.36,-0.05], color: "metal", mirror: true },
+      { shape: "box", size: [0.12,0.22,0.12], pos: [0.78,2.4,0.66], color: "amber", mirror: true },
+    ],
+  },
   // generator : turbine couchée à hélice, deux bobines à anneaux lumineux (720 triangles)
   generator: {
     parts: [

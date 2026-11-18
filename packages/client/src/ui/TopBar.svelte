@@ -27,7 +27,8 @@
       <div class="stock">
         {#each SHOWN as id}
           {#if id <= 12 || (ui.stock[id] ?? 0) > 0}
-            <span class="tip res"><Item {id} n={ui.stock[id] ?? 0} size={20} />{#if (ui.teamStock[id] ?? 0) > 0}<span class="team num">+{(ui.teamStock[id] ?? 0) >= 10000 ? Math.floor((ui.teamStock[id] ?? 0) / 1000) + "k" : ui.teamStock[id]}</span>{/if}<span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{ui.stock[id] ?? 0}</span> dans votre stock (dépôts)<br /><span class="num">{ui.teamStock[id] ?? 0}</span> dans le stock de l'équipe (entrepôts)<br /><span class="dim">La construction puise d'abord dans votre stock.</span></span></span>
+            {@const fill = ui.stockCap > 0 ? Math.min(1, (ui.stock[id] ?? 0) / ui.stockCap) : 0}
+            <span class="tip res" class:full={fill >= 1} class:near={fill >= 0.85 && fill < 1}><Item {id} n={ui.stock[id] ?? 0} size={20} /><span class="cap"><span style:width={fill * 100 + "%"}></span></span>{#if (ui.teamStock[id] ?? 0) > 0}<span class="team num">+{(ui.teamStock[id] ?? 0) >= 10000 ? Math.floor((ui.teamStock[id] ?? 0) / 1000) + "k" : ui.teamStock[id]}</span>{/if}<span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{ui.stock[id] ?? 0}</span> dans votre stock (dépôts)<br /><span class="num">{ui.teamStock[id] ?? 0}</span> dans le stock de l'équipe (entrepôts)<br /><span class="dim">La construction puise d'abord dans votre stock.</span><br />Réserve : <span class="num">{ui.stockCap}</span> au plus par objet{#if fill >= 1} <b class="bad">pleine</b>{/if}<br /><span class="dim">Chaque dépôt l'agrandit (davantage une fois amélioré).</span></span></span>
           {/if}
         {/each}
       </div>
@@ -102,6 +103,13 @@
   .grow { flex: 1; }
   .stock { display: flex; gap: 11px; }
   .res :global(.num) { font-size: 12.5px; }
+  .res { position: relative; }
+  /* remplissage de la réserve (plafond fixé par les dépôts) */
+  .res .cap { position: absolute; left: 0; right: 0; bottom: 1px; height: 2px; background: rgba(255, 255, 255, 0.1); pointer-events: none; }
+  .res .cap > span { display: block; height: 100%; background: var(--accent); opacity: 0.7; }
+  .res.near .cap > span { background: var(--amber); opacity: 1; }
+  .res.full .cap > span { background: var(--bad, #ff5a4f); opacity: 1; }
+  .res.full :global(.num) { color: var(--bad, #ff5a4f); }
   .res .team { font-size: 10.5px; color: var(--accent); margin-left: 1px; opacity: 0.9; }
   .sep { width: 1px; height: 24px; background: linear-gradient(180deg, transparent, var(--line-hi), transparent); flex-shrink: 0; }
   .gauge { display: flex; align-items: center; gap: 7px; color: var(--accent); white-space: nowrap; }

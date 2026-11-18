@@ -272,10 +272,15 @@ fn reclaim_wreck(w: &mut World, s: usize, wk: usize) -> bool {
     let bp = build_power(w, s) as i32;
     let owner = w.units.owner[s] as usize;
     let amount = (bp / 5).max(1);
+    let (room_iron, room_steel) = (w.stock_room(owner, IRON_PLATE), w.stock_room(owner, STEEL));
+    if room_iron == 0 && room_steel == 0 {
+        // réserve pleine : le recyclage s'arrête
+        return false;
+    }
     let wr = &mut w.wrecks[wk];
-    let take_iron = amount.min(wr.iron);
+    let take_iron = amount.min(wr.iron).min(room_iron);
     wr.iron -= take_iron;
-    let take_steel = (amount - take_iron).min(wr.steel);
+    let take_steel = (amount - take_iron).min(wr.steel).min(room_steel);
     wr.steel -= take_steel;
     let empty = wr.iron <= 0 && wr.steel <= 0;
     w.players[owner].stock[IRON_PLATE as usize] += take_iron;
@@ -703,7 +708,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             }
             clear_goal(w, s);
-            let it = crate::belts::take_from_belt(w, b, &|_| true);
+            let o = owner as usize;
+            // dans la limite de la réserve
+            let (st, cap) = (w.players[o].stock, w.players[o].stock_cap);
+            let it = crate::belts::take_from_belt(w, b, &|i| st[i as usize] < cap);
             if it != 0 {
                 w.players[owner as usize].stock[it as usize] += 1;
                 w.units.cold[s].flags |= UF_WORKING;

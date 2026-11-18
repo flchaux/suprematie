@@ -15,7 +15,7 @@ pub const RECIPE_SCALE: u32 = 100 * 1024;
 fn needs_tick(c: BClass) -> bool {
     matches!(
         c,
-        BClass::Extractor | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport
+        BClass::Extractor | BClass::Depot | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport
     )
 }
 
@@ -407,6 +407,10 @@ pub fn complete_building(w: &mut World, b: usize) {
     if def.class == BClass::Belt {
         belts::rebuild_around(w, &[(x, y)]);
     }
+    if def.class == BClass::Depot {
+        let lv = (w.buildings[b].level as usize).min(DEPOT_CAP.len() - 1);
+        w.players[owner as usize].stock_cap += DEPOT_CAP[lv];
+    }
     w.buildings_version = w.buildings_version.wrapping_add(1);
     w.ev(EV_BUILT, owner as i32, kind as i32, x, y);
 }
@@ -416,6 +420,11 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     let (bw, bh) = w.buildings[b].size();
     let def = bdef(kind);
     let floor = w.buildings[b].floor;
+    if def.class == BClass::Depot && w.buildings[b].complete() {
+        let lv = (w.buildings[b].level as usize).min(DEPOT_CAP.len() - 1);
+        let owner = w.buildings[b].owner as usize;
+        w.players[owner].stock_cap -= DEPOT_CAP[lv];
+    }
     w.buildings[b].alive = false;
     for ty in y..y + bh {
         for tx in x..x + bw {
@@ -915,7 +924,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
         return false;
     }
     match bb.def().class {
-        BClass::Depot => true,
+        BClass::Depot => w.stock_room(bb.owner as usize, item) > 0,
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::accepts(w, b, item),
         BClass::Router => bb.stash.len() < 4,
         BClass::Crafter => {
@@ -1016,6 +1025,9 @@ fn take_output(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
     if matches!(w.buildings[b].def().class, BClass::Warehouse | BClass::Station | BClass::CargoPad) {
         return crate::logistics::take(w, b, want);
     }
+    if w.buildings[b].def().class == BClass::Depot {
+        return depot_take(w, b, &|i| want[i as usize]);
+    }
     let it = output_of(&w.buildings[b]);
     if it != 0 && want[it as usize] {
         w.buildings[b].out -= 1;
@@ -1070,6 +1082,7 @@ pub fn update_buildings(w: &mut World) {
         }
         match bb.def().class {
             BClass::Extractor => tick_extractor(w, b),
+            BClass::Depot => tick_depot(w, b),
             BClass::Belt if bb.def().collect => tick_collector(w, b),
             BClass::Inserter => tick_inserter(w, b),
             BClass::Crafter => tick_crafter(w, b),
@@ -1165,6 +1178,7 @@ fn tick_router(w: &mut World, b: usize) {
 pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
     match bb.def().class {
         BClass::Extractor => EXTRACTOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
+        BClass::Depot if bb.level == 0 => Some((DEPOT_UPGRADE_COST, DEPOT_UPGRADE_TECH, DEPOT_UPGRADE_TIME as u32 * 20)),
         BClass::Crafter => ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind).map(|u| (bdef(u.1).cost, bdef(u.1).tech, u.2 as u32 * 20)),
         _ => None,
     }
@@ -1239,6 +1253,11 @@ fn tick_collector(w: &mut World, b: usize) {
             pos = p;
         }
         let Some(k) = found else { return };
+        // réserve pleine pour cet objet : il laisse passer
+        let pl = &w.players[owner];
+        if pl.stock[l.items[k].0 as usize] >= pl.stock_cap {
+            return;
+        }
         // surplus : la file arrêtée en aval remonte jusqu'à la case (l'objet suivant s'y arrêterait),
         // ou la case est au bout de la ligne et sa sortie est bloquée
         let blocked = match prev {
@@ -1279,6 +1298,12 @@ fn tick_upgrade(w: &mut World, b: usize) {
     bb.wake = 0;
     match bb.def().class {
         BClass::Extractor => bb.level += 1,
+        BClass::Depot => {
+            // dépôt plus grand : la réserve du joueur grandit d'autant
+            bb.level += 1;
+            let owner = bb.owner as usize;
+            w.players[owner].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
+        }
         _ => {
             if let Some(u) = ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind) {
                 let (old, new) = (bb.def().hp, bdef(u.1).hp);
@@ -1288,6 +1313,55 @@ fn tick_upgrade(w: &mut World, b: usize) {
         }
     }
     wake_watchers(w, b);
+}
+
+/// Sortie d'un dépôt amélioré : prochain objet filtré (à tour de rôle) que le joueur a en réserve et
+/// que `want` accepte ; il quitte la réserve. 0 : rien (dépôt non amélioré, sans filtre, réserve vide).
+fn depot_take(w: &mut World, b: usize, want: &dyn Fn(u8) -> bool) -> u8 {
+    let bb = &w.buildings[b];
+    if bb.level == 0 || bb.filters.is_empty() {
+        return 0;
+    }
+    let owner = bb.owner as usize;
+    let n = bb.filters.len();
+    let start = bb.timer as usize % n;
+    for k in 0..n {
+        let it = w.buildings[b].filters[(start + k) % n];
+        if it != 0 && w.players[owner].stock[it as usize] > 0 && want(it) {
+            w.players[owner].stock[it as usize] -= 1;
+            w.buildings[b].timer = ((start + k + 1) % n) as _;
+            return it;
+        }
+    }
+    0
+}
+
+/**
+ * Dépôt : un dépôt amélioré avec des filtres pose ses objets filtrés (pris dans la réserve, à tour de
+ * rôle) sur les tapis qui partent de ses faces ; sinon il dort.
+ */
+fn tick_depot(w: &mut World, b: usize) {
+    let bb = &w.buildings[b];
+    if bb.level == 0 || bb.filters.is_empty() {
+        w.buildings[b].working = false;
+        w.buildings[b].wake = w.tick + SLEEP;
+        return;
+    }
+    let belts = out_belts(w, b);
+    let mut any = false;
+    for t in belts.iter().copied() {
+        if !belts::belt_has_room(w, t) {
+            continue;
+        }
+        let it = depot_take(w, b, &|_| true);
+        if it == 0 {
+            break;
+        }
+        belts::put_on_belt(w, t, it);
+        any = true;
+    }
+    w.buildings[b].working = any;
+    w.buildings[b].wake = w.tick + if belts.is_empty() { 20 } else { 2 };
 }
 
 fn tick_extractor(w: &mut World, b: usize) {

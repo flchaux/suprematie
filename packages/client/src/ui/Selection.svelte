@@ -25,6 +25,11 @@
   // amélioration possible (extracteur : niveau suivant ; assembleur : modèle suivant)
   const upg = $derived.by(() => {
     if (!info || !bdef || !d) return null;
+    if (bdef.cls === BClass.Depot) {
+      const dp = d.depot;
+      if (!dp || (info.level ?? 0) > 0) return null;
+      return { label: "Agrandir le dépôt", cost: dp.upgradeCost, tech: dp.upgradeTech, time: dp.upgradeTime, gain: `réserve +${dp.cap[1] - dp.cap[0]} par objet, sorties filtrées` };
+    }
     if (bdef.cls === BClass.Extractor) {
       const l = info.level ?? 0;
       const n = (d.extractorLevels ?? [])[l + 1];
@@ -271,7 +276,28 @@
         <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part dans votre stock au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
         <div class="row"><span class="kicker">Surplus mis en réserve</span> <span class="num">{info.out ?? 0}</span></div>
       {:else if bdef.cls === BClass.Depot}
-        <span class="dim">Tout ce qui entre ici rejoint votre stock personnel, utilisé par vos ingénieurs.</span>
+        {@const dp = d.depot}
+        {@const filters = (info.filters ?? []) as number[]}
+        <span class="dim small">Tout ce qui entre ici rejoint votre réserve, utilisée par vos ingénieurs. Quand la réserve d'un objet est pleine, le dépôt le refuse et le tapis attend.</span>
+        <div class="row"><span class="kicker">Réserve</span> <span class="num">{ui.stockCap}</span><span class="dim small">&nbsp;par objet{#if dp}&nbsp;· ce dépôt : +{dp.cap[Math.min(info.level ?? 0, dp.cap.length - 1)]}{/if}</span></div>
+        {#if (info.level ?? 0) > 0}
+          <div class="row"><span class="kicker">Sorties filtrées</span><span class="dim small">posées à tour de rôle sur les tapis qui partent du dépôt, ou prises par les bras</span></div>
+          <div class="row wrap">
+            {#each Array(dp?.maxFilters ?? 4) as _, k}
+              <select value={filters[k] ?? 0} disabled={!mine || (k > filters.length)} title="Objet sorti de la réserve" onchange={(e) => {
+                const v = Number((e.target as HTMLSelectElement).value);
+                const next = filters.slice();
+                if (v > 0) next[k] = v; else next.splice(k, 1);
+                client.setFilters(next.filter((x) => x > 0));
+              }}>
+                <option value={0}>— aucun —</option>
+                {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({ui.stock[i] ?? 0})</option>{/if}{/each}
+              </select>
+            {/each}
+          </div>
+        {:else}
+          <span class="dim small">Amélioré, il gagne un étage, agrandit davantage la réserve et peut sortir les objets de votre choix.</span>
+        {/if}
       {:else if bdef.cls === BClass.Warehouse}
         <span class="dim small">Ce qui entre ici rejoint le stock de l'équipe : chaque allié peut s'en servir pour construire (après son propre stock).</span>
         <div class="row"><span class="kicker">Sortie</span>

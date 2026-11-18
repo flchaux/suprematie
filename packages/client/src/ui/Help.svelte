@@ -34,6 +34,7 @@
         <li>Les ingénieurs (et le robot de commandement) construisent avec le <b>stock commun</b>, affiché en haut.</li>
         <li>Le stock se remplit uniquement par les <b>dépôts</b> : tout objet qui y entre (par tapis ou bras) devient disponible partout.</li>
         <li>Chaîne de base : <b>extracteur</b> sur un gisement → <b>tapis</b> → <b>fonderie</b> → tapis → <b>dépôt</b>.</li>
+        <li><b>Dépôts et réserve</b> : votre réserve garde au plus 400 de chaque objet, plus 600 par dépôt (2 000 pour un dépôt amélioré). Réserve pleine : les dépôts refusent l'objet et les tapis attendent. Un dépôt amélioré (automatisation) gagne un étage et des sorties filtrées, réglées dans sa fiche : il pose ces objets, pris dans la réserve, sur les tapis qui partent de lui.</li>
         <li><b>Collecteur de surplus</b> (automatisation) : posé sur un tapis, qu'il remplace ; quand la file est bouchée plus loin, ce qui arrive sous lui part dans votre stock, et l'amont ne s'arrête jamais.</li>
         <li><b>Trappes</b> : un tapis qui entre dans un bâtiment le livre directement (trappe cyan) ; un tapis qui part d'une face reçoit ses produits (trappe ambre). Sans tapis, la trappe reste fermée.</li>
         <li>Les <b>bras</b> restent utiles pour prendre sur un tapis qui passe le long d'un bâtiment : un bras prend sur la case derrière lui et pose sur la case devant, seulement ce que la cible accepte. Quand un bâtiment a plusieurs sorties (bras et tapis), elles reçoivent ses produits à tour de rôle ; la part d'un bras se règle en le sélectionnant.</li>

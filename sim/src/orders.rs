@@ -35,6 +35,8 @@ pub const O_RESEARCH_QUEUE: i32 = 22;
 pub const O_UPGRADE: i32 = 40;
 /// oublier les fantômes à reconstruire d'une zone : [x0, y0, x1, y1] (cases, bornes comprises)
 pub const O_CANCEL_GHOSTS: i32 = 41;
+/// filtres de sortie d'un dépôt amélioré : [réf., n, objet...] (n <= MAX_FILTERS)
+pub const O_SET_FILTERS: i32 = 42;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
@@ -221,6 +223,23 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let (b, f) = (c.next(), c.next());
             if let Some(b) = own_building(w, p, b) {
                 w.buildings[b].repeat = f != 0;
+            }
+        }
+        O_SET_FILTERS => {
+            let b = c.next();
+            let n = c.next().clamp(0, MAX_FILTERS as i32);
+            let mut items = Vec::new();
+            for _ in 0..n {
+                let it = c.next();
+                if it > 0 && (it as usize) < NUM_ITEMS && !items.contains(&(it as u8)) {
+                    items.push(it as u8);
+                }
+            }
+            if let Some(b) = own_building(w, p, b) {
+                if w.buildings[b].def().class == BClass::Depot && w.buildings[b].level > 0 {
+                    w.buildings[b].filters = items;
+                    w.buildings[b].wake = 0;
+                }
             }
         }
         O_CANCEL_GHOSTS => {
