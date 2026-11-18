@@ -1120,6 +1120,7 @@ export class Entities {
     const DZ = [0, 1, 0, -1];
     // tapis et bras : case -> direction (bras : 16 * quarts de tour + 4 * portée + direction)
     const links = new Map<number, number>();
+    const curves = new Map<number, number>();
     let o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const bd = this.data.buildings[buf[o + 1] & 0xff];
@@ -1127,8 +1128,12 @@ export class Entities {
       // un tapis surélevé ne touche pas les bâtiments
       if ((buf[o + 1] >>> 28) & 3) continue;
       const dir = (buf[o + 1] >> 16) & 3;
+      const cell = ((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff);
       const arm = bd.cls === BClass.Inserter ? 16 * (buf[o + 6] & 3 || 2) + 4 * Math.max(1, bd.reach ?? 1) : 0;
-      links.set(((buf[o + 2] >>> 16) & 0xffff) * W + (buf[o + 2] & 0xffff), arm + dir);
+      links.set(cell, arm + dir);
+      // virage : côté par lequel il est alimenté (tapis latéral ou bâtiment)
+      const shape = bd.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
+      if (shape) curves.set(cell, shape === 1 ? (dir + 1) & 3 : (dir + 3) & 3);
     }
     // transfert direct : case -> bâtiment (fabricants, extracteurs et receveurs), pour ouvrir la trappe
     // entre deux bâtiments collés qui s'échangent des objets
@@ -1201,6 +1206,8 @@ export class Entities {
           if (code !== undefined && code < 4) {
             if (code === side) state = 2;
             else if (code === (side + 2) % 4) state = 1;
+            // virage alimenté par cette face
+            else if (curves.get(oz * W + ox) === (side + 2) % 4) state = 2;
           } else if (code !== undefined) {
             // bras : dépose devant lui, prise selon sa rotation
             const d = code & 3;

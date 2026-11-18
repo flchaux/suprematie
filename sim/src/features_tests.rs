@@ -1354,6 +1354,47 @@ fn flow_averages_the_last_minute() {
     assert!((290..=320).contains(&v), "{v}");
 }
 
+/// Virage alimenté par un bâtiment : un tapis posé le long de la face d'une fonderie, sans tapis qui
+/// l'alimente, devient un virage qui reçoit ses produits ; tourner (R) le tapis de sortie vers la file
+/// voisine crée ce virage.
+#[test]
+fn belt_along_a_face_becomes_a_building_fed_curve() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 94, y: 100 });
+    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let i = w.map.idx(94 + dx, 100 + dy);
+        w.map.deposit[i] = IRON_ORE;
+    }
+    put(&mut w, 0, B_EXTRACTOR, 94, 100, 0);
+    for x in 96..100 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    let f = put(&mut w, 0, B_FURNACE, 100, 100, 0);
+    put(&mut w, 0, B_GENERATOR, 100, 104, 0);
+    // tapis de sortie vers l'est en (102, 101), puis une file qui monte vers le nord jusqu'à un dépôt
+    let out = put(&mut w, 0, B_BELT1, 102, 101, 0);
+    let mid = put(&mut w, 0, B_BELT1, 102, 100, 3);
+    put(&mut w, 0, B_BELT1, 102, 99, 3);
+    put(&mut w, 0, B_DEPOT, 102, 97, 0);
+    // le tapis du dessus touche aussi la face et rien ne l'alimente : lui aussi est un virage de sortie
+    let mut outs = crate::buildings::out_belts(&w, f);
+    outs.sort_unstable();
+    assert_eq!(outs, vec![out, mid], "tout droit vers l'est, et le virage du dessus");
+    // R trois fois : il pointe vers le nord, le long de la face est de la fonderie
+    for _ in 0..3 {
+        crate::buildings::rotate(&mut w, out);
+    }
+    assert_eq!(w.buildings[out].dir, 3);
+    // alimenté par l'ouest = côté (3 + 3) % 4 : forme 2
+    assert_eq!(crate::belts::belt_shape(&w, out), 2, "virage alimenté par la fonderie");
+    assert_eq!(crate::belts::belt_shape(&w, mid), 0, "le tapis suivant, alimenté par derrière, reste droit");
+    assert_eq!(crate::buildings::out_belts(&w, f), vec![out], "seul le virage reçoit les produits");
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    run(&mut w, 4000);
+    assert!(w.players[0].stock[IRON_PLATE as usize] - before > 10, "les plaques passent par le virage jusqu'au dépôt");
+}
+
 /// Un générateur s'améliore deux fois : sans production pendant le chantier, puis plus de puissance.
 #[test]
 fn generator_upgrade_raises_power_production() {

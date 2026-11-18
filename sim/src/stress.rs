@@ -343,6 +343,10 @@ pub fn logistics_demo() -> World {
     for y in y0 + 41..y0 + 47 {
         put(&mut w, 0, B_BELT1, x0 + 49, y, 1);
     }
+    // tapis le long de la face sud du dépôt, vers l'ouest : le premier est un virage alimenté par le dépôt
+    for x in (x0 + 44..x0 + 49).rev() {
+        put(&mut w, 0, B_BELT1, x, y0 + 41, 2);
+    }
     // bras en quart de tour : tourné vers le sud, il prend sur ce tapis (à sa droite) et dépose devant lui
     let arm = put(&mut w, 0, B_INSERTER, x0 + 50, y0 + 44, 1);
     if arm != usize::MAX {
