@@ -88,6 +88,14 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     ]);
 }
 
+/// Avancement d'une amélioration en cours, en millièmes (1 à 1000 ; 0 : aucune).
+fn upgrade_permille(bb: &Building) -> i32 {
+    match (bb.upgrade, crate::buildings::upgrade_spec(bb)) {
+        (0, _) | (_, None) => 0,
+        (u, Some((_, _, total))) => (1 + (u as u64 - 1) * 999 / total.max(1) as u64) as i32,
+    }
+}
+
 fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
     let bb = &w.buildings[b];
     let def = bb.def();
@@ -176,7 +184,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         bb.build as i32,
         aux1,
         aux2,
-        bb.line as i32,
+        // tapis : sa ligne ; autres bâtiments : avancement d'une amélioration en cours (1 à 1000, 0 : aucune)
+        if def.class == BClass::Belt { bb.line as i32 } else { upgrade_permille(bb) },
     ]);
 }
 
@@ -424,8 +433,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         (0, 0)
     };
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{}}}",
-        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{}}}",
+        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb)
     )
 }
 

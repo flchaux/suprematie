@@ -81,6 +81,8 @@ class KindMesh {
 /** Bâtiments qui reçoivent des objets (et ont donc des trappes) ; ce sont aussi ceux qui reçoivent par transfert direct. */
 const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad]);
 const RECIPE_NONE = 255;
+/** teinte d'un bâtiment en cours d'amélioration (chantier ambre) */
+const UPGRADE_TINT = new THREE.Color(0xffc266);
 const CRAFTER_ASSEMBLER = 1;
 
 const tmpM = new THREE.Matrix4();
@@ -181,6 +183,8 @@ export class Entities {
   group = new THREE.Group();
   unitMeshes: KindMesh[] = [];
   buildingMeshes: KindMesh[] = [];
+  /** modèles des niveaux améliorés (extracteur : clé_n2, clé_n3), par type de bâtiment */
+  levelMeshes = new Map<number, KindMesh[]>();
   /** virages des tapis par type : [entrée à gauche, entrée à droite] (forme 1 et 2 de la simulation) */
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
@@ -274,6 +278,14 @@ export class Entities {
       built.box.getSize(size);
       const scale = buildingScale(b.w, size.x, size.z, b.reach);
       this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
+      const lv: KindMesh[] = [];
+      for (let n = 2; BUILDING_MODELS[`${b.key}_n${n}`]; n++) {
+        const bl = buildModel(BUILDING_MODELS[`${b.key}_n${n}`]);
+        const sz = new THREE.Vector3();
+        bl.box.getSize(sz);
+        lv.push(new KindMesh(this.group, bl, buildingScale(b.w, sz.x, sz.z, b.reach), TEX_PER_TILE_BUILDING));
+      }
+      if (lv.length) this.levelMeshes.set(this.buildingMeshes.length - 1, lv);
       // tapis : virages (objets entrant par la gauche, par la droite), à l'échelle du tapis droit
       if (b.cls === BClass.Belt) {
         const g = BUILDING_MODELS[b.key + "_virage_g"];
@@ -461,6 +473,7 @@ export class Entities {
     const teamOf = (p: number) => f.players[p]?.team ?? p;
     for (const m of this.unitMeshes) m.begin();
     for (const m of this.buildingMeshes) m.begin();
+    for (const l of this.levelMeshes.values()) for (const m of l) m.begin();
     for (const [g, d] of this.beltCurves.values()) {
       g.begin();
       d.begin();
@@ -657,7 +670,11 @@ export class Entities {
       if (strategic) continue;
       // tapis en virage : forme calculée par la simulation d'après les tapis voisins (mot auxiliaire)
       const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
-      const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : this.buildingMeshes[kind];
+      // extracteur amélioré : modèle de son niveau
+      const lvl = def.cls === BClass.Extractor ? (buf[o + 5] >>> 24) & 3 : 0;
+      const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]);
+      // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
+      const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
       km.ensure(km.n + 1);
       const build = buf[o + 4] / 65536;
       const ground = groundHeight(this.map, cx, cz);
@@ -678,7 +695,7 @@ export class Entities {
       }
       tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ3, tmpS.set(sc, sy, szz));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
-      const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
+      const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
       // tapis surélevé : pilier sous la case ; rampe : cage d'ascenseur (deux montants, traverse, filets)
       if (def.cls === BClass.Belt && (floor > 0 || ramp >= 0)) {
@@ -694,7 +711,6 @@ export class Entities {
         }
       }
       // extracteur amélioré : barres de niveau sur la façade avant (repère du bâtiment)
-      const lvl = def.cls === BClass.Extractor ? (buf[o + 5] >>> 24) & 3 : 0;
       if (lvl > 0 && build >= 1 && npip + lvl <= 2000) {
         const bw = dir & 1 ? def.h : def.w;
         const bh = dir & 1 ? def.w : def.h;
@@ -734,7 +750,7 @@ export class Entities {
           const phase = (buf[o + 5] >> 8) & 0xff;
           const timer = (buf[o + 5] >> 16) & 0xff;
           rot = phase === 1 ? Math.PI * (1 - timer / 6) : phase === 2 ? Math.PI : phase === 3 ? (Math.PI * timer) / 6 : 0;
-        } else if (bflags & BF.WORKING) rot = performance.now() / 300;
+        } else if (bflags & BF.WORKING && upg === 0) rot = performance.now() / 300;
         tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc), p.origin.z);
         tmpM2.multiply(new THREE.Matrix4().makeRotationY(rot));
         tmpM2.scale(tmpS.set(sc, sy, sc));
@@ -801,6 +817,19 @@ export class Entities {
           this.bars.setColorAt(bars, tmpC.setRGB(0.9, 0.2, 0.15));
           bars++;
         }
+      } else if (upg > 0 && bars < 5900) {
+        // amélioration : barre toujours visible, avancement en ambre
+        const wdt = def.w * 0.8;
+        const z = cz + def.h / 2;
+        const lift = y + 2.2;
+        tmpM.compose(tmpV.set(cx, lift, z), tmpQ.identity(), tmpS.set(wdt + 0.12, 1, 2.4));
+        this.bars.setMatrixAt(bars, tmpM);
+        this.bars.setColorAt(bars, tmpC.setRGB(0.08, 0.1, 0.12));
+        bars++;
+        tmpM.compose(tmpV.set(cx - (wdt * (1 - upg)) / 2, lift + 0.02, z), tmpQ.identity(), tmpS.set(wdt * upg, 1, 1.6));
+        this.bars.setMatrixAt(bars, tmpM);
+        this.bars.setColorAt(bars, tmpC.setRGB(1, 0.72, 0.25));
+        bars++;
       } else if ((frac < 0.999 || selected.has(ref)) && def.cls !== BClass.Belt && bars < 5900) {
         const wdt = def.w * 0.8;
         tmpM.compose(tmpV.set(cx, y + 2.2, cz + def.h / 2), tmpQ.identity(), tmpS.set(wdt, 1, 1));
@@ -862,6 +891,7 @@ export class Entities {
     for (const m of this.vehicleMeshes) m.end();
     for (const m of this.unitMeshes) m.end();
     for (const m of this.buildingMeshes) m.end();
+    for (const l of this.levelMeshes.values()) for (const m of l) m.end();
     for (const [g, d] of this.beltCurves.values()) {
       g.end();
       d.end();

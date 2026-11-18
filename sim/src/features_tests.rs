@@ -540,8 +540,21 @@ fn extractor_upgrade_speeds_up_extraction() {
     assert_eq!(w.buildings[ext[1]].level, 0, "automatisation non faite");
     w.players[0].researched |= 1 << T_AUTOMATION;
     order(&mut w, ext[1]);
-    assert_eq!(w.buildings[ext[1]].level, 1);
     assert_eq!(w.players[0].stock[STEEL as usize], 90, "coût payé");
+    // l'amélioration prend du temps (20 s) : le niveau ne change qu'à la fin, sans extraction entre-temps
+    assert!(w.buildings[ext[1]].upgrade > 0);
+    assert_eq!(w.buildings[ext[1]].level, 0);
+    let p0 = w.buildings[ext[1]].progress;
+    for _ in 0..390 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[ext[1]].level, 0, "trop tôt");
+    assert_eq!(w.buildings[ext[1]].progress, p0, "pas d'extraction pendant l'amélioration");
+    for _ in 0..20 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[ext[1]].level, 1);
+    assert_eq!(w.buildings[ext[1]].upgrade, 0);
     // niveau 2 : électronique manquante
     order(&mut w, ext[1]);
     assert_eq!(w.buildings[ext[1]].level, 1);
@@ -915,4 +928,36 @@ fn collector_takes_only_the_surplus() {
         w.step(&[]);
     }
     assert_eq!(w.buildings[col].out, 0, "rien à collecter sur une file fluide");
+}
+
+/// Amélioration d'un assembleur sur place : il devient l'assembleur rapide au bout de 20 s, garde sa
+/// recette ; un second ordre pendant le chantier l'annule et rembourse.
+#[test]
+fn assembler_upgrade_takes_time_and_can_be_cancelled() {
+    use crate::orders::O_UPGRADE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
+    let rid = RECIPES.iter().position(|r| r.key == "gear").unwrap() as i32;
+    let r = w.building_ref(a) as i32;
+    w.step(&[4, crate::orders::O_SET_RECIPE, 0, r, rid]);
+    for (it, n) in [(STEEL, 50), (GEAR, 50), (CIRCUIT, 50)] {
+        w.players[0].stock[it as usize] = n;
+    }
+    // lancé puis annulé : remboursé, toujours assembleur simple
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert!(w.buildings[a].upgrade > 0);
+    assert_eq!(w.players[0].stock[STEEL as usize], 44);
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert_eq!(w.buildings[a].upgrade, 0);
+    assert_eq!(w.players[0].stock[STEEL as usize], 50, "remboursé");
+    // lancé jusqu'au bout
+    w.step(&[3, O_UPGRADE, 0, r]);
+    for _ in 0..450 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[a].kind, B_ASSEMBLER1 + 1, "devenu assembleur rapide");
+    assert_eq!(w.buildings[a].recipe as i32, rid, "recette gardée");
+    assert_eq!(w.buildings[a].hp, bdef(B_ASSEMBLER1 + 1).hp, "points de vie à la même proportion");
 }

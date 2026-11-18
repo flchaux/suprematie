@@ -22,6 +22,20 @@
   const deployable = $derived(has("sonde") || has("heavy_artillery"));
   // même ordre que la rangée de touches de l'usine (factory1, factory2…)
   const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory).map((i) => ({ u: d.units[i], i })) : []);
+  // amélioration possible (extracteur : niveau suivant ; assembleur : modèle suivant)
+  const upg = $derived.by(() => {
+    if (!info || !bdef || !d) return null;
+    if (bdef.cls === BClass.Extractor) {
+      const l = info.level ?? 0;
+      const n = (d.extractorLevels ?? [])[l + 1];
+      if (!n) return null;
+      return { label: `Améliorer au niveau ${l + 2}`, cost: n.cost, tech: n.tech, time: n.time ?? 0, gain: `vitesse ×${(n.speed / 100).toFixed(1)}, énergie ×${(n.power / 100).toFixed(1)}` };
+    }
+    const u = (d.assemblerUpgrades ?? []).find((x) => x[0] === sb?.kind);
+    if (!u) return null;
+    const to = d.buildings[u[1]];
+    return { label: `Améliorer en ${to.name}`, cost: to.cost, tech: to.tech, time: u[2], gain: `vitesse ×${(to.speed / Math.max(1, bdef.speed)).toFixed(2)}, ${to.powerUse} kW` };
+  });
   const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
   // seulement les recettes débloquées par nos recherches (les autres apparaissent dans l'écran des recettes)
   const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
@@ -32,6 +46,7 @@
   const status = $derived.by(() => {
     if (!info || !bdef || !d) return { text: "", kind: "" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
+    if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (arrêté pendant le chantier)`, kind: "build" };
     if (bdef.powerUse > 0 && !info.net) return { text: "Hors réseau électrique : reliez-le à un générateur (pylônes)", kind: "warn" };
     if (bdef.powerUse > 0 && info.sat < 512) return { text: `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : il manque des générateurs`, kind: "warn" };
     if (bdef.cls === BClass.Crafter && info.recipe !== RECIPE_NONE && !info.working) {
@@ -116,6 +131,19 @@
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {:else}
         <button class="icon-btn danger" title="Démonté par vos constructeurs les plus proches, matériaux rendus au stock" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+      {/if}
+      {#if upg && info.build >= 65536}
+        <div class="upgrade">
+          {#if info.upgrade > 0}
+            <div class="upbar"><span style="width: {info.upgrade / 10}%"></span></div>
+            <button class="icon-btn danger" title="Rembourse le coût de l'amélioration" onclick={() => client.upgradeBuilding()}><Icon name="close" size={14} /> Annuler l'amélioration</button>
+          {:else}
+            {@const ok = hasTechUI(upg.tech)}
+            <button class="icon-btn" disabled={!ok || upg.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name="plus" size={14} /> {upg.label}</button>
+            <span class="dim small num">{upg.gain} · chantier de {upg.time} s, arrêté pendant ce temps</span>
+            {#if ok}<Cost cost={upg.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[upg.tech]?.name}</span>{/if}
+          {/if}
+        </div>
       {/if}
       {#if rate}
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
@@ -237,17 +265,8 @@
       {:else if bdef.cls === BClass.Extractor}
         {@const levels = d.extractorLevels ?? []}
         {@const lvl = info.level ?? 0}
-        {@const next = levels[lvl + 1]}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
         <div class="row"><span class="kicker">Niveau</span> <span class="num">{lvl + 1} / {levels.length || 1}</span>{#if levels[lvl]}<span class="dim small num">· vitesse ×{(levels[lvl].speed / 100).toFixed(1)} · énergie ×{(levels[lvl].power / 100).toFixed(1)}</span>{/if}</div>
-        {#if next && info.owner === ui.me && info.build >= 65536}
-          {@const ok = hasTechUI(next.tech)}
-          <div class="upgrade">
-            <button class="icon-btn" disabled={!ok || next.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name="plus" size={14} /> Améliorer au niveau {lvl + 2}</button>
-            <span class="dim small num">vitesse ×{(next.speed / 100).toFixed(1)}, énergie ×{(next.power / 100).toFixed(1)}</span>
-            {#if ok}<Cost cost={next.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[next.tech]?.name}</span>{/if}
-          </div>
-        {/if}
       {:else if bdef.cls === BClass.Belt && bdef.collect}
         <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part dans votre stock au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
         <div class="row"><span class="kicker">Surplus mis en réserve</span> <span class="num">{info.out ?? 0}</span></div>
@@ -404,6 +423,8 @@
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .upgrade { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .upbar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+  .upbar span { display: block; height: 100%; background: #f5b342; }
   .rlock { margin-top: 6px; font-size: 11px; opacity: 0.75; }
   .rhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .rhead .icon-btn { font-size: 11px; padding: 3px 8px; }

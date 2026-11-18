@@ -1063,6 +1063,11 @@ pub fn update_buildings(w: &mut World) {
             w.buildings[b].stun -= 1;
             continue;
         }
+        if bb.upgrade > 0 {
+            // amélioration en cours : le bâtiment ne travaille pas (sa production en cours attend)
+            tick_upgrade(w, b);
+            continue;
+        }
         match bb.def().class {
             BClass::Extractor => tick_extractor(w, b),
             BClass::Belt if bb.def().collect => tick_collector(w, b),
@@ -1155,25 +1160,43 @@ fn tick_router(w: &mut World, b: usize) {
     bb.wake = w.tick + 4;
 }
 
+/// Amélioration possible du bâtiment : (coût, recherche, durée en ticks). Extracteur : niveau suivant
+/// (EXTRACTOR_LEVELS) ; assembleur : modèle suivant (ASSEMBLER_UPGRADES).
+pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
+    match bb.def().class {
+        BClass::Extractor => EXTRACTOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
+        BClass::Crafter => ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind).map(|u| (bdef(u.1).cost, bdef(u.1).tech, u.2 as u32 * 20)),
+        _ => None,
+    }
+}
+
 /**
- * Améliore l'extracteur `b` d'un niveau (ordre UPGRADE) : il doit être terminé, sous le niveau
- * maximal, la recherche du niveau suivant faite et son coût disponible (payé aussitôt).
+ * Ordre UPGRADE sur l'extracteur ou l'assembleur `b` : lance son amélioration (il doit être terminé, la
+ * recherche faite et le coût disponible, payé aussitôt). Le bâtiment ne travaille plus jusqu'à la fin
+ * (voir tick_upgrade). Sur une amélioration en cours, l'ordre l'annule et rembourse.
  */
 pub fn upgrade(w: &mut World, b: usize) -> bool {
     let bb = &w.buildings[b];
-    if !bb.alive || bb.def().class != BClass::Extractor || !bb.complete() {
+    if !bb.alive || !bb.complete() {
         return false;
     }
-    let next = bb.level as usize + 1;
-    let Some(lvl) = EXTRACTOR_LEVELS.get(next) else { return false };
+    let Some((cost, tech, _)) = upgrade_spec(bb) else { return false };
     let owner = bb.owner as usize;
-    if !w.players[owner].has_tech(lvl.tech) || !lvl.cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
+    if bb.upgrade > 0 {
+        for &(it, n) in cost {
+            w.players[owner].stock[it as usize] += n as i32;
+        }
+        w.buildings[b].upgrade = 0;
+        w.buildings[b].wake = 0;
+        return true;
+    }
+    if !w.players[owner].has_tech(tech) || !cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
         return false;
     }
-    for &(it, n) in lvl.cost {
+    for &(it, n) in cost {
         w.pay(owner, it, n as i32);
     }
-    w.buildings[b].level = next as u8;
+    w.buildings[b].upgrade = 1;
     w.buildings[b].wake = 0;
     true
 }
@@ -1238,6 +1261,33 @@ fn tick_collector(w: &mut World, b: usize) {
             bb.working = true;
         }
     }
+}
+
+/// Amélioration en cours : le chantier avance d'un tick ; à la fin, l'extracteur passe au niveau suivant,
+/// l'assembleur devient le modèle suivant (points de vie à la même proportion).
+fn tick_upgrade(w: &mut World, b: usize) {
+    let Some((_, _, total)) = upgrade_spec(&w.buildings[b]) else {
+        w.buildings[b].upgrade = 0;
+        return;
+    };
+    let bb = &mut w.buildings[b];
+    bb.upgrade += 1;
+    if bb.upgrade <= total {
+        return;
+    }
+    bb.upgrade = 0;
+    bb.wake = 0;
+    match bb.def().class {
+        BClass::Extractor => bb.level += 1,
+        _ => {
+            if let Some(u) = ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind) {
+                let (old, new) = (bb.def().hp, bdef(u.1).hp);
+                bb.hp = (bb.hp as i64 * new as i64 / old.max(1) as i64) as i32;
+                bb.kind = u.1;
+            }
+        }
+    }
+    wake_watchers(w, b);
 }
 
 fn tick_extractor(w: &mut World, b: usize) {
