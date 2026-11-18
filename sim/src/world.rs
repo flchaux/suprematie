@@ -45,8 +45,10 @@ pub struct Player {
     pub power_use: i32,
     pub kills: u32,
     pub losses: u32,
+    /// plafond de la réserve, par objet (STOCK_BASE + dépôts terminés)
+    pub stock_cap: i32,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -283,11 +285,13 @@ pub struct Building {
     pub floor: u8,
     /// amélioration en cours (extracteur, assembleur) : ticks écoulés + 1 (0 : aucune), voir buildings::upgrade
     pub upgrade: u32,
+    /// dépôt amélioré : objets remis en sortie (tapis qui partent de ses faces, bras), à tour de rôle
+    pub filters: Vec<u8>,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade
+    share, pass, vpass, level, floor, upgrade, filters
 });
 
 impl Building {
@@ -487,6 +491,7 @@ impl World {
                 power_use: 0,
                 kills: 0,
                 losses: 0,
+                stock_cap: STOCK_BASE,
             });
         }
         let vis_w = map.w / 4;
@@ -753,6 +758,12 @@ impl World {
 
     pub fn update_vis_all(&mut self) {
         crate::combat::update_visibility(self);
+    }
+
+    /// Place libre dans la réserve du joueur pour cet objet (plafond fixé par ses dépôts).
+    #[inline]
+    pub fn stock_room(&self, p: usize, item: u8) -> i32 {
+        (self.players[p].stock_cap - self.players[p].stock[item as usize]).max(0)
     }
 
     /// Quantité disponible pour un joueur : son stock puis le stock commun de son équipe.

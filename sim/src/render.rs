@@ -6,7 +6,8 @@ use crate::fixed::TILE;
 use crate::world::*;
 
 pub const HEADER: usize = 16;
-pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS;
+/// ... + plafond de la réserve (dernier mot)
+pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 1;
 pub const CARRIER_WORDS: usize = 5;
 pub const UNIT_WORDS: usize = 9;
 pub const BUILDING_WORDS: usize = 8;
@@ -37,6 +38,7 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
             Some(ts) => out.extend(ts.iter().copied()),
             None => out.extend(std::iter::repeat_n(0, NUM_ITEMS)),
         }
+        out.push(p.stock_cap);
     }
 }
 
@@ -169,6 +171,11 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
         BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress / 1024) as i32),
+        // dépôt : trois premiers objets filtrés (bits 0-23), niveau (bits 24-25) ; quatrième filtre dans aux2
+        BClass::Depot => {
+            let f = |k: usize| bb.filters.get(k).copied().unwrap_or(0) as i32;
+            (f(0) | f(1) << 8 | f(2) << 16 | (bb.level as i32) << 24, f(3))
+        }
         // tapis : forme (bits 0-1), montée ou descente (bit 2) vers le niveau des bits 3-4
         BClass::Belt if bb.complete() => {
             let ramp = crate::belts::ramp_to(w, b).map(|f| 4 | (f as i32) << 3).unwrap_or(0);
@@ -433,8 +440,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         (0, 0)
     };
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{}}}",
-        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb)
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{}}}",
+        bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter())
     )
 }
 

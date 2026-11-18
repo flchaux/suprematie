@@ -2,7 +2,8 @@
 
 export const HEADER = 16;
 export const NUM_ITEMS = 27;
-export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS;
+/** ... + plafond de la réserve (dernier mot) */
+export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 1;
 export const UNIT_WORDS = 9;
 export const BUILDING_WORDS = 8;
 export const ITEM_WORDS = 3;
@@ -26,6 +27,8 @@ export interface PlayerView {
   stock: Int32Array; produced: Int32Array; consumed: Int32Array;
   /** stock commun de l'équipe (entrepôts d'équipe) */
   teamStock: Int32Array;
+  /** plafond de la réserve, par objet (base + dépôts) */
+  stockCap: number;
 }
 
 export interface Frame {
@@ -65,6 +68,7 @@ export function parseFrame(buf: Int32Array): Frame {
       produced: buf.subarray(o + 13 + NUM_ITEMS, o + 13 + 2 * NUM_ITEMS),
       consumed: buf.subarray(o + 13 + 2 * NUM_ITEMS, o + 13 + 3 * NUM_ITEMS),
       teamStock: buf.subarray(o + 13 + 3 * NUM_ITEMS, o + 13 + 4 * NUM_ITEMS),
+      stockCap: buf[o + 13 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }
@@ -119,6 +123,7 @@ export function parseBotDump(buf: Int32Array): BotView {
       produced: buf.subarray(o + 13 + NUM_ITEMS, o + 13 + 2 * NUM_ITEMS),
       consumed: buf.subarray(o + 13 + 2 * NUM_ITEMS, o + 13 + 3 * NUM_ITEMS),
       teamStock: buf.subarray(o + 13 + 3 * NUM_ITEMS, o + 13 + 4 * NUM_ITEMS),
+      stockCap: buf[o + 13 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }

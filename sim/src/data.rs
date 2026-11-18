@@ -120,6 +120,16 @@ pub const RECIPES: [RecipeDef; 21] = [
 ];
 pub const RECIPE_NONE: u8 = 255;
 
+/// Réserve du joueur : plafond de chaque objet = base + capacité de ses dépôts terminés (par niveau).
+pub const STOCK_BASE: i32 = 400;
+pub const DEPOT_CAP: [i32; 2] = [600, 2000];
+/// Amélioration d'un dépôt (plus haut, sorties filtrées) : coût, recherche, durée (secondes).
+pub const DEPOT_UPGRADE_COST: &[(u8, u16)] = &[(STEEL, 20), (GEAR, 10), (CIRCUIT, 6)];
+pub const DEPOT_UPGRADE_TECH: u8 = T_AUTOMATION;
+pub const DEPOT_UPGRADE_TIME: u16 = 20;
+/// Objets filtrés au plus en sortie d'un dépôt amélioré.
+pub const MAX_FILTERS: usize = 4;
+
 /// Niveaux d'un extracteur (amélioration sur place) : vitesse et consommation en % du niveau 0,
 /// coût de passage à ce niveau et recherche requise.
 pub struct ExtractorLevel {
@@ -773,12 +783,19 @@ pub fn data_json() -> String {
     let levels: Vec<String> = EXTRACTOR_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"assemblerUpgrades\":[{}]}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
         levels.join(","),
-        asm.join(",")
+        asm.join(","),
+        STOCK_BASE,
+        DEPOT_CAP[0],
+        DEPOT_CAP[1],
+        cost_js(DEPOT_UPGRADE_COST),
+        DEPOT_UPGRADE_TECH,
+        DEPOT_UPGRADE_TIME,
+        MAX_FILTERS
     ));
     s
 }

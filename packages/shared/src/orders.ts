@@ -18,6 +18,8 @@ export const O = {
   UPGRADE: 40,
   /** oublier les bâtiments à reconstruire (fantômes) d'une zone */
   CANCEL_GHOSTS: 41,
+  /** objets remis en sortie par un dépôt amélioré : [réf., n, objet…] */
+  SET_FILTERS: 42,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
@@ -185,6 +187,10 @@ export function cancelGhosts(x0: number, y0: number, x1: number, y1: number): Cm
 }
 export function upgrade(ref: number): Cmd {
   return [O.UPGRADE, ref | 0];
+}
+export function setFilters(ref: number, items: number[]): Cmd {
+  const l = items.filter((i) => i > 0).slice(0, 4);
+  return [O.SET_FILTERS, ref | 0, l.length, ...l.map((i) => i | 0)];
 }
 export function setShare(ref: number, pct: number): Cmd {
   return [O.SET_SHARE, ref | 0, Math.max(0, Math.min(100, Math.round(pct)))];

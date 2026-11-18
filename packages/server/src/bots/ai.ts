@@ -152,6 +152,9 @@ export class SkirmishAI implements Bot {
   enemyDir: [number, number] = [0, 0];
   rally: [number, number] = [0, 0];
   turretsPlanned = 0;
+  /** dépôts posés en plus de celui du module principal, et tick du dernier */
+  extraDepots = 0;
+  lastDepot = -1e9;
   extCount = new Map<number, number>();
   reclaiming = new Map<number, number>(); // ingénieur -> épave
   combatKinds: boolean[];
@@ -1062,7 +1065,26 @@ export class SkirmishAI implements Bot {
     } else if (allBuilt && mods.length < maxMods && this.tick > P.moduleDelay && (planDone || rich || coreDone || techFirst || this.tick > P.moduleDelay * 2)) {
       L.push({ name: "module", prio: techFirst ? 810 : 520, remote: true, est: [150, 60], make: () => this.makeModule() });
     }
+    // réserve presque pleine (plafond fixé par les dépôts) : un dépôt de plus près du centre, au plus
+    // un par minute
+    const cap = this.me.stockCap ?? 0;
+    if (cap > 0 && this.extraDepots < 8 && this.tick - this.lastDepot > 1200 && this.me.stock.some((n) => n >= cap * 0.85)) {
+      L.push({ name: "depot", prio: 830, est: [8], make: () => this.makeDepot(m0) });
+    }
     return L;
+  }
+
+  /** Dépôt seul autour du module : agrandit la réserve. */
+  makeDepot(m: Module): Project | null {
+    const kind = this.ids.b.depot;
+    const a = this.extraDepots * 1.3 + 0.6;
+    const r = m.L / 2 + 4;
+    this.extraDepots++;
+    this.lastDepot = this.tick;
+    const pos = this.planner.findFree(kind, Math.round(m.cx + Math.cos(a) * r), Math.round(m.cy + Math.sin(a) * r), 0, 8, 1);
+    if (!pos) return null;
+    this.planner.mark(pos[0], pos[1], 2, 2);
+    return this.newProject("depot", [{ kind, x: pos[0], y: pos[1], dir: 0, tag: "storage" }]);
   }
 
   slotEst(type: string): number[] {

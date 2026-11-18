@@ -670,8 +670,8 @@ export class Entities {
       if (strategic) continue;
       // tapis en virage : forme calculée par la simulation d'après les tapis voisins (mot auxiliaire)
       const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
-      // extracteur amélioré : modèle de son niveau
-      const lvl = def.cls === BClass.Extractor ? (buf[o + 5] >>> 24) & 3 : 0;
+      // extracteur ou dépôt amélioré : modèle de son niveau
+      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot ? (buf[o + 5] >>> 24) & 3 : 0;
       const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]);
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
@@ -1270,10 +1270,11 @@ export class Entities {
    * Hauteur du toit d'un bâtiment à son centre : la face la plus haute du modèle qui recouvre le
    * point central (et non le sommet d'une cheminée ou d'une antenne posée à côté).
    */
-  private roofHeight(kind: number): number {
-    const hit = this.roofCache.get(kind);
+  private roofHeight(kind: number, lvl = 0): number {
+    const key = kind * 8 + lvl;
+    const hit = this.roofCache.get(key);
     if (hit !== undefined) return hit;
-    const km = this.buildingMeshes[kind];
+    const km = (lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind];
     let top = 0;
     if (km) {
       const p = km.built.body.getAttribute("position");
@@ -1293,7 +1294,7 @@ export class Entities {
       top *= km.scale;
       if (top <= 0) top = km.height;
     }
-    this.roofCache.set(kind, top);
+    this.roofCache.set(key, top);
     return top;
   }
 
@@ -1349,7 +1350,7 @@ export class Entities {
       const def = this.data.buildings[kind];
       const cls = def.cls;
       // (pas d'icône sur l'extracteur : ses pièces sont teintées selon le minerai exploité)
-      if (cls !== BClass.Crafter && cls !== BClass.Factory && cls !== BClass.Lab) continue;
+      if (cls !== BClass.Crafter && cls !== BClass.Factory && cls !== BClass.Lab && cls !== BClass.Depot) continue;
       if (buf[o + 4] < 65536) continue;
       const owner = (buf[o + 1] >> 8) & 0xff;
       if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
@@ -1359,7 +1360,11 @@ export class Entities {
         const it = this.data.recipes[aux]?.output[0];
         if (it !== undefined) keys.push("items/" + this.data.items[it].key);
       } else if (cls === BClass.Factory && aux > 0) keys.push("units/" + this.data.units[aux - 1]?.key);
-      else if (cls === BClass.Lab && aux > 0) {
+      else if (cls === BClass.Depot) {
+        // dépôt amélioré : objets filtrés sur le toit
+        const w5 = buf[o + 5];
+        for (const it of [w5 & 0xff, (w5 >>> 8) & 0xff, (w5 >>> 16) & 0xff, buf[o + 6] & 0xff]) if (it > 0 && this.data.items[it]) keys.push("items/" + this.data.items[it].key);
+      } else if (cls === BClass.Lab && aux > 0) {
         const tier = this.data.techs[aux]?.tier ?? 0;
         for (let k = 0; k < tier; k++) keys.push("items/" + this.data.items[PACK1 + k].key);
       }
@@ -1369,7 +1374,7 @@ export class Entities {
       const bh = dir & 1 ? def.w : def.h;
       const cx = (buf[o + 2] & 0xffff) + bw / 2;
       const cz = ((buf[o + 2] >>> 16) & 0xffff) + bh / 2;
-      const top = groundHeight(this.map, cx, cz) + this.roofHeight(kind) + 0.05;
+      const top = groundHeight(this.map, cx, cz) + this.roofHeight(kind, cls === BClass.Depot ? (buf[o + 5] >>> 24) & 3 : 0) + 0.05;
       const size = Math.min(1.7, Math.max(0.55, Math.min(bw, bh) * 0.42));
       // icônes côte à côte, superposées d'un tiers, centrées sur le toit
       const step = size * 0.68;

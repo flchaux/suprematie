@@ -41,6 +41,7 @@ Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste 
 - L'énergie passe par un réseau électrique relié par des pylônes. Un bâtiment hors réseau ne fonctionne pas.
 - Les usines d'unités reçoivent leurs composants par tapis.
 - Les drones ingénieurs construisent les bâtiments avec un stock commun au joueur, alimenté par les dépôts : ce qui entre dans un dépôt devient disponible pour les ingénieurs sur toute la carte.
+- Cette réserve est plafonnée, objet par objet : 400 de base, plus 600 par dépôt terminé (2 000 pour un dépôt amélioré). Réserve pleine pour un objet : les dépôts le refusent (le tapis attend), le collecteur de surplus le laisse passer, les ingénieurs cessent de le ramasser ou de le recycler. Les remboursements ne sont pas plafonnés. Un dépôt amélioré (automatisation) gagne un étage et des sorties filtrées (jusqu'à 4 objets) : il pose ces objets, pris dans la réserve à tour de rôle, sur les tapis qui partent de ses faces, et les bras peuvent les y prendre.
 - Les unités détruites laissent des épaves que les ingénieurs recyclent en plaques de fer et en acier, comme dans Supreme Commander.
 
 ## Technologie
@@ -167,7 +168,7 @@ Les bâtiments de production viennent de Factorio, les bâtiments militaires de 
 | Raffinerie | Transforme l'hydrocarbure et le cristal | 2 |
 | Usine chimique | Fabrique les composites | 3 |
 | Laboratoire | Consomme les lots de recherche | 0 |
-| Dépôt | Alimente le stock commun utilisé par les ingénieurs | 0 |
+| Dépôt | Alimente le stock commun utilisé par les ingénieurs, dont il agrandit le plafond ; amélioré, rend des objets filtrés | 0 |
 | Générateur | Petite production d'énergie sans combustible | 0 |
 | Pylône | Relie le réseau électrique | 0 |
 | Centrale à hydrocarbure | Grosse production d'énergie, posée sur un gisement d'hydrocarbure | 2 |

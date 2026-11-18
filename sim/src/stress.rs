@@ -333,7 +333,16 @@ pub fn logistics_demo() -> World {
         // un collecteur de surplus au milieu de la file
         put(&mut w, 0, if x == x0 + 44 { B_COLLECTOR } else { B_BELT1 }, x, y0 + 39, 0);
     }
-    put(&mut w, 0, B_DEPOT, x0 + 48, y0 + 39, 0);
+    // dépôt amélioré : il rend des engrenages et des circuits sur un tapis qui part vers le sud
+    let d = put(&mut w, 0, B_DEPOT, x0 + 48, y0 + 39, 0);
+    if d != usize::MAX {
+        w.buildings[d].level = 1;
+        w.buildings[d].filters = vec![GEAR, CIRCUIT];
+        w.players[0].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
+    }
+    for y in y0 + 41..y0 + 47 {
+        put(&mut w, 0, B_BELT1, x0 + 49, y, 1);
+    }
     let (ex, ey) = (x0 + 52, y0 + 34);
     for dy in 0..2 {
         for dx in 0..2 {

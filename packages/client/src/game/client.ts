@@ -560,6 +560,7 @@ export class GameClient {
     if (me && ui.me >= 0) {
       ui.stock = Array.from(me.stock);
       ui.teamStock = Array.from(me.teamStock);
+      ui.stockCap = me.stockCap;
       ui.produced = Array.from(me.produced);
       ui.consumed = Array.from(me.consumed);
       ui.powerProd = me.powerProd;
@@ -1945,6 +1946,10 @@ export class GameClient {
       this.cmd(Ord.upgrade(ui.selBuilding.ref));
       sfx.confirm();
     }
+  }
+  /** Objets remis en sortie par le dépôt amélioré sélectionné. */
+  setFilters(items: number[]): void {
+    if (ui.selBuilding) this.cmd(Ord.setFilters(ui.selBuilding.ref, items));
   }
   setShare(pct: number): void {
     if (ui.selBuilding) this.cmd(Ord.setShare(ui.selBuilding.ref, pct));
