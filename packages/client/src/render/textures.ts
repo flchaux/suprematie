@@ -78,7 +78,8 @@ export async function loadModelTextures(): Promise<void> {
  * `scale` : répétitions de la texture par unité du repère du modèle.
  */
 export function modelTexture(scale: number): { detail: N; height: N; rough: N; amount: N } {
-  const mat = attribute("mat", "float");
+  // couche de matière : premier composant de l'attribut « mat » (le second est l'occlusion ambiante)
+  const mat = attribute("mat", "vec2").x;
   const layer = min(mat, float(MATERIAL_KEYS.length - 1));
   const cell = vec2(mod(layer, float(COLS)), floor(layer.div(COLS)));
   const cellUV = vec2(CELL / (COLS * CELL), CELL / (ROWS * CELL));

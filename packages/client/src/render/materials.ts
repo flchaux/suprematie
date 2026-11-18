@@ -1,8 +1,10 @@
 // Matériaux : couleur de sommet, teinte du joueur par instance (pièces « faction »), pièces lumineuses.
 import * as THREE from "three/webgpu";
-import { attribute, mix, instancedBufferAttribute, float, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionGeometry } from "three/tsl";
+import { attribute, mix, instancedBufferAttribute, float, vec3, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionGeometry } from "three/tsl";
 import { fogFactor, applyFog } from "./fog.ts";
 import { modelTexture } from "./textures.ts";
+
+type N = ReturnType<typeof float>;
 
 /** Répétitions de texture par unité du monde (une case = 1) : unités et bâtiments. */
 export const TEX_PER_TILE_UNIT = 0.8;
@@ -24,6 +26,22 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   team.setUsage(THREE.DynamicDrawUsage);
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.65, metalness: 0.25 });
   const vcol = attribute("color", "vec3");
+  // matière par pièce (attribut « mat ») : blindage peint, métal nu, métal sombre, peinture de danger,
+  // verre, lumineux. Le métal nu est très métallique et assez lisse : il reflète l'environnement.
+  const matAo = attribute("mat", "vec2");
+  const layer = matAo.x;
+  const byLayer = (v: number[]): N => {
+    let node: N = float(v[v.length - 1]) as unknown as N;
+    for (let i = v.length - 2; i >= 0; i--) node = layer.lessThan(float(i + 0.5)).select(float(v[i]), node) as unknown as N;
+    return node;
+  };
+  const metal = byLayer([0.3, 0.62, 0.45, 0.2, 0.1, 0]);
+  const rough = byLayer([0.5, 0.36, 0.5, 0.55, 0.1, 0.6]);
+  // occlusion ambiante cuite au chargement (générateur) : sur la lumière indirecte, et un peu sur la directe
+  const ao = matAo.y;
+  mat.aoNode = ao;
+  mat.metalnessNode = metal;
+  mat.roughnessNode = rough;
   const mask = attribute("mask", "float");
   const isFaction = clamp(mask, float(0), float(1)).mul(float(1).sub(step(float(1.5), mask)));
   const isOre = step(float(3), mask);
@@ -34,13 +52,16 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   const tcol = instancedBufferAttribute(team, "vec3");
   // brouillard : les bâtiments ennemis explorés mais hors de vue restent assombris
   const fog = fogFactor();
-  let base = mix(mix(vcol, tcol, isFaction), acol, isOre);
+  // couleur d'équipe : peinture sur métal, un peu désaturée et assombrie (moins « jouet »)
+  const tlum = dot(tcol, vec3(0.2126, 0.7152, 0.0722));
+  const paint = mix(vec3(tlum, tlum, tlum), tcol, float(0.78)).mul(0.82);
+  let base = mix(mix(vcol, paint, isFaction), acol, isOre).mul(mix(float(1), ao, float(0.45)));
   if (texScale > 0) {
     const t = modelTexture(texScale);
     // détail : module la couleur autour de 1, avec une légère salissure (dans le repère du modèle : elle suit l'unité)
     const grime = mx_noise_float(positionGeometry.mul(0.35)).mul(0.08);
     base = base.mul(mix(float(1), t.detail.mul(1.3).add(0.35).sub(grime), t.amount));
-    mat.roughnessNode = mix(float(0.65), t.rough.sub(0.5).mul(0.5).add(0.62), t.amount);
+    mat.roughnessNode = mix(rough, rough.add(t.rough.sub(0.5).mul(0.35)), t.amount);
     // relief : perturbation de la normale par les dérivées de la hauteur (sans coordonnées de texture)
     const h = t.height.mul(t.amount).mul(0.025);
     const sx = dFdx(positionView);
