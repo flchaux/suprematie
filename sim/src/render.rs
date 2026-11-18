@@ -508,6 +508,12 @@ pub fn planned_builds(w: &World, player: i32) -> Vec<i32> {
             }
         }
     }
+    // bâtiments détruits à reconstruire
+    for g in &w.ghosts {
+        if g.owner as i32 == player {
+            list.push((g.kind, g.x, g.y, g.dir & 3));
+        }
+    }
     list.sort_unstable();
     list.dedup();
     list.truncate(2000);

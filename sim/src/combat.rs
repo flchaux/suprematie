@@ -770,6 +770,10 @@ pub fn cleanup_dead(w: &mut World) {
             let (bw, bh) = w.buildings[b].size();
             w.ev(EV_BUILDING_DIED, cx, cy, kind as i32, owner as i32);
             w.ev(EV_EXPLOSION, cx, cy, bw.max(bh) * TILE / 2, 0);
+            // bâtiment terminé d'un joueur encore en jeu : fantôme à reconstruire par ses ingénieurs
+            if w.buildings[b].complete() && w.players[owner as usize].alive {
+                buildings::add_ghost(w, b);
+            }
             // chantier rendu au joueur à moitié ? non : perdu
             buildings::remove_building(w, b, true);
             if kind == B_CRYSTAL_REACTOR {

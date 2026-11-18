@@ -110,6 +110,14 @@
     {#if ui.showStats}<Stats />{/if}
     {#if ui.showHelp}<Help />{/if}
     {#if ui.showRecipes}<Recipes />{/if}
+    {#if ui.logisticsView}
+      <div class="logilegend panel">
+        <span class="kicker">Vue logistique</span>
+        <span><i style="background:#3f5273"></i>tapis vide</span><span><i style="background:#3fd27a"></i>fluide</span><span><i style="background:#e8c234"></i>chargé</span><span><i style="background:#ff3b2e"></i>saturé</span>
+        <span class="sep"></span>
+        <span><i style="background:#ff3b2e"></i>sortie bloquée</span><span><i style="background:#f0a020"></i>entrée manquante</span><span><i style="background:#b060ff"></i>énergie</span><span><i style="background:#3a9a52"></i>en marche</span>
+      </div>
+    {/if}
     {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt}
       <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette pour monter ou descendre ; les ascenseurs se posent seuls</span></div>
     {/if}
@@ -158,4 +166,7 @@
   @keyframes slide { from { opacity: 0; transform: translateX(-10px); } }
   @keyframes blink { 50% { opacity: 0.3; } }
   .floorbadge { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); padding: 6px 12px; font-size: 12px; z-index: 6; pointer-events: none; white-space: nowrap; }
+  .logilegend { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 6px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; white-space: nowrap; }
+  .logilegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .logilegend .sep { width: 1px; height: 14px; background: var(--line); }
 </style>

@@ -739,3 +739,50 @@ fn building_over_belts_replaces_them() {
     assert_eq!(w.buildings[building_at(&w, 99, 100).unwrap()].kind, B_BELT1, "les autres tapis restent");
     assert_eq!(w.players[0].stock[IRON_PLATE as usize], iron + 2 * belt_iron - depot_iron, "deux tapis remboursés, dépôt payé");
 }
+
+/// Reconstruction automatique : un bâtiment détruit laisse un fantôme qu'un ingénieur inactif reconstruit
+/// (avec sa recette) ; un ordre efface les fantômes d'une zone.
+#[test]
+fn destroyed_buildings_are_rebuilt_by_idle_engineers() {
+    use crate::orders::{apply_orders, O_CANCEL_GHOSTS};
+    let mut w = world(&[0, 1]);
+    flatten(&mut w, 85, 85, 130, 130);
+    put(&mut w, 0, B_GENERATOR, 96, 100, 0);
+    let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
+    let gear = RECIPES.iter().position(|r| r.key == "gear").unwrap() as u8;
+    w.buildings[a].recipe = gear;
+    let eng = w.spawn_unit(U_ENG1, 0, 104 * TILE, 104 * TILE);
+    for it in 0..NUM_ITEMS {
+        w.players[0].stock[it] = 500;
+    }
+    // destruction au combat
+    crate::combat::damage_building(&mut w, a, 1_000_000, 1);
+    w.step(&[]);
+    assert!(!w.buildings[a].alive);
+    assert_eq!(w.ghosts.len(), 1, "fantôme noté");
+    // l'ingénieur inactif s'en charge et reconstruit
+    let mut rebuilt = None;
+    for _ in 0..1200 {
+        w.step(&[]);
+        let o = w.map.occ[w.map.idx(100, 100)];
+        if o != 0 && w.buildings[o as usize - 1].complete() && w.ghosts.is_empty() {
+            rebuilt = Some(o as usize - 1);
+            break;
+        }
+    }
+    let b = rebuilt.expect("reconstruit");
+    assert_eq!(w.buildings[b].kind, B_ASSEMBLER1);
+    assert_eq!(w.buildings[b].recipe, gear, "recette reprise");
+    let s = w.unit(eng).unwrap();
+    assert!(w.units.cold[s].orders.is_empty(), "l'ingénieur redevient inactif");
+    // un fantôme effacé par le joueur n'est pas reconstruit
+    crate::combat::damage_building(&mut w, b, 1_000_000, 1);
+    w.step(&[]);
+    assert_eq!(w.ghosts.len(), 1);
+    apply_orders(&mut w, &[6, O_CANCEL_GHOSTS, 0, 95, 95, 105, 105]);
+    assert!(w.ghosts.is_empty(), "fantôme effacé");
+    for _ in 0..300 {
+        w.step(&[]);
+    }
+    assert_eq!(w.map.occ[w.map.idx(100, 100)], 0, "rien n'est reconstruit");
+}

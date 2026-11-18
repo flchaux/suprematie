@@ -338,6 +338,10 @@ export class GameClient {
       this.lastPowerShow = 0;
       sc.power?.hide();
     }
+    // vue logistique : tant que la touche est maintenue
+    const logi = keymap.held("logisticsView", this.keys);
+    if (logi !== ui.logisticsView) ui.logisticsView = logi;
+    if (sc.entities) sc.entities.logistics = logi;
     // points de vie de l'unité sélectionnée seule
     if (ui.unitInfo && now - this.unitInfoAt > 400) this.refreshUnitInfo();
     // curseur : les unités bougent sous une souris immobile, la sélection change
@@ -1938,6 +1942,13 @@ export class GameClient {
     const inBox = (x: number, z: number) => sc.project(x, groundHeight(this.map!, x, z) + 0.3, z, p) && p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by;
     const targets: { ref: number; x: number; y: number }[] = [];
     let cancelled = 0;
+    // bâtiments à reconstruire (fantômes) du cadre : oubliés
+    const corners = [this.groundAt(ax, ay), this.groundAt(bx, ay), this.groundAt(ax, by), this.groundAt(bx, by)].filter((c): c is NonNullable<typeof c> => !!c);
+    if (corners.length) {
+      const xs = corners.map((c) => c.x);
+      const zs = corners.map((c) => c.z);
+      this.cmd(Ord.cancelGhosts(Math.floor(Math.min(...xs)), Math.floor(Math.min(...zs)), Math.floor(Math.max(...xs)), Math.floor(Math.max(...zs))));
+    }
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const w1 = f.buf[o + 1];
       if (((w1 >> 8) & 0xff) !== ui.me) continue;

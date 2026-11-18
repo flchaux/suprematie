@@ -65,6 +65,112 @@ fn replaceable_at(w: &World, owner: u8, i: usize) -> Option<usize> {
     (bb.alive && bb.owner == owner && matches!(bb.def().class, BClass::Belt | BClass::Router)).then_some(b)
 }
 
+/// Fantômes au plus par joueur (les plus anciens sont oubliés au-delà).
+const MAX_GHOSTS: usize = 300;
+/// Distance de recherche d'un ingénieur inactif pour reconstruire (sous-unités).
+const GHOST_RANGE: i32 = 40 * TILE;
+
+/// Note un bâtiment détruit comme fantôme à reconstruire (type, position, direction et niveau, recette).
+pub fn add_ghost(w: &mut World, b: usize) {
+    let bb = &w.buildings[b];
+    let g = Ghost {
+        owner: bb.owner,
+        kind: bb.kind,
+        x: bb.x,
+        y: bb.y,
+        dir: bb.dir | bb.floor << 3,
+        recipe: if bb.def().class == BClass::Crafter { bb.recipe } else { RECIPE_NONE },
+        taken: NONE,
+    };
+    let owner = g.owner;
+    if w.ghosts.iter().filter(|o| o.owner == owner).count() >= MAX_GHOSTS {
+        if let Some(i) = w.ghosts.iter().position(|o| o.owner == owner) {
+            w.ghosts.remove(i);
+        }
+    }
+    w.ghosts.push(g);
+}
+
+/// L'ingénieur `id` a-t-il encore l'ordre de construire ce fantôme ?
+fn ghost_taken_by(w: &World, id: u32, g: &Ghost) -> bool {
+    let Some(s) = w.unit(id) else { return false };
+    w.units.cold[s].orders.iter().any(|o| matches!(*o, Order::Build { kind, x, y, .. } if kind == g.kind && x == g.x && y == g.y))
+}
+
+/// Ingénieur inactif (sans ordre, non transporté) du joueur le plus proche de (x, y), à portée.
+fn idle_engineer(w: &World, owner: u8, x: i32, y: i32) -> Option<usize> {
+    let mut best = None;
+    let mut bd = i64::MAX;
+    for s in 0..w.units.alive.len() {
+        if !w.units.alive[s] || w.units.owner[s] != owner || udef(w.units.kind[s]).build_power == 0 {
+            continue;
+        }
+        let c = &w.units.cold[s];
+        if !c.orders.is_empty() || c.carried_by != NONE {
+            continue;
+        }
+        let d = crate::fixed::dist2(x, y, w.units.x[s], w.units.y[s]);
+        if d <= (GHOST_RANGE as i64) * (GHOST_RANGE as i64) && d < bd {
+            bd = d;
+            best = Some(s);
+        }
+    }
+    best
+}
+
+/**
+ * Reconstruction automatique (toutes les secondes) : un fantôme dont la case est libre est confié à
+ * l'ingénieur inactif le plus proche ; un fantôme reconstruit reprend sa recette et disparaît ; un
+ * fantôme dont la place est prise par autre chose est oublié.
+ */
+pub fn rebuild_ghosts(w: &mut World) {
+    let mut assigned = 0;
+    let mut i = 0;
+    while i < w.ghosts.len() {
+        let g = w.ghosts[i];
+        let floor = floor_of(g.dir);
+        if !w.map.inside(g.x, g.y) {
+            w.ghosts.remove(i);
+            continue;
+        }
+        let o = w.map.occ_floor(w.map.idx(g.x, g.y), floor);
+        if o != 0 {
+            let b = (o - 1) as usize;
+            let bb = &w.buildings[b];
+            if bb.kind == g.kind && bb.x == g.x && bb.y == g.y && bb.owner == g.owner {
+                if !bb.complete() {
+                    i += 1;
+                    continue;
+                }
+                // reconstruit : sa recette d'avant
+                if g.recipe != RECIPE_NONE && bb.def().class == BClass::Crafter && bb.recipe == RECIPE_NONE && w.players[g.owner as usize].has_tech(RECIPES[g.recipe as usize].tech) {
+                    w.buildings[b].recipe = g.recipe;
+                    w.buildings[b].wake = 0;
+                }
+            }
+            w.ghosts.remove(i);
+            continue;
+        }
+        if g.taken != NONE {
+            if ghost_taken_by(w, g.taken, &g) {
+                i += 1;
+                continue;
+            }
+            w.ghosts[i].taken = NONE;
+        }
+        if assigned < 16 && can_place(w, g.owner, g.kind, g.x, g.y, g.dir) {
+            let (bw, bh) = dims(g.kind, g.dir);
+            let (cx, cy) = (g.x * TILE + bw * TILE / 2, g.y * TILE + bh * TILE / 2);
+            if let Some(s) = idle_engineer(w, g.owner, cx, cy) {
+                crate::orders::give(w, s, false, Order::Build { kind: g.kind, x: g.x, y: g.y, dir: g.dir, bid: 0 });
+                w.ghosts[i].taken = w.unit_id(s);
+                assigned += 1;
+            }
+        }
+        i += 1;
+    }
+}
+
 /// Libère l'emprise d'une pose avec remplacement. Un tapis du même type sur la même case est
 /// simplement réorienté (renvoie son indice : rien à construire) ; sinon les tapis remplacés sont
 /// démontés, leur coût et les objets qu'ils portent rendus au stock (renvoie None : poser le chantier).

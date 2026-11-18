@@ -74,6 +74,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "research", label: "Recherche", group: "Interface", ctx: "global" },
   { id: "stats", label: "Statistiques", group: "Interface", ctx: "global" },
   { id: "recipes", label: "Recettes débloquées", group: "Interface", ctx: "global" },
+  { id: "logisticsView", label: "Vue logistique (maintenir) : remplissage des tapis, bâtiments bloqués, affamés ou sans énergie", group: "Interface", ctx: "global", held: true, shiftFree: true },
   { id: "help", label: "Aide", group: "Interface", ctx: "global" },
   { id: "chat", label: "Discussion", group: "Interface", ctx: "global" },
   { id: "perf", label: "Détail des performances", group: "Interface", ctx: "global" },
@@ -197,6 +198,7 @@ export function defaultBindings(layout: Layout): Record<string, Chord[]> {
     research: k("t"),
     stats: [named("Tab")],
     recipes: k("y"),
+    logisticsView: k("j"),
     help: [named("F1"), ...k("h")],
     chat: [named("Enter")],
     // F3 sert aux marque-pages : les performances passent sur F9

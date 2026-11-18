@@ -86,6 +86,15 @@ const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
 const tmpQ2 = new THREE.Quaternion();
 const tmpQ3 = new THREE.Quaternion();
+// vue logistique : tapis vide, fluide, chargé, saturé ; bâtiment bloqué, affamé, sans énergie, en marche
+const LOGI_EMPTY = new THREE.Color(0.25, 0.32, 0.45);
+const LOGI_FLOW = new THREE.Color(0.25, 1.1, 0.45);
+const LOGI_BUSY = new THREE.Color(1.3, 1.05, 0.2);
+const LOGI_FULL = new THREE.Color(1.5, 0.18, 0.12);
+const LOGI_BLOCKED = new THREE.Color(1.5, 0.18, 0.12);
+const LOGI_STARVED = new THREE.Color(1.4, 0.75, 0.1);
+const LOGI_POWER = new THREE.Color(0.85, 0.35, 1.5);
+const LOGI_OK = new THREE.Color(0.2, 0.6, 0.3);
 /** hauteur d'un niveau de tapis (cases du monde) : niveau 1 au-dessus des bâtiments bas, niveau 2 encore au-dessus */
 export const FLOOR_H = 1.6;
 const tmpV2 = new THREE.Vector3();
@@ -176,6 +185,9 @@ export class Entities {
   wallSeg: KindMesh | null = null;
   /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
   levelPips: THREE.InstancedMesh;
+  /** vue logistique (touche maintenue) : dalles colorées sur les tapis (remplissage) et sous les bâtiments en difficulté */
+  logistics = false;
+  logiPads: THREE.InstancedMesh;
   /** tapis surélevés : piliers, et cages d'ascenseur (montants et traverse) là où un tapis change de niveau */
   supports: THREE.InstancedMesh;
   liftGlow: THREE.InstancedMesh;
@@ -303,6 +315,12 @@ export class Entities {
       m.frustumCulled = false;
       this.group.add(m);
     }
+    this.logiPads = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ transparent: true, opacity: 0.72, depthTest: false, depthWrite: false }), 20000);
+    this.logiPads.count = 0;
+    this.logiPads.frustumCulled = false;
+    this.logiPads.renderOrder = 6;
+    this.logiPads.setColorAt(0, new THREE.Color());
+    this.group.add(this.logiPads);
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
     for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
@@ -841,6 +859,7 @@ export class Entities {
     this.levelPips.instanceMatrix.needsUpdate = true;
     this.supports.count = nsup;
     this.supports.instanceMatrix.needsUpdate = true;
+    this.updateLogistics(f, strategic, myTeam, spectator);
     this.liftGlow.count = nlift;
     this.liftGlow.instanceMatrix.needsUpdate = true;
     this.updateHatches(f, strategic, myTeam, spectator);
@@ -1311,6 +1330,63 @@ export class Entities {
   private unitHeightAt(wi: number, x: number, z: number): number {
     const kind = this.data.units.findIndex((u) => u.weapons.includes(wi));
     return kind >= 0 ? this.unitHeight(kind, x, z) : groundHeight(this.map, x, z);
+  }
+
+  /**
+   * Vue logistique : sur chaque tapis, une dalle selon son remplissage (objets sur la case : vide,
+   * fluide, chargé, saturé) ; sous les bâtiments, une dalle s'ils sont bloqués (sortie pleine), affamés
+   * (entrée manquante) ou sans énergie suffisante ; vert pâle s'ils tournent.
+   */
+  private updateLogistics(f: Frame, strategic: boolean, myTeam: number, spectator: boolean): void {
+    const m = this.logiPads;
+    if (!this.logistics || strategic) {
+      m.count = 0;
+      return;
+    }
+    const buf = f.buf;
+    // objets par case de tapis (cases du monde, tous niveaux)
+    const fill = new Map<number, number>();
+    for (let i = 0, o = f.itemOff; i < f.nItems; i++, o += ITEM_WORDS) {
+      const key = Math.floor(buf[o + 1] / TILE) * 65536 + Math.floor(buf[o] / TILE);
+      fill.set(key, (fill.get(key) ?? 0) + 1);
+    }
+    let n = 0;
+    const put = (x: number, y: number, z: number, w: number, h: number, c: THREE.Color) => {
+      if (n >= 20000) return;
+      tmpM.compose(tmpV.set(x, y, z), tmpQ.identity(), tmpS.set(w, 1, h));
+      m.setMatrixAt(n, tmpM);
+      m.setColorAt(n, c);
+      n++;
+    };
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      const kind = buf[o + 1] & 0xff;
+      const def = this.data.buildings[kind];
+      const owner = (buf[o + 1] >> 8) & 0xff;
+      if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
+      if (buf[o + 4] < 65536) continue;
+      const dir = (buf[o + 1] >> 16) & 3;
+      const flags = (buf[o + 1] >> 20) & 0xff;
+      const x = buf[o + 2] & 0xffff;
+      const z = (buf[o + 2] >>> 16) & 0xffff;
+      const bw = dir & 1 ? def.h : def.w;
+      const bh = dir & 1 ? def.w : def.h;
+      const cx = x + bw / 2;
+      const cz = z + bh / 2;
+      const g = groundHeight(this.map, cx, cz);
+      if (def.cls === BClass.Belt) {
+        const floor = (buf[o + 1] >>> 28) & 3;
+        const k = fill.get(z * 65536 + x) ?? 0;
+        put(cx, g + floor * FLOOR_H + 0.14, cz, 0.62, 0.92, k >= 4 ? LOGI_FULL : k === 3 ? LOGI_BUSY : k > 0 ? LOGI_FLOW : LOGI_EMPTY);
+        continue;
+      }
+      if (def.cls === BClass.Wall || def.cls === BClass.Pylon || def.cls === BClass.Inserter) continue;
+      const c =
+        flags & BF.OUT_BLOCKED ? LOGI_BLOCKED : flags & BF.NO_INPUT ? LOGI_STARVED : flags & (BF.UNPOWERED | BF.LOW_POWER) && def.powerUse > 0 ? LOGI_POWER : flags & BF.WORKING ? LOGI_OK : null;
+      if (c) put(cx, g + 0.06, cz, bw * 1.04, bh * 1.04, c);
+    }
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
   }
 
   /** Maillage des objets d'un type (modèle de assets/models/items.ts, un quart de case de large). */
