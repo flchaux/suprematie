@@ -42,51 +42,53 @@
       <button role="tab" class="icon-btn" class:on={tab === "curves"} aria-selected={tab === "curves"} onclick={() => (tab = "curves")}><Icon name="stats" size={14} /> Courbes</button>
     </div>
   </div>
-  {#if tab === "curves"}
-    <Charts samples={shownSamples()} players={shown} note={seesAll() ? "Relevé toutes les 30 s" : "Votre équipe uniquement · relevé toutes les 30 s"} />
-  {:else}
-  <div class="two">
-    <section>
-      <h3>Production <span class="dim">· par minute</span></h3>
-      <table>
-        <thead><tr><th>Objet</th><th class="r">Produit</th><th class="r">Consommé</th><th class="r">Stock</th><th class="r">Total</th></tr></thead>
-        <tbody>
-          {#each ui.data?.items ?? [] as it, i}
-            {#if i > 0 && ((ui.produced[i] ?? 0) > 0 || (ui.stock[i] ?? 0) > 0)}
-              {@const net = (rates.p[i] ?? 0) - (rates.c[i] ?? 0)}
-              <tr>
-                <td><Item id={i} size={20} /> {it.name}</td>
-                <td class="r num good">{rates.p[i] ?? 0}</td>
-                <td class="r num warn">{rates.c[i] ?? 0}</td>
-                <td class="r num" class:bad={net < 0 && (ui.stock[i] ?? 0) < 50}>{ui.stock[i]}</td>
-                <td class="r num dim">{ui.produced[i]}</td>
+  <div class="modal-body">
+    {#if tab === "curves"}
+      <Charts samples={shownSamples()} players={shown} note={seesAll() ? "Relevé toutes les 30 s" : "Votre équipe uniquement · relevé toutes les 30 s"} />
+    {:else}
+    <div class="two">
+      <section>
+        <h3>Production <span class="dim">· par minute</span></h3>
+        <table>
+          <thead><tr><th>Objet</th><th class="r">Produit</th><th class="r">Consommé</th><th class="r">Stock</th><th class="r">Total</th></tr></thead>
+          <tbody>
+            {#each ui.data?.items ?? [] as it, i}
+              {#if i > 0 && ((ui.produced[i] ?? 0) > 0 || (ui.stock[i] ?? 0) > 0)}
+                {@const net = (rates.p[i] ?? 0) - (rates.c[i] ?? 0)}
+                <tr>
+                  <td><Item id={i} size={20} /> {it.name}</td>
+                  <td class="r num good">{rates.p[i] ?? 0}</td>
+                  <td class="r num warn">{rates.c[i] ?? 0}</td>
+                  <td class="r num" class:bad={net < 0 && (ui.stock[i] ?? 0) < 50}>{ui.stock[i]}</td>
+                  <td class="r num dim">{ui.produced[i]}</td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h3>Joueurs</h3>
+        <table>
+          <thead><tr><th>Joueur</th><th class="r">Équipe</th><th class="r">Unités</th><th class="r">Énergie</th><th class="r">Destr.</th><th class="r">Pertes</th></tr></thead>
+          <tbody>
+            {#each shown as i (i)}
+              {@const p = ui.players[i]}
+              <tr class:out={!p.alive}>
+                <td><span class="pc" style:background={color(i)}></span>{p.name}{#if p.bot} <Icon name="bot" size={12} />{/if}</td>
+                <td class="r num">{p.team + 1}</td><td class="r num">{p.units}</td><td class="r num">{p.power} kW</td><td class="r num good">{p.kills}</td><td class="r num bad">{p.losses}</td>
               </tr>
-            {/if}
-          {/each}
-        </tbody>
-      </table>
-    </section>
-    <section>
-      <h3>Joueurs</h3>
-      <table>
-        <thead><tr><th>Joueur</th><th class="r">Équipe</th><th class="r">Unités</th><th class="r">Énergie</th><th class="r">Destr.</th><th class="r">Pertes</th></tr></thead>
-        <tbody>
-          {#each shown as i (i)}
-            {@const p = ui.players[i]}
-            <tr class:out={!p.alive}>
-              <td><span class="pc" style:background={color(i)}></span>{p.name}{#if p.bot} <Icon name="bot" size={12} />{/if}</td>
-              <td class="r num">{p.team + 1}</td><td class="r num">{p.units}</td><td class="r num">{p.power} kW</td><td class="r num good">{p.kills}</td><td class="r num bad">{p.losses}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      {#if ui.me >= 0}<p class="surr">
-        <button class="icon-btn" title="Sauvegarde la partie sur le serveur ; l'hôte pourra la recharger depuis le salon" onclick={() => client.saveGame()}><Icon name="save" size={14} /> Sauvegarder</button>
-        <button class="icon-btn danger" onclick={() => confirm("Abandonner la partie ?") && client.surrender()}><Icon name="flag" size={14} /> Abandonner</button>
-      </p>{/if}
-    </section>
+            {/each}
+          </tbody>
+        </table>
+        {#if ui.me >= 0}<p class="surr">
+          <button class="icon-btn" title="Sauvegarde la partie sur le serveur ; l'hôte pourra la recharger depuis le salon" onclick={() => client.saveGame()}><Icon name="save" size={14} /> Sauvegarder</button>
+          <button class="icon-btn danger" onclick={() => confirm("Abandonner la partie ?") && client.surrender()}><Icon name="flag" size={14} /> Abandonner</button>
+        </p>{/if}
+      </section>
+    </div>
+    {/if}
   </div>
-  {/if}
 </div>
 
 <style>

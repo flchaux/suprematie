@@ -207,7 +207,11 @@ label { cursor: pointer; }
 .hp.low > div { background: linear-gradient(90deg, var(--bad), #ff8a95); }
 
 /* ---------- fenêtres modales ---------- */
-.modal { position: absolute; inset: 64px 48px 64px 48px; overflow: auto; padding: 18px 24px; z-index: 20; }
+/* le cadre ne défile pas (son contour et son verre sont des pseudo-éléments en position absolue, qui
+   défileraient avec le contenu) : seul .modal-body défile, l'en-tête reste visible */
+.modal { position: absolute; inset: 64px 48px 64px 48px; overflow: hidden; display: flex; flex-direction: column; padding: 18px 24px; z-index: 20; }
+.modal > .modal-head { flex-shrink: 0; }
+.modal-body { flex: 1; min-height: 0; overflow: auto; margin-right: -14px; padding-right: 14px; }
 .modal h2 { margin: 0 0 4px; font-size: 20px; }
 .modal-head { display: flex; align-items: flex-end; gap: 14px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .modal-head .grow { flex: 1; }
