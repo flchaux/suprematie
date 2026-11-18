@@ -1,6 +1,8 @@
 // Descriptions des unités. Clé = clé de l'unité dans les données du jeu (sim/src/data.rs).
 // Généré depuis des descriptions de pièces simples (voir types.ts et kit.ts) ; aucune géométrie brute.
-import type { ColorName, Model, Part, Vec3 } from "./types.ts";
+import type { Model, Part, Vec3 } from "./types.ts";
+import { roach } from "./experimentales/roach.ts";
+import { spider } from "./experimentales/spider.ts";
 
 /**
  * Place une pièce le long d'un axe incliné (canon, rampe) : `base` = origine de l'axe, `elev` = angle
@@ -22,65 +24,11 @@ function roues(x: number, y: number, z: number, r: number, w: number, sides = 8)
   return { shape: "cylinder", sides, radius: r, height: w, pos: [x, y, z], rot: [0, 0, 90], color: "black", mirror: true };
 }
 
-interface Segment {
-  /** pente en degrés (positif : vers le haut) */
-  tilt: number;
-  len: number;
-  /** épaisseur (y) et largeur (z) du segment */
-  w: number;
-  color: ColorName;
-  shape?: "box" | "bevel";
-  /** filet lumineux le long du segment */
-  strip?: ColorName;
-  /** articulation (boîte) au bout du segment */
-  joint?: { size: Vec3; color: ColorName };
-}
-
-/**
- * Patte articulée côté droit (copiée à gauche par mirror) : segments enchaînés depuis la hanche,
- * orientés par `yaw` (degrés autour de y ; négatif : vers l'avant) puis par la pente de chaque segment.
- */
-function patte(hip: Vec3, yaw: number, segs: Segment[]): Part[] {
-  const out: Part[] = [];
-  const a = (yaw * Math.PI) / 180;
-  const r3 = (v: number): number => +v.toFixed(3);
-  let p = hip;
-  for (const s of segs) {
-    const t = (s.tilt * Math.PI) / 180;
-    const d: Vec3 = [Math.cos(t) * Math.cos(a), Math.sin(t), -Math.cos(t) * Math.sin(a)];
-    const c: Vec3 = [p[0] + (d[0] * s.len) / 2, p[1] + (d[1] * s.len) / 2, p[2] + (d[2] * s.len) / 2];
-    const rot: Vec3 = [0, yaw, s.tilt];
-    out.push({ shape: s.shape ?? "box", size: [s.len, s.w, s.w], pos: [r3(c[0]), r3(c[1]), r3(c[2])], rot, color: s.color, mirror: true });
-    if (s.strip) {
-      // normale locale +y du segment, pour poser le filet sur sa face
-      const n: Vec3 = [-Math.sin(t) * Math.cos(a), Math.cos(t), Math.sin(t) * Math.sin(a)];
-      const o = s.w / 2 + 0.01;
-      out.push({ shape: "box", size: [s.len * 0.7, 0.03, s.w * 0.25], pos: [r3(c[0] + n[0] * o), r3(c[1] + n[1] * o), r3(c[2] + n[2] * o)], rot, color: s.strip, mirror: true });
-    }
-    p = [p[0] + d[0] * s.len, p[1] + d[1] * s.len, p[2] + d[2] * s.len];
-    if (s.joint) out.push({ shape: "box", size: s.joint.size, pos: [r3(p[0]), r3(p[1]), r3(p[2])], rot: [0, yaw, 0], color: s.joint.color, mirror: true });
-  }
-  return out;
-}
-
 /** Chenille à patins (côté droit, mirror pour l'autre) : bande noire, galets et garde-boue. */
 function chenille(x: number, w: number, len: number, h: number): Part[] {
   return [
     { shape: "bevel", size: [w, h, len], pos: [x, h / 2, 0], color: "black", bevel: h * 0.3, mirror: true },
     { shape: "box", size: [w + 0.04, h * 0.35, len * 0.82], pos: [x, h * 0.42, 0], color: "dark", mirror: true },
-  ];
-}
-
-/** Patte de blatte côté droit ou gauche (pivot à la hanche) : cuisse relevée, tibia vers le sol, ergot. */
-function patteBlatte(name: string, side: 1 | -1, z: number, yaw: number): Part[] {
-  const x = (v: number): number => +(v * side).toFixed(3);
-  const r = (v: number): number => v * side;
-  return [
-    { shape: "bevel", size: [0.34,0.34,0.34], pos: [x(1.5),1.0,z], color: "light", pivot: name },
-    { shape: "box", size: [1.1,0.2,0.2], pos: [x(2.0),1.23,z], rot: [0,r(yaw),r(25)], color: "dark", parent: name },
-    { shape: "box", size: [0.05,0.05,0.7], pos: [x(2.0),1.35,z], rot: [0,r(yaw),0], color: "glow", parent: name },
-    { shape: "box", size: [1.5,0.16,0.16], pos: [x(2.7),0.73,z], rot: [0,r(yaw),r(-75)], color: "faction", parent: name },
-    { shape: "cone", sides: 5, radius: 0.08, height: 0.4, pos: [x(2.62),1.05,z], rot: [0,0,r(-40)], color: "metal", parent: name },
   ];
 }
 
@@ -847,71 +795,8 @@ export const UNIT_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 6, radius: 0.06, height: 0.8, pos: [0,0.86,2.4], rot: [90,0,0], color: "dark", parent: "tourelle" },
     ],
   },
-  // spider : araignée de siège à huit pattes (filets cyan), carapace aux couleurs du camp, émetteur laser au centre (1552 triangles)
-  spider: {
-    parts: [
-      { shape: "bevel", size: [2.0,0.8,2.8], pos: [0,1.9,0], color: "dark" },
-      { shape: "bevel", size: [1.7,0.35,2.3], pos: [0,2.4,-0.1], color: "faction" },
-      { shape: "bevel", size: [0.2,0.5,2.0], pos: [1.02,1.95,0], color: "light", mirror: true },
-      { shape: "bevel", size: [1.2,0.6,0.7], pos: [0,1.95,1.5], color: "light" },
-      { shape: "box", size: [0.7,0.08,0.04], pos: [0,2.05,1.86], color: "glow" },
-      { shape: "box", size: [0.1,0.08,0.04], pos: [0.3,1.85,1.86], color: "amber", mirror: true },
-      { shape: "bevel", size: [1.6,0.7,1.2], pos: [0,1.95,-1.6], color: "light" },
-      { shape: "box", size: [0.04,0.05,0.9], pos: [0.81,2.0,-1.6], color: "glow", mirror: true },
-      // pattes
-      ...[[1.0,-40],[0.35,-13],[-0.35,13],[-1.0,40]].flatMap(([z, yaw]) =>
-        patte([1.0,1.9,z], yaw, [
-          { tilt: 40, len: 1.1, w: 0.42, color: "faction", shape: "bevel", joint: { size: [0.44,0.44,0.44], color: "light" } },
-          { tilt: -75, len: 2.6, w: 0.4, color: "dark", shape: "bevel", strip: "glow", joint: { size: [0.46,0.12,0.5], color: "black" } },
-        ])),
-      // émetteur laser central (pivot « laser » : le rayon part du centre de l'araignée et suit sa cible)
-      { shape: "sphere", radius: 0.62, detail: 1, pos: [0,2.95,0], color: "dark", pivot: "laser" },
-      { shape: "cylinder", sides: 8, radius: 0.75, height: 0.22, pos: [0,2.62,0], color: "metal", parent: "laser" },
-      { shape: "cylinder", sides: 8, radius: 0.67, height: 0.07, pos: [0,2.98,0], color: "glow", parent: "laser" },
-      { shape: "bevel", size: [0.95,0.28,0.55], pos: [0,3.38,-0.3], color: "faction", parent: "laser" },
-      { shape: "box", size: [0.04,0.05,0.4], pos: [0.36,3.4,-0.3], color: "glow", mirror: true, parent: "laser" },
-      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.3, pos: [0,3.0,0.55], rot: [90,0,0], color: "metal", parent: "laser" },
-      { shape: "sphere", radius: 0.27, detail: 1, pos: [0,3.0,0.72], color: "glow", parent: "laser" },
-      { shape: "box", size: [0.08,0.05,0.05], pos: [0.22,3.28,0.42], color: "amber", mirror: true, parent: "laser" },
-    ],
-  },
-  // roach : char Blatte, carapace segmentée aux couleurs du camp sur chenilles, six pattes articulées,
-  // tête pivotante à canons-mandibules et antennes
-  roach: {
-    parts: [
-      // chenilles et caisse
-      { shape: "bevel", size: [0.8,0.75,4.0], pos: [1.15,0.4,-0.2], color: "dark", mirror: true },
-      { shape: "box", size: [0.84,0.1,3.4], pos: [1.15,0.8,-0.2], color: "metal", mirror: true },
-      { shape: "box", size: [0.03,0.05,2.6], pos: [1.56,0.45,-0.2], color: "glow", mirror: true },
-      { shape: "bevel", size: [2.2,0.7,4.2], pos: [0,0.9,0], color: "dark" },
-      // élytres (carapace), joint lumineux, taches ambre
-      { shape: "bevel", size: [1.25,0.38,3.6], pos: [0.62,1.42,-0.55], rot: [4,0,-9], color: "faction", mirror: true },
-      { shape: "box", size: [0.05,0.06,3.2], pos: [0,1.6,-0.6], color: "glow" },
-      { shape: "box", size: [0.4,0.05,0.04], pos: [0.62,1.58,-1.4], rot: [0,0,-9], color: "light", mirror: true },
-      { shape: "box", size: [0.4,0.05,0.04], pos: [0.62,1.6,-0.4], rot: [0,0,-9], color: "light", mirror: true },
-      // abdomen et cerques
-      { shape: "bevel", size: [1.8,0.42,0.9], pos: [0,1.1,-2.55], rot: [-12,0,0], color: "light" },
-      { shape: "cone", sides: 5, radius: 0.12, height: 0.9, pos: [0.5,1.0,-3.2], rot: [-100,0,0], color: "metal", mirror: true },
-      // pronotum (bouclier de tête)
-      { shape: "bevel", size: [2.5,0.42,1.4], pos: [0,1.38,1.55], rot: [-12,0,0], color: "faction" },
-      { shape: "box", size: [2.0,0.05,0.05], pos: [0,1.42,2.25], color: "glow" },
-      { shape: "box", size: [0.3,0.06,0.3], pos: [0.55,1.62,1.45], rot: [-12,0,0], color: "amber", mirror: true },
-      // pattes (trépied alterné : avant droite, milieu gauche, arrière droite ensemble)
-      ...patteBlatte("jambe_d1", 1, 1.2, -20),
-      ...patteBlatte("jambe_d2_ar", 1, 0, 0),
-      ...patteBlatte("jambe_d3", 1, -1.2, 20),
-      ...patteBlatte("jambe_g_1", -1, 1.2, -20),
-      ...patteBlatte("jambe_g_2_ar", -1, 0, 0),
-      ...patteBlatte("jambe_g_3", -1, -1.2, 20),
-      // tête pivotante : yeux, canons-mandibules, antennes
-      { shape: "bevel", size: [1.3,0.62,0.85], pos: [0,0.95,2.55], color: "dark", pivot: "tourelle" },
-      { shape: "sphere", radius: 0.16, pos: [0.5,1.08,2.8], color: "glow", mirror: true, parent: "tourelle" },
-      { shape: "bevel", size: [0.32,0.26,0.9], pos: [0.5,0.8,3.05], rot: [0,-15,0], color: "light", mirror: true, parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.13, height: 1.4, pos: [0.36,0.88,3.4], rot: [90,0,0], color: "metal", mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.2,0.2,0.04], pos: [0.36,0.88,4.11], color: "amber", mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.07,0.07,2.2], pos: [0.67,1.37,3.8], rot: [-15,20,0], color: "metal", mirror: true, parent: "tourelle" },
-    ],
-  },
+  spider,
+  roach,
   // dragon : « Gros Chinois », dragon robot volant ; tête pivotante (pivot « laser » : souffle de feu),
   // corps en anneaux qui ondulent (pivots ondule2…ondule11), crête ambre, moustaches, perle d'énergie
   dragon: {
