@@ -22,6 +22,8 @@ export const O = {
   SET_FILTERS: 42,
   /** rotation d'un bras : [réf., quarts de tour 1 à 3] (1 : prend à droite, 2 : derrière, 3 : à gauche) */
   SET_TURN: 43,
+  /** objets par voyage au départ d'une gare ou d'un héliport : [réf., n] (0 : automatique) */
+  SET_LOT: 44,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
@@ -189,6 +191,9 @@ export function cancelGhosts(x0: number, y0: number, x1: number, y1: number): Cm
 }
 export function upgrade(ref: number): Cmd {
   return [O.UPGRADE, ref | 0];
+}
+export function setLot(ref: number, n: number): Cmd {
+  return [O.SET_LOT, ref | 0, Math.max(0, Math.round(n))];
 }
 export function setTurn(ref: number, quarters: number): Cmd {
   return [O.SET_TURN, ref | 0, Math.max(1, Math.min(3, quarters | 0))];

@@ -320,12 +320,21 @@ fn unload(w: &mut World, ci: usize, b: usize) -> bool {
     w.carriers[ci].load == 0
 }
 
-/// Chargement depuis « à envoyer », par objet dans l'ordre des identifiants.
+/// Objets par voyage au départ de la gare `b` pour ce type de véhicule : le réglage de la gare (borné
+/// par la capacité), ou 0 en automatique.
+pub fn lot_of(b: &Building, kind: u8) -> u16 {
+    b.lot.min(CARRIERS[kind as usize].capacity)
+}
+
+/// Chargement depuis « à envoyer », par objet dans l'ordre des identifiants, jusqu'à la capacité du
+/// véhicule ou au nombre d'objets par voyage réglé sur la gare.
 fn load(w: &mut World, ci: usize, b: usize) {
     if w.buildings[b].stash.len() < 2 * N {
         return;
     }
-    let cap = CARRIERS[w.carriers[ci].kind as usize].capacity;
+    let kind = w.carriers[ci].kind;
+    let lot = lot_of(&w.buildings[b], kind);
+    let cap = if lot > 0 { lot } else { CARRIERS[kind as usize].capacity };
     let mut moved = false;
     for i in 1..N {
         let free = cap.saturating_sub(w.carriers[ci].load);
@@ -384,8 +393,12 @@ pub fn update_carriers(w: &mut World) {
                 w.carriers[ci].ready = true;
             }
             load(w, ci, here);
-            // départ s'il y a quelque chose à livrer, ou à prendre à l'autre bout
-            let go = w.carriers[ci].load > 0 || stash_total(&w.buildings[there], false) > 0;
+            // départ avec un voyage complet (automatique : dès qu'il y a quelque chose), ou à vide s'il y
+            // a de quoi faire un voyage complet à l'autre bout
+            let kind = w.carriers[ci].kind;
+            let need = |b: &Building| lot_of(b, kind).max(1) as u32;
+            let load = w.carriers[ci].load as u32;
+            let go = load >= need(&w.buildings[here]) || (load == 0 && stash_total(&w.buildings[there], false) >= need(&w.buildings[there]));
             if go && depart(w, ci, here, there) {
                 let c = &mut w.carriers[ci];
                 c.state += 1;

@@ -2051,6 +2051,10 @@ export class GameClient {
     }
   }
   /** Rotation du bras sélectionné, en quarts de tour (1 : prend à droite, 2 : derrière, 3 : à gauche). */
+  /** Objets par voyage des véhicules qui partent de la gare sélectionnée (0 : automatique). */
+  setLot(n: number): void {
+    if (ui.selBuilding) this.cmd(Ord.setLot(ui.selBuilding.ref, n));
+  }
   setTurn(quarters: number): void {
     if (ui.selBuilding) this.cmd(Ord.setTurn(ui.selBuilding.ref, quarters));
   }

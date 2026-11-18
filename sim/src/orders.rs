@@ -39,6 +39,8 @@ pub const O_CANCEL_GHOSTS: i32 = 41;
 pub const O_SET_FILTERS: i32 = 42;
 /// rotation d'un bras : [réf., quarts de tour (1 à 3)]
 pub const O_SET_TURN: i32 = 43;
+/// objets par voyage au départ d'une gare ou d'un héliport : [réf., n] (0 : automatique)
+pub const O_SET_LOT: i32 = 44;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
@@ -452,6 +454,17 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if w.buildings[b].def().class == crate::data::BClass::Inserter {
                     w.buildings[b].share = v;
                     w.buildings[b].wake = 0;
+                }
+            }
+        }
+        O_SET_LOT => {
+            let r = c.next();
+            let n = c.next().clamp(0, 10_000) as u16;
+            if let Some(b) = own_building(w, p, r) {
+                if let Some(kind) = crate::logistics::carrier_kind(w.buildings[b].def().class) {
+                    if kind < 2 {
+                        w.buildings[b].lot = n.min(CARRIERS[kind as usize].capacity);
+                    }
                 }
             }
         }
