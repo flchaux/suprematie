@@ -292,11 +292,16 @@ pub struct Building {
     pub upgrade: u32,
     /// dépôt amélioré : objets remis en sortie (tapis qui partent de ses faces, bras), à tour de rôle
     pub filters: Vec<u8>,
+    /// débit de la dernière minute : objets (ou unités, cycles de recherche) comptés par tranche de
+    /// FLOW_SLICE ticks, tranche `t` dans la case `t % FLOW_SLICES` ; voir buildings::flow_add
+    pub flow: [u16; FLOW_SLICES],
+    /// dernière tranche comptée dans `flow`
+    pub flow_at: u32,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, turn
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn
 });
 
 impl Building {
@@ -415,6 +420,10 @@ pub const EV_GIFT: i32 = 18;
 pub const EV_ATTACKED: i32 = 19;
 /// Usine à l'arrêt faute de composants depuis 10 s : joueur, x, y (centre), premier composant manquant.
 pub const EV_FACTORY_STARVED: i32 = 20;
+
+/// Débit des bâtiments : une minute découpée en tranches de 10 s.
+pub const FLOW_SLICE: u32 = 200;
+pub const FLOW_SLICES: usize = 6;
 
 pub struct World {
     pub params: Vec<i32>,

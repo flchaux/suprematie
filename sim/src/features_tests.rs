@@ -1056,6 +1056,7 @@ fn depot_touching_a_factory_feeds_it_from_the_reserve() {
     assert_eq!(crate::buildings::touching_depots(&w, f), 1);
     run(&mut w, 900);
     assert_eq!(w.players[0].unit_count, units0 + 2, "deux robots produits");
+    assert_eq!(w.buildings[f].flow.iter().map(|&n| n as u32).sum::<u32>(), 2, "débit : deux unités comptées");
     let cost = udef(robot as u16).cost;
     let iron = cost.iter().find(|c| c.0 == IRON_PLATE).unwrap().1 as i32;
     assert_eq!(w.players[0].stock[IRON_PLATE as usize], 100 - 2 * iron, "pris dans la réserve, l'avance rendue à la fin de la file");
@@ -1331,4 +1332,24 @@ fn arm_turn_picks_from_the_chosen_side() {
     // valeur invalide : ignorée
     w.step(&[4, O_SET_TURN, 0, r, 7]);
     assert_eq!(w.buildings[arm].turn, 3);
+}
+
+/// Débit de la dernière minute : tranches de 10 s glissantes, remises à zéro après un silence.
+#[test]
+fn flow_averages_the_last_minute() {
+    use crate::buildings::{flow_add, flow_per_min};
+    let mut bb = Building::default();
+    for t in (0..1200).step_by(20) {
+        flow_add(&mut bb, t, 1);
+    }
+    assert_eq!(flow_per_min(&bb, 1199), 600, "60 objets en une minute : 60,0 par minute");
+    assert_eq!(flow_per_min(&bb, 2399), 0, "une minute de silence");
+    for t in (2400..3600).step_by(40) {
+        flow_add(&mut bb, t, 1);
+    }
+    assert_eq!(flow_per_min(&bb, 3599), 300, "rythme divisé par deux");
+    // la tranche en cours compte au prorata : pas de chute brutale au changement de tranche
+    flow_add(&mut bb, 3600, 1);
+    let v = flow_per_min(&bb, 3600);
+    assert!((290..=320).contains(&v), "{v}");
 }

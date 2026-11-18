@@ -84,6 +84,20 @@
     const max = (1200 / ticks) * r.output[1];
     return { max, now: info.working ? max * Math.min(1, (info.sat ?? 1024) / 1024) : 0, item: r.output[0] };
   });
+  /** Débit moyen de la dernière minute, compté par la simulation (dixièmes par minute) : ce qui a vraiment été produit. */
+  const FLOW_UNIT: Partial<Record<number, string>> = {
+    [BClass.Extractor]: "objets",
+    [BClass.Crafter]: "objets",
+    [BClass.Factory]: "unités",
+    [BClass.Lab]: "cycles de recherche",
+    [BClass.Depot]: "objets reçus",
+    [BClass.Inserter]: "objets déplacés",
+  };
+  const flow = $derived.by(() => {
+    if (!info || !bdef || info.build < 65536 || info.flow === undefined) return null;
+    const unit = FLOW_UNIT[bdef.cls];
+    return unit ? { v: info.flow / 10, unit, item: rate?.item } : null;
+  });
   /** Caractéristiques d'une recette dans ce bâtiment : durée d'un cycle (s), énergie par cycle (kJ), objets par minute. */
   const recipeSpec = (r: { time: number; output: [number, number] }) => {
     const secs = r.time / 20 / (Math.max(1, bdef?.speed ?? 100) / 100);
@@ -154,6 +168,9 @@
       {/if}
       {#if rate}
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
+      {/if}
+      {#if flow}
+        <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min</div>
       {/if}
       {#if bdef.cls === BClass.Crafter}
         <div class="rhead">

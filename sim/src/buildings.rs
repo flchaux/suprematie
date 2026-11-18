@@ -929,6 +929,37 @@ fn cost_slot(cost: &[(u8, u16)], item: u8) -> Option<usize> {
     cost.iter().position(|c| c.0 == item)
 }
 
+// ---------- débit de la dernière minute ----------
+
+/// Compte `n` objets produits (ou reçus, déplacés) par le bâtiment, dans la tranche de 10 s en cours.
+pub fn flow_add(bb: &mut Building, tick: u32, n: u16) {
+    let t = tick / FLOW_SLICE;
+    if t != bb.flow_at {
+        // tranches écoulées depuis le dernier compte : remises à zéro (au plus une minute)
+        let gap = t.saturating_sub(bb.flow_at).min(FLOW_SLICES as u32);
+        for k in 1..=gap {
+            bb.flow[((bb.flow_at + k) % FLOW_SLICES as u32) as usize] = 0;
+        }
+        bb.flow_at = t;
+    }
+    let c = &mut bb.flow[(t % FLOW_SLICES as u32) as usize];
+    *c = c.saturating_add(n);
+}
+
+/// Débit moyen sur la dernière minute, en dixièmes par minute : les 5 tranches complètes et la tranche en cours.
+pub fn flow_per_min(bb: &Building, tick: u32) -> u32 {
+    let t = tick / FLOW_SLICE;
+    let mut total = 0u32;
+    for k in 0..FLOW_SLICES as u32 {
+        // tranche jamais comptée depuis (plus récente que flow_at) : vide ; sinon encore dans la fenêtre
+        if let Some(s) = t.checked_sub(k).filter(|&s| s <= bb.flow_at) {
+            total += bb.flow[(s % FLOW_SLICES as u32) as usize] as u32;
+        }
+    }
+    let span = (FLOW_SLICES as u32 - 1) * FLOW_SLICE + tick % FLOW_SLICE + 1;
+    (total as u64 * 1200 * 10 / span as u64) as u32
+}
+
 // ---------- usines : réserve de composants ----------
 //
 // Une usine garde ses composants par objet (`stash`, NUM_ITEMS cases, allouée au premier dépôt), pour toute sa file :
@@ -1085,6 +1116,8 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
         BClass::Depot => {
             let o = w.buildings[b].owner as usize;
             w.players[o].stock[item as usize] += 1;
+            let tick = w.tick;
+            flow_add(&mut w.buildings[b], tick, 1);
         }
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::insert(w, b, item),
         BClass::Router => {
@@ -1526,6 +1559,7 @@ fn tick_extractor(w: &mut World, b: usize) {
     if bb.progress >= 30 * RECIPE_SCALE {
         bb.progress -= 30 * RECIPE_SCALE;
         bb.out += 1;
+        flow_add(bb, w.tick, 1);
         let it = bb.recipe as usize;
         w.players[owner].produced[it] += 1;
     }
@@ -1644,6 +1678,7 @@ fn tick_crafter_work(w: &mut World, b: usize) {
     if bb.progress >= rec.time as u32 * RECIPE_SCALE {
         bb.working = false;
         bb.out += rec.output.1 as u16;
+        flow_add(bb, w.tick, rec.output.1 as u16);
         let owner = bb.owner as usize;
         w.players[owner].produced[rec.output.0 as usize] += rec.output.1 as u32;
         wake_watchers(w, b);
@@ -1681,6 +1716,7 @@ fn tick_lab(w: &mut World, b: usize) {
     let need = TECHS[t as usize].time as u32 * 20 * RECIPE_SCALE;
     if bb.progress >= need {
         bb.working = false;
+        flow_add(bb, w.tick, 1);
         let p = &mut w.players[owner];
         if p.research == t && !p.has_tech(t) {
             p.tech_progress[t as usize] += 1;
@@ -1755,6 +1791,8 @@ fn tick_factory(w: &mut World, b: usize) {
             sy = c.1;
         }
         let rally = bb.rally;
+        let tick = w.tick;
+        flow_add(&mut w.buildings[b], tick, 1);
         let id = w.spawn_unit(kind, owner as u8, sx, sy);
         let s = slot_of(id);
         w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
@@ -1943,7 +1981,9 @@ fn tick_inserter(w: &mut World, b: usize) {
         2 => {
             let item = w.buildings[b].hand;
             if push_to(w, tx, ty, item) {
+                let tick = w.tick;
                 let bb = &mut w.buildings[b];
+                flow_add(bb, tick, 1);
                 bb.hand = 0;
                 bb.phase = 3;
                 bb.timer = SWING;
