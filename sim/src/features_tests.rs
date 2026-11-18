@@ -786,3 +786,40 @@ fn destroyed_buildings_are_rebuilt_by_idle_engineers() {
     }
     assert_eq!(w.map.occ[w.map.idx(100, 100)], 0, "rien n'est reconstruit");
 }
+
+/// Enjamber un seul tapis : une case à l'étage juste au-dessus du tapis croisé. La file au sol qui y
+/// arrive monte (elle ne se déverse pas dans le tapis croisé par le côté), puis redescend.
+#[test]
+fn single_tile_overpass_crosses_a_belt() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 130, 130);
+    // ligne est-ouest : sol 100..104, étage 1 en 105 (au-dessus de la ligne nord-sud), sol 106..108
+    for x in 100..105 {
+        put_belt(&mut w, x, 100, 0, 0);
+    }
+    put_belt(&mut w, 105, 100, 0, 1);
+    for x in 106..109 {
+        put_belt(&mut w, x, 100, 0, 0);
+    }
+    put(&mut w, 0, B_DEPOT, 109, 100, 0);
+    // ligne nord-sud au sol en x = 105, vers un dépôt au sud
+    for y in 95..104 {
+        put_belt(&mut w, 105, y, 1, 0);
+    }
+    put(&mut w, 0, B_DEPOT, 105, 104, 0);
+    let a = w.map.occ_floor(w.map.idx(100, 100), 0) as usize - 1;
+    let before = w.map.occ_floor(w.map.idx(104, 100), 0) as usize - 1;
+    assert_eq!(crate::belts::ramp_to(&w, before), Some(1), "la case avant le croisement doit monter");
+    let under = w.map.occ_floor(w.map.idx(105, 100), 0) as usize - 1;
+    assert_eq!(crate::belts::belt_shape(&w, under), 0, "le tapis croisé reste droit");
+    let fe0 = w.players[0].stock[IRON_ORE as usize];
+    let mut sent = 0;
+    for k in 0..600 {
+        if k % 10 == 0 && k < 300 {
+            sent += crate::belts::put_on_belt(&mut w, a, IRON_ORE) as i32;
+        }
+        w.step(&[]);
+    }
+    assert!(sent > 20);
+    assert_eq!(w.players[0].stock[IRON_ORE as usize] - fe0, sent, "tout le fer doit passer par-dessus, jusqu'au dépôt de l'est");
+}

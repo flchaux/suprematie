@@ -141,14 +141,20 @@ fn belt_at(w: &World, x: i32, y: i32, floor: u8) -> Option<(usize, u8)> {
     }
 }
 
-/// Tapis suivant (celui dans lequel débouche ce tapis), s'il n'est pas en sens opposé : au même
-/// niveau, sinon au niveau voisin, tout droit (ascenseur : montée ou descente automatique).
+/// Tapis suivant (celui dans lequel débouche ce tapis) :
+/// - au même niveau, dans le même sens : tout droit ;
+/// - sinon au niveau voisin, dans le même sens (ascenseur : montée ou descente automatique) ; il
+///   l'emporte sur un tapis du même niveau qui croise la case (passage par-dessus un tapis) ;
+/// - sinon le tapis du même niveau qui croise (alimentation par le côté), s'il n'est pas en sens opposé.
 pub fn next_belt(w: &World, b: usize) -> Option<usize> {
     let bb = &w.buildings[b];
     let (dx, dy) = DIRS[bb.dir as usize];
     let (x, y) = (bb.x + dx, bb.y + dy);
-    if let Some((nb, nd)) = belt_at(w, x, y, bb.floor) {
-        return if (nd + 2) % 4 == bb.dir { None } else { Some(nb) };
+    let same = belt_at(w, x, y, bb.floor);
+    if let Some((nb, nd)) = same {
+        if nd == bb.dir {
+            return Some(nb);
+        }
     }
     for g in [bb.floor + 1, bb.floor.wrapping_sub(1)] {
         if let Some((nb, nd)) = belt_at(w, x, y, g) {
@@ -158,17 +164,21 @@ pub fn next_belt(w: &World, b: usize) -> Option<usize> {
             }
         }
     }
-    None
+    match same {
+        Some((nb, nd)) if (nd + 2) % 4 != bb.dir => Some(nb),
+        _ => None,
+    }
 }
 
 /// Tapis d'un autre niveau, juste derrière et dans le même sens, qui monte ou descend vers `b`
-/// (aucun tapis de son propre niveau ne le prolonge sur la case de `b`).
+/// (aucun tapis de son propre niveau ne le prolonge tout droit sur la case de `b` ; un tapis qui y
+/// croise ne compte pas : on passe par-dessus).
 fn elevator_pred(w: &World, b: usize) -> Option<usize> {
     let bb = &w.buildings[b];
     let (bx, by) = DIRS[(bb.dir as usize + 2) % 4];
     for g in [bb.floor + 1, bb.floor.wrapping_sub(1)] {
         if let Some((pb, pd)) = belt_at(w, bb.x + bx, bb.y + by, g) {
-            if pd == bb.dir && belt_at(w, bb.x, bb.y, g).is_none() {
+            if pd == bb.dir && belt_at(w, bb.x, bb.y, g).is_none_or(|(_, d)| d != pd) {
                 return Some(pb);
             }
         }
@@ -206,8 +216,8 @@ fn main_pred(w: &World, b: usize) -> Option<usize> {
     for sd in [(d + 1) % 4, (d + 3) % 4] {
         let (sx, sy) = DIRS[sd];
         if let Some((pb, pd)) = belt_at(w, bb.x + sx, bb.y + sy, f) {
-            // le tapis latéral doit pointer vers nous
-            if (pd as usize + 2) % 4 == sd {
+            // le tapis latéral doit pointer vers nous (et ne pas passer au-dessus par un ascenseur)
+            if (pd as usize + 2) % 4 == sd && next_belt(w, pb) == Some(b) {
                 side = Some(pb);
                 count += 1;
             }
@@ -247,8 +257,8 @@ pub fn belt_shape(w: &World, b: usize) -> u8 {
     let mut count = 0;
     for (k, sd) in [(1u8, (d + 1) % 4), (2u8, (d + 3) % 4)] {
         let (sx, sy) = DIRS[sd];
-        if let Some((_, pd)) = belt_at(w, bb.x + sx, bb.y + sy, f) {
-            if (pd as usize + 2) % 4 == sd {
+        if let Some((pb, pd)) = belt_at(w, bb.x + sx, bb.y + sy, f) {
+            if (pd as usize + 2) % 4 == sd && next_belt(w, pb) == Some(b) {
                 shape = k;
                 count += 1;
             }
