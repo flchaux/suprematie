@@ -8,6 +8,8 @@ export interface BuildingDef {
   key: string; name: string; w: number; h: number; hp: number; powerUse: number; powerProd: number; cost: [number, number][];
   build: number; tech: number; cls: number; speed: number; crafter: number; factory: number; weapon: number; supply: number;
   connect: number; radar: number; shieldR: number; deposit: number; water: boolean; passable: boolean; reach: number;
+  /** tapis collecteur de surplus */
+  collect?: boolean;
 }
 export interface UnitDef {
   key: string; name: string; layer: number; hp: number; speed: number; radius: number; weapons: number[]; vision: number; radar: number;

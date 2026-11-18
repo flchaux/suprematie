@@ -384,6 +384,8 @@ pub struct BuildingDef {
     pub passable: bool,
     /// bras : distance (cases) de la case de prise et de la case de dépose
     pub reach: u8,
+    /// tapis collecteur de surplus : les objets à l'arrêt sur sa case partent dans le stock
+    pub collect: bool,
 }
 
 const BD: BuildingDef = BuildingDef {
@@ -411,6 +413,7 @@ const BD: BuildingDef = BuildingDef {
     water: false,
     passable: false,
     reach: 1,
+    collect: false,
 };
 
 pub const B_EXTRACTOR: u16 = 0;
@@ -456,8 +459,9 @@ pub const B_OVERFLOW: u16 = 41;
 pub const B_PORTAL: u16 = 42;
 pub const B_ROBOPORT: u16 = 43;
 pub const B_LONG_INSERTER: u16 = 44;
+pub const B_COLLECTOR: u16 = 45;
 
-pub const BUILDINGS: [BuildingDef; 45] = [
+pub const BUILDINGS: [BuildingDef; 46] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -505,6 +509,8 @@ pub const BUILDINGS: [BuildingDef; 45] = [
     BuildingDef { key: "gift_portal", name: "Portail de don", size: (2, 2), hp: 2000, cost: &[(IRON_PLATE, 40), (COPPER_PLATE, 20), (CIRCUIT, 10)], build: 8, class: BClass::Portal, passable: true, ..BD },
     BuildingDef { key: "roboport", name: "Base de robots logistiques", size: (2, 2), hp: 3000, power_use: 800, cost: &[(STEEL, 40), (PROCESSOR, 10), (COMPOSITE, 10)], build: 20, tech: 31, class: BClass::Roboport, ..BD },    // bras long : prend et pose à 2 cases, par-dessus la case intermédiaire (un tapis, par exemple)
     BuildingDef { key: "long_inserter", name: "Bras long", hp: 100, power_use: 20, cost: &[(IRON_PLATE, 3), (GEAR, 1), (COPPER_PLATE, 2)], build: 1, tech: 1, class: BClass::Inserter, passable: true, vision: 0, reach: 2, ..BD },
+    // tapis surmonté d'un portique : il se pose sur un tapis (qu'il remplace) et met le surplus en réserve
+    BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, class: BClass::Belt, speed: 24, passable: true, vision: 0, collect: true, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -746,9 +752,9 @@ pub fn data_json() -> String {
             s.push(',');
         }
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"w\":{},\"h\":{},\"hp\":{},\"powerUse\":{},\"powerProd\":{},\"cost\":{},\"build\":{},\"tech\":{},\"cls\":{},\"speed\":{},\"crafter\":{},\"factory\":{},\"weapon\":{},\"supply\":{},\"connect\":{},\"radar\":{},\"shieldR\":{},\"deposit\":{},\"water\":{},\"passable\":{},\"reach\":{}}}",
+            "{{\"key\":{},\"name\":{},\"w\":{},\"h\":{},\"hp\":{},\"powerUse\":{},\"powerProd\":{},\"cost\":{},\"build\":{},\"tech\":{},\"cls\":{},\"speed\":{},\"crafter\":{},\"factory\":{},\"weapon\":{},\"supply\":{},\"connect\":{},\"radar\":{},\"shieldR\":{},\"deposit\":{},\"water\":{},\"passable\":{},\"reach\":{},\"collect\":{}}}",
             js(b.key), js(b.name), b.size.0, b.size.1, b.hp, b.power_use, b.power_prod, cost_js(b.cost), b.build, b.tech,
-            b.class as u8, b.speed, b.crafter as u8, b.factory as u8, b.weapon, b.supply, b.connect, b.radar, b.shield_r, b.deposit, b.water, b.passable, b.reach
+            b.class as u8, b.speed, b.crafter as u8, b.factory as u8, b.weapon, b.supply, b.connect, b.radar, b.shield_r, b.deposit, b.water, b.passable, b.reach, b.collect
         ));
     }
     s.push_str("],\"units\":[");

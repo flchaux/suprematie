@@ -330,7 +330,8 @@ pub fn logistics_demo() -> World {
     // goulottes : une file de tapis passe sous les deux extracteurs (arrivée latérale) ; un troisième
     // extracteur, tourné vers l'est, débouche sur deux tapis qui partent dans le même sens
     for x in x0 + 39..x0 + 48 {
-        put(&mut w, 0, B_BELT1, x, y0 + 39, 0);
+        // un collecteur de surplus au milieu de la file
+        put(&mut w, 0, if x == x0 + 44 { B_COLLECTOR } else { B_BELT1 }, x, y0 + 39, 0);
     }
     put(&mut w, 0, B_DEPOT, x0 + 48, y0 + 39, 0);
     let (ex, ey) = (x0 + 52, y0 + 34);
