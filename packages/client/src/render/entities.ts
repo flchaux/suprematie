@@ -670,8 +670,8 @@ export class Entities {
       if (strategic) continue;
       // tapis en virage : forme calculée par la simulation d'après les tapis voisins (mot auxiliaire)
       const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
-      // extracteur ou dépôt amélioré : modèle de son niveau
-      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot ? (buf[o + 5] >>> 24) & 3 : 0;
+      // extracteur, dépôt ou générateur amélioré : modèle de son niveau
+      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power ? (buf[o + 5] >>> 24) & 3 : 0;
       const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]);
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;

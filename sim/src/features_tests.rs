@@ -1313,3 +1313,59 @@ fn flow_averages_the_last_minute() {
     let v = flow_per_min(&bb, 3600);
     assert!((290..=320).contains(&v), "{v}");
 }
+
+/// Un générateur s'améliore deux fois : sans production pendant le chantier, puis plus de puissance.
+#[test]
+fn generator_upgrade_raises_power_production() {
+    use crate::orders::O_UPGRADE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let g = put(&mut w, 0, B_GENERATOR, 100, 100, 0);
+    let r = w.building_ref(g) as i32;
+    for (it, n) in [(STEEL, 100), (GEAR, 50), (CIRCUIT, 50), (ENGINE, 50)] {
+        w.players[0].stock[it as usize] = n;
+    }
+    run(&mut w, 10);
+    assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[0].prod);
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert!(w.buildings[g].upgrade > 0);
+    run(&mut w, 10);
+    assert_eq!(w.players[0].power_prod, 0, "arrêté pendant le chantier");
+    run(&mut w, GENERATOR_LEVELS[1].time as u32 * 20);
+    assert_eq!(w.buildings[g].level, 1);
+    assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[1].prod);
+    // niveau 3, puis plus rien à améliorer
+    w.step(&[3, O_UPGRADE, 0, r]);
+    run(&mut w, GENERATOR_LEVELS[2].time as u32 * 20 + 10);
+    assert_eq!(w.buildings[g].level, 2);
+    assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[2].prod);
+    let steel = w.players[0].stock[STEEL as usize];
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert_eq!(w.buildings[g].upgrade, 0);
+    assert_eq!(w.players[0].stock[STEEL as usize], steel, "niveau maximal : rien n'est payé");
+}
+
+/// Débit maximal calculé : un assembleur toujours approvisionné et vidé l'atteint (à un tick près par cycle).
+#[test]
+fn assembler_fed_continuously_reaches_its_max_flow() {
+    use crate::buildings::{flow_max, flow_per_min};
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
+    let rid = RECIPES.iter().position(|r| r.key == "gear").unwrap() as i32;
+    let r = w.building_ref(a) as i32;
+    w.step(&[4, crate::orders::O_SET_RECIPE, 0, r, rid]);
+    for _ in 0..2400 {
+        for _ in 0..2 {
+            if crate::buildings::accepts(&w, a, IRON_PLATE) {
+                insert_item(&mut w, a, IRON_PLATE);
+            }
+        }
+        w.buildings[a].out = 0;
+        w.step(&[]);
+    }
+    let (now, max) = (flow_per_min(&w.buildings[a], w.tick), flow_max(&w, a));
+    assert!(max > 0);
+    assert!(now * 100 >= max * 85 && now <= max + max / 20, "réel {now}, max {max}");
+}

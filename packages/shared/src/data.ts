@@ -23,6 +23,8 @@ export interface GameData {
   depot?: { base: number; cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number };
   extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; /** durée de l'amélioration vers ce niveau (s) */ time?: number }[];
   /** améliorations des assembleurs sur place : [type actuel, type visé, durée (s)] ; coût et recherche du type visé */
+  /** niveaux du générateur : production (kW), coût, recherche et durée (s) de passage à ce niveau */
+  generatorLevels?: { prod: number; cost: [number, number][]; tech: number; time: number }[];
   assemblerUpgrades?: [number, number, number][];
   /** véhicules de transport : 0 train, 1 drone de fret (speed : sous-unités par tick) */
   carriers: { capacity: number; speed: number; buffer: number; cost: [number, number][] }[];

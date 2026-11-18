@@ -550,7 +550,7 @@ pub fn rebuild_power(w: &mut World) {
             });
             let net = if best != usize::MAX { pole_net[best] } else { 0 };
             if b.complete() && def.power_prod > 0 && net != 0 {
-                w.nets[net as usize].prod += def.power_prod;
+                w.nets[net as usize].prod += power_prod_of(b);
             }
             w.buildings[bi].net = net;
             if net != 0 {
@@ -948,6 +948,37 @@ pub fn flow_per_min(bb: &Building, tick: u32) -> u32 {
     (total as u64 * 1200 * 10 / span as u64) as u32
 }
 
+/// Débit maximal du bâtiment à pleine énergie, en dixièmes par minute, pour sa production en cours
+/// (recette, unité en tête de file, recherche) ; 0 : pas de maximum (dépôt, rien en cours).
+/// Mêmes règles que les ticks de production : à comparer à flow_per_min.
+pub fn flow_max(w: &World, b: usize) -> u32 {
+    let bb = &w.buildings[b];
+    let owner = bb.owner as usize;
+    let tenths = |num: u64, den: u64| (num / den.max(1)) as u32;
+    match bb.def().class {
+        // un cycle : time * RECIPE_SCALE de progrès, speed * 1024 par tick
+        BClass::Crafter if bb.recipe != RECIPE_NONE => {
+            let r = &RECIPES[bb.recipe as usize];
+            tenths(12_000 * r.output.1 as u64 * bb.def().speed as u64, r.time as u64 * 100)
+        }
+        // un objet : 30 * RECIPE_SCALE de progrès, 1024 * res_mult * vitesse du niveau / 100 par tick
+        BClass::Extractor => {
+            let lvl = EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)].speed as u64;
+            tenths(12_000 * w.players[owner].res_mult.max(0) as u64 * lvl, 30 * 100 * 100)
+        }
+        // une unité : build * 20 * RECIPE_SCALE de progrès, 1024 * build_mult par tick
+        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64, udef(q.0).build as u64 * 20 * 100)),
+        // un cycle de recherche : time secondes
+        BClass::Lab => {
+            let t = if bb.working { bb.tech } else { w.players[owner].research };
+            if t == 0 { 0 } else { tenths(600, TECHS[t as usize].time as u64) }
+        }
+        // prise, aller (SWING ticks), dépose, retour (SWING ticks)
+        BClass::Inserter => tenths(12_000, 2 * SWING as u64 + 2),
+        _ => 0,
+    }
+}
+
 // ---------- usines : réserve de composants ----------
 //
 // Une usine garde ses composants par objet (`stash`, NUM_ITEMS cases, allouée au premier dépôt), pour toute sa file :
@@ -1238,6 +1269,8 @@ pub fn update_buildings(w: &mut World) {
                 tick_ammo_builder(w, b, INTERCEPTOR_COST, 3, 400);
                 crate::combat::antimissile(w, b);
             }
+            // générateur entré dans la liste pour une amélioration (voir upgrade) : dort jusqu'à la prochaine
+            BClass::Power => w.buildings[b].wake = NONE,
             BClass::Orbital => {
                 let need = bdef(B_ORBITAL).power_use;
                 let s = use_power(w, b, need);
@@ -1316,6 +1349,7 @@ pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
     match bb.def().class {
         BClass::Extractor => EXTRACTOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Depot if bb.level == 0 => Some((DEPOT_UPGRADE_COST, DEPOT_UPGRADE_TECH, DEPOT_UPGRADE_TIME as u32 * 20)),
+        BClass::Power if bb.kind == B_GENERATOR => GENERATOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Crafter => ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind).map(|u| (bdef(u.1).cost, bdef(u.1).tech, u.2 as u32 * 20)),
         _ => None,
     }
@@ -1339,6 +1373,7 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
         }
         w.buildings[b].upgrade = 0;
         w.buildings[b].wake = 0;
+        w.power_dirty |= w.buildings[b].def().class == BClass::Power;
         return true;
     }
     if !w.players[owner].has_tech(tech) || !cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
@@ -1349,7 +1384,24 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
     }
     w.buildings[b].upgrade = 1;
     w.buildings[b].wake = 0;
+    // un générateur n'est pas dans la liste des bâtiments actifs : il y entre pour son chantier
+    if let Err(p) = w.active.binary_search(&(b as u32)) {
+        w.active.insert(p, b as u32);
+    }
+    // générateur : sans production pendant le chantier
+    w.power_dirty |= w.buildings[b].def().class == BClass::Power;
     true
+}
+
+/// Production électrique d'un bâtiment terminé (kW) : niveau d'un générateur amélioré, rien pendant une amélioration.
+pub fn power_prod_of(bb: &Building) -> i32 {
+    if bb.upgrade > 0 {
+        0
+    } else if bb.kind == B_GENERATOR {
+        GENERATOR_LEVELS[(bb.level as usize).min(GENERATOR_LEVELS.len() - 1)].prod
+    } else {
+        bb.def().power_prod
+    }
 }
 
 /// Objets prélevés au plus par tick par un collecteur (au-delà du débit d'un tapis express).
@@ -1435,6 +1487,10 @@ fn tick_upgrade(w: &mut World, b: usize) {
     bb.wake = 0;
     match bb.def().class {
         BClass::Extractor => bb.level += 1,
+        BClass::Power => {
+            bb.level += 1;
+            w.power_dirty = true;
+        }
         BClass::Depot => {
             // dépôt plus grand : la réserve du joueur grandit d'autant
             bb.level += 1;
