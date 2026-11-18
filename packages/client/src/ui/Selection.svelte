@@ -258,7 +258,7 @@
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
                 <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}<Cost cost={u.cost} />
-                <span class="dim">Clic{#if hk} ou {hk}{/if} : +1 · Maj+clic{#if hk} ou Maj+{hk}{/if} : +5 · clic droit : retirer. Composants : dépôt collé (réserve), tapis, bras ou fabricant collé.</span></div>
+                </div>
             </div>
           {/each}
         </div>

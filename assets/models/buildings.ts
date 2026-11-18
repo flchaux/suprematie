@@ -153,6 +153,11 @@ function bobine(x: number, z: number, rayon: number, h: number, n: number, coiff
 const EXTRACTEUR_BASE: Part[] = [
       ...socle(2),
       ...filets(2),
+      // sens de sortie : une flèche ambre devant chacune des deux cases de la face avant (le minerai sort
+      // par là), faite de deux demi-pointes comme celle des tapis
+      { shape: "box", size: [0.62, 0.08, 0.36], pos: [0.5, 0.29, 0.8], color: "dark", mirror: true },
+      { shape: "wedge", size: [0.04, 0.26, 0.32], pos: [0.63, 0.355, 0.8], color: "amber", rot: [0, 0, -90], mirror: true },
+      { shape: "wedge", size: [0.04, 0.26, 0.32], pos: [-0.37, 0.355, 0.8], color: "amber", rot: [0, 0, -90], mirror: true },
       // puits : cratère sombre, anneau lumineux
       { shape: "cylinder", sides: 8, radius: 0.5, height: 0.04, pos: [0,0.26,0.3], color: "ore" },
       { shape: "cylinder", sides: 8, radius: 0.4, height: 0.04, pos: [0,0.28,0.3], color: "dark" },
