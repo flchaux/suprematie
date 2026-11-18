@@ -1027,3 +1027,92 @@ fn depots_cap_the_reserve_and_upgraded_depot_outputs_filtered_items() {
     crate::buildings::remove_building(&mut w, d, false);
     assert_eq!(w.players[0].stock_cap, before - DEPOT_CAP[1]);
 }
+
+fn unit_kind(key: &str) -> i32 {
+    UNITS.iter().position(|u| u.key == key).unwrap() as i32
+}
+
+/// Un dépôt collé à une usine l'alimente depuis la réserve du joueur, sans tapis ni bras.
+#[test]
+fn depot_touching_a_factory_feeds_it_from_the_reserve() {
+    use crate::orders::O_FACTORY_QUEUE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    put(&mut w, 0, B_GENERATOR, 102, 96, 0);
+    let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
+    let r = w.building_ref(f) as i32;
+    let robot = unit_kind("line_robot");
+    w.players[0].stock[IRON_PLATE as usize] = 100;
+    w.players[0].stock[GEAR as usize] = 100;
+    w.step(&[5, O_FACTORY_QUEUE, 0, r, robot, 2]);
+    let units0 = w.players[0].unit_count;
+    // sans dépôt : rien n'arrive
+    run(&mut w, 200);
+    assert_eq!(w.players[0].unit_count, units0);
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], 100);
+    // dépôt contre la face ouest
+    put(&mut w, 0, B_DEPOT, 98, 100, 0);
+    assert_eq!(crate::buildings::touching_depots(&w, f), 1);
+    run(&mut w, 900);
+    assert_eq!(w.players[0].unit_count, units0 + 2, "deux robots produits");
+    let cost = udef(robot as u16).cost;
+    let iron = cost.iter().find(|c| c.0 == IRON_PLATE).unwrap().1 as i32;
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], 100 - 2 * iron, "pris dans la réserve, l'avance rendue à la fin de la file");
+    assert_eq!(crate::buildings::factory_has(&w.buildings[f], IRON_PLATE), 0);
+}
+
+/// L'usine garde d'avance les composants de deux unités pour chaque type de sa file ; ce qui dépasse
+/// quand la file change retourne à la réserve, et une unité abandonnée en cours rend ses composants.
+#[test]
+fn factory_buffers_two_units_for_its_whole_queue() {
+    use crate::buildings::{accepts, factory_has};
+    use crate::orders::O_FACTORY_QUEUE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
+    let r = w.building_ref(f) as i32;
+    let (robot, moto) = (unit_kind("line_robot"), unit_kind("moto"));
+    let need = |k: i32, it: u8| udef(k as u16).cost.iter().find(|c| c.0 == it).map_or(0, |c| c.1);
+    assert!(!accepts(&w, f, IRON_PLATE), "file vide : rien n'est accepté");
+    w.step(&[5, O_FACTORY_QUEUE, 0, r, robot, 1]);
+    w.step(&[5, O_FACTORY_QUEUE, 0, r, moto, 1]);
+    let mut n = 0;
+    while accepts(&w, f, IRON_PLATE) {
+        insert_item(&mut w, f, IRON_PLATE);
+        n += 1;
+    }
+    let lim = 2 * need(robot, IRON_PLATE).max(need(moto, IRON_PLATE));
+    assert_eq!(n, lim, "deux unités d'avance pour le plus gros besoin de la file");
+    assert!(!accepts(&w, f, STEEL), "objet inutile à la file refusé");
+    // retirer la moto : l'excédent retourne à la réserve
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    w.step(&[5, O_FACTORY_QUEUE, 0, r, moto, -1]);
+    let keep = 2 * need(robot, IRON_PLATE);
+    assert_eq!(factory_has(&w.buildings[f], IRON_PLATE), keep);
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], before + (lim - keep) as i32);
+    // vider la file : tout revient
+    w.step(&[5, O_FACTORY_QUEUE, 0, r, robot, -1]);
+    assert_eq!(factory_has(&w.buildings[f], IRON_PLATE), 0);
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], before + lim as i32);
+}
+
+/// Une usine en panne de composants depuis 10 s le signale une fois à son joueur.
+#[test]
+fn starved_factory_raises_one_alert() {
+    use crate::orders::O_FACTORY_QUEUE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    put(&mut w, 0, B_GENERATOR, 100, 96, 0);
+    put(&mut w, 0, B_GENERATOR, 102, 96, 0);
+    let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
+    let r = w.building_ref(f) as i32;
+    w.step(&[5, O_FACTORY_QUEUE, 0, r, unit_kind("line_robot"), 1]);
+    let mut alerts = Vec::new();
+    for _ in 0..1200 {
+        w.step(&[]);
+        alerts.extend(w.events.chunks(5).filter(|e| e[0] == EV_FACTORY_STARVED).map(|e| (e[1], e[4])));
+    }
+    assert_eq!(alerts.len(), 1, "une seule alerte par attente");
+    assert_eq!(alerts[0], (0, IRON_PLATE as i32), "joueur et premier composant manquant");
+}

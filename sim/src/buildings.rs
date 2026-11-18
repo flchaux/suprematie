@@ -917,6 +917,124 @@ fn cost_slot(cost: &[(u8, u16)], item: u8) -> Option<usize> {
     cost.iter().position(|c| c.0 == item)
 }
 
+// ---------- usines : réserve de composants ----------
+//
+// Une usine garde ses composants par objet (`stash`, NUM_ITEMS cases, allouée au premier dépôt), pour toute sa file :
+// jusqu'à deux unités d'avance pour chaque type d'unité en attente. Un changement de file ne perd donc rien.
+
+/// Composants d'avance qu'une usine garde : `FACTORY_AHEAD` fois le coût de chaque type d'unité de sa file.
+const FACTORY_AHEAD: u16 = 2;
+
+/// Quantité de l'objet `item` dans la réserve de l'usine.
+pub fn factory_has(bb: &Building, item: u8) -> u16 {
+    bb.stash.get(item as usize).copied().unwrap_or(0)
+}
+
+/// Plafond de la réserve de l'usine pour `item` : deux fois le plus gros besoin d'une unité de la file.
+fn factory_limit(bb: &Building, item: u8) -> u16 {
+    bb.queue.iter().map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1)).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
+}
+
+/// Place encore libre dans la réserve de l'usine pour `item`.
+pub fn factory_room(bb: &Building, item: u8) -> u16 {
+    factory_limit(bb, item).saturating_sub(factory_has(bb, item))
+}
+
+pub fn factory_put(bb: &mut Building, item: u8, n: u16) {
+    if bb.stash.len() < NUM_ITEMS {
+        bb.stash.resize(NUM_ITEMS, 0);
+    }
+    bb.stash[item as usize] += n;
+}
+
+/// Après un changement de file : rend au stock du joueur ce qui dépasse le nouveau plafond de la réserve.
+pub fn factory_trim(w: &mut World, b: usize) {
+    let owner = w.buildings[b].owner as usize;
+    for it in 0..w.buildings[b].stash.len() {
+        let bb = &w.buildings[b];
+        let extra = bb.stash[it].saturating_sub(factory_limit(bb, it as u8));
+        if extra > 0 {
+            w.buildings[b].stash[it] -= extra;
+            w.players[owner].stock[it] += extra as i32;
+        }
+    }
+}
+
+/// Un dépôt collé à une usine lui donne un objet de la réserve du joueur toutes les `DEPOT_FEED_PERIOD` ticks (2 par seconde).
+pub const DEPOT_FEED_PERIOD: u32 = 10;
+
+/// Usine en attente de composants depuis 10 s : alerte EV_FACTORY_STARVED pour son joueur.
+const FACTORY_ALERT_DELAY: u32 = 200;
+const FACTORY_ALERTED: u32 = NONE - 1;
+
+/// Nombre de dépôts terminés du même joueur collés à une face du bâtiment `b`.
+pub fn touching_depots(w: &World, b: usize) -> u32 {
+    let bb = &w.buildings[b];
+    let (bw, bh) = bb.size();
+    let mut v: Vec<usize> = Vec::new();
+    for ty in bb.y - 1..=bb.y + bh {
+        for tx in bb.x - 1..=bb.x + bw {
+            if !on_face(bb.x, bb.y, bw, bh, tx, ty) || !w.map.inside(tx, ty) {
+                continue;
+            }
+            let o = w.map.occ[w.map.idx(tx, ty)];
+            if o == 0 {
+                continue;
+            }
+            let c = (o - 1) as usize;
+            let cb = &w.buildings[c];
+            if cb.alive && cb.complete() && cb.owner == bb.owner && cb.def().class == BClass::Depot {
+                v.push(c);
+            }
+        }
+    }
+    v.sort_unstable();
+    v.dedup();
+    v.len() as u32
+}
+
+/// Dépôts collés : l'usine puise dans la réserve du joueur (puis de son équipe) les composants de sa file,
+/// à tour de rôle entre les objets de l'unité en tête, puis ceux des suivantes. `charge` garde le tick de la dernière prise.
+fn feed_from_depots(w: &mut World, b: usize) {
+    let last = w.buildings[b].charge;
+    if w.tick < last.saturating_add(DEPOT_FEED_PERIOD) {
+        return;
+    }
+    let n = touching_depots(w, b);
+    if n == 0 {
+        w.buildings[b].charge = w.tick;
+        return;
+    }
+    // au plus 6 objets par dépôt accumulés pendant un sommeil (SLEEP = 60 ticks)
+    let periods = ((w.tick - last) / DEPOT_FEED_PERIOD).min(SLEEP / DEPOT_FEED_PERIOD);
+    let mut budget = periods * n;
+    w.buildings[b].charge = w.tick;
+    let owner = w.buildings[b].owner as usize;
+    let kinds: Vec<u16> = w.buildings[b].queue.iter().map(|q| q.0).collect();
+    for k in kinds {
+        let cost = udef(k).cost;
+        // tour de rôle : un objet de chaque composant par passe, jusqu'au plafond de la réserve
+        loop {
+            let mut took = false;
+            for &(it, _) in cost {
+                if budget == 0 {
+                    return;
+                }
+                if factory_room(&w.buildings[b], it) == 0 || w.avail(owner, it) <= 0 {
+                    continue;
+                }
+                w.pay(owner, it, 1);
+                factory_put(&mut w.buildings[b], it, 1);
+                budget -= 1;
+                took = true;
+            }
+            if !took {
+                break;
+            }
+        }
+    }
+}
+
 /// Le bâtiment accepte-t-il cet objet (par un bras ou un tapis) ?
 pub fn accepts(w: &World, b: usize, item: u8) -> bool {
     let bb = &w.buildings[b];
@@ -942,15 +1060,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
             }
         }
         BClass::Lab => (PACK1..PACK1 + 6).contains(&item) && bb.inv[(item - PACK1) as usize] < 2,
-        BClass::Factory => {
-            if let Some(&(k, _)) = bb.queue.first() {
-                let cost = udef(k).cost;
-                if let Some(j) = cost_slot(cost, item) {
-                    return bb.inv[j] < cost[j].1;
-                }
-            }
-            false
-        }
+        BClass::Factory => factory_room(bb, item) > 0,
         BClass::Silo => cost_slot(MISSILE_COST, item).is_some_and(|j| bb.inv[j] < MISSILE_COST[j].1),
         BClass::AntiMissile => cost_slot(INTERCEPTOR_COST, item).is_some_and(|j| bb.inv[j] < INTERCEPTOR_COST[j].1),
         _ => false,
@@ -990,13 +1100,7 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
         BClass::Lab => {
             w.buildings[b].inv[(item - PACK1) as usize] += 1;
         }
-        BClass::Factory => {
-            if let Some(&(k, _)) = w.buildings[b].queue.first() {
-                if let Some(j) = cost_slot(udef(k).cost, item) {
-                    w.buildings[b].inv[j] += 1;
-                }
-            }
-        }
+        BClass::Factory => factory_put(&mut w.buildings[b], item, 1),
         BClass::Silo => {
             if let Some(j) = cost_slot(MISSILE_COST, item) {
                 w.buildings[b].inv[j] += 1;
@@ -1588,20 +1692,36 @@ fn tick_factory(w: &mut World, b: usize) {
     let owner = w.buildings[b].owner as usize;
     let Some(&(kind, _)) = w.buildings[b].queue.first() else {
         w.buildings[b].working = false;
+        w.buildings[b].target = NONE;
         w.buildings[b].wake = w.tick + SLEEP;
         return;
     };
+    feed_from_depots(w, b);
     let def = udef(kind);
     if !w.buildings[b].working {
-        let has = def.cost.iter().enumerate().all(|(j, c)| w.buildings[b].inv[j] >= c.1);
-        if !has || w.players[owner].unit_count >= UNIT_CAP {
+        let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1).map(|c| c.0);
+        if missing.is_some() || w.players[owner].unit_count >= UNIT_CAP {
+            // en panne de composants depuis FACTORY_ALERT_DELAY : une alerte pour son joueur (une seule par attente)
+            let bb = &mut w.buildings[b];
+            // `target` : NONE hors attente, tick du début de l'attente, puis FACTORY_ALERTED une fois l'alerte donnée
+            match (missing, bb.target) {
+                (None, _) => bb.target = NONE,
+                (Some(_), NONE) => bb.target = w.tick,
+                (Some(it), t) if t != FACTORY_ALERTED && w.tick - t >= FACTORY_ALERT_DELAY => {
+                    bb.target = FACTORY_ALERTED;
+                    let (cx, cy) = bb.center();
+                    w.ev(EV_FACTORY_STARVED, owner as i32, cx, cy, it as i32);
+                }
+                _ => {}
+            }
             w.buildings[b].wake = w.tick + SLEEP;
             return;
         }
-        for (j, c) in def.cost.iter().enumerate() {
-            w.buildings[b].inv[j] -= c.1;
+        for c in def.cost {
+            w.buildings[b].stash[c.0 as usize] -= c.1;
             w.players[owner].consumed[c.0 as usize] += c.1 as u32;
         }
+        w.buildings[b].target = NONE;
         w.buildings[b].working = true;
         w.buildings[b].progress = 0;
         wake_watchers(w, b);
@@ -1639,6 +1759,8 @@ fn tick_factory(w: &mut World, b: usize) {
             }
         }
         bb.wake = 0;
+        // dernier exemplaire d'un type : son avance de composants retourne au stock
+        factory_trim(w, b);
         wake_watchers(w, b);
     }
 }

@@ -1437,7 +1437,7 @@ export class SkirmishAI implements Bot {
         const ref = sim.buildingAt(s.x, s.y);
         const b = ref ? this.ix.bref.get(ref) : undefined;
         if (!b || b.owner !== this.ctx.slot || b.build < BUILD_FULL) continue;
-        const inf = sim.infoBuilding(ref) as { inv: number[]; queue: [number, number][] } | null;
+        const inf = sim.infoBuilding(ref) as { inv: number[]; stash: number[]; queue: [number, number][] } | null;
         if (!inf) continue;
         if (isLab) {
           const t = this.me.research;
@@ -1447,7 +1447,8 @@ export class SkirmishAI implements Bot {
           if (!b.working) this.waiting.add(m);
         } else if (inf.queue.length) {
           const cost = data.units[inf.queue[0][0]].cost;
-          for (let j = 0; j < cost.length; j++) if (inf.inv[j] < cost[j][1]) D.add(cost[j][0]);
+          // réserve de l'usine : par objet (stash)
+          for (const [itm, n] of cost) if ((inf.stash[itm] ?? 0) < n) D.add(itm);
           if (!b.working) this.waiting.add(m);
         }
       }

@@ -63,8 +63,9 @@
     if (bdef.cls === BClass.Extractor && info.out >= 5) return { text: "Sortie bloquée : le minerai n'est pas emporté", kind: "warn" };
     if (bdef.cls === BClass.Factory && info.queue.length && !info.working) {
       const u = d.units[info.queue[0][0]];
-      const miss = u.cost.filter(([, n], j) => info.inv[j] < n).map(([it]) => d.items[it].name);
-      if (miss.length) return { text: `En attente de composants : ${miss.join(", ")} (par bras)`, kind: "warn" };
+      const miss = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n).map(([it, n]) => `${n - (info.stash[it] ?? 0)} ${d.items[it].name}`);
+      const how = info.depots ? "réserve du joueur épuisée pour ces objets" : "collez un dépôt à l'usine, ou amenez-les par tapis";
+      if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
     if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
     const low = bdef.powerUse > 0 && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
@@ -226,7 +227,7 @@
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
                 <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br /><Cost cost={u.cost} />
-                <span class="dim">Clic{#if hk} ou {hk}{/if} : +1 · Maj+clic{#if hk} ou Maj+{hk}{/if} : +5 · clic droit : retirer. Les composants arrivent par bras.</span></div>
+                <span class="dim">Clic{#if hk} ou {hk}{/if} : +1 · Maj+clic{#if hk} ou Maj+{hk}{/if} : +5 · clic droit : retirer. Composants : dépôt collé (réserve), tapis, bras ou fabricant collé.</span></div>
             </div>
           {/each}
         </div>
@@ -236,8 +237,12 @@
         </div>
         {#if info.queue.length}
           {@const cur = d.units[info.queue[0][0]]}
-          <div class="row"><span class="kicker">En cours · {cur.name}</span>{#each cur.cost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} size={16} />{/each}</div>
+          <div class="row"><span class="kicker">En cours · {cur.name}</span>{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}</div>
         {/if}
+        <span class="dim small"><Icon name="logistics" size={12} />
+          {#if info.depots}Alimentée depuis la réserve par {info.depots} dépôt{info.depots > 1 ? "s" : ""} collé{info.depots > 1 ? "s" : ""} ({2 * info.depots} objets/s).
+          {:else}Collez un dépôt à l'usine : il l'alimente depuis la réserve, sans tapis.{/if}
+          Elle garde d'avance les composants de 2 unités.</span>
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
         <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}</button></div>

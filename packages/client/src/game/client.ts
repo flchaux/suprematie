@@ -69,6 +69,7 @@ export class GameClient {
   lastClick = { time: 0, id: 0 };
   running = false;
   alertPos: { x: number; z: number } | null = null;
+  lastStarveAlert = -1e9;
   pingTimer = 0;
   lastGroupKey = { k: -1, t: 0 };
   autoSelect = false;
@@ -460,6 +461,14 @@ export class GameClient {
           break;
         case EV.ATTACKED:
           if (a === ui.me) this.onAttacked(c / TILE, d / TILE, e === 1);
+          break;
+        case EV.FACTORY_STARVED:
+          // usine à l'arrêt faute de composants (au plus une annonce toutes les 30 s)
+          if (a === ui.me && performance.now() - this.lastStarveAlert > 30000) {
+            this.lastStarveAlert = performance.now();
+            pushMessage(`Usine à l'arrêt, composant manquant : ${this.data!.items[e]?.name ?? "?"} (collez un dépôt à l'usine ou amenez un tapis)`, "alert");
+            this.alertPos = { x: c / TILE, z: d / TILE };
+          }
           break;
         case EV.RESEARCH:
           if (a === ui.me) {

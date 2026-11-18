@@ -408,6 +408,8 @@ pub const EV_PROMOTED: i32 = 17;
 pub const EV_GIFT: i32 = 18;
 /// Attaque subie : joueur visé, x, y, 1 si c'est son commandant (au plus un toutes les 2 s par joueur et par type).
 pub const EV_ATTACKED: i32 = 19;
+/// Usine à l'arrêt faute de composants depuis 10 s : joueur, x, y (centre), premier composant manquant.
+pub const EV_FACTORY_STARVED: i32 = 20;
 
 pub struct World {
     pub params: Vec<i32>,

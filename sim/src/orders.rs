@@ -204,19 +204,20 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 bb.queue.retain(|q| q.1 > 0);
             }
             let front_after = bb.queue.first().map(|q| q.0);
-            if front_before != front_after {
-                // rendre les composants déjà livrés au stock
-                if let Some(k) = front_before {
-                    let inv = bb.inv;
-                    for (j, &(it, _)) in udef(k).cost.iter().enumerate() {
-                        w.players[p as usize].stock[it as usize] += inv[j] as i32;
-                    }
-                }
-                let bb = &mut w.buildings[b];
-                bb.inv = [0; 6];
+            if front_before != front_after && bb.working {
                 bb.working = false;
                 bb.progress = 0;
+                // unité en cours abandonnée : ses composants reviennent dans la réserve de l'usine
+                if let Some(k) = front_before {
+                    for &(it, n) in udef(k).cost {
+                        crate::buildings::factory_put(&mut w.buildings[b], it, n);
+                        let c = &mut w.players[p as usize].consumed[it as usize];
+                        *c = c.saturating_sub(n as u32);
+                    }
+                }
             }
+            // ce qui dépasse l'avance voulue par la nouvelle file retourne au stock
+            crate::buildings::factory_trim(w, b);
             w.buildings[b].wake = 0;
         }
         O_FACTORY_REPEAT => {

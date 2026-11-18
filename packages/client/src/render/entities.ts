@@ -1157,6 +1157,9 @@ export class Entities {
       // fabricant sans recette : seul un extracteur l'amorce (fonderie, raffinerie…)
       return this.data.buildings[buf[s + 1] & 0xff].cls === BClass.Extractor && td.crafter !== CRAFTER_ASSEMBLER && recipes.some((x) => x.crafter === td.crafter && x.inputs.some((y) => y[0] === it));
     };
+    /** dépôt `s` collé à l'usine `t` du même joueur : il l'alimente depuis la réserve */
+    const feeds = (s: number, t: number): boolean =>
+      this.data.buildings[buf[s + 1] & 0xff].cls === BClass.Depot && this.data.buildings[buf[t + 1] & 0xff].cls === BClass.Factory && ((buf[s + 1] >> 8) & 0xff) === ((buf[t + 1] >> 8) & 0xff);
     const inCol = new THREE.Color(0.5, 2.2, 2.6);
     const outCol = new THREE.Color(2.8, 1.7, 0.35);
     const q = new THREE.Quaternion();
@@ -1201,8 +1204,8 @@ export class Entities {
           if (state === 0) {
             const nb = cells.get(oz * W + ox);
             if (nb !== undefined && nb !== o) {
-              if (takes(nb, o, gives(nb))) state = 1;
-              else if (takes(o, nb, gives(o))) state = 2;
+              if (takes(nb, o, gives(nb)) || feeds(nb, o)) state = 1;
+              else if (takes(o, nb, gives(o)) || feeds(o, nb)) state = 2;
             }
           }
           // bras long posé à 2 cases de la face (par-dessus la case voisine)
