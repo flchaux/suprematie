@@ -116,57 +116,6 @@ function tapisVirage(surface: Part["color"], fleche: Part["color"], filet: Part[
   return { parts };
 }
 
-/** Caisson commun des assembleurs (3 x 3) : coins blindés clairs, cadre supérieur aux couleurs de l'équipe. */
-function assembleur(): Part[] {
-  return [
-    ...socle(3),
-    ...filets(3),
-    { shape: "bevel", size: [2.7,0.72,2.7], pos: [0,0.6,0], color: "dark" },
-    { shape: "bevel", size: [0.62,0.92,0.62], pos: [1.1,0.7,1.1], color: "light", mirror: true },
-    { shape: "bevel", size: [0.62,0.92,0.62], pos: [1.1,0.7,-1.1], color: "light", mirror: true },
-    { shape: "bevel", size: [1.0,0.42,0.1], pos: [0,0.52,1.35], bevel: 0.03, color: "black" },
-    { shape: "box", size: [0.9,0.04,0.03], pos: [0,0.83,1.36], color: "glow" },
-    { shape: "box", size: [0.1,0.06,0.03], pos: [0.62,0.5,1.36], color: "amber", mirror: true },
-    { shape: "box", size: [0.04,0.36,1.0], pos: [1.35,0.6,0], color: "metal", mirror: true },
-    { shape: "box", size: [0.03,0.04,0.8], pos: [1.37,0.86,0], color: "glow", mirror: true },
-    { shape: "bevel", size: [2.4,0.16,0.4], pos: [0,1.04,1.05], color: "faction" },
-    { shape: "bevel", size: [2.4,0.16,0.4], pos: [0,1.04,-1.05], color: "faction" },
-    { shape: "bevel", size: [0.4,0.16,1.7], pos: [1.05,1.04,0], color: "faction", mirror: true },
-    { shape: "box", size: [1.8,0.04,1.8], pos: [0,0.97,0], color: "metal" },
-  ];
-}
-
-/**
- * Bras robotisé posé dans le caisson ; avec `pivot`, c'est le bras animé « bras ».
- * `yaw` : direction du bras en degrés (0 = vers l'avant, +z ; 90 = vers +x), `reach` : longueur relative,
- * `lift` : surélévation du socle (posé sur un pilier d'angle).
- */
-function brasRobot(x: number, z: number, pivot: boolean, o: { yaw?: number; reach?: number; lift?: number } = {}): Part[] {
-  const p = pivot ? { parent: "bras" } : {};
-  const yaw = ((o.yaw ?? 0) * Math.PI) / 180;
-  const k = o.reach ?? 1;
-  const dy = o.lift ?? 0;
-  const sy = Math.sin(yaw);
-  const cy = Math.cos(yaw);
-  // point à la distance d le long du bras
-  const at = (d: number, y: number): Vec3 => [x + d * k * sy, y + dy, z + d * k * cy];
-  // inclinaison du bras (-10° autour de son axe transversal) puis lacet, exprimés dans l'ordre XYZ du générateur
-  const t = (-10 * Math.PI) / 180;
-  const st = Math.sin(t);
-  const ct = Math.cos(t);
-  const deg = 180 / Math.PI;
-  const armRot: Vec3 = [Math.atan2(st, cy * ct) * deg, Math.asin(sy * ct) * deg, Math.atan2(-sy * st, cy) * deg];
-  const r = (o.yaw ?? 0) % 360;
-  return [
-    { shape: "cylinder", sides: 8, radius: 0.2, height: 0.3, pos: at(0, 1.12), color: "metal" },
-    { shape: "bevel", size: [0.3,0.26,0.3], pos: at(0, 1.38), rot: [0,r,0], color: "light", ...(pivot ? { pivot: "bras" } : {}) },
-    { shape: "bevel", size: [0.16,0.16,0.8 * k], pos: at(0.35, 1.5), rot: armRot, color: "light", ...p },
-    { shape: "box", size: [0.12,0.36,0.12], pos: at(0.72, 1.32), rot: [0,r,0], color: "metal", ...p },
-    { shape: "box", size: [0.3,0.08,0.16], pos: at(0.72, 1.12), rot: [0,r,0], color: "dark", ...p },
-    { shape: "box", size: [0.05,0.05,0.03], pos: at(0.18, 1.5), rot: [0,r,0], color: "amber", ...p },
-  ];
-}
-
 /**
  * Turbine couchée du générateur (axe avant-arrière, hélice vers +z) posée sur le socle, à l'échelle `k`
  * (1 : turbine du générateur de base). 236 triangles.

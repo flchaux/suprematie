@@ -25,19 +25,6 @@ function incl(base: Vec3, elev: number, d: number, h: number, p: Part): Part {
   return { ...p, pos, rot: [r[0] - elev, r[1], r[2]] };
 }
 
-/** Paire de roues (pneu noir couché selon x), symétrique gauche-droite : 64 triangles (48 en 6 côtés). */
-function roues(x: number, y: number, z: number, r: number, w: number, sides = 8): Part {
-  return { shape: "cylinder", sides, radius: r, height: w, pos: [x, y, z], rot: [0, 0, 90], color: "black", mirror: true };
-}
-
-/** Chenille à patins (côté droit, mirror pour l'autre) : bande noire, galets et garde-boue. */
-function chenille(x: number, w: number, len: number, h: number): Part[] {
-  return [
-    { shape: "bevel", size: [w, h, len], pos: [x, h / 2, 0], color: "black", bevel: h * 0.3, mirror: true },
-    { shape: "box", size: [w + 0.04, h * 0.35, len * 0.82], pos: [x, h * 0.42, 0], color: "dark", mirror: true },
-  ];
-}
-
 // ——— Lot C (unités terrestres) : aides propres au lot ———
 
 /**
