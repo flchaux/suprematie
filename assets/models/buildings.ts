@@ -1363,6 +1363,28 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.08,0.18,0.95], pos: [0.47,0.1,0], color: "light", mirror: true },
     ],
   },
+  // splitter_n2 : répartiteur réglé « gauche et avant » (flèche de droite éteinte)
+  splitter_n2: {
+    parts: [
+      { shape: "box", size: [0.95,0.12,0.95], pos: [0,0.06,0], color: "metal" },
+      { shape: "box", size: [0.7,0.2,0.7], pos: [0,0.2,0], color: "faction" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0,0.33,0.3], color: "glow" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [-0.3,0.33,0], rot: [0,-90,0], color: "glow" },
+      { shape: "box", size: [0.06,0.05,0.24], pos: [0.3,0.32,0], color: "dark" },
+      { shape: "box", size: [0.08,0.18,0.95], pos: [0.47,0.1,0], color: "light", mirror: true },
+    ],
+  },
+  // splitter_n3 : répartiteur réglé « droite et avant » (flèche de gauche éteinte)
+  splitter_n3: {
+    parts: [
+      { shape: "box", size: [0.95,0.12,0.95], pos: [0,0.06,0], color: "metal" },
+      { shape: "box", size: [0.7,0.2,0.7], pos: [0,0.2,0], color: "faction" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0,0.33,0.3], color: "glow" },
+      { shape: "wedge", size: [0.22,0.06,0.25], pos: [0.3,0.33,0], rot: [0,90,0], color: "glow" },
+      { shape: "box", size: [0.06,0.05,0.24], pos: [-0.3,0.32,0], color: "dark" },
+      { shape: "box", size: [0.08,0.18,0.95], pos: [0.47,0.1,0], color: "light", mirror: true },
+    ],
+  },
   // sorter : trieur (1 x 1) — entrée à l'arrière (-z), sorties : avant (+z), gauche (-x), droite (+x)
   sorter: {
     parts: [

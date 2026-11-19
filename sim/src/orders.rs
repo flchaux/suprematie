@@ -41,6 +41,8 @@ pub const O_SET_FILTERS: i32 = 42;
 pub const O_SET_TURN: i32 = 43;
 /// objets par voyage au départ d'une gare ou d'un héliport : [réf., n] (0 : automatique)
 pub const O_SET_LOT: i32 = 44;
+/// sorties d'un répartiteur : [réf., mode] (0 : les trois, 1 : gauche et avant, 2 : droite et avant)
+pub const O_SET_SPLIT: i32 = 45;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
@@ -158,9 +160,9 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
                     if udef(w.units.kind[s]).build_power > 0 {
-                        // bit 4 : pose avec remplacement des tapis (voir buildings::DIR_REPLACE)
-                        // bits 0-1 : direction ; 2 : remplacement ; 3-4 : niveau d'un tapis
-                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 31) as u8, bid: 0 });
+                        // bits 0-1 : direction ; 2 : remplacement des tapis (buildings::DIR_REPLACE) ;
+                        // 3-4 : niveau d'un tapis ; 5-6 : sorties d'un répartiteur (Building::split)
+                        give(w, s, q, Order::Build { kind: kind as u16, x, y, dir: (dir & 127) as u8, bid: 0 });
                     }
                 }
             }
@@ -453,6 +455,17 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if let Some(b) = own_building(w, p, r) {
                 if w.buildings[b].def().class == crate::data::BClass::Inserter {
                     w.buildings[b].share = v;
+                    w.buildings[b].wake = 0;
+                }
+            }
+        }
+        O_SET_SPLIT => {
+            let r = c.next();
+            let m = c.next();
+            if let Some(b) = own_building(w, p, r) {
+                if w.buildings[b].kind == B_SPLITTER && (0..=2).contains(&m) {
+                    w.buildings[b].split = m as u8;
+                    w.buildings[b].hand = 0;
                     w.buildings[b].wake = 0;
                 }
             }

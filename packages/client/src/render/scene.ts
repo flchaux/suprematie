@@ -393,7 +393,8 @@ export class GameScene {
     let g = this.ghostMeshes.get(key);
     if (!g || g.mesh.count === undefined) {
       const def = this.data.buildings[kind];
-      const vkey = variant === 1 ? def.key + "_virage_g" : variant === 2 ? def.key + "_virage_d" : def.key;
+      // variantes : virages des tapis, sorties du répartiteur (modèles de niveau _n2 / _n3)
+      const vkey = variant === 0 ? def.key : (BUILDING_MODELS[def.key + (variant === 1 ? "_virage_g" : "_virage_d")] ? def.key + (variant === 1 ? "_virage_g" : "_virage_d") : def.key + (variant === 1 ? "_n2" : "_n3"));
       const built = buildModel(BUILDING_MODELS[vkey] ?? BUILDING_MODELS[def.key] ?? fallbackModel());
       g = teamInstancedMesh(built.body, 512);
       g.mesh.castShadow = false;

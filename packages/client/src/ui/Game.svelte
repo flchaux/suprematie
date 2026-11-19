@@ -11,6 +11,7 @@
   import Help from "./Help.svelte";
   import Recipes from "./Recipes.svelte";
   import Icon from "./Icon.svelte";
+  import SplitIcon from "./SplitIcon.svelte";
   import EndReport from "./EndReport.svelte";
   import { keyOf } from "../game/keys.svelte.ts";
   import Plans from "./Plans.svelte";
@@ -132,6 +133,9 @@
         {#if dead}<div class="pnet"><i class="deadsw"></i><span class="dim">{dead} zone{dead > 1 ? "s" : ""} sans combustible ou sans générateur</span></div>{/if}
         <span class="dim small">Une couleur par réseau : des zones de même couleur sont reliées. Consommation / production · autonomie à cette charge.</span>
       </div>
+    {/if}
+    {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.key === "splitter"}
+      <div class="floorbadge panel"><span class="kicker">Sorties</span> <SplitIcon mode={ui.buildSplit} size={22} /> <b>{["gauche, avant et droite", "gauche et avant", "droite et avant"][ui.buildSplit]}</b> <span class="dim">· molette pour changer</span></div>
     {/if}
     {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt}
       <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette pour monter ou descendre ; les ascenseurs se posent seuls</span></div>

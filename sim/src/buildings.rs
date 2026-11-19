@@ -328,12 +328,15 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     }
     let (fx, fy) = front_tile(x, y, bw, bh, dir);
     let floor = floor_of(dir);
+    // répartiteur : ses sorties choisies à la pose (bits 5-6 de la direction)
+    let split = if kind == B_SPLITTER { ((dir >> 5) & 3).min(2) } else { 0 };
     w.buildings[slot] = Building {
         alive: true,
         gen,
         kind,
         owner,
         floor,
+        split,
         dir: dir & 3,
         x,
         y,
@@ -1589,12 +1592,21 @@ fn tick_router(w: &mut World, b: usize) {
     let (x, y, d, kind, filter, turn) = (bb.x, bb.y, bb.dir as usize, bb.kind, bb.recipe, bb.hand as usize);
     let item = bb.stash[0] as u8;
     let outs = [(d + 3) % 4, d, (d + 1) % 4]; // gauche, avant, droite
+    // répartiteur : ses sorties (les trois, ou un angle et l'avant), servies à tour de rôle
+    let split_outs: &[usize] = match w.buildings[b].split {
+        1 => &[0, 1],
+        2 => &[1, 2],
+        _ => &[0, 1, 2],
+    };
+    let mut rot = [0usize; 3];
     let order: &[usize] = match kind {
-        B_SPLITTER => match turn % 3 {
-            0 => &[0, 1, 2],
-            1 => &[1, 2, 0],
-            _ => &[2, 0, 1],
-        },
+        B_SPLITTER => {
+            let n = split_outs.len();
+            for (i, r) in rot.iter_mut().enumerate().take(n) {
+                *r = split_outs[(turn + i) % n];
+            }
+            &rot[..n]
+        }
         B_SORTER => {
             if filter != 0 && filter != RECIPE_NONE && item == filter {
                 &[0]
@@ -1611,7 +1623,9 @@ fn tick_router(w: &mut World, b: usize) {
             bb.stash.remove(0);
             bb.working = true;
             if kind == B_SPLITTER {
-                bb.hand = ((k + 1) % 3) as u8;
+                // la sortie suivante dans la liste du mode
+                let pos = split_outs.iter().position(|&o| o == k).unwrap_or(0);
+                bb.hand = ((pos + 1) % split_outs.len()) as u8;
             }
             wake_watchers(w, b);
             return;

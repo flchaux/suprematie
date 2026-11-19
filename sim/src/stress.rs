@@ -357,6 +357,14 @@ pub fn logistics_demo() -> World {
     for x in (x0 + 44..x0 + 49).rev() {
         put(&mut w, 0, B_BELT1, x, y0 + 41, 2);
     }
+    // répartiteur réglé « gauche et avant » (vitrine)
+    for (dx, dy) in [(52, 47), (53, 48), (44, 48), (42, 47), (55, 45)] {
+        let sp = put(&mut w, 0, B_SPLITTER, x0 + dx, y0 + dy, 1);
+        if sp != usize::MAX {
+            w.buildings[sp].split = 1;
+            break;
+        }
+    }
     // bras en quart de tour : tourné vers le sud, il prend sur ce tapis (à sa droite) et dépose devant lui
     let arm = put(&mut w, 0, B_INSERTER, x0 + 50, y0 + 44, 1);
     if arm != usize::MAX {
