@@ -202,11 +202,11 @@
         {@const out = info.genOut ?? 0}
         <div class="row small"><span class="kicker">Combustible</span> <Item id={cell ? ENERGY_CELL : HYDROCARBON} size={16} />
           <span class="fuelbar" class:empty={fuel <= 0}><span style:width={tank ? (100 * fuel) / tank + "%" : "0"}></span></span>
-          {#if unit}<span class="num">{(fuel / unit).toFixed(1)}</span><span class="dim"> / {(tank / unit).toFixed(0)}</span>{/if}
+          {#if unit}<span class="nowrap"><span class="num">{(fuel / unit).toFixed(1)}</span><span class="dim"> / {(tank / unit).toFixed(0)}</span></span>{/if}
           {#if fuel > 0 && out > 0}<span class="dim"> · encore <span class="num">{Math.ceil(fuel / out / 20)}</span> s à cette charge</span>{/if}
         </div>
-        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{kw}</span> kW <span class="dim">· brûle {cell ? "des cellules d'énergie" : "de l'hydrocarbure ou du carburant (5 fois plus)"}, plus vite quand la zone consomme</span></div>
-        <div class="row small"><span class="kicker">Production</span> <span class="num">{kw}</span> kW{#if gl} <span class="dim">· niveau {(info.level ?? 0) + 1}/{gl.length}</span>{/if}{#if info.upgrade > 0} <span class="dim">(arrêtée pendant l'amélioration)</span>{/if}</div>
+        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{kw}</span> kW{#if gl} <span class="dim">· niveau {(info.level ?? 0) + 1}/{gl.length}</span>{/if}{#if info.upgrade > 0} <span class="dim">(arrêté pendant l'amélioration)</span>{/if}</div>
+        <span class="dim small">Brûle {cell ? "des cellules d'énergie" : "de l'hydrocarbure, ou du carburant (5 fois plus d'énergie)"}, d'autant plus vite que sa zone consomme.</span>
       {/if}
       {#if flow}
         <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
@@ -634,4 +634,5 @@
   .fuelbar { display: inline-block; width: 70px; height: 6px; background: rgba(255, 255, 255, 0.08); margin: 0 4px; vertical-align: middle; }
   .fuelbar > span { display: block; height: 100%; background: var(--amber); }
   .fuelbar.empty { outline: 1px solid var(--bad, #ff5a4f); }
+  .nowrap { white-space: nowrap; }
 </style>

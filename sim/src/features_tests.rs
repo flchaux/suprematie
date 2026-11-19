@@ -1690,6 +1690,10 @@ fn hydrocarbon_extractor_needs_no_power_and_zones_merge() {
 #[test]
 fn main_generator_is_placed_at_start_with_fuel() {
     let mut w = world(&[0, 1]);
+    // comme une vraie partie : aucune recherche
+    for pl in w.players.iter_mut() {
+        pl.researched = 1;
+    }
     w.place_start_buildings();
     for p in 0..2u8 {
         let (sx, sy) = w.map.starts[p as usize];
@@ -1701,7 +1705,8 @@ fn main_generator_is_placed_at_start_with_fuel() {
         assert!(w.buildings[g].net != 0);
         assert_eq!(w.nets[w.buildings[g].net as usize].cap, 1500);
     }
-    // une centrale à hydrocarbure se pose désormais hors gisement
+    // une centrale à hydrocarbure (recherche Hydrocarbures) se pose désormais hors gisement
+    w.players[0].researched = u64::MAX;
     let (sx, sy) = w.map.starts[0];
     assert!(crate::buildings::place_building(&mut w, 0, B_HYDRO, sx + 8, sy + 8, 0).is_some() || crate::buildings::place_building(&mut w, 0, B_HYDRO, sx - 10, sy + 8, 0).is_some());
 }

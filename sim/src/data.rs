@@ -569,7 +569,7 @@ pub const BUILDINGS: [BuildingDef; 47] = [
     // tapis surmonté d'un portique : il se pose sur un tapis (qu'il remplace) et met le surplus en réserve
     BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, class: BClass::Belt, speed: 72, passable: true, vision: 0, collect: true, ..BD }, // vitesse express : ne ralentit aucune file
     // générateur principal : posé au départ (et reconstructible), grande zone ; brûle de l'hydrocarbure
-    BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 1, class: BClass::Power, supply: 18, connect: 30, ..BD },
+    BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 0, class: BClass::Power, supply: 18, connect: 30, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.

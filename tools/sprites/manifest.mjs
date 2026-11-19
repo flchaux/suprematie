@@ -82,6 +82,7 @@ export const BUILDINGS = {
   splitter: "a compact conveyor belt splitter block with one input and three glowing output arrows (left, forward, right)",
   sorter: "a compact conveyor sorting block with a small scanner window, one glowing arrow forward and one to the left",
   overflow: "a compact conveyor overflow valve block with a bright forward arrow and two dim side arrows",
+  main_generator: "a large industrial power station block with a turbine hall, an hydrocarbon fuel tank with an amber gauge, two smokestacks and a tall transmitter mast with glowing rings",
   collector: "a short conveyor belt segment straddled by a small boxy gantry hood on four legs, a glowing amber suction mouth over the belt, a small hopper on top",
   gift_portal: "a glowing gateway arch on a platform where allied troops walk through to join another commander",
   roboport: "a logistics robot hub: a square tower with a landing pad on top, beacon lights and small flying robots",
