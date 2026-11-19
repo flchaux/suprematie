@@ -254,6 +254,7 @@ export class GameClient {
     // ?demo=eau : carte avec de l'eau, sans les armées (aperçu du terrain)
     // ?demo=logistique : trains, drones et entrepôt d'équipe (vu comme le joueur 1, brouillard coupé)
     // ?demo=armes : expérimentales, balles, traits d'énergie et rayons prolongés face à une armée
+    // ?demo=projectiles : une rangée par arme qui tire au sol, pour juger chaque projectile
     const scene = new URLSearchParams(location.search).get("demo") ?? "";
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;

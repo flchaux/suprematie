@@ -27,6 +27,7 @@ export interface SimExports {
   bench_reference(): number;
   logistics_demo(): number;
   weapons_demo(): number;
+  projectiles_demo(): number;
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
   research_queue(player: number): number;
@@ -147,6 +148,9 @@ export class Sim {
   }
   weaponsDemo(): number {
     return this.ex.weapons_demo() >>> 0;
+  }
+  projectilesDemo(): number {
+    return this.ex.projectiles_demo() >>> 0;
   }
   benchReference(): number {
     return this.ex.bench_reference() >>> 0;

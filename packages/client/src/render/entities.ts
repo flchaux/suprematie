@@ -4,7 +4,7 @@
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1 } from "@supreme/shared";
-import { texture as tslTexture, uv, vec2, instancedBufferAttribute } from "three/tsl";
+import { texture as tslTexture, uv, vec2, instancedBufferAttribute, normalView } from "three/tsl";
 import { BUILDING_FILL, buildingScale, buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
@@ -311,13 +311,23 @@ export class Entities {
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
     this.itemColors = data.items.map((it) => new THREE.Color(it.color ?? 0xffffff));
-    // projectiles lumineux (couleurs au-delà de 1 : halo)
-    this.proj = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 0.5), basic({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 8000);
+    // projectiles lumineux (couleurs au-delà de 1 : halo) : ellipsoïde d'axe +z, de diamètre 1 ; chaque
+    // trait d'énergie est dessiné deux fois, un cœur fin et très lumineux et un halo large et pâle
+    // bord adouci : l'éclat décroît vers la silhouette (face tournée vers la caméra pleine, bord nul)
+    const glowMat = basic({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    glowMat.opacityNode = normalView.z.abs().pow(1.6);
+    this.proj = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 14, 10), glowMat, 8000);
     this.proj.count = 0;
     this.proj.frustumCulled = false;
     this.proj.setColorAt(0, new THREE.Color());
     this.group.add(this.proj);
-    this.slugs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardNodeMaterial({ color: 0xffffff, metalness: 0.7, roughness: 0.35 }), 6000);
+    // projectiles matériels (balles, obus, missiles, bombes, torpilles) : ogive d'axe +z, pointe en avant,
+    // de longueur 1 et de diamètre 1
+    const ogive = new THREE.LatheGeometry(
+      [[0, -0.5], [0.4, -0.5], [0.5, -0.4], [0.5, 0.08], [0.44, 0.24], [0.3, 0.4], [0.12, 0.48], [0, 0.5]].map(([r, y]) => new THREE.Vector2(r, y)),
+      12,
+    ).rotateX(Math.PI / 2);
+    this.slugs = new THREE.InstancedMesh(ogive, new THREE.MeshStandardNodeMaterial({ color: 0xffffff, metalness: 0.6, roughness: 0.4 }), 6000);
     this.slugs.count = 0;
     this.slugs.frustumCulled = false;
     this.slugs.setColorAt(0, new THREE.Color());
@@ -1033,47 +1043,71 @@ export class Entities {
         continue;
       }
       const dist = Math.hypot(x1 - x0, z1 - z0);
-      let arc = 1.2;
-      if (w?.proj === 1 || special === 1) arc = Math.min(60, dist * 0.35); // obus, missile stratégique
-      else if (w?.proj === 2) arc = Math.min(8, dist * 0.15);
-      else if (w?.proj === 3) arc = 0;
+      const pk = w?.proj ?? 0;
       const gy0 = groundHeight(this.map, x0, z0);
       const gy1 = groundHeight(this.map, x1, z1);
-      let y = gy0 + (gy1 - gy0) * tt + 1 + Math.sin(Math.PI * tt) * arc;
-      if (w?.proj === 3) y = gy1 + 12 * (1 - tt) + 0.5; // bombe : tombe
-      if (special === 2) y = gy1 + 60 * (1 - tt);
       const dx = x1 - x0;
       const dz = z1 - z0;
-      tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tmpV.set(dx, special === 2 ? -50 : 0, dz).normalize());
-      const big = special === 1 ? 3 : special === 2 ? 2 : w && w.aoe > 600 ? 1.8 : 1;
-      const pk = w?.proj ?? 0;
-      if (special === 0 && (pk === 0 || pk === 1) && nk < 6000) {
-        // cinétique : balle (laiton) ou obus (acier sombre), et un traceur discret derrière la balle
-        const shell = pk === 1;
-        const k = shell ? 0.16 * big : 0.06 * big;
-        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(k, k, shell ? 0.3 * big : 0.22 * big));
-        this.slugs.setMatrixAt(nk, tmpM);
-        this.slugs.setColorAt(nk, shell ? tmpC.setHex(0x4a5058) : tmpC.setHex(0xd8a850));
-        nk++;
-        if (!shell) {
-          tmpM.compose(tmpV.set(x - (dx / (dist || 1)) * 0.35, y, z - (dz / (dist || 1)) * 0.35), tmpQ, tmpS.set(0.3 * big, 0.3 * big, 1.3 * big));
-          this.proj.setMatrixAt(np, tmpM);
-          this.proj.setColorAt(np, tmpC.setHex(0xffb060).multiplyScalar(0.9));
-          np++;
+      // hauteur et pente de la trajectoire : y(t) et dy/dt (pour orienter le projectile selon sa course)
+      let arc = 1.2;
+      if (pk === 1 || special === 1 || special === 255) arc = Math.min(60, dist * 0.35); // obus, missile stratégique
+      else if (pk === 2) arc = Math.min(8, dist * 0.15);
+      else if (pk === 3 || pk === 4) arc = 0;
+      let y = gy0 + (gy1 - gy0) * tt + 1 + Math.sin(Math.PI * tt) * arc;
+      let vy = gy1 - gy0 + Math.PI * Math.cos(Math.PI * tt) * arc;
+      if (pk === 3) {
+        // bombe : tombe en avançant
+        y = gy1 + 12 * (1 - tt) + 0.5;
+        vy = -12;
+      } else if (pk === 4) {
+        // torpille : juste sous la surface
+        y = Math.max(gy0 + (gy1 - gy0) * tt, this.map.waterLevel * HSCALE) - 0.06;
+        vy = 0;
+      }
+      if (special === 2) {
+        y = gy1 + 60 * (1 - tt);
+        vy = -60;
+      }
+      tmpV.set(dx, vy, dz);
+      if (tmpV.lengthSq() < 1e-6) tmpV.set(0, -1, 0);
+      tmpQ.setFromUnitVectors(Z_AXIS, tmpV.normalize());
+      // vecteur unitaire de la course (pour placer flamme et traceur derrière le projectile)
+      const ux = tmpV.x;
+      const uy = tmpV.y;
+      const uz = tmpV.z;
+      const big = special === 1 || special === 255 ? 3 : special === 2 ? 2 : w && w.aoe > 600 ? 1.8 : 1;
+      const look = special === 0 ? PROJ_LOOKS[pk] : undefined;
+      if (special === 2) {
+        // frappe orbitale : colonne d'énergie qui tombe du ciel
+        np = this.glow(np, x, y, z, 0.35, 0.35, 4, 0xfff0b0, 3.2);
+        np = this.glow(np, x, y, z, 1.1, 1.1, 5, 0xffc040, 0.9);
+      } else if (look?.slug || special === 1 || special === 255) {
+        // projectile matériel : ogive orientée selon la course, et sa lueur (traceur, propulseur, culot chaud)
+        const L = look ?? PROJ_LOOKS[2]!;
+        const sz = special ? 3.2 : L.grow ? Math.min(big, 1.4) : 1;
+        if (nk < 6000) {
+          tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(L.slug![0] * sz, L.slug![0] * sz, L.slug![1] * sz));
+          this.slugs.setMatrixAt(nk, tmpM);
+          this.slugs.setColorAt(nk, tmpC.setHex(special ? 0xe8e8e8 : L.color));
+          nk++;
+        }
+        if (L.tail) {
+          const [r, len, back, col, k] = L.tail;
+          const off = (L.slug![1] * 0.5 + back) * sz;
+          const pulse = pk === 2 || special ? 0.8 + 0.4 * Math.sin(now / 17 + i * 2.3) : 1;
+          np = this.glow(np, x - ux * off, y - uy * off, z - uz * off, r * sz * pulse, r * sz * pulse, len * sz, col, k);
         }
       } else {
-        // énergie : trait lumineux (les traits « blaster » sont plus longs et plus fins)
-        const blaster = pk === 9;
-        // canon de rail : trait très long et fin
-        const rail = pk === 11;
-        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(big * (blaster ? 0.7 : rail ? 0.5 : 1), big * (blaster ? 0.7 : rail ? 0.5 : 1), big * (blaster ? 2.6 : rail ? 6 : 1)));
-        this.proj.setMatrixAt(np, tmpM);
-        this.proj.setColorAt(np, tmpC.setHex(special ? 0xffe070 : PROJ_COLORS[pk] ?? 0xffffff).multiplyScalar(pk === 3 ? 0.6 : blaster ? 3.2 : 2.6));
-        np++;
+        // énergie : cœur fin et lumineux + halo large et pâle
+        const L = look ?? { core: [0.12, 0.3], halo: [0.32, 0.45], color: 0xffe070, k: 2.6 };
+        const pulse = pk === 7 ? 0.85 + 0.25 * Math.sin(now / 40 + i * 1.3) : 1;
+        const col = special ? 0xffe070 : (PROJ_COLORS[pk] ?? 0xffffff);
+        np = this.glow(np, x, y, z, L.core![0] * big * pulse, L.core![0] * big * pulse, L.core![1] * big, col, L.k ?? 2.6);
+        np = this.glow(np, x, y, z, L.halo![0] * big * pulse, L.halo![0] * big * pulse, L.halo![1] * big, col, (L.k ?? 2.6) * 0.22);
       }
       const elapsed = buf[o + 4] & 0xffff;
       if (elapsed >= 1 && elapsed <= tickDelta && special === 0 && pk !== 3 && pk !== 4) fx.muzzle(x0, gy0 + 1, z0, pk, big);
-      if (special || pk === 1 || pk === 2 || pk === 4 || pk === 11) fx.trail(x, y, z, pk, dt, big);
+      if (special || pk === 1 || pk === 2 || pk === 4 || pk === 11) fx.trail(x, y, z, special === 1 || special === 255 ? 2 : pk, dt, big);
     }
     this.proj.count = np;
     this.proj.instanceMatrix.needsUpdate = true;
@@ -1615,6 +1649,15 @@ export class Entities {
     for (const m of this.logoMeshes.values()) m.instanceMatrix.needsUpdate = true;
   }
 
+  /** Une lueur (ellipsoïde additif d'axe la course courante, tmpQ) ; renvoie le nouveau compte. */
+  private glow(n: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: number, k: number): number {
+    if (n >= 8000) return n;
+    tmpM.compose(tmpV2.set(x, y, z), tmpQ, tmpS.set(sx, sy, sz));
+    this.proj.setMatrixAt(n, tmpM);
+    this.proj.setColorAt(n, tmpC.setHex(color).multiplyScalar(k));
+    return n + 1;
+  }
+
   /**
    * Origine d'un rayon prolongé de l'arme `wi` : pivot « laser » du modèle de l'unité qui la porte
    * (hauteur et avancée vers la cible, à l'échelle), sinon aux trois cinquièmes de sa hauteur.
@@ -1858,3 +1901,33 @@ function diagAtlas(): THREE.Texture {
 }
 
 const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030, 11: 0xc8ecff };
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+/**
+ * Apparence de chaque famille de projectiles (en cases).
+ * - matériels : slug = [diamètre, longueur] de l'ogive, color = teinte du métal, grow = grossit un peu pour
+ *   les armes à grand rayon d'effet ; tail = lueur derrière [diamètre, longueur, recul, couleur, intensité]
+ *   (traceur des balles, culot chaud des obus, flamme des missiles) ;
+ * - énergie : core / halo = [diamètre, longueur] du cœur et du halo, k = intensité du cœur.
+ */
+interface ProjLook {
+  slug?: [number, number];
+  color: number;
+  grow?: boolean;
+  tail?: [number, number, number, number, number];
+  core?: [number, number];
+  halo?: [number, number];
+  k?: number;
+}
+const PROJ_LOOKS: Record<number, ProjLook> = {
+  0: { slug: [0.045, 0.16], color: 0xd8a850, tail: [0.035, 0.7, 0.3, 0xffb060, 1.2] },
+  1: { slug: [0.085, 0.26], color: 0x4a5058, grow: true, tail: [0.08, 0.16, 0.02, 0xff9a40, 2.6] },
+  2: { slug: [0.07, 0.34], color: 0xc4c9cf, grow: true, tail: [0.09, 0.26, 0.08, 0xffc070, 3] },
+  3: { slug: [0.13, 0.36], color: 0x3c4232, grow: true },
+  4: { slug: [0.08, 0.42], color: 0x2e353c, tail: [0.05, 0.12, 0.02, 0x9fd0ff, 1.4] },
+  5: { color: 0x7fffff, core: [0.18, 0.3], halo: [0.45, 0.6], k: 2.8 },
+  6: { color: 0x7dfcff, core: [0.15, 0.24], halo: [0.38, 0.48], k: 2.8 },
+  7: { color: 0x9db7ff, core: [0.17, 0.2], halo: [0.48, 0.5], k: 2.6 },
+  8: { color: 0xff5050, core: [0.05, 1.1], halo: [0.15, 1.3], k: 3.2 },
+  9: { color: 0xff2a2a, core: [0.045, 0.9], halo: [0.14, 1.05], k: 3.4 },
+  11: { color: 0xc8ecff, core: [0.03, 3], halo: [0.11, 3.2], k: 3.4 },
+};

@@ -1958,3 +1958,17 @@ fn splitter_outputs_are_configurable() {
     assert_eq!(w.buildings[b].split, 1, "réglé à la pose");
     assert_eq!(w.buildings[b].dir, 0);
 }
+
+#[test]
+fn projectiles_demo_fires_every_projectile_kind() {
+    let mut w = crate::stress::projectiles_demo();
+    let mut kinds = std::collections::BTreeSet::new();
+    for _ in 0..900 {
+        w.step(&[]);
+        for p in &w.projectiles {
+            kinds.insert(WEAPONS[p.weapon as usize].proj as u8);
+        }
+    }
+    println!("familles de projectiles : {:?}", kinds);
+    assert!(kinds.len() >= 10, "presque toutes les familles tirent : {:?}", kinds);
+}
