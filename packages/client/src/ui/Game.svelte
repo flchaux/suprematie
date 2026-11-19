@@ -118,6 +118,21 @@
         <span><i style="background:#ff3b2e"></i>sortie bloquée</span><span><i style="background:#f0a020"></i>entrée manquante</span><span><i style="background:#b060ff"></i>énergie</span><span><i style="background:#3a9a52"></i>en marche</span>
       </div>
     {/if}
+    {#if ui.powerView}
+      {@const alive = ui.powerNets.filter((n) => !n.dead)}
+      {@const dead = ui.powerNets.filter((n) => n.dead).length}
+      <div class="powerlegend panel">
+        <span class="kicker">Vue électrique</span>
+        {#each alive as n (n.id)}
+          <div class="pnet">
+            <i style:background={"#" + n.color.toString(16).padStart(6, "0")}></i>
+            <span class="num">{n.demand}&nbsp;/&nbsp;{n.prod}&nbsp;kW</span>{#if n.sat < 1024}<span class="bad">&nbsp;·&nbsp;{Math.round((n.sat / 1024) * 100)}&nbsp;%</span>{/if}<span class="dim">&nbsp;·&nbsp;</span>{#if n.autonomy < 0}<span class="dim">rien ne brûle</span>{:else}<span class:warn={n.autonomy < 60} class="num">autonomie {n.autonomy >= 120 ? Math.round(n.autonomy / 60) + " min" : n.autonomy + " s"}</span>{/if}
+          </div>
+        {:else}<span class="dim">Aucune zone alimentée</span>{/each}
+        {#if dead}<div class="pnet"><i class="deadsw"></i><span class="dim">{dead} zone{dead > 1 ? "s" : ""} sans combustible ou sans générateur</span></div>{/if}
+        <span class="dim small">Une couleur par réseau : des zones de même couleur sont reliées. Consommation / production · autonomie à cette charge.</span>
+      </div>
+    {/if}
     {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt}
       <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette pour monter ou descendre ; les ascenseurs se posent seuls</span></div>
     {/if}
@@ -169,4 +184,8 @@
   .logilegend { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 6px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; white-space: nowrap; }
   .logilegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .logilegend .sep { width: 1px; height: 14px; background: var(--line); }
+  .powerlegend { position: absolute; left: 16px; top: 64px; display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; max-width: 300px; }
+  .powerlegend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .powerlegend .deadsw { background: repeating-linear-gradient(45deg, #ff4a3d 0 3px, transparent 3px 6px); border: 1px solid #ff4a3d; }
+  .powerlegend .warn { color: var(--amber); }
 </style>

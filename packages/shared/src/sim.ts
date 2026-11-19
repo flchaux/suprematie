@@ -157,8 +157,9 @@ export class Sim {
 }
 
 /** Zones électriques : réseaux [id, joueur, production, demande, installé, satisfaction, combustible,
- * autonomie s] et poteaux [x, y, l, h, portée, réseau, générateur ?, combustible ‰ (-1 relais), joueur, réf.]. */
+ * autonomie s] et poteaux [x, y, l, h, portée, réseau, générateur ?, combustible ‰ (-1 relais), joueur, réf.,
+ * type de bâtiment]. */
 export interface PowerZones {
   nets: [number, number, number, number, number, number, number, number][];
-  poles: [number, number, number, number, number, number, number, number, number, number][];
+  poles: [number, number, number, number, number, number, number, number, number, number, number][];
 }

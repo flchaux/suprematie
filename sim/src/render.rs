@@ -465,7 +465,7 @@ pub fn info_building(w: &World, r: u32) -> String {
 /// `nets` : [id, joueur, production, demande, puissance installée, satisfaction, combustible total,
 /// autonomie en s (-1 : rien ne brûle)] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
 /// réseau (0 : aucun), genre (0 relais, 1 générateur), combustible en millièmes du réservoir (-1 : relais),
-/// joueur, référence]. Un générateur à sec garde sa portée mais n'a pas de réseau.
+/// joueur, référence, type de bâtiment]. Un générateur à sec garde sa portée mais n'a pas de réseau.
 pub fn power_zones(w: &World, player: i32) -> String {
     let team = if player >= 0 && (player as usize) < w.players.len() { Some(w.players[player as usize].team) } else { None };
     let mine = |o: u8| team.is_none_or(|t| w.team_of(o) == t);
@@ -494,7 +494,7 @@ pub fn power_zones(w: &World, player: i32) -> String {
         // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
         let net = if gen && bb.fuel <= 0 { 0 } else { bb.net };
         let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };
-        poles.push(format!("[{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, def.supply, net, gen as i32, fuel, bb.owner, w.building_ref(b)));
+        poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, def.supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind));
     }
     format!("{{\"nets\":[{}],\"poles\":[{}]}}", nets.join(","), poles.join(","))
 }

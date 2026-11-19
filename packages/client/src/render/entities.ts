@@ -195,6 +195,8 @@ export class Entities {
   levelPips: THREE.InstancedMesh;
   /** vue logistique (touche maintenue) : dalles colorées sur les tapis (remplissage) et sous les bâtiments en difficulté */
   logistics = false;
+  /** combustible des générateurs de l'équipe (référence → fraction du réservoir, autonomie courte) */
+  fuelGauges = new Map<number, { f: number; low: boolean }>();
   logiPads: THREE.InstancedMesh;
   /** tapis surélevés : piliers, et cages d'ascenseur (montants et traverse) là où un tapis change de niveau */
   supports: THREE.InstancedMesh;
@@ -843,6 +845,26 @@ export class Entities {
         tmpM.compose(tmpV.set(cx - (wdt * (1 - frac)) / 2, y + 2.22, cz + def.h / 2), tmpQ.identity(), tmpS.set(wdt * frac, 1, 0.8));
         this.bars.setMatrixAt(bars, tmpM);
         this.bars.setColorAt(bars, tmpC.setRGB(1 - frac, 0.25 + frac * 0.7, 0.2));
+        bars++;
+      }
+      // générateur de l'équipe : jauge de combustible au-dessus (verte, ambre sous une minute d'autonomie,
+      // rouge clignotante à sec)
+      const gauge = def.cls === BClass.Power && build >= 1 && upg === 0 ? this.fuelGauges.get(buf[o] >>> 0) : undefined;
+      if (gauge && bars < 5900 && !strategic) {
+        const wdt = def.w * 0.7;
+        const lift = y + km.height + 0.5;
+        // barre à plat, comme les points de vie (géométrie couchée), un peu plus épaisse
+        tmpM.compose(tmpV.set(cx, lift, cz), tmpQ.identity(), tmpS.set(wdt + 0.12, 1, 2.6));
+        this.bars.setMatrixAt(bars, tmpM);
+        this.bars.setColorAt(bars, tmpC.setRGB(0.06, 0.08, 0.1));
+        bars++;
+        const dry = gauge.f <= 0;
+        const f = dry ? 1 : Math.max(0.04, gauge.f);
+        tmpM.compose(tmpV.set(cx - (wdt * (1 - f)) / 2, lift + 0.02, cz), tmpQ.identity(), tmpS.set(wdt * f, 1, 1.8));
+        this.bars.setMatrixAt(bars, tmpM);
+        if (dry) this.bars.setColorAt(bars, Math.floor(now / 400) % 2 ? tmpC.setRGB(1, 0.2, 0.15) : tmpC.setRGB(0.35, 0.05, 0.04));
+        else if (gauge.low) this.bars.setColorAt(bars, tmpC.setRGB(1, 0.7, 0.2));
+        else this.bars.setColorAt(bars, tmpC.setRGB(0.3, 1, 0.6));
         bars++;
       }
     }

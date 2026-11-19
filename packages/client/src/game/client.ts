@@ -5,8 +5,9 @@ import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech } from "@supreme/shared";
-import type { Frame, GameData, ServerMsg, GameStart } from "@supreme/shared";
+import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
+import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { PLAYER_COLORS } from "../models/generator.ts";
@@ -55,6 +56,9 @@ export class GameClient {
   middle = { active: false, x: 0, y: 0 };
   canvasEl: HTMLElement | null = null;
   selBox: HTMLDivElement | null = null;
+  /** zones électriques de l'équipe (dernière requête) */
+  zones: PowerZones | null = null;
+  lastZonesQuery = 0;
   minimap: HTMLCanvasElement | null = null;
   minimapBase: ImageData | null = null;
   reqId = 0;
@@ -347,24 +351,34 @@ export class GameClient {
       this.lastUiUpdate = now;
       this.updateUi();
     }
-    // pose d'un bâtiment électrique : zones alimentées en surimpression bleu clair
+    // zones électriques : vue électrique (touche maintenue) ou pose d'un bâtiment qui consomme ou alimente
+    const pv = keymap.held("powerView", this.keys);
+    if (pv !== ui.powerView) ui.powerView = pv;
     const placing = ui.mode === "build" && ui.buildKind >= 0 ? this.data?.buildings[ui.buildKind] : undefined;
-    if (placing && placing.supply > 0 && sc.power && this.frame) {
-      if (now - this.lastPowerShow > 250) {
-        this.lastPowerShow = now;
-        const f = this.frame;
-        const poles: { x: number; y: number; w: number; h: number; s: number }[] = [];
-        for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-          const kind = f.buf[o + 1] & 0xff;
-          const owner = (f.buf[o + 1] >> 8) & 0xff;
-          const d = this.data!.buildings[kind];
-          if (owner !== ui.me || !d || d.supply <= 0 || f.buf[o + 4] < 65536) continue;
-          const dir = (f.buf[o + 1] >> 16) & 3;
-          poles.push({ x: f.buf[o + 2] & 0xffff, y: (f.buf[o + 2] >>> 16) & 0xffff, w: dir & 1 ? d.h : d.w, h: dir & 1 ? d.w : d.h, s: d.supply });
+    const placingPower = !!placing && (placing.supply > 0 || placing.powerUse > 0);
+    const showZones = pv || placingPower;
+    // les zones servent aussi à la mini-carte et aux jauges : requête toutes les 2 s, toutes les 0,4 s affichées
+    if (this.frame && ui.me >= 0 && now - this.lastZonesQuery > (showZones ? 400 : 2000)) {
+      this.lastZonesQuery = now;
+      void this.query<PowerZones | null>("powerZones", [ui.me]).then((z) => {
+        if (!z || !this.data) return;
+        this.zones = z;
+        const data = this.data;
+        sc.power?.setZones(z, (kind) => data.buildings[kind]?.connect ?? 0, (x, zz) => (this.map ? groundHeight(this.map, x, zz) : 0));
+        if (sc.power) ui.powerNets = sc.power.nets;
+        if (sc.entities) {
+          const g = new Map<number, { f: number; low: boolean }>();
+          const autonomy = new Map<number, number>();
+          for (const n of z.nets) autonomy.set(n[0], n[7]);
+          for (const q of z.poles) if (q[6] === 1) g.set(q[9] >>> 0, { f: q[7] / 1000, low: q[7] <= 0 || (q[5] > 0 && (autonomy.get(q[5]) ?? -1) >= 0 && (autonomy.get(q[5]) ?? 0) < 60) });
+          sc.entities.fuelGauges = g;
         }
-        sc.power.setNetwork(poles);
-        sc.power.show(this.ghostCells.map((c) => ({ x: c.x, y: c.y, w: c.dir & 1 ? placing.h : placing.w, h: c.dir & 1 ? placing.w : placing.h, s: placing.supply })));
-      }
+      });
+    }
+    if (showZones && sc.power && this.frame) {
+      const preview = placing && placing.supply > 0 ? this.ghostCells.map((c) => ({ x: c.x, y: c.y, w: c.dir & 1 ? placing.h : placing.w, h: c.dir & 1 ? placing.w : placing.h, s: placing.supply })) : [];
+      sc.power.show(preview, pv);
+      this.lastPowerShow = now;
     } else if (this.lastPowerShow) {
       this.lastPowerShow = 0;
       sc.power?.hide();
@@ -2414,6 +2428,19 @@ export class GameClient {
     const vis = f.vis;
     const vw = f.visW;
     const seen = (x: number, z: number, bit: number) => ui.spectator || !vis || (vis[Math.min(vw - 1, (z / 4) | 0) * vw + Math.min(vw - 1, (x / 4) | 0)] & bit) !== 0;
+    // zones électriques de l'équipe : aplats par réseau, zones mortes en rouge
+    const zones = this.zones;
+    const hex = (c: number) => "#" + c.toString(16).padStart(6, "0");
+    if (zones && this.scene?.power) {
+      const colors = this.scene.power.colorOf;
+      ctx.globalAlpha = 0.22;
+      for (const p of zones.poles) {
+        const c = p[5] > 0 ? colors.get(p[5]) : undefined;
+        ctx.fillStyle = hex(c ?? DEAD_COLOR);
+        ctx.fillRect((p[0] - p[4]) * k, (p[1] - p[4]) * k, (p[2] + 2 * p[4]) * k, (p[3] + 2 * p[4]) * k);
+      }
+      ctx.globalAlpha = 1;
+    }
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const owner = (f.buf[o + 1] >> 8) & 0xff;
       const kind = f.buf[o + 1] & 0xff;
@@ -2435,6 +2462,22 @@ export class GameClient {
       ctx.fillStyle = this.selected.has(f.buf[o] >>> 0) ? "#ffffff" : "#" + PLAYER_COLORS[owner % 8].toString(16).padStart(6, "0");
       const s = big ? 4 : 2;
       ctx.fillRect(x * k - s / 2, z * k - s / 2, s, s);
+    }
+    // générateurs : point vert (alimenté), ambre (moins d'une minute d'autonomie), rouge (à sec)
+    if (zones) {
+      const autonomy = new Map<number, number>();
+      for (const n of zones.nets) autonomy.set(n[0], n[7]);
+      for (const p of zones.poles) {
+        if (p[6] !== 1) continue;
+        const a = p[5] > 0 ? (autonomy.get(p[5]) ?? -1) : -1;
+        ctx.fillStyle = p[7] <= 0 ? "#ff4a3d" : a >= 0 && a < 60 ? "#ffb547" : "#4dffb0";
+        ctx.beginPath();
+        ctx.arc((p[0] + p[2] / 2) * k, (p[1] + p[3] / 2) * k, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
     // cadre de la caméra
     const r = this.scene!.viewRect();
