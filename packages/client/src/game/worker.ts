@@ -135,6 +135,7 @@ addEventListener("message", async (e: MessageEvent) => {
   // la partie de référence (armées, usines) est sur carte sèche ; avec ?demo=eau on garde la carte seule
   if (m.scene === "logistique") sim.logisticsDemo();
   else if (m.scene === "armes") sim.weaponsDemo();
+  else if (m.scene === "projectiles") sim.projectilesDemo();
   else if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;

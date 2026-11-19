@@ -438,14 +438,15 @@ export class Effects {
   /** Traînée d'un projectile (appelée à chaque image). */
   trail(x: number, y: number, z: number, proj: number, dt: number, big: number): void {
     if (!this.inView(x, z, 2)) return;
-    if (proj === 2 || big > 1.5) {
+    if (proj === 2 || (proj !== 1 && big > 1.5)) {
       // missile : flamme + fumée
       if (Math.random() < dt * 60 * this.quality) {
         this.smoke.spawn({ x: x + rnd(-0.05, 0.05), y, z: z + rnd(-0.05, 0.05), vy: 0.2, life: rnd(0.6, 1.1) * big, s0: 0.18 * big, s1: 0.65 * big, c0: [0.7, 0.68, 0.65], c1: [0.55, 0.55, 0.55], a: 0.55, drag: 1.5 });
       }
       this.fire.spawn({ x, y, z, life: 0.05, s0: 0.4 * big, s1: 0.25 * big, c0: [4, 2.4, 0.9] });
     } else if (proj === 1) {
-      if (Math.random() < dt * 25 * this.quality) this.smoke.spawn({ x, y, z, life: 0.5, s0: 0.12, s1: 0.35, c0: [0.6, 0.58, 0.55], a: 0.35 });
+      // obus : fin filet de fumée (plus épais pour l'artillerie lourde)
+      if (Math.random() < dt * 25 * this.quality) this.smoke.spawn({ x, y, z, life: 0.5 * big, s0: 0.08 * big, s1: 0.3 * big, c0: [0.6, 0.58, 0.55], a: 0.35 });
     } else if (proj === 11) {
       // canon de rail : sillage ionisé bleuté qui s'attarde
       if (Math.random() < dt * 90 * this.quality) this.fire.spawn({ x, y, z, life: rnd(0.25, 0.45), s0: 0.22 * big, s1: 0.05, c0: [1.6, 2.6, 4], c1: [0.4, 0.8, 1.8] });

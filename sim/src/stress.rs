@@ -460,3 +460,35 @@ pub fn weapons_demo() -> World {
     }
     w
 }
+
+/// Galerie des projectiles : une rangée par arme, chaque tireur bombarde le sol à 20 cases devant lui
+/// (rien ne riposte) ; des transports adverses immobiles servent de cibles aux armes antiaériennes.
+/// Les navires sont posés à terre : ils ne bougent pas mais tirent.
+pub fn projectiles_demo() -> World {
+    let mut w = World::new(&[11, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    let (x0, y0) = (w.map.w / 2 - 40, w.map.h / 2 - 60);
+    const SHOOTERS: [u16; 25] = [4, 5, 6, 7, 10, 11, 12, 14, 15, 16, 17, 18, 23, 24, 31, 32, 33, 36, 37, 38, 40, 41, 44, 46, 48];
+    flat(&mut w, x0 - 10, y0 - 6, x0 + 40, y0 + SHOOTERS.len() as i32 * 4 + 6);
+    for (i, &kind) in SHOOTERS.iter().enumerate() {
+        let y = y0 + i as i32 * 4;
+        let id = w.spawn_unit(kind, 0, x0 * TILE + TILE / 2, y * TILE + TILE / 2);
+        if let Some(s) = w.unit(id) {
+            let (tx, ty) = ((x0 + 20) * TILE + TILE / 2, y * TILE + TILE / 2);
+            crate::orders::give(&mut w, s, false, Order::AttackGround { x: tx, y: ty });
+        }
+    }
+    // antiaérien : défense mobile, chasseur de supériorité, sous-marin (torpilles sur un navire)
+    for (k, &kind) in [8u16, 25, 20].iter().enumerate() {
+        w.spawn_unit(kind, 0, (x0 - 6) * TILE, (y0 + 10 + k as i32 * 30) * TILE);
+    }
+    for k in 0..6 {
+        w.spawn_unit(22, 1, (x0 + 2 + k * 2) * TILE, (y0 + 10 + (k % 3) * 30) * TILE);
+    }
+    w.spawn_unit(28, 0, (x0 - 6) * TILE, (y0 + 100) * TILE);
+    w.spawn_unit(27, 1, (x0 + 4) * TILE, (y0 + 100) * TILE);
+    w
+}
