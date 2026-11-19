@@ -1773,4 +1773,10 @@ fn dry_middle_zone_splits_the_network_and_stops_belts() {
     // les tapis consomment : 1 kW par case de tapis de base
     let n = w.buildings[first].net as usize;
     assert!(w.nets[n].demand >= 4, "les tapis consomment ({} kW)", w.nets[n].demand);
+    // une zone sous-alimentée ne coupe pas les tapis ; une zone éteinte, si
+    let tiles = w.belts.lines[w.buildings[first].line as usize].tiles.clone();
+    w.nets[n].sat = 100;
+    assert!(crate::belts::line_powered(&w, &tiles), "zone sous-alimentée : les tapis tournent");
+    w.nets[n].sat = 0;
+    assert!(!crate::belts::line_powered(&w, &tiles), "zone éteinte : arrêtés");
 }
