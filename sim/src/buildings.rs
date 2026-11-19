@@ -1116,7 +1116,7 @@ pub fn flow_max(w: &World, b: usize) -> u32 {
         // un cycle : time * RECIPE_SCALE de progrès, speed * 1024 par tick
         BClass::Crafter if bb.recipe != RECIPE_NONE => {
             let r = &RECIPES[bb.recipe as usize];
-            tenths(12_000 * r.output.1 as u64 * bb.def().speed as u64, r.time as u64 * 100)
+            tenths(12_000 * r.output.1 as u64 * crafter_speed(bb) as u64, r.time as u64 * 100)
         }
         // un objet : 30 * RECIPE_SCALE de progrès, 1024 * res_mult * vitesse du niveau / 100 par tick
         BClass::Extractor => {
@@ -1643,6 +1643,7 @@ pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
         BClass::Extractor => EXTRACTOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Depot if bb.level == 0 => Some((DEPOT_UPGRADE_COST, DEPOT_UPGRADE_TECH, DEPOT_UPGRADE_TIME as u32 * 20)),
         BClass::Power if bb.kind == B_GENERATOR => GENERATOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
+        BClass::Crafter if bb.kind == B_FURNACE => FURNACE_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Crafter => ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind).map(|u| (bdef(u.1).cost, bdef(u.1).tech, u.2 as u32 * 20)),
         _ => None,
     }
@@ -1780,6 +1781,7 @@ fn tick_upgrade(w: &mut World, b: usize) {
     bb.wake = 0;
     match bb.def().class {
         BClass::Extractor => bb.level += 1,
+        BClass::Crafter if bb.kind == B_FURNACE => bb.level += 1,
         BClass::Power => {
             bb.level += 1;
             w.power_dirty = true;
@@ -1989,6 +1991,21 @@ fn tick_crafter(w: &mut World, b: usize) {
     }
 }
 
+/// Niveau d'amélioration d'une fonderie (FURNACE_LEVELS) ; les autres fabricants changent de modèle.
+fn furnace_level(bb: &Building) -> Option<&'static ExtractorLevel> {
+    (bb.kind == B_FURNACE).then(|| &FURNACE_LEVELS[(bb.level as usize).min(FURNACE_LEVELS.len() - 1)])
+}
+
+/// Vitesse d'un fabricant (% de la vitesse de référence des recettes), niveau de la fonderie compris.
+pub fn crafter_speed(bb: &Building) -> u32 {
+    bb.def().speed as u32 * furnace_level(bb).map_or(100, |l| l.speed) / 100
+}
+
+/// Consommation d'un fabricant (kW), niveau de la fonderie compris.
+pub fn crafter_power(bb: &Building) -> i32 {
+    bb.def().power_use * furnace_level(bb).map_or(100, |l| l.power) / 100
+}
+
 fn tick_crafter_work(w: &mut World, b: usize) {
     let r = w.buildings[b].recipe;
     if r == RECIPE_NONE {
@@ -2016,8 +2033,8 @@ fn tick_crafter_work(w: &mut World, b: usize) {
         bb.progress = 0;
         wake_watchers(w, b);
     }
-    let speed = w.buildings[b].def().speed as u32;
-    let use_ = w.buildings[b].def().power_use;
+    let speed = crafter_speed(&w.buildings[b]);
+    let use_ = crafter_power(&w.buildings[b]);
     let s = use_power(w, b, use_);
     let bb = &mut w.buildings[b];
     bb.progress += speed * s as u32;

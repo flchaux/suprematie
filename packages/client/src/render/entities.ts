@@ -688,7 +688,7 @@ export class Entities {
       // tapis en virage : forme calculée par la simulation d'après les tapis voisins (mot auxiliaire)
       const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
       // extracteur, dépôt ou générateur amélioré : modèle de son niveau
-      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power || def.key === "splitter" ? (buf[o + 5] >>> 24) & 3 : 0;
+      const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power || def.key === "splitter" || def.key === "furnace" ? (buf[o + 5] >>> 24) & 3 : 0;
       // tapis droit au sol rejoint par le côté : variante au rebord ouvert (jonction en T continue)
       const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts) : undefined;
       const km = junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
@@ -1592,7 +1592,7 @@ export class Entities {
       const bh = dir & 1 ? def.w : def.h;
       const cx = (buf[o + 2] & 0xffff) + bw / 2;
       const cz = ((buf[o + 2] >>> 16) & 0xffff) + bh / 2;
-      const top = groundHeight(this.map, cx, cz) + this.roofHeight(kind, cls === BClass.Depot ? (buf[o + 5] >>> 24) & 3 : 0) + 0.05;
+      const top = groundHeight(this.map, cx, cz) + this.roofHeight(kind, cls === BClass.Depot || this.data.buildings[kind].key === "furnace" ? (buf[o + 5] >>> 24) & 3 : 0) + 0.05;
       const size = Math.min(1.7, Math.max(0.55, Math.min(bw, bh) * 0.42));
       // icônes côte à côte, superposées d'un tiers, centrées sur le toit
       const step = size * 0.68;

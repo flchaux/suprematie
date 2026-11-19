@@ -380,7 +380,75 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 8, radius: 0.13, height: 0.02, pos: [0.54,2.22,-0.56], color: "amber" },
       { shape: "box", size: [0.07,0.05,0.03], pos: [0.54,1.92,-0.37], color: "amber" },
     ],
+  },  // furnace_n2 : fonderie améliorée (automatisation) : même bloc, échangeurs de chaleur ambrés sur les
+  // flancs, seconde cheminée et soufflerie sur le toit
+  furnace_n2: {
+    parts: [
+      ...socle(2),
+      ...filets(2, 2, false),
+      { shape: "bevel", size: [1.66,1.2,1.56], pos: [0,0.85,-0.06], color: "dark" },
+      { shape: "bevel", size: [0.36,1.04,0.36], pos: [0.7,0.78,0.62], color: "light", mirror: true },
+      { shape: "bevel", size: [0.36,1.04,0.36], pos: [0.7,0.78,-0.66], color: "light", mirror: true },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.7,1.12,0.81], color: "amber", mirror: true },
+      // gueule du four, élargie
+      { shape: "bevel", size: [1.04,0.8,0.12], pos: [0,0.76,0.74], bevel: 0.04, color: "black" },
+      { shape: "box", size: [0.86,0.6,0.06], pos: [0,0.72,0.79], color: "amber" },
+      { shape: "bevel", size: [1.12,0.16,0.22], pos: [0,1.2,0.72], color: "light" },
+      // échangeurs de chaleur sur les flancs : ailettes et liseré ambre
+      { shape: "bevel", size: [0.14,0.7,0.9], pos: [0.86,0.78,-0.06], color: "metal", mirror: true },
+      { shape: "box", size: [0.03,0.5,0.04], pos: [0.94,0.78,0.2], color: "amber", mirror: true },
+      { shape: "box", size: [0.03,0.5,0.04], pos: [0.94,0.78,-0.06], color: "amber", mirror: true },
+      { shape: "box", size: [0.03,0.5,0.04], pos: [0.94,0.78,-0.32], color: "amber", mirror: true },
+      // toit aux couleurs de l'équipe (centre dégagé pour l'icône de la recette)
+      { shape: "bevel", size: [1.5,0.14,1.4], pos: [0,1.52,-0.08], color: "faction" },
+      { shape: "box", size: [1.2,0.03,0.03], pos: [0,1.6,0.6], color: "amber" },
+      // deux cheminées aux coins arrière
+      { shape: "cylinder", sides: 8, radius: 0.22, height: 0.18, pos: [0.54,1.67,-0.56], color: "metal", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.16, height: 0.55, pos: [0.54,2.0,-0.56], color: "dark", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.08, pos: [0.54,2.29,-0.56], color: "metal", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.12, height: 0.02, pos: [0.54,2.34,-0.56], color: "amber", mirror: true },
+      // soufflerie à l'avant gauche du toit
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.12, pos: [-0.5,1.65,0.42], color: "metal" },
+      { shape: "cylinder", sides: 6, radius: 0.15, height: 0.03, pos: [-0.5,1.72,0.42], color: "dark", pivot: "rotor" },
+    ],
   },
+  // furnace_n3 : fonderie à induction (électronique) : bloc rehaussé, creuset ceint de bobines cyan
+  // lumineuses, ailettes de refroidissement et cheminée haute
+  furnace_n3: {
+    parts: [
+      ...socle(2),
+      ...filets(2),
+      { shape: "bevel", size: [1.7,1.36,1.6], pos: [0,0.93,-0.06], color: "dark" },
+      { shape: "bevel", size: [0.36,1.2,0.36], pos: [0.7,0.86,0.62], color: "light", mirror: true },
+      { shape: "bevel", size: [0.36,1.2,0.36], pos: [0.7,0.86,-0.66], color: "light", mirror: true },
+      { shape: "box", size: [0.08,0.05,0.03], pos: [0.7,1.3,0.81], color: "glow", mirror: true },
+      // gueule : plaque vitrée chauffée à blanc, cadre clair
+      { shape: "bevel", size: [1.04,0.86,0.12], pos: [0,0.8,0.76], bevel: 0.04, color: "black" },
+      { shape: "box", size: [0.86,0.66,0.06], pos: [0,0.78,0.81], color: "amber" },
+      { shape: "box", size: [0.86,0.04,0.07], pos: [0,0.5,0.82], color: "glow" },
+      { shape: "bevel", size: [1.12,0.16,0.22], pos: [0,1.3,0.74], color: "light" },
+      // ailettes de refroidissement sur les flancs
+      { shape: "box", size: [0.12,0.9,0.06], pos: [0.88,0.86,0.3], color: "metal", mirror: true },
+      { shape: "box", size: [0.12,0.9,0.06], pos: [0.88,0.86,0.06], color: "metal", mirror: true },
+      { shape: "box", size: [0.12,0.9,0.06], pos: [0.88,0.86,-0.18], color: "metal", mirror: true },
+      { shape: "box", size: [0.12,0.9,0.06], pos: [0.88,0.86,-0.42], color: "metal", mirror: true },
+      // toit d'équipe ; bobines d'induction aux trois coins libres (centre laissé à l'icône de la recette)
+      { shape: "bevel", size: [1.5,0.14,1.4], pos: [0,1.68,-0.08], color: "faction" },
+      ...([[-0.56,0.44],[0.56,0.44],[-0.56,-0.62]] as const).flatMap(([x, z]): Part[] => [
+        { shape: "cylinder", sides: 8, radius: 0.16, height: 0.08, pos: [x,1.79,z], color: "metal" },
+        { shape: "cylinder", sides: 8, radius: 0.11, height: 0.3, pos: [x,1.98,z], color: "glow" },
+        { shape: "cylinder", sides: 8, radius: 0.15, height: 0.04, pos: [x,1.94,z], color: "metal" },
+        { shape: "cylinder", sides: 8, radius: 0.15, height: 0.04, pos: [x,2.06,z], color: "metal" },
+        { shape: "cylinder", sides: 8, radius: 0.13, height: 0.05, pos: [x,2.15,z], color: "dark" },
+      ]),
+      // cheminée haute dans le coin arrière droit
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.2, pos: [0.6,1.84,-0.62], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 0.7, pos: [0.6,2.28,-0.62], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.18, height: 0.06, pos: [0.6,2.64,-0.62], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.02, pos: [0.6,2.68,-0.62], color: "glow" },
+    ],
+  },
+
   // assembler1 : caisson à coins clairs, couvercle ouvert à l'arrière, bras robotisé sur le pilier arrière
   // gauche, tourné en diagonale : le centre du toit reste dégagé pour l'icône de la recette (940 triangles)
   assembler1: {

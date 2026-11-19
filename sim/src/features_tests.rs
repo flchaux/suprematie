@@ -1958,3 +1958,48 @@ fn splitter_outputs_are_configurable() {
     assert_eq!(w.buildings[b].split, 1, "réglé à la pose");
     assert_eq!(w.buildings[b].dir, 0);
 }
+
+/// La fonderie s'améliore sur place (automatisation, puis électronique) : elle garde sa recette et va
+/// d'autant plus vite que son niveau est élevé.
+#[test]
+fn furnace_upgrade_speeds_up_smelting() {
+    use crate::buildings::{accepts, crafter_speed, flow_max, flow_per_min};
+    use crate::orders::O_UPGRADE;
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let f = put(&mut w, 0, B_FURNACE, 100, 100, 0);
+    for it in [STEEL, GEAR, CIRCUIT, ENGINE, PROCESSOR] {
+        w.players[0].stock[it as usize] = 100;
+    }
+    let r = w.building_ref(f) as i32;
+    let base = crafter_speed(&w.buildings[f]);
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert!(w.buildings[f].upgrade > 0, "amélioration lancée");
+    assert_eq!(w.players[0].stock[STEEL as usize], 92, "coût payé");
+    for _ in 0..20 * 20 + 5 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[f].level, 1);
+    assert_eq!(crafter_speed(&w.buildings[f]), base * 160 / 100);
+    // niveau 2 alimenté sans arrêt : il produit plus vite que la fonderie de base
+    w.step(&[3, O_UPGRADE, 0, r]);
+    for _ in 0..30 * 20 + 5 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[f].level, 2);
+    let plain = put(&mut w, 0, B_FURNACE, 110, 100, 0);
+    for _ in 0..1200 {
+        for m in [f, plain] {
+            if accepts(&w, m, IRON_ORE) {
+                insert_item(&mut w, m, IRON_ORE);
+            }
+            w.buildings[m].out = 0;
+        }
+        w.step(&[]);
+    }
+    let (fast, slow) = (flow_per_min(&w.buildings[f], w.tick), flow_per_min(&w.buildings[plain], w.tick));
+    assert!(fast * 100 >= slow * 200, "niveau 3 : {fast} contre {slow}");
+    assert!(flow_max(&w, f) > flow_max(&w, plain));
+    w.step(&[3, O_UPGRADE, 0, r]);
+    assert_eq!(w.buildings[f].upgrade, 0, "pas de niveau 4");
+}

@@ -24,6 +24,8 @@ export interface GameData {
   /** dépôts : réserve de base, capacité par niveau, amélioration (sorties filtrées) */
   depot?: { base: number; cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number };
   extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; /** durée de l'amélioration vers ce niveau (s) */ time?: number }[];
+  /** niveaux de la fonderie (amélioration sur place) : vitesse et énergie en %, coût, recherche, durée (s) */
+  furnaceLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; time: number }[];
   /** améliorations des assembleurs sur place : [type actuel, type visé, durée (s)] ; coût et recherche du type visé */
   /** niveaux du générateur : production (kW), coût, recherche et durée (s) de passage à ce niveau */
   generatorLevels?: { prod: number; cost: [number, number][]; tech: number; time: number }[];

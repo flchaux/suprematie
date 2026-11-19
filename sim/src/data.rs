@@ -146,6 +146,15 @@ pub const EXTRACTOR_LEVELS: [ExtractorLevel; 3] = [
     ExtractorLevel { speed: 230, power: 190, cost: &[(STEEL, 20), (ENGINE, 4), (PROCESSOR, 2)], tech: T_ELECTRONICS, time: 30 },
 ];
 
+/// Niveaux d'une fonderie (amélioration sur place, comme l'extracteur) : vitesse et consommation en %
+/// du modèle de base, coût de passage, recherche et durée. Ils suivent ceux de l'extracteur : une
+/// fonderie améliorée suit le minerai d'un extracteur du même niveau.
+pub const FURNACE_LEVELS: [ExtractorLevel; 3] = [
+    ExtractorLevel { speed: 100, power: 100, cost: &[], tech: 0, time: 0 },
+    ExtractorLevel { speed: 160, power: 140, cost: &[(STEEL, 8), (GEAR, 6), (CIRCUIT, 4)], tech: T_AUTOMATION, time: 20 },
+    ExtractorLevel { speed: 230, power: 190, cost: &[(STEEL, 16), (ENGINE, 3), (PROCESSOR, 2)], tech: T_ELECTRONICS, time: 30 },
+];
+
 /// Niveaux d'un générateur (amélioration sur place) : production (kW), coût de passage à ce niveau,
 /// recherche requise et durée (secondes, sans production pendant ce temps).
 pub struct GeneratorLevel {
@@ -856,14 +865,16 @@ pub fn data_json() -> String {
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();
     let levels: Vec<String> = EXTRACTOR_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech, l.time)).collect();
+    let furn: Vec<String> = FURNACE_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech, l.time)).collect();
     let gens: Vec<String> = GENERATOR_LEVELS.iter().map(|l| format!("{{\"prod\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.prod, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"generatorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
         levels.join(","),
+        furn.join(","),
         gens.join(","),
         asm.join(","),
         STOCK_BASE,

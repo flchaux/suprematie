@@ -46,11 +46,19 @@
       if (!n) return null;
       return { label: `Améliorer au niveau ${l + 2}`, cost: n.cost, tech: n.tech, time: n.time ?? 0, gain: `vitesse ×${(n.speed / 100).toFixed(1)}, énergie ×${(n.power / 100).toFixed(1)}` };
     }
+    if (bdef.key === "furnace" && d.furnaceLevels) {
+      const l = info.level ?? 0;
+      const n = d.furnaceLevels[l + 1];
+      if (!n) return null;
+      return { label: `Améliorer au niveau ${l + 2}`, cost: n.cost, tech: n.tech, time: n.time, gain: `vitesse ×${(n.speed / 100).toFixed(1)}, ${Math.round((bdef.powerUse * n.power) / 100)} kW` };
+    }
     const u = (d.assemblerUpgrades ?? []).find((x) => x[0] === sb?.kind);
     if (!u) return null;
     const to = d.buildings[u[1]];
     return { label: `Améliorer en ${to.name}`, cost: to.cost, tech: to.tech, time: u[2], gain: `vitesse ×${(to.speed / Math.max(1, bdef.speed)).toFixed(2)}, ${to.powerUse} kW` };
   });
+  /** vitesse effective d'un fabricant : niveau de la fonderie compris (comme crafter_speed dans la simulation) */
+  const cspeed = $derived(bdef ? (bdef.speed * (bdef.key === "furnace" ? (d?.furnaceLevels?.[info?.level ?? 0]?.speed ?? 100) : 100)) / 100 : 100);
   const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
   // seulement les recettes débloquées par nos recherches (les autres apparaissent dans l'écran des recettes)
   const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
@@ -100,7 +108,7 @@
     }
     if (!info || !bdef || !d || bdef.cls !== BClass.Crafter || info.recipe === RECIPE_NONE) return null;
     const r = d.recipes[info.recipe];
-    const ticks = (r.time * 100) / Math.max(1, bdef.speed);
+    const ticks = (r.time * 100) / Math.max(1, cspeed);
     const max = (1200 / ticks) * r.output[1];
     return { max, now: info.working ? max * Math.min(1, (info.sat ?? 1024) / 1024) : 0, item: r.output[0] };
   });
@@ -215,6 +223,11 @@
       {#if info.twins}
         <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose s'équilibrent : ce que l'une reçoit sert aussi à l'autre"><span class="kicker">Jumelée</span> ingrédients partagés avec {info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
       {/if}
+      {#if bdef.key === "furnace" && d.furnaceLevels}
+        {@const fl = d.furnaceLevels}
+        {@const lv = info.level ?? 0}
+        <div class="row small"><span class="kicker">Niveau</span> <span class="num">{lv + 1} / {fl.length}</span>{#if fl[lv]}<span class="dim num"> · vitesse ×{(fl[lv].speed / 100).toFixed(1)} · {Math.round((bdef.powerUse * fl[lv].power) / 100)} kW</span>{/if}</div>
+      {/if}
       {#if bdef.cls === BClass.Crafter}
         <div class="rhead">
           <span class="kicker">Recette</span>
@@ -260,7 +273,7 @@
           <div class="flow">
             {#each r.inputs as [it, n], j}<span class="tip slot"><Item id={it} n={info.inv[j]} need={n} size={22} /><span class="tt">{d.items[it].name} : {info.inv[j]} (recette : {n})</span></span>{/each}
             <span class="arrow">▸▸</span>
-            <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">{d.items[r.output[0]].name} ×{r.output[1]} en {(r.time / 20 / (bdef.speed / 100)).toFixed(1)} s</span></span>
+            <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">{d.items[r.output[0]].name} ×{r.output[1]} en {(r.time / 20 / (cspeed / 100)).toFixed(1)} s</span></span>
           </div>
           {@const sp = recipeSpec(r)}
           <div class="detail small">

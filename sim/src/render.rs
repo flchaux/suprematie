@@ -150,7 +150,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             } else {
                 0
             };
-            (bb.recipe as i32 | (bb.out as i32) << 8, pr)
+            // recette (bits 0-7), produits en attente (8-23), niveau d'une fonderie (24-25)
+            (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, pr)
         }
         BClass::Factory => {
             let front = bb.queue.first().map(|q| q.0 as i32 + 1).unwrap_or(0);
