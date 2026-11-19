@@ -503,7 +503,9 @@ pub fn update_belts(w: &mut World) {
             let p = line_powered(w, &w.belts.lines[li].tiles);
             w.belts.lines[li].powered = p;
         }
-        if w.belts.lines[li].items.is_empty() || !w.belts.lines[li].powered {
+        // une file qui transporte du combustible est alimentée par lui : elle tourne même sans courant
+        let l = &w.belts.lines[li];
+        if l.items.is_empty() || (!l.powered && !l.items.iter().any(|&(it, _)| crate::buildings::is_fuel(it))) {
             continue;
         }
         // l'objet de tête est arrivé au bout : tenter de le faire sortir

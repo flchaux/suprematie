@@ -133,9 +133,8 @@ pub fn tick_station(w: &mut World, b: usize) {
     if w.buildings[b].stash.len() < 2 * N {
         w.buildings[b].stash = vec![0; 2 * N];
     }
-    let need = w.buildings[b].def().power_use;
-    let s = crate::buildings::use_power(w, b, need);
-    w.buildings[b].working = s >= 512;
+    // les gares et héliports n'ont pas besoin d'électricité : un train livre toujours, même à une zone en panne
+    w.buildings[b].working = true;
 }
 
 // ---------- ordres ----------

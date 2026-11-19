@@ -1780,3 +1780,67 @@ fn dry_middle_zone_splits_the_network_and_stops_belts() {
     w.nets[n].sat = 0;
     assert!(!crate::belts::line_powered(&w, &tiles), "zone éteinte : arrêtés");
 }
+
+/// Combustible transporté : un générateur alimenté seulement par un tapis venant d'un extracteur
+/// d'hydrocarbure se remplit de nouveau après être tombé à sec (le tapis chargé d'hydrocarbure tourne sans
+/// courant) ; un bras sans courant passe le combustible mais pas le minerai. Alertes : une fois chacune.
+#[test]
+fn fuel_carrying_belts_and_arms_run_without_power_and_alerts_fire_once() {
+    let mut w = world(&[0]);
+    w.infinite_grid = false;
+    flatten(&mut w, 80, 80, 130, 130);
+    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let i = w.map.idx(90 + dx, 100 + dy);
+        w.map.deposit[i] = HYDROCARBON;
+    }
+    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: 90, y: 100 });
+    put(&mut w, 0, B_EXTRACTOR, 90, 100, 0);
+    for x in 92..98 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    let g = put(&mut w, 0, B_GENERATOR, 98, 100, 0);
+    // à sec : la zone s'éteint, mais le tapis d'hydrocarbure continue et remplit le générateur
+    w.buildings[g].fuel = 0;
+    w.power_dirty = true;
+    run(&mut w, 1200);
+    assert!(w.buildings[g].fuel > 5 * FUEL_HYDROCARBON, "réalimenté par son tapis : {}", w.buildings[g].fuel);
+    // bras sans courant : le combustible passe, le minerai non
+    let mut w = world(&[0]);
+    w.infinite_grid = false;
+    flatten(&mut w, 80, 80, 130, 130);
+    let gen = put(&mut w, 0, B_GENERATOR, 100, 100, 0);
+    w.buildings[gen].fuel = 0;
+    let arm = put(&mut w, 0, B_INSERTER, 102, 100, 2);
+    let belt = put(&mut w, 0, B_BELT1, 103, 100, 0);
+    w.power_dirty = true;
+    run(&mut w, 10);
+    crate::belts::put_on_belt(&mut w, belt, IRON_ORE);
+    run(&mut w, 200);
+    assert_eq!(w.buildings[gen].fuel, 0, "le bras sans courant ne prend pas de minerai");
+    let l = w.buildings[belt].line as usize;
+    w.belts.lines[l].items.clear();
+    crate::belts::put_on_belt(&mut w, belt, HYDROCARBON);
+    run(&mut w, 200);
+    // reçu (le générateur, de nouveau alimenté, en brûle déjà un peu pour le bras et le tapis)
+    assert!(w.buildings[gen].fuel > FUEL_HYDROCARBON / 2, "mais il passe l'hydrocarbure au générateur : {}", w.buildings[gen].fuel);
+    let _ = arm;
+    // alertes : moins d'une minute, puis à sec, une seule fois chacune
+    let mut w = world(&[0]);
+    w.infinite_grid = false;
+    flatten(&mut w, 80, 80, 130, 130);
+    let g = put(&mut w, 0, B_GENERATOR, 100, 100, 0);
+    let lab = put(&mut w, 0, B_LAB, 100, 103, 0);
+    w.buildings[g].fuel = 2 * FUEL_HYDROCARBON;
+    crate::buildings::rebuild_power(&mut w);
+    let (mut low, mut dry) = (0, 0);
+    for _ in 0..1200 {
+        crate::buildings::use_power(&mut w, lab, 300);
+        w.events.clear();
+        crate::buildings::power_tick(&mut w);
+        for e in w.events.chunks(5) {
+            low += (e[0] == EV_FUEL_LOW) as i32;
+            dry += (e[0] == EV_FUEL_DRY) as i32;
+        }
+    }
+    assert_eq!((low, dry), (1, 1), "une alerte « moins d'une minute », puis une « à sec »");
+}
