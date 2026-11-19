@@ -285,6 +285,8 @@ pub struct Building {
     pub lot: u16,
     /// générateur : combustible en réserve, en kW × ticks (voir FUEL_HYDROCARBON)
     pub fuel: i32,
+    /// générateur : alerte déjà donnée (0 aucune, 1 moins d'une minute, 2 à sec)
+    pub fuel_alert: u8,
     /// bras : compteur de tour de rôle (ordonnancement à pas pondérés)
     pub pass: u64,
     /// source servie par plusieurs bras : temps virtuel du dernier service
@@ -306,7 +308,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert
 });
 
 impl Building {
@@ -434,6 +436,10 @@ pub const EV_GIFT: i32 = 18;
 pub const EV_ATTACKED: i32 = 19;
 /// Usine à l'arrêt faute de composants depuis 10 s : joueur, x, y (centre), premier composant manquant.
 pub const EV_FACTORY_STARVED: i32 = 20;
+/// générateur : moins d'une minute de combustible à la charge actuelle [joueur, x, y, type]
+pub const EV_FUEL_LOW: i32 = 41;
+/// générateur à sec : sa zone s'éteint [joueur, x, y, type]
+pub const EV_FUEL_DRY: i32 = 42;
 
 /// Débit des bâtiments : une minute découpée en tranches de 10 s.
 pub const FLOW_SLICE: u32 = 200;

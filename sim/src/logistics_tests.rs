@@ -188,3 +188,28 @@ fn train_trip_size_is_configurable() {
     w.step(&[4, O_SET_LOT, 0, rb, 50]);
     assert_eq!(w.buildings[b].lot, 0, "la gare de l'allié n'est pas à nous");
 }
+
+/// Gares sans électricité : une gare dans une zone sous-alimentée (ou éteinte) reçoit quand même le train
+/// et le décharge (on peut toujours livrer du combustible à une zone en panne).
+#[test]
+fn stations_work_in_an_underpowered_zone() {
+    let mut w = allies();
+    w.infinite_grid = false;
+    flatten(&mut w, 25, 90, 120, 120);
+    let a = station(&mut w, 0, B_STATION, 30, 100);
+    let b = station(&mut w, 0, B_STATION, 101, 100);
+    for x in 32..101 {
+        put(&mut w, 0, B_RAIL, x, 101);
+    }
+    // gros consommateur dans la zone de la gare B : 3 000 kW pour 400 produits
+    put(&mut w, 0, B_ORBITAL, 104, 92);
+    run(&mut w, 40);
+    w.buildings[a].stash[HYDROCARBON as usize] = 100;
+    w.players[0].stock[GEAR as usize] = 100;
+    w.players[0].stock[IRON_PLATE as usize] = 100;
+    w.players[0].stock[STEEL as usize] = 100;
+    let rb = w.building_ref(b);
+    crate::logistics::link(&mut w, 0, a, rb);
+    run(&mut w, 3000);
+    assert_eq!(w.buildings[b].stash[N + HYDROCARBON as usize], 100, "déchargé malgré la zone sous-alimentée");
+}

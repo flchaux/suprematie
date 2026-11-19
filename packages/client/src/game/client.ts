@@ -74,6 +74,7 @@ export class GameClient {
   running = false;
   alertPos: { x: number; z: number } | null = null;
   lastStarveAlert = -1e9;
+  lastFuelAlert = 0;
   pingTimer = 0;
   lastGroupKey = { k: -1, t: 0 };
   autoSelect = false;
@@ -505,6 +506,19 @@ export class GameClient {
           break;
         case EV.ATTACKED:
           if (a === ui.me) this.onAttacked(c / TILE, d / TILE, e === 1);
+          break;
+        case EV.FUEL_LOW:
+        case EV.FUEL_DRY:
+          // générateur : moins d'une minute de combustible, puis à sec (au plus une annonce toutes les 15 s)
+          if (a === ui.me && performance.now() - this.lastFuelAlert > 15000) {
+            this.lastFuelAlert = performance.now();
+            const name = this.data!.buildings[e]?.name ?? "Générateur";
+            if (type === EV.FUEL_DRY) {
+              say("energie");
+              pushMessage(`${name} à sec : sa zone électrique est éteinte (collez-lui un extracteur d'hydrocarbure ou un dépôt, ou amenez du combustible)`, "alert");
+            } else pushMessage(`${name} : moins d'une minute de combustible`, "alert");
+            this.alertPos = { x: c / TILE, z: d / TILE };
+          }
           break;
         case EV.FACTORY_STARVED:
           // usine à l'arrêt faute de composants (au plus une annonce toutes les 30 s)

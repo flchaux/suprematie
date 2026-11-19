@@ -479,6 +479,24 @@ pub fn fuel_energy(kind: u16, item: u8) -> i32 {
     }
 }
 
+/// Objet combustible (hydrocarbure, carburant, cellule d'énergie) : le tapis ou le bras qui le
+/// transporte est alimenté par lui et ne s'arrête pas, même hors zone électrique.
+#[inline]
+pub fn is_fuel(item: u8) -> bool {
+    matches!(item, HYDROCARBON | FUEL | ENERGY_CELL)
+}
+
+/// Le générateur reçoit du combustible : son alerte est levée quand il est de nouveau bien rempli
+/// (et ne sera pas redonnée tant qu'il ne retombe pas à sec).
+fn refueled(bb: &mut Building) {
+    if bb.fuel_alert == 2 {
+        bb.fuel_alert = 1;
+    }
+    if bb.fuel >= fuel_tank(bb.kind) / 2 {
+        bb.fuel_alert = 0;
+    }
+}
+
 /// Réservoir d'un générateur (kW × ticks).
 pub fn fuel_tank(kind: u16) -> i32 {
     FUEL_TANK_UNITS * if kind == B_CRYSTAL_REACTOR { FUEL_CELL / 4 } else { FUEL_HYDROCARBON }
@@ -506,6 +524,7 @@ fn tick_generator(w: &mut World, b: usize) {
                 w.power_dirty = true;
             }
             w.buildings[b].fuel += e;
+            refueled(&mut w.buildings[b]);
             break;
         }
     }
@@ -670,9 +689,19 @@ pub fn power_tick(w: &mut World) {
                 if bb.alive && bb.fuel > 0 {
                     let burn = (power_prod_of(bb) as i64 * used / cap).max(1) as i32;
                     bb.fuel = (bb.fuel - burn).max(0);
+                    let (owner, kind) = (bb.owner as i32, bb.kind as i32);
+                    let (cx, cy) = bb.center();
                     if bb.fuel == 0 {
                         // à sec : sa zone disparaît
                         w.power_dirty = true;
+                        if bb.fuel_alert < 2 {
+                            bb.fuel_alert = 2;
+                            w.ev(EV_FUEL_DRY, owner, cx, cy, kind);
+                        }
+                    } else if bb.fuel_alert == 0 && (bb.fuel as i64) < burn as i64 * 1200 {
+                        // moins d'une minute à cette charge
+                        bb.fuel_alert = 1;
+                        w.ev(EV_FUEL_LOW, owner, cx, cy, kind);
                     }
                 }
             }
@@ -937,7 +966,8 @@ fn arm_powered(w: &World, c: usize) -> bool {
 fn outlet_ready(w: &World, sb: usize, c: usize, it: u8) -> bool {
     match w.buildings[c].def().class {
         BClass::Belt => belts::belt_has_room(w, c),
-        BClass::Inserter => arm_powered(w, c) && taker_ready(w, c, it),
+        // un bras sans courant prend quand même son tour pour du combustible
+        BClass::Inserter => (arm_powered(w, c) || is_fuel(it)) && taker_ready(w, c, it),
         _ => direct_ok(w, sb, c, it),
     }
 }
@@ -1270,6 +1300,7 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
             let bb = &mut w.buildings[b];
             let was_dry = bb.fuel <= 0;
             bb.fuel += fuel_energy(bb.kind, item);
+            refueled(bb);
             if was_dry && bb.fuel > 0 {
                 // de nouveau alimenté : sa zone revient
                 w.power_dirty = true;
@@ -2100,9 +2131,14 @@ fn tick_inserter(w: &mut World, b: usize) {
         return;
     }
     let s = use_power(w, b, w.buildings[b].def().power_use);
-    if s < ARM_MIN_SAT {
-        w.buildings[b].wake = w.tick + 10;
-        return;
+    // sans courant, le bras ne manipule que du combustible (le combustible qu'il porte l'alimente)
+    let fuel_only = s < ARM_MIN_SAT;
+    if fuel_only {
+        let bb = &w.buildings[b];
+        if matches!(bb.phase, 1 | 2) && !is_fuel(bb.hand) {
+            w.buildings[b].wake = w.tick + 10;
+            return;
+        }
     }
     let to = w.map.occ[w.map.idx(tx, ty)];
     let so = w.map.occ[w.map.idx(sx, sy)];
@@ -2121,8 +2157,13 @@ fn tick_inserter(w: &mut World, b: usize) {
             let tclass = w.buildings[t].def().class;
             let mut any = false;
             for (it, slot) in want.iter_mut().enumerate().skip(1) {
-                *slot = tclass == BClass::Belt || accepts(w, t, it as u8);
+                *slot = (tclass == BClass::Belt || accepts(w, t, it as u8)) && (!fuel_only || is_fuel(it as u8));
                 any |= *slot;
+            }
+            if !any && fuel_only {
+                // sans courant et rien à brûler à prendre : on réessaie bientôt (le courant peut revenir)
+                w.buildings[b].wake = w.tick + 10;
+                return;
             }
             if !any {
                 watch(w, t, b);

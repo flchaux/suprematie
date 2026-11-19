@@ -557,8 +557,8 @@ pub const BUILDINGS: [BuildingDef; 47] = [
     // logistique et entraide (voir logistics.rs)
     BuildingDef { key: "warehouse", name: "Entrepôt d'équipe", size: (2, 2), hp: 1500, cost: &[(IRON_PLATE, 30), (COPPER_PLATE, 10)], build: 6, class: BClass::Warehouse, ..BD },
     BuildingDef { key: "rail", name: "Rail", size: (1, 1), hp: 150, cost: &[(IRON_PLATE, 3)], build: 1, tech: 1, class: BClass::Rail, passable: true, ..BD },
-    BuildingDef { key: "station", name: "Gare", size: (2, 2), hp: 2500, power_use: 100, cost: &[(IRON_PLATE, 40), (GEAR, 10), (CIRCUIT, 5)], build: 10, tech: 1, class: BClass::Station, ..BD },
-    BuildingDef { key: "cargo_pad", name: "Héliport de fret", size: (2, 2), hp: 1500, power_use: 150, cost: &[(STEEL, 15), (CIRCUIT, 10)], build: 10, tech: 4, class: BClass::CargoPad, ..BD },
+    BuildingDef { key: "station", name: "Gare", size: (2, 2), hp: 2500, cost: &[(IRON_PLATE, 40), (GEAR, 10), (CIRCUIT, 5)], build: 10, tech: 1, class: BClass::Station, ..BD },
+    BuildingDef { key: "cargo_pad", name: "Héliport de fret", size: (2, 2), hp: 1500, cost: &[(STEEL, 15), (CIRCUIT, 10)], build: 10, tech: 4, class: BClass::CargoPad, ..BD },
     // tapis de contrôle (entrée par l'arrière ; sorties : avant, gauche, droite)
     BuildingDef { key: "splitter", name: "Répartiteur", size: (1, 1), hp: 120, cost: &[(IRON_PLATE, 6), (GEAR, 4), (CIRCUIT, 2)], build: 2, tech: 1, class: BClass::Router, passable: true, ..BD },
     BuildingDef { key: "sorter", name: "Trieur", size: (1, 1), hp: 120, cost: &[(IRON_PLATE, 6), (GEAR, 4), (CIRCUIT, 4)], build: 2, tech: 8, class: BClass::Router, passable: true, ..BD },
