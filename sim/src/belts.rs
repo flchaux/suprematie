@@ -27,12 +27,13 @@ pub struct Line {
 }
 crate::ser_struct!(Line { alive, tiles, items, speed, moving, out_pos, out_floor, powered });
 
-/// Une file de tapis tourne-t-elle ? Il faut que chacune de ses cases soit dans une zone électrique
-/// alimentée à au moins 50 %.
+/// Une file de tapis tourne-t-elle ? Il faut que chacune de ses cases soit dans une zone électrique qui
+/// produit quelque chose : une zone sous-alimentée ne coupe pas les tapis, seule une zone éteinte (plus
+/// aucun générateur avec du combustible) ou l'absence de zone les arrête.
 pub fn line_powered(w: &World, tiles: &[u32]) -> bool {
     tiles.iter().all(|&t| {
         let n = w.buildings[t as usize].net as usize;
-        n != 0 && w.nets.get(n).is_some_and(|x| x.sat >= 512)
+        n != 0 && w.nets.get(n).is_some_and(|x| x.sat > 0)
     })
 }
 
