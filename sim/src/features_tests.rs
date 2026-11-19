@@ -14,6 +14,8 @@ fn world(teams: &[i32]) -> World {
     for pl in w.players.iter_mut() {
         pl.researched = u64::MAX;
     }
+    // les tests qui ne portent pas sur l'électricité n'ont pas à poser de zones (voir infinite_grid)
+    w.infinite_grid = true;
     w
 }
 
@@ -584,6 +586,8 @@ fn extractor_upgrade_speeds_up_extraction() {
 #[test]
 fn unpowered_arm_does_not_starve_the_output_belt() {
     let mut w = world(&[0]);
+    // électricité réelle : seules les zones des générateurs alimentent
+    w.infinite_grid = false;
     flatten(&mut w, 85, 85, 125, 125);
     // générateur en (100, 100) : alimente jusqu'à x = 109 ; la fonderie (109-110) est couverte
     put(&mut w, 0, B_GENERATOR, 100, 100, 0);
@@ -1591,6 +1595,8 @@ fn bombs_dropped_over_a_shield_hit_the_shield() {
 #[test]
 fn generators_burn_fuel_according_to_load() {
     let mut w = world(&[0]);
+    // électricité réelle : seules les zones des générateurs alimentent
+    w.infinite_grid = false;
     flatten(&mut w, 80, 80, 150, 130);
     // deux zones séparées, chacune un générateur ; 1 laboratoire dans la première, 4 dans la seconde
     let g1 = put(&mut w, 0, B_GENERATOR, 90, 100, 0);
@@ -1623,6 +1629,11 @@ fn generators_burn_fuel_according_to_load() {
     crate::buildings::insert_item(&mut w, g1, HYDROCARBON);
     crate::buildings::insert_item(&mut w, g2, HYDROCARBON);
     assert_eq!(w.buildings[g1].fuel, FUEL_HYDROCARBON);
+    // de nouveau alimentés : leurs zones reviennent
+    assert!(w.power_dirty);
+    crate::buildings::rebuild_power(&mut w);
+    let n1 = w.buildings[labs1[0]].net as usize;
+    assert_ne!(n1, 0);
     for _ in 0..100 {
         draw(&mut w);
     }
@@ -1654,6 +1665,8 @@ fn generators_burn_fuel_according_to_load() {
 #[test]
 fn hydrocarbon_extractor_needs_no_power_and_zones_merge() {
     let mut w = world(&[0]);
+    // électricité réelle : seules les zones des générateurs alimentent
+    w.infinite_grid = false;
     flatten(&mut w, 80, 80, 150, 130);
     for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
         let i = w.map.idx(96 + dx, 100 + dy);
@@ -1675,7 +1688,11 @@ fn hydrocarbon_extractor_needs_no_power_and_zones_merge() {
     put(&mut w, 0, B_PYLON, 132, 101, 0);
     let lab = put(&mut w, 0, B_LAB, 140, 103, 0);
     crate::buildings::rebuild_power(&mut w);
-    assert_eq!(w.buildings[lab].net, w.buildings[g].net, "une seule zone");
+    // le générateur lointain est à sec : sa zone n'existe pas, le laboratoire n'est dans aucune zone
+    assert_eq!(w.buildings[lab].net, 0, "zone d'un générateur à sec : rien");
+    crate::buildings::insert_item(&mut w, far, HYDROCARBON);
+    crate::buildings::rebuild_power(&mut w);
+    assert_eq!(w.buildings[lab].net, w.buildings[g].net, "rempli : une seule zone, reliée par les relais");
     let n = w.buildings[lab].net as usize;
     assert_eq!(w.nets[n].gens.len(), 2);
     crate::buildings::use_power(&mut w, lab, 60);
@@ -1709,4 +1726,51 @@ fn main_generator_is_placed_at_start_with_fuel() {
     w.players[0].researched = u64::MAX;
     let (sx, sy) = w.map.starts[0];
     assert!(crate::buildings::place_building(&mut w, 0, B_HYDRO, sx + 8, sy + 8, 0).is_some() || crate::buildings::place_building(&mut w, 0, B_HYDRO, sx - 10, sy + 8, 0).is_some());
+}
+
+/// Trois zones en ligne : celle du milieu à sec, les deux du bout ne sont plus reliées (chacune vit de
+/// son propre combustible) ; les tapis hors zone ou dans une zone éteinte s'arrêtent.
+#[test]
+fn dry_middle_zone_splits_the_network_and_stops_belts() {
+    let mut w = world(&[0]);
+    w.infinite_grid = false;
+    flatten(&mut w, 80, 80, 150, 130);
+    // générateurs à 16 cases d'écart (liaison : 20) ; A et C sont à 32 cases (non reliés directement)
+    let a = put(&mut w, 0, B_GENERATOR, 100, 100, 0);
+    let b = put(&mut w, 0, B_GENERATOR, 116, 100, 0);
+    let c = put(&mut w, 0, B_GENERATOR, 132, 100, 0);
+    let la = put(&mut w, 0, B_LAB, 100, 103, 0);
+    let lc = put(&mut w, 0, B_LAB, 132, 103, 0);
+    for g in [a, b, c] {
+        w.buildings[g].fuel = 10 * FUEL_HYDROCARBON;
+    }
+    crate::buildings::rebuild_power(&mut w);
+    assert_ne!(w.buildings[la].net, 0);
+    assert_eq!(w.buildings[la].net, w.buildings[lc].net, "trois zones alimentées : un seul réseau");
+    w.buildings[b].fuel = 0;
+    crate::buildings::rebuild_power(&mut w);
+    let (na, nc) = (w.buildings[la].net, w.buildings[lc].net);
+    assert!(na != 0 && nc != 0 && na != nc, "milieu à sec : deux réseaux isolés ({} et {})", na, nc);
+    assert_eq!(w.nets[na as usize].gens, vec![a as u32]);
+    assert_eq!(w.nets[nc as usize].gens, vec![c as u32]);
+    // tapis : une file dans la zone de A tourne ; une file qui sort de toute zone s'arrête entièrement
+    let first = put(&mut w, 0, B_BELT1, 96, 106, 0);
+    for x in 97..100 {
+        put(&mut w, 0, B_BELT1, x, 106, 0);
+    }
+    let long = put(&mut w, 0, B_BELT1, 96, 115, 0);
+    for x in 97..125 {
+        put(&mut w, 0, B_BELT1, x, 115, 0);
+    }
+    run(&mut w, 30);
+    let line = |w: &World, b: usize| w.belts.lines[w.buildings[b].line as usize].powered;
+    assert!(line(&w, first), "file dans la zone de A : alimentée");
+    assert!(!line(&w, long), "file qui traverse une zone éteinte et le vide : arrêtée");
+    crate::belts::put_on_belt(&mut w, long, IRON_ORE);
+    let before = w.belts.lines[w.buildings[long].line as usize].items[0].1;
+    run(&mut w, 40);
+    assert_eq!(w.belts.lines[w.buildings[long].line as usize].items[0].1, before, "les objets ne bougent pas");
+    // les tapis consomment : 1 kW par case de tapis de base
+    let n = w.buildings[first].net as usize;
+    assert!(w.nets[n].demand >= 4, "les tapis consomment ({} kW)", w.nets[n].demand);
 }

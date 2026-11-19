@@ -57,6 +57,7 @@ fn set_recipe(w: &mut World, b: usize, key: &str) {
 #[test]
 fn production_chain_reaches_tier3_packs() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 95, 105, 180, 130);
     let y = 120;
@@ -146,6 +147,7 @@ fn production_chain_reaches_tier3_packs() {
 #[test]
 fn research_with_labs() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     flatten(&mut w, 95, 105, 140, 130);
     let lab = put(&mut w, B_LAB, 110, 115, 0);
     for x in [100, 103] {
@@ -166,6 +168,7 @@ fn research_with_labs() {
 fn battle_world(n: usize) -> World {
     // pas de modification de la carte ici : restore() la régénère à partir de la graine
     let mut w = World::new(&params(2, 512));
+    w.infinite_grid = true;
     let kinds = [U_LINE_ROBOT, 6, 10, 7];
     for i in 0..n {
         for p in 0..2u8 {
@@ -209,6 +212,7 @@ fn battle_1000_vs_1000_deterministic() {
 #[test]
 fn commander_builds_with_stock() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     let c = w.players[0].commander;
     let s = slot_of(c);
     let (sx, sy) = (w.units.x[s] / TILE, w.units.y[s] / TILE);
@@ -246,6 +250,7 @@ fn debug_battle_positions() {
 #[test]
 fn flow_field_goes_around_wall() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 60, 60, 200, 200);
     w.nav = crate::flow::Nav::new(&w.map);
@@ -283,6 +288,7 @@ fn flow_goal_on_building_goes_around_wall() {
     // but posé au centre d'un bâtiment (case infranchissable) : le chemin doit quand même
     // contourner le mur au lieu d'aller tout droit s'y bloquer
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 60, 60, 200, 200);
     w.nav = crate::flow::Nav::new(&w.map);
@@ -313,6 +319,7 @@ fn long_detour_keeps_the_order() {
     // mur de 360 cases : pour rejoindre un point à 60 cases, l'unité doit s'éloigner du but pendant
     // bien plus de 1200 ticks ; elle ne doit pas abandonner son ordre en route
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 60, 0, 200, 440);
     w.nav = crate::flow::Nav::new(&w.map);
@@ -341,6 +348,7 @@ fn long_detour_keeps_the_order() {
 #[test]
 fn arms_share_output_of_same_source() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     spot(&mut w, IRON_ORE, 100, 100);
@@ -393,6 +401,7 @@ fn arms_share_output_of_same_source() {
 #[test]
 fn belts_feed_and_drain_buildings_without_arms() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     spot(&mut w, IRON_ORE, 94, 100);
@@ -418,6 +427,7 @@ fn belts_feed_and_drain_buildings_without_arms() {
 /// Fonderie approvisionnée en minerai (elle produit à son rythme), ses tapis de sortie en cul-de-sac.
 fn outlet_world() -> (World, usize) {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     let f = put(&mut w, B_FURNACE, 100, 100, 0);
@@ -486,6 +496,7 @@ fn output_arm_and_belt_alternate() {
 #[test]
 fn long_arm_reaches_over_a_belt() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     spot(&mut w, IRON_ORE, 100, 100);
@@ -511,6 +522,7 @@ fn long_arm_reaches_over_a_belt() {
 #[test]
 fn commander_collects_items_from_belt() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     spot(&mut w, IRON_ORE, 94, 100);
@@ -611,6 +623,7 @@ fn recipes_follow_the_tech_tree() {
 #[test]
 fn locked_recipe_is_refused() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = 1 | (1 << T_AUTOMATION);
     flatten(&mut w, 85, 85, 125, 125);
     let a = put(&mut w, B_ASSEMBLER1, 100, 100, 0);
@@ -627,6 +640,7 @@ fn locked_recipe_is_refused() {
 #[test]
 fn direct_transfer_between_touching_buildings() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     spot(&mut w, IRON_ORE, 100, 100);
@@ -652,6 +666,7 @@ fn direct_transfer_between_touching_buildings() {
 #[test]
 fn direct_transfer_needs_matching_recipe() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     put(&mut w, B_GENERATOR, 100, 96, 0);
@@ -678,6 +693,7 @@ fn direct_transfer_needs_matching_recipe() {
 #[test]
 fn rotate_order_turns_a_built_belt() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     flatten(&mut w, 85, 85, 125, 125);
     // tapis vers l'est de 100 à 104, sans rien au bout ; tourné vers le sud, le dernier livre en
@@ -712,6 +728,7 @@ fn rotate_order_turns_a_built_belt() {
 #[test]
 fn cancel_plan_removes_planned_builds_and_ghosts() {
     let mut w = World::new(&params(1, 512));
+    w.infinite_grid = true;
     w.players[0].researched = u64::MAX;
     let cmd = w.players[0].commander as i32;
     // deux dépôts loin du commandant (chantiers pas encore posés)

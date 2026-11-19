@@ -204,7 +204,8 @@ export class GameScene {
     this.decor = new Decorations(map, data);
     this.decor.enabled = this.gfx.decor !== false;
     this.scene.add(this.decor.mesh);
-    this.power = new PowerCoverage(map.w, map.h);
+    if (this.power) this.power.dispose();
+    this.power = new PowerCoverage(map.w, map.h, this.scene);
     if (this.overlay) this.scene.remove(this.overlay.group);
     this.overlay = new CommandOverlay(data, map);
     this.scene.add(this.overlay.group);

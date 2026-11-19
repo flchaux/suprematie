@@ -461,6 +461,44 @@ pub fn info_building(w: &World, r: u32) -> String {
     )
 }
 
+/// Zones électriques des joueurs de l'équipe de `player` (vue électrique, mini-carte, pose) :
+/// `nets` : [id, joueur, production, demande, puissance installée, satisfaction, combustible total,
+/// autonomie en s (-1 : rien ne brûle)] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
+/// réseau (0 : aucun), genre (0 relais, 1 générateur), combustible en millièmes du réservoir (-1 : relais),
+/// joueur, référence, type de bâtiment]. Un générateur à sec garde sa portée mais n'a pas de réseau.
+pub fn power_zones(w: &World, player: i32) -> String {
+    let team = if player >= 0 && (player as usize) < w.players.len() { Some(w.players[player as usize].team) } else { None };
+    let mine = |o: u8| team.is_none_or(|t| w.team_of(o) == t);
+    let mut nets = Vec::new();
+    for (i, n) in w.nets.iter().enumerate().skip(1) {
+        if n.unlimited || !mine(n.owner) {
+            continue;
+        }
+        let fuel: i64 = n.gens.iter().map(|&g| w.buildings[g as usize].fuel.max(0) as i64).sum();
+        let burn = n.demand.min(n.prod) as i64;
+        let autonomy = if burn > 0 { fuel / burn / 20 } else { -1 };
+        nets.push(format!("[{},{},{},{},{},{},{},{}]", i, n.owner, n.prod, n.demand, n.cap, n.sat, fuel, autonomy));
+    }
+    let mut poles = Vec::new();
+    for (b, bb) in w.buildings.iter().enumerate() {
+        if !bb.alive || !bb.complete() || !mine(bb.owner) {
+            continue;
+        }
+        let def = bb.def();
+        if def.supply == 0 {
+            continue;
+        }
+        let (bw, bh) = bb.size();
+        let gen = def.class == BClass::Power;
+        let fuel = if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::fuel_tank(bb.kind).max(1) as i64) as i32 } else { -1 };
+        // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
+        let net = if gen && bb.fuel <= 0 { 0 } else { bb.net };
+        let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };
+        poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, def.supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind));
+    }
+    format!("{{\"nets\":[{}],\"poles\":[{}]}}", nets.join(","), poles.join(","))
+}
+
 pub fn info_unit(w: &World, id: u32) -> String {
     let Some(s) = w.unit(id) else { return "null".into() };
     let c = &w.units.cold[s];

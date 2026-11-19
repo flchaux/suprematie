@@ -403,8 +403,12 @@ pub struct Net {
     pub gens: Vec<u32>,
     /// puissance installée (tous générateurs terminés, avec ou sans combustible)
     pub cap: i32,
+    /// réseau illimité de World::infinite_grid (tests et démos)
+    pub unlimited: bool,
+    /// consommation permanente des tapis de la zone (kW)
+    pub belt_demand: i32,
 }
-crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap });
+crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap, unlimited, belt_demand });
 
 // Événements pour le rendu (non hachés, non sérialisés)
 pub const EV_BEAM: i32 = 2;
@@ -453,6 +457,9 @@ pub struct World {
     pub wfree: Vec<u32>,
     pub nets: Vec<Net>,
     pub power_dirty: bool,
+    /// réseau partout (tests et démos seulement, jamais dans une vraie partie) : un bâtiment hors de toute
+    /// zone est quand même alimenté, sans limite
+    pub infinite_grid: bool,
     pub nav: Nav,
     pub winner: i32,
     // ---- dérivé (reconstruit) ----
@@ -542,6 +549,7 @@ impl World {
             wfree: Vec::new(),
             nets: vec![Net::default()],
             power_dirty: true,
+            infinite_grid: false,
             nav,
             winner: -1,
             vis: vec![vec![0u8; (vis_w * vis_w) as usize]; n_teams as usize],

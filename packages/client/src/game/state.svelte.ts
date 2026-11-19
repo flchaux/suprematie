@@ -72,6 +72,10 @@ export const ui = $state({
   buildFloor: 0,
   /** vue logistique affichée (touche maintenue) */
   logisticsView: false,
+  /** vue électrique (touche maintenue) */
+  powerView: false,
+  /** réseaux électriques de l'équipe (légende de la vue électrique) */
+  powerNets: [] as { id: number; color: number; prod: number; demand: number; cap: number; sat: number; autonomy: number; dead: boolean }[],
   chatOpen: false,
   volume: 0.5,
   music: 0.35,

@@ -904,6 +904,16 @@ export class SkirmishAI implements Bot {
     };
   }
 
+  /**
+   * Tapis principal d'un module et ses relais : une file de tapis s'arrête si une de ses cases est hors
+   * zone électrique (un générateur posé pour un module lointain compte dans sa production).
+   */
+  busProject(m: Module, remote: boolean): Project {
+    const places = this.planner.busPlaces(m);
+    for (const pl of places) m.prod += this.ctx.data.buildings[pl.kind].powerProd;
+    return this.newProject("bus", places, { module: m, remote });
+  }
+
   startProject(u: BotUnit): Project | null {
     const list = this.engBuilders(u);
     list.sort((a, b) => b.prio - a.prio);
@@ -979,7 +989,7 @@ export class SkirmishAI implements Bot {
     const busDone = (m: Module) => (m as Module & { busDone?: boolean }).busDone === true;
     for (const m of mods) {
       if (!busDone(m)) {
-        L.push({ name: "bus" + m.id, prio: 1000 - m.id, remote: m.id > 0, est: [m.L + 8], make: () => this.newProject("bus", m.bus.slice(), { module: m, remote: m.id > 0 }) });
+        L.push({ name: "bus" + m.id, prio: 1000 - m.id, remote: m.id > 0, est: [m.L + 8], make: () => this.busProject(m, m.id > 0) });
         continue;
       }
       // énergie
@@ -1495,7 +1505,7 @@ export class SkirmishAI implements Bot {
       this.produces.set(m, new Set());
       if (plan === ARMY_PLAN) this.factoryLost = false;
       this.log("module", m.id, m.role, "en", m.cx, m.cy);
-      return this.newProject("bus", m.bus.slice(), { module: m, remote: true });
+      return this.busProject(m, true);
     }
     return null;
   }

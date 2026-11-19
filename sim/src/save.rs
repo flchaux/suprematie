@@ -27,6 +27,7 @@ pub fn snapshot(w: &World) -> Vec<u8> {
     w.wfree.ser(&mut o);
     w.nets.ser(&mut o);
     w.power_dirty.ser(&mut o);
+    w.infinite_grid.ser(&mut o);
     w.winner.ser(&mut o);
     w.vis.ser(&mut o);
     w.team_stock.ser(&mut o);
@@ -55,6 +56,7 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
     w.wfree = Ser::de(&mut r);
     w.nets = Ser::de(&mut r);
     w.power_dirty = Ser::de(&mut r);
+    w.infinite_grid = Ser::de(&mut r);
     w.winner = Ser::de(&mut r);
     w.vis = Ser::de(&mut r);
     w.team_stock = Ser::de(&mut r);
