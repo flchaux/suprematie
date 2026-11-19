@@ -176,6 +176,13 @@ pub extern "C" fn info_building(r: u32) -> *const u8 {
     set_out_bytes(s.into_bytes())
 }
 
+/// Zones électriques de l'équipe d'un joueur (JSON, voir render::power_zones).
+#[no_mangle]
+pub extern "C" fn power_zones(player: i32) -> *const u8 {
+    let s = with_world(|w| render::power_zones(w, player), "null".into());
+    set_out_bytes(s.into_bytes())
+}
+
 #[no_mangle]
 pub extern "C" fn info_unit(id: u32) -> *const u8 {
     let s = with_world(|w| render::info_unit(w, id), "null".into());

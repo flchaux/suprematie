@@ -520,9 +520,9 @@ pub const B_MAIN_GENERATOR: u16 = 46;
 
 pub const BUILDINGS: [BuildingDef; 47] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
-    BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
-    BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
-    BuildingDef { key: "belt3", name: "Tapis express", hp: 100, cost: &[(STEEL, 1), (GEAR, 1)], build: 1, tech: T_LOGISTICS3, class: BClass::Belt, speed: 72, passable: true, vision: 0, ..BD },
+    BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
+    BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
+    BuildingDef { key: "belt3", name: "Tapis express", hp: 100, cost: &[(STEEL, 1), (GEAR, 1)], build: 1, tech: T_LOGISTICS3, power_use: 3, class: BClass::Belt, speed: 72, passable: true, vision: 0, ..BD },
     BuildingDef { key: "inserter", name: "Bras", hp: 80, power_use: 15, cost: &[(IRON_PLATE, 2), (COPPER_PLATE, 1)], build: 1, class: BClass::Inserter, passable: true, vision: 0, ..BD },
     BuildingDef { key: "furnace", name: "Fonderie", size: (2, 2), hp: 350, power_use: 90, cost: &[(IRON_PLATE, 8), (COPPER_PLATE, 2)], build: 3, class: BClass::Crafter, crafter: Crafter::Furnace, ..BD },
     BuildingDef { key: "assembler1", name: "Assembleur", size: (2, 2), hp: 400, power_use: 75, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 6)], build: 4, class: BClass::Crafter, speed: 75, ..BD },
@@ -567,7 +567,7 @@ pub const BUILDINGS: [BuildingDef; 47] = [
     BuildingDef { key: "roboport", name: "Base de robots logistiques", size: (2, 2), hp: 3000, power_use: 800, cost: &[(STEEL, 40), (PROCESSOR, 10), (COMPOSITE, 10)], build: 20, tech: 31, class: BClass::Roboport, ..BD },    // bras long : prend et pose à 2 cases, par-dessus la case intermédiaire (un tapis, par exemple)
     BuildingDef { key: "long_inserter", name: "Bras long", hp: 100, power_use: 20, cost: &[(IRON_PLATE, 3), (GEAR, 1), (COPPER_PLATE, 2)], build: 1, tech: 1, class: BClass::Inserter, passable: true, vision: 0, reach: 2, ..BD },
     // tapis surmonté d'un portique : il se pose sur un tapis (qu'il remplace) et met le surplus en réserve
-    BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, class: BClass::Belt, speed: 72, passable: true, vision: 0, collect: true, ..BD }, // vitesse express : ne ralentit aucune file
+    BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, power_use: 3, class: BClass::Belt, speed: 72, passable: true, vision: 0, collect: true, ..BD }, // vitesse express : ne ralentit aucune file
     // générateur principal : posé au départ (et reconstructible), grande zone ; brûle de l'hydrocarbure
     BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 0, class: BClass::Power, supply: 18, connect: 30, ..BD },
 ];

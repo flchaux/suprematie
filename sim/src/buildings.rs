@@ -502,6 +502,9 @@ fn tick_generator(w: &mut World, b: usize) {
         let e = fuel_energy(kind, it);
         if e > 0 && w.buildings[b].fuel + e <= fuel_tank(kind) && w.avail(owner, it) > 0 {
             w.pay(owner, it, 1);
+            if w.buildings[b].fuel <= 0 {
+                w.power_dirty = true;
+            }
             w.buildings[b].fuel += e;
             break;
         }
@@ -529,7 +532,8 @@ pub fn rebuild_power(w: &mut World) {
         let poles: Vec<usize> = (0..w.buildings.len())
             .filter(|&i| {
                 let b = &w.buildings[i];
-                b.alive && b.owner == owner && b.complete() && b.def().supply > 0
+                // un générateur sans combustible ne forme plus de zone et ne relie plus ses voisins
+                b.alive && b.owner == owner && b.complete() && b.def().supply > 0 && !(b.def().class == BClass::Power && b.fuel <= 0)
             })
             .collect();
         // union-find
@@ -562,6 +566,13 @@ pub fn rebuild_power(w: &mut World) {
                 }
             }
         }
+        // réseau partout (tests, démos) : un réseau illimité pour ce qui n'est dans aucune zone
+        let fallback = if w.infinite_grid {
+            w.nets.push(Net { sat: 1024, owner, unlimited: true, ..Net::default() });
+            (w.nets.len() - 1) as u16
+        } else {
+            0
+        };
         let mut root_net: Vec<u16> = vec![0; poles.len()];
         for i in 0..poles.len() {
             let r = find(&mut parent, i);
@@ -602,8 +613,8 @@ pub fn rebuild_power(w: &mut World) {
                     best = p;
                 }
             });
-            let net = if best != usize::MAX { pole_net[best] } else { 0 };
-            if b.complete() && def.power_prod > 0 && net != 0 {
+            let net = if best != usize::MAX { pole_net[best] } else { fallback };
+            if b.complete() && def.power_prod > 0 && net != 0 && net != fallback {
                 // les générateurs de la zone : leur production dépend de leur combustible (power_tick)
                 let cap = power_prod_of(b);
                 let n = &mut w.nets[net as usize];
@@ -613,6 +624,10 @@ pub fn rebuild_power(w: &mut World) {
             w.buildings[bi].net = net;
             if net != 0 {
                 w.buildings[bi].wake = 0;
+                // les tapis consomment en permanence (ils n'ont pas de tick propre)
+                if def.class == BClass::Belt && w.buildings[bi].complete() {
+                    w.nets[net as usize].belt_demand += def.power_use;
+                }
             }
         }
         for &pb in &poles {
@@ -629,6 +644,16 @@ pub fn power_tick(w: &mut World) {
         p.power_use = 0;
     }
     for ni in 1..w.nets.len() {
+        let belts = w.nets[ni].belt_demand;
+        w.nets[ni].demand_next += belts;
+        if w.nets[ni].unlimited {
+            let n = &mut w.nets[ni];
+            n.demand = n.demand_next;
+            n.demand_next = 0;
+            n.prod = n.demand;
+            n.sat = 1024;
+            continue;
+        }
         let gens = std::mem::take(&mut w.nets[ni].gens);
         let mut cap = 0i64;
         for &g in &gens {
@@ -645,6 +670,10 @@ pub fn power_tick(w: &mut World) {
                 if bb.alive && bb.fuel > 0 {
                     let burn = (power_prod_of(bb) as i64 * used / cap).max(1) as i32;
                     bb.fuel = (bb.fuel - burn).max(0);
+                    if bb.fuel == 0 {
+                        // à sec : sa zone disparaît
+                        w.power_dirty = true;
+                    }
                 }
             }
         }
@@ -1239,7 +1268,12 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::insert(w, b, item),
         BClass::Power => {
             let bb = &mut w.buildings[b];
+            let was_dry = bb.fuel <= 0;
             bb.fuel += fuel_energy(bb.kind, item);
+            if was_dry && bb.fuel > 0 {
+                // de nouveau alimenté : sa zone revient
+                w.power_dirty = true;
+            }
         }
         BClass::Router => {
             let bb = &mut w.buildings[b];

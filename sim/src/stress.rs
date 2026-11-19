@@ -33,6 +33,8 @@ fn build_reference(verbose: bool) -> World {
         p.extend_from_slice(&[i, 0, 100, 100]);
     }
     let mut w = World::new(&p);
+    // banc : réseau partout (le banc mesure la simulation, pas l'implantation des zones)
+    w.infinite_grid = true;
     for pl in w.players.iter_mut() {
         pl.researched = u64::MAX;
     }
@@ -209,6 +211,8 @@ fn stress_profile() {
 /// coudé, trois drones de fret, un entrepôt d'équipe, et quelques bâtiments en difficulté (icônes).
 pub fn logistics_demo() -> World {
     let mut w = World::new(&[7, 512, 0, 2, 0, 0, 100, 100, 0, 0, 100, 100]);
+    // démo : réseau partout
+    w.infinite_grid = true;
     for pl in w.players.iter_mut() {
         pl.researched = u64::MAX;
     }
@@ -382,6 +386,8 @@ pub fn logistics_demo() -> World {
 /// d'énergie et à obus (joueur 0) face à une armée nombreuse et à des tourelles (joueur 1).
 pub fn weapons_demo() -> World {
     let mut w = World::new(&[11, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    // démo : réseau partout
+    w.infinite_grid = true;
     for pl in w.players.iter_mut() {
         pl.researched = u64::MAX;
     }

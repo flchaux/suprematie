@@ -15,6 +15,7 @@ export interface SimExports {
   bot_dump(): number;
   info_building(r: number): number;
   info_unit(id: number): number;
+  power_zones(player: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   tile_info(x: number, y: number): number;
   building_at(x: number, y: number): number;
@@ -110,6 +111,10 @@ export class Sim {
   botDump(): Int32Array {
     return this.outI32(this.ex.bot_dump());
   }
+  /** Zones électriques de l'équipe du joueur (voir sim/src/render.rs, power_zones). */
+  powerZones(player: number): PowerZones {
+    return JSON.parse(this.outString(this.ex.power_zones(player | 0))) as PowerZones;
+  }
   infoBuilding(ref: number): unknown {
     return JSON.parse(this.outString(this.ex.info_building(ref >>> 0)));
   }
@@ -149,4 +154,11 @@ export class Sim {
   winner(): number {
     return this.ex.game_winner();
   }
+}
+
+/** Zones électriques : réseaux [id, joueur, production, demande, installé, satisfaction, combustible,
+ * autonomie s] et poteaux [x, y, l, h, portée, réseau, générateur ?, combustible ‰ (-1 relais), joueur, réf.]. */
+export interface PowerZones {
+  nets: [number, number, number, number, number, number, number, number][];
+  poles: [number, number, number, number, number, number, number, number, number, number][];
 }

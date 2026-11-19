@@ -7,7 +7,7 @@ type In =
   | { type: "snapshot"; wasmUrl: string; tick: number; data: Uint8Array }
   | { type: "tick"; tick: number; orders: number[] }
   | { type: "view"; x0: number; y0: number; x1: number; y1: number; detail: number; player: number }
-  | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "wreckAt" | "orders" | "planned" | "researchQueue"; a: number[] }
+  | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "wreckAt" | "orders" | "planned" | "researchQueue" | "powerZones"; a: number[] }
   | { type: "replay"; speed: number }
   | { type: "pause"; paused: boolean };
 
@@ -107,6 +107,7 @@ onmessage = async (e: MessageEvent<In>) => {
       else if (m.q === "orders") result = sim.unitOrders(m.a);
       else if (m.q === "planned") result = sim.plannedBuilds(m.a[0]);
       else if (m.q === "researchQueue") result = Array.from(sim.researchQueue(m.a[0]));
+      else if (m.q === "powerZones") result = sim.powerZones(m.a[0]);
       else if (m.q === "canPlaceMany") {
         // a = [joueur, type, puis (x, y, dir)…]
         const r: boolean[] = [];

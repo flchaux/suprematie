@@ -7,6 +7,7 @@ use crate::world::*;
 /// Deux joueurs dans la même équipe (alliés).
 fn allies() -> World {
     let mut w = World::new(&[4242, 512, 0, 2, 0, 0, 100, 100, 0, 0, 100, 100]);
+    w.infinite_grid = true;
     for p in w.players.iter_mut() {
         p.researched = u64::MAX;
     }

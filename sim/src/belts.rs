@@ -22,8 +22,19 @@ pub struct Line {
     pub out_pos: i32,
     /// Niveau de cette case (un tapis surélevé ne livre qu'à un tapis de son niveau ou d'un niveau voisin).
     pub out_floor: u8,
+    /// toutes ses cases sont dans une zone électrique alimentée (sinon la file est arrêtée)
+    pub powered: bool,
 }
-crate::ser_struct!(Line { alive, tiles, items, speed, moving, out_pos, out_floor });
+crate::ser_struct!(Line { alive, tiles, items, speed, moving, out_pos, out_floor, powered });
+
+/// Une file de tapis tourne-t-elle ? Il faut que chacune de ses cases soit dans une zone électrique
+/// alimentée à au moins 50 %.
+pub fn line_powered(w: &World, tiles: &[u32]) -> bool {
+    tiles.iter().all(|&t| {
+        let n = w.buildings[t as usize].net as usize;
+        n != 0 && w.nets.get(n).is_some_and(|x| x.sat >= 512)
+    })
+}
 
 #[derive(Default)]
 pub struct Belts {
@@ -437,7 +448,8 @@ pub fn rebuild_around(w: &mut World, changed: &[(i32, i32)]) {
                 b.line = li;
                 b.line_idx = k as u16;
             }
-            w.belts.lines[li as usize] = Line { alive: true, tiles: chain, items: VecDeque::new(), speed, moving: 0, out_pos, out_floor };
+            let powered = line_powered(w, &chain);
+            w.belts.lines[li as usize] = Line { alive: true, tiles: chain, items: VecDeque::new(), speed, moving: 0, out_pos, out_floor, powered };
             new_lines.push(li);
         }
     }
@@ -482,7 +494,15 @@ pub fn rebuild_around(w: &mut World, changed: &[(i32, i32)]) {
 pub fn update_belts(w: &mut World) {
     let n = w.belts.lines.len();
     for li in 0..n {
-        if !w.belts.lines[li].alive || w.belts.lines[li].items.is_empty() {
+        if !w.belts.lines[li].alive {
+            continue;
+        }
+        // alimentation de la file, revue tous les 10 ticks (une file sur dix à chaque tick)
+        if (li as u32 + w.tick).is_multiple_of(10) {
+            let p = line_powered(w, &w.belts.lines[li].tiles);
+            w.belts.lines[li].powered = p;
+        }
+        if w.belts.lines[li].items.is_empty() || !w.belts.lines[li].powered {
             continue;
         }
         // l'objet de tête est arrivé au bout : tenter de le faire sortir
@@ -600,7 +620,7 @@ mod tests {
     use super::*;
     #[test]
     fn line_insert_take() {
-        let mut l = Line { alive: true, tiles: vec![0, 1, 2, 3], items: VecDeque::new(), speed: 24, moving: 0, out_pos: -1, out_floor: 0 };
+        let mut l = Line { alive: true, tiles: vec![0, 1, 2, 3], items: VecDeque::new(), speed: 24, moving: 0, out_pos: -1, out_floor: 0, powered: true };
         assert!(l.insert_at(IRON_ORE, 128));
         assert!(!l.insert_at(IRON_ORE, 150));
         assert!(l.insert_at(COPPER_ORE, 400));
