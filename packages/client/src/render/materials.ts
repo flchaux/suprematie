@@ -27,7 +27,7 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
   const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.65, metalness: 0.25 });
   const vcol = attribute("color", "vec3");
   // matière par pièce (attribut « mat ») : blindage peint, métal nu, métal sombre, peinture de danger,
-  // verre, lumineux. Le métal nu est très métallique et assez lisse : il reflète l'environnement.
+  // verre, lumineux, caoutchouc, cuivre, béton. Le métal nu est très métallique et assez lisse : il reflète l'environnement.
   const matAo = attribute("mat", "vec2");
   const layer = matAo.x;
   const byLayer = (v: number[]): N => {
@@ -35,8 +35,9 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
     for (let i = v.length - 2; i >= 0; i--) node = layer.lessThan(float(i + 0.5)).select(float(v[i]), node) as unknown as N;
     return node;
   };
-  const metal = byLayer([0.3, 0.62, 0.45, 0.2, 0.1, 0]);
-  const rough = byLayer([0.5, 0.36, 0.5, 0.55, 0.1, 0.6]);
+  // couches 6 à 8 : caoutchouc (mat), cuivre (très métallique, lisse), béton (mat, minéral)
+  const metal = byLayer([0.3, 0.62, 0.45, 0.2, 0.1, 0, 0, 0.85, 0]);
+  const rough = byLayer([0.5, 0.36, 0.5, 0.55, 0.1, 0.6, 0.85, 0.3, 0.88]);
   // occlusion ambiante cuite au chargement (générateur) : sur la lumière indirecte, et un peu sur la directe
   const ao = matAo.y;
   mat.aoNode = ao;

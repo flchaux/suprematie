@@ -1,5 +1,5 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
-// ?set=units|buildings|items|decor  &only=clé1,clé2
+// ?set=units|buildings|items|decor  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
 import * as THREE from "three/webgpu";
 import { buildModel, fallbackModel, PLAYER_COLORS } from "../../packages/client/src/models/generator.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
@@ -50,7 +50,7 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 sun.position.set(-3, 6, 4);
 scene.add(sun);
 
-const cols = Math.ceil(Math.sqrt(list.length * 1.6));
+const cols = Math.min(list.length, Math.ceil(Math.sqrt(list.length * 1.6)));
 const cell = set === "units" ? 3.2 : set === "items" ? 1.6 : set === "decor" ? 3 : 8;
 const labels = document.getElementById("labels")!;
 let tris = 0;
@@ -107,13 +107,15 @@ if (set !== "decor") list.forEach((d, i) => {
   const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.6, 0)), new THREE.Vector3(s, s, s));
   const color = new THREE.Color(set === "items" ? itemColor(d.key) : PLAYER_COLORS[i % 8]);
   const texScale = s * (set === "units" ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING);
-  const body = teamInstancedMesh(built.body, 1, texScale);
+  // ?lo : niveau de détail réduit (sans les pièces fines)
+  const lo = params.has("lo");
+  const body = teamInstancedMesh((lo && built.bodyLo) || built.body, 1, texScale);
   body.mesh.count = 1;
   body.mesh.setMatrixAt(0, root);
   setTeamColor(body, 0, color);
   scene.add(body.mesh);
   for (const p of built.pivots) {
-    const pm = teamInstancedMesh(p.geometry, 1, texScale);
+    const pm = teamInstancedMesh((lo && p.geometryLo) || p.geometry, 1, texScale);
     pm.mesh.count = 1;
     const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(new THREE.Matrix4().makeRotationY(0.5));
     pm.mesh.setMatrixAt(0, m);
@@ -126,14 +128,16 @@ if (set !== "decor") list.forEach((d, i) => {
     g.position.set(x, 0.01, z);
     scene.add(g);
   }
-  tris += built.triangles;
-  placed.push({ pos: new THREE.Vector3(x, 0, z + cell * 0.38), name: d.name + (desc ? "" : " (manquant)"), tri: built.triangles });
+  const tri = lo ? built.trianglesLo : built.triangles;
+  tris += tri;
+  placed.push({ pos: new THREE.Vector3(x, 0, z + cell * 0.38), name: d.name + (desc ? "" : " (manquant)") + (built.bodyLo && !lo ? ` (loin ${built.trianglesLo})` : ""), tri });
 });
 const rows = Math.ceil(list.length / cols);
 const cx = ((cols - 1) * cell) / 2;
 const cz = ((rows - 1) * cell) / 2;
 const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 1000);
-const dist = Math.max(cols, rows) * cell * 1.25;
+// ?zoom=2 : caméra deux fois plus proche (vérifier le détail des modèles)
+const dist = (Math.max(cols, rows) * cell * 1.25) / Number(params.get("zoom") ?? 1);
 camera.position.set(cx, dist * 0.82, cz + dist * 0.62);
 camera.lookAt(cx, 0, cz);
 camera.updateMatrixWorld();

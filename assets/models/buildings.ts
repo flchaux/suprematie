@@ -12,6 +12,24 @@ function socle(w: number, d = w): Part[] {
   ];
 }
 
+/**
+ * Contour d'une voûte en demi-ellipse (largeur 2 x rx, hauteur ry) posée sur y = 0, à extruder : pleine
+ * si `ep` = 0, sinon arc d'épaisseur `ep` (nervure).
+ */
+function arc(rx: number, ry: number, ep: number, n: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI;
+    out.push([Math.cos(a) * rx, Math.sin(a) * ry]);
+  }
+  if (ep <= 0) return out;
+  for (let i = n; i >= 0; i--) {
+    const a = (i / n) * Math.PI;
+    out.push([Math.cos(a) * (rx - ep), Math.sin(a) * (ry - ep)]);
+  }
+  return out;
+}
+
 /** Filets lumineux sur le chant du socle : avant et côtés (48 triangles), ou avant seul (24). */
 function filets(w: number, d = w, cotes = true): Part[] {
   const l = Math.min(w, d) * 0.28;
@@ -487,42 +505,65 @@ export const BUILDING_MODELS: Record<string, Model> = {
       ...brasRobot(-0.85, -0.3, true),
     ],
   },
-  // refinery : colonnes de distillation à dômes, cuve couchée, conduites, pupitre (792 triangles)
+  // refinery : colonne de distillation à plateformes, colonne claire à dôme, ballon couché sur berceaux de béton,
+  // tuyauteries coudées en cuivre à brides, pupitre ; pièces fines : rambardes, échelles, vannes, cerclages
   refinery: {
     parts: [
       ...socle(3),
       ...filets(3),
-      // grande colonne
-      { shape: "cylinder", sides: 8, radius: 0.42, height: 2.0, pos: [-0.62,1.25,-0.62], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.3, pos: [-0.62,0.6,-0.62], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.34, pos: [-0.62,1.85,-0.62], color: "faction" },
-      { shape: "sphere", radius: 0.42, detail: 1, pos: [-0.62,2.25,-0.62], scale: [1,0.7,1], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.13, height: 0.16, pos: [-0.62,2.6,-0.62], color: "metal" },
-      { shape: "box", size: [0.05,0.9,0.03], pos: [-0.62,1.25,-0.19], color: "glow" },
-      { shape: "box", size: [0.1,0.06,0.03], pos: [-0.62,2.15,-0.22], color: "amber" },
-      // colonne claire
-      { shape: "cylinder", sides: 8, radius: 0.32, height: 1.5, pos: [0.55,1.0,-0.75], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.28, pos: [0.55,1.25,-0.75], color: "dark" },
-      { shape: "box", size: [0.04,0.24,0.03], pos: [0.55,1.25,-0.41], color: "glow" },
-      { shape: "sphere", radius: 0.32, pos: [0.55,1.75,-0.75], scale: [1,0.7,1], color: "faction" },
-      { shape: "sphere", radius: 0.08, pos: [0.55,2.0,-0.75], color: "amber" },
+      // dalles de béton sous les colonnes
+      { shape: "bevel", size: [1.25,0.08,1.25], pos: [-0.62,0.29,-0.62], bevel: 0.03, color: "concrete" },
+      { shape: "bevel", size: [0.9,0.08,0.9], pos: [0.55,0.29,-0.75], bevel: 0.03, color: "concrete" },
+      // grande colonne : jupe, fût, bandeau d'équipe, dôme, évent
+      { shape: "lathe", sides: 16, pos: [-0.62,0,-0.62], color: "faction", profile: [[0,0.33],[0.42,0.33],[0.42,2.05],[0.38,2.22],[0.27,2.36],[0.12,2.42],[0.12,2.56],[0.15,2.58],[0.15,2.64],[0,2.64]] },
+      { shape: "cylinder", sides: 16, radius: 0.5, radiusTop: 0.46, height: 0.24, bevel: 0.03, pos: [-0.62,0.45,-0.62], color: "dark" },
+      { shape: "cylinder", sides: 16, radius: 0.44, height: 0.3, bevel: 0.02, pos: [-0.62,1.85,-0.62], color: "dark" },
+      { shape: "torus", radius: 0.43, tube: 0.025, sides: 16, pos: [-0.62,0.95,-0.62], color: "metal" },
+      { shape: "torus", radius: 0.43, tube: 0.025, sides: 16, pos: [-0.62,1.35,-0.62], color: "metal", fine: true },
+      { shape: "box", size: [0.05,0.9,0.03], pos: [-0.62,1.25,-0.2], color: "glow" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [-0.62,2.12,-0.24], color: "amber" },
+      // plateforme circulaire et sa rambarde, échelle
+      { shape: "lathe", sides: 16, pos: [-0.62,0,-0.62], color: "metal", profile: [[0.42,1.56],[0.64,1.56],[0.64,1.61],[0.42,1.61]] },
+      { shape: "torus", radius: 0.63, tube: 0.015, sides: 16, pos: [-0.62,1.8,-0.62], color: "hazard", fine: true },
+      ...[0, 90, 180, 270].map((a): Part => ({ shape: "box", size: [0.025,0.2,0.025], pos: [-0.62 + 0.62 * Math.sin((a * Math.PI) / 180),1.7,-0.62 + 0.62 * Math.cos((a * Math.PI) / 180)], color: "light", fine: true })),
+      { use: "echelle", pos: [-0.62,0.56,-0.17], scale: [1,1.0,1], rot: [0,0,0] },
+      // colonne claire (sous-ensemble cuve), bandeau d'équipe et feu
+      { use: "cuve", pos: [0.55,0.33,-0.75], scale: [0.66,1.6,0.66] },
+      { shape: "cylinder", sides: 16, radius: 0.34, height: 0.22, bevel: 0.015, pos: [0.55,1.2,-0.75], color: "faction" },
+      { shape: "box", size: [0.04,0.24,0.03], pos: [0.55,0.8,-0.41], color: "glow" },
+      { shape: "sphere", radius: 0.07, pos: [0.55,1.95,-0.75], color: "amber" },
+      { use: "echelle", pos: [0.21,0.33,-0.75], rot: [0,-90,0], scale: [1,1.3,1] },
       // petite colonne
-      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.7, pos: [0.15,0.6,0.15], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.22, height: 0.12, pos: [0.15,0.97,0.15], color: "dark" },
-      { shape: "sphere", radius: 0.07, pos: [0.15,1.07,0.15], color: "amber" },
-      // cuve couchée
-      { shape: "cylinder", sides: 8, radius: 0.33, height: 1.1, pos: [-0.75,0.6,0.62], rot: [0,0,90], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.35, height: 0.12, pos: [-0.45,0.6,0.62], rot: [0,0,90], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.05, pos: [-1.31,0.6,0.62], rot: [0,0,90], color: "glow" },
-      { shape: "box", size: [0.5,0.2,0.4], pos: [-0.75,0.3,0.62], color: "dark" },
-      // conduites
-      { shape: "box", size: [0.12,0.12,1.1], pos: [0.15,0.42,-0.4], color: "metal" },
-      { shape: "box", size: [1.1,0.12,0.12], pos: [-0.05,1.45,-0.7], color: "metal" },
-      { shape: "box", size: [0.12,0.12,0.9], pos: [1.05,0.4,0.0], color: "dark" },
-      { shape: "box", size: [0.9,0.12,0.12], pos: [0.6,0.4,-0.4], color: "dark" },
-      // pupitre de commande
+      { use: "cuve", pos: [0.15,0.25,0.15], scale: [0.42,0.8,0.42] },
+      { shape: "sphere", radius: 0.06, pos: [0.15,1.08,0.15], color: "amber" },
+      // rack de tuyauteries à l'arrière : deux portiques, trois conduites parallèles
+      { shape: "box", size: [0.06,0.95,0.06], pos: [-0.05,0.75,-1.3], color: "dark" },
+      { shape: "box", size: [0.06,0.95,0.06], pos: [-0.05,0.75,-0.95], color: "dark", fine: true },
+      { shape: "box", size: [0.06,0.06,0.45], pos: [-0.05,1.2,-1.12], color: "dark" },
+      { shape: "tube", radius: 0.04, path: [[-0.6,1.27,-1.25],[0.55,1.27,-1.25]], color: "copper" },
+      { shape: "tube", radius: 0.04, path: [[-0.6,1.27,-1.12],[0.55,1.27,-1.12]], color: "metal" },
+      { shape: "tube", radius: 0.04, path: [[-0.6,1.27,-0.99],[0.55,1.27,-0.99]], color: "steel", fine: true },
+      // ballon couché sur deux berceaux de béton
+      { shape: "lathe", sides: 16, pos: [-0.72,0.66,0.62], rot: [0,0,90], color: "light", profile: [[0,-0.68],[0.14,-0.66],[0.26,-0.6],[0.33,-0.48],[0.33,0.48],[0.26,0.6],[0.14,0.66],[0,0.68]] },
+      { shape: "cylinder", sides: 16, radius: 0.345, height: 0.14, pos: [-0.5,0.66,0.62], rot: [0,0,90], color: "faction" },
+      { shape: "torus", radius: 0.335, tube: 0.02, sides: 16, pos: [-1.0,0.66,0.62], rot: [0,0,90], color: "metal", fine: true },
+      { shape: "extrude", profile: [[-0.3,0],[0.3,0],[0.3,0.3],[0.2,0.3],[0.12,0.2],[-0.12,0.2],[-0.2,0.3],[-0.3,0.3]], depth: 0.14, bevel: 0.02, pos: [-1.05,0.25,0.62], rot: [0,90,0], color: "concrete" },
+      { shape: "extrude", profile: [[-0.3,0],[0.3,0],[0.3,0.3],[0.2,0.3],[0.12,0.2],[-0.12,0.2],[-0.2,0.3],[-0.3,0.3]], depth: 0.14, bevel: 0.02, pos: [-0.4,0.25,0.62], rot: [0,90,0], color: "concrete" },
+      { shape: "cylinder", sides: 12, radius: 0.24, height: 0.04, pos: [-1.41,0.66,0.62], rot: [0,0,90], color: "glow" },
+      // tuyauteries coudées en cuivre, brides et vannes
+      { shape: "tube", radius: 0.055, path: [[-0.2,0.75,-0.62],[0.15,0.75,-0.62],[0.15,0.75,-0.1],[0.15,0.95,0.15]], bend: 0.12, color: "copper" },
+      { shape: "tube", radius: 0.055, path: [[-0.62,1.45,-0.2],[-0.62,1.45,0.0],[0.0,1.45,0.0],[0.25,1.45,-0.75]], bend: 0.15, color: "copper" },
+      { shape: "tube", radius: 0.05, path: [[-0.72,1.0,0.62],[-0.72,1.25,0.62],[-0.72,1.25,0.0],[-0.62,1.25,-0.2]], bend: 0.12, color: "metal" },
+      { shape: "tube", radius: 0.05, path: [[0.89,0.9,-0.75],[1.1,0.9,-0.75],[1.1,0.45,-0.75],[1.1,0.45,0.3],[0.6,0.45,0.6]], bend: 0.15, color: "metal" },
+      { shape: "torus", radius: 0.07, tube: 0.02, sides: 10, pos: [0.15,0.75,-0.35], rot: [90,0,0], color: "steel", fine: true },
+      { shape: "torus", radius: 0.07, tube: 0.02, sides: 10, pos: [-0.3,1.45,0.0], rot: [0,0,90], color: "steel", fine: true },
+      { shape: "torus", radius: 0.065, tube: 0.02, sides: 10, pos: [1.1,0.45,-0.2], rot: [90,0,0], color: "steel", fine: true },
+      { use: "vanne", pos: [0.15,0.8,-0.5] },
+      { use: "vanne", pos: [1.1,0.5,0.05] },
+      // pupitre de commande à écran
       { shape: "bevel", size: [0.9,0.3,0.6], pos: [0.55,0.4,0.85], color: "light" },
-      { shape: "box", size: [0.4,0.03,0.3], pos: [0.45,0.56,0.85], color: "dark" },
+      { shape: "bevel", size: [0.7,0.22,0.08], pos: [0.55,0.62,0.7], rot: [-25,0,0], bevel: 0.02, color: "dark" },
+      { shape: "box", size: [0.6,0.15,0.02], pos: [0.55,0.63,0.745], rot: [-25,0,0], color: "glow" },
       { shape: "box", size: [0.1,0.06,0.03], pos: [0.85,0.42,1.16], color: "amber" },
     ],
   },
@@ -826,47 +867,60 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.08,0.06,0.03], pos: [0.85,0.36,1.13], color: "amber" },
     ],
   },
-  // land_factory : hangar à toit voûté, grande porte éclairée à l'avant, modules latéraux, cheminée (1020 triangles)
+  // land_factory : hangar à voûte d'équipe sur arcs clairs et verrière, grand portail à rideau métallique,
+  // parvis de béton, module de ventilation à hélice, cuve et conduites, cheminée évasée ; pièces fines :
+  // pilastres, lames du rideau, échelle, garde-corps, antenne
   land_factory: {
     parts: [
       ...socle(5),
       ...filets(5),
-      // hall
-      { shape: "bevel", size: [3.8,1.1,3.6], pos: [0,0.8,-0.35], color: "dark" },
-      { shape: "box", size: [0.04,0.06,3.0], pos: [1.92,1.0,-0.4], color: "glow", mirror: true },
-      { shape: "box", size: [0.14,0.14,2.6], pos: [-1.98,0.5,-0.6], color: "metal" },
-      // toit voûté : faîte clair, pans aux couleurs de l'équipe
-      { shape: "bevel", size: [1.8,0.75,3.0], pos: [0,1.7,0], color: "dark" },
-      { shape: "bevel", size: [1.5,0.22,3.1], pos: [0,2.15,0], color: "light" },
-      { shape: "bevel", size: [1.25,0.22,3.1], pos: [1.24,1.735,0], rot: [0,0,-38], color: "faction", mirror: true },
-      { shape: "box", size: [0.06,0.03,2.8], pos: [0,2.27,0], color: "glow" },
-      // portail avant
-      { shape: "bevel", size: [2.7,2.0,0.4], pos: [0,1.25,1.55], color: "light" },
-      { shape: "bevel", size: [2.0,1.45,0.1], pos: [0,0.98,1.76], bevel: 0.04, color: "black" },
-      { shape: "box", size: [1.8,0.05,0.03], pos: [0,1.62,1.82], color: "glow" },
-      { shape: "box", size: [0.05,1.3,0.03], pos: [0.88,0.95,1.82], color: "glow", mirror: true },
-      { shape: "box", size: [0.1,0.06,0.03], pos: [1.15,1.9,1.76], color: "amber", mirror: true },
-      { shape: "box", size: [2.0,0.03,0.6], pos: [0,0.265,2.1], color: "hazard" },
-      // module avant gauche
-      { shape: "bevel", size: [0.75,1.1,1.5], pos: [-2.0,0.8,1.3], color: "light" },
-      { shape: "bevel", size: [0.6,0.12,1.3], pos: [-2.0,1.4,1.3], color: "faction" },
-      { shape: "box", size: [0.03,0.05,1.1], pos: [-2.38,0.9,1.3], color: "glow" },
-      { shape: "box", size: [0.4,0.5,0.04], pos: [-2.0,0.6,2.06], color: "dark" },
-      { shape: "box", size: [0.08,0.06,0.03], pos: [-1.75,0.95,2.06], color: "amber" },
-      // module avant droit
-      { shape: "bevel", size: [0.75,0.9,1.7], pos: [2.0,0.7,1.1], color: "dark" },
-      { shape: "bevel", size: [0.7,0.3,1.0], pos: [2.0,1.3,1.2], color: "light" },
-      { shape: "box", size: [0.03,0.05,1.3], pos: [2.38,0.75,1.1], color: "glow" },
-      { shape: "box", size: [0.08,0.06,0.03], pos: [2.0,1.0,1.96], color: "amber" },
-      // machinerie arrière, cheminée, antenne
-      { shape: "bevel", size: [1.2,0.5,0.6], pos: [1.0,1.6,-1.85], color: "metal" },
-      { shape: "box", size: [0.08,0.06,0.03], pos: [1.0,1.65,-1.54], color: "amber" },
-      { shape: "bevel", size: [1.0,0.3,0.6], pos: [-0.4,1.5,-1.85], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.22, height: 1.2, pos: [-1.5,1.95,-1.85], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.24, height: 0.05, pos: [-1.5,2.2,-1.85], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 0.26, height: 0.1, pos: [-1.5,2.55,-1.85], color: "metal" },
-      { shape: "box", size: [0.04,0.8,0.04], pos: [1.5,2.25,-1.85], color: "dark" },
-      { shape: "box", size: [0.07,0.07,0.07], pos: [1.5,2.66,-1.85], color: "amber" },
+      // parvis de béton et rampe de sortie
+      { shape: "bevel", size: [2.6,0.06,0.95], pos: [0,0.28,2.0], bevel: 0.02, color: "concrete" },
+      { shape: "box", size: [2.0,0.03,0.5], pos: [0,0.32,2.05], color: "hazard" },
+      // hall : murs sombres, pilastres clairs, filets
+      { shape: "bevel", size: [3.8,1.0,3.5], pos: [0,0.75,-0.3], color: "dark" },
+      ...[-1.6, -0.75, 0.1, 0.95].map((z): Part => ({ shape: "box", size: [0.1,0.95,0.14], pos: [1.92,0.75,z], color: "light", mirror: true, fine: true })),
+      { shape: "box", size: [0.04,0.05,3.0], pos: [1.92,1.12,-0.35], color: "glow", mirror: true },
+      // voûte d'équipe, quatre arcs clairs, verrière lumineuse au faîte
+      { shape: "extrude", profile: arc(1.85, 0.95, 0, 9), depth: 3.3, pos: [0,1.24,-0.35], color: "faction" },
+      ...[-1.85, -0.85, 0.15, 1.15].map((z): Part => ({ shape: "extrude", profile: arc(1.92, 1.02, 0.12, 9), depth: 0.12, pos: [0,1.24,z], color: "light" })),
+      { shape: "bevel", size: [0.5,0.06,3.1], pos: [0,2.19,-0.35], bevel: 0.02, color: "glass" },
+      { shape: "box", size: [0.04,0.03,3.0], pos: [0,2.23,-0.35], color: "glow" },
+      // portail : piliers, linteau à bandeau d'équipe, rideau métallique à lames, filets
+      { shape: "bevel", size: [0.4,1.95,0.55], pos: [1.2,1.2,1.5], color: "light", mirror: true },
+      { shape: "bevel", size: [2.8,0.42,0.6], pos: [0,2.05,1.5], color: "light" },
+      { shape: "bevel", size: [2.4,0.14,0.08], pos: [0,2.07,1.82], bevel: 0.02, color: "faction" },
+      { shape: "box", size: [2.0,1.55,0.06], pos: [0,1.02,1.58], color: "black" },
+      ...[0.45, 0.7, 0.95, 1.2, 1.45].map((y): Part => ({ shape: "box", size: [1.96,0.04,0.04], pos: [0,y,1.62], color: "metal", fine: true })),
+      { shape: "box", size: [1.9,0.05,0.03], pos: [0,1.72,1.66], color: "glow" },
+      { shape: "box", size: [0.04,1.4,0.03], pos: [0.97,1.0,1.66], color: "glow", mirror: true },
+      { shape: "cylinder", sides: 10, radius: 0.07, height: 0.08, pos: [1.2,2.3,1.5], color: "amber", mirror: true },
+      // module gauche : ventilation à hélice (pivot), grille
+      { shape: "bevel", size: [0.8,1.0,1.6], pos: [-2.05,0.75,1.0], color: "light" },
+      { shape: "bevel", size: [0.66,0.1,1.4], pos: [-2.05,1.3,1.0], color: "faction" },
+      { shape: "lathe", sides: 16, pos: [-2.05,1.3,1.0], color: "dark", profile: [[0.24,0],[0.3,0],[0.3,0.16],[0.26,0.16],[0.26,0.04],[0.24,0.04]] },
+      { shape: "cylinder", sides: 10, radius: 0.06, height: 0.12, pos: [-2.05,1.4,1.0], color: "metal", pivot: "rotor_v" },
+      ...[0, 120, 240].map((a): Part => ({ shape: "box", size: [0.42,0.015,0.08], pos: [-2.05,1.42,1.0], rot: [12,a,0], color: "steel", parent: "rotor_v" })),
+      ...[0.55, 0.75, 0.95].map((y): Part => ({ shape: "box", size: [0.03,0.05,0.9], pos: [-2.46,y,1.0], color: "black", fine: true })),
+      { shape: "box", size: [0.03,0.05,1.2], pos: [-2.46,1.12,1.0], color: "glow" },
+      // module droit : cuve, conduite coudée vers le hall
+      { shape: "bevel", size: [0.8,0.7,1.7], pos: [2.05,0.6,1.0], color: "dark" },
+      { use: "cuve", pos: [2.05,0.95,1.25], scale: [0.6,0.9,0.6] },
+      { shape: "cylinder", sides: 16, radius: 0.31, height: 0.12, pos: [2.05,1.35,1.25], color: "faction" },
+      { shape: "tube", radius: 0.05, path: [[2.05,1.2,0.9],[2.05,1.2,0.5],[1.9,1.2,0.3]], bend: 0.12, color: "copper" },
+      { shape: "torus", radius: 0.065, tube: 0.018, sides: 10, pos: [2.05,1.2,0.65], rot: [90,0,0], color: "steel", fine: true },
+      { shape: "box", size: [0.08,0.06,0.03], pos: [2.05,0.75,1.86], color: "amber" },
+      // arrière : machinerie, cheminée évasée, échelle, antenne
+      { shape: "bevel", size: [1.3,0.55,0.6], pos: [0.95,1.55,-1.85], color: "metal" },
+      ...[0.55, 0.95, 1.35].map((x): Part => ({ shape: "box", size: [0.25,0.04,0.5], pos: [x,1.84,-1.85], color: "dark", fine: true })),
+      { shape: "box", size: [0.08,0.06,0.03], pos: [0.95,1.6,-1.54], color: "amber" },
+      { shape: "lathe", sides: 16, pos: [-1.45,1.2,-1.75], color: "dark", profile: [[0,0],[0.26,0],[0.26,0.1],[0.2,0.16],[0.2,1.25],[0.27,1.42],[0.27,1.5],[0.22,1.5],[0.22,1.44],[0,1.44]] },
+      { shape: "cylinder", sides: 16, radius: 0.215, height: 0.08, pos: [-1.45,2.05,-1.75], color: "glow" },
+      { shape: "torus", radius: 0.21, tube: 0.02, sides: 12, pos: [-1.45,1.75,-1.75], color: "metal", fine: true },
+      { use: "echelle", pos: [-1.45,1.25,-1.54], scale: [0.8,1.1,1] },
+      { use: "garde_corps", pos: [0.95,1.83,-2.12], scale: [1.3,1,1] },
+      { shape: "tube", radius: 0.015, sides: 4, path: [[1.5,1.8,-1.85],[1.5,2.65,-1.85]], color: "dark", fine: true },
+      { shape: "sphere", radius: 0.045, pos: [1.5,2.68,-1.85], color: "amber" },
     ],
   },
   // air_factory : piste et avion à l'avant gauche, hangar, tour de contrôle à parabole (1104 triangles)

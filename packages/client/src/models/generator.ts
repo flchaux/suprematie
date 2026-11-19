@@ -2,7 +2,7 @@
 // Les pièces de couleur « faction » portent un masque (attribut `mask`) : le shader les teinte
 // avec la couleur du joueur. L'attribut `mat` donne la couche de texture (matière) de chaque pièce. Les pièces mobiles (pivot) forment des géométries séparées.
 import * as THREE from "three/webgpu";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeGeometries, toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import type { Model, Part, ColorName } from "../../../../assets/models/types.ts";
 import { KIT } from "../../../../assets/models/kit.ts";
@@ -31,11 +31,18 @@ export const PALETTE: Record<ColorName, number> = {
   crystal: 0x4fdcf0,
   flower: 0xe8c43a,
   rust: 0x8c4d2c,
+  copper: 0xb8703a,
+  steel: 0xb4bcc6,
+  rubber: 0x26282b,
+  concrete: 0x9a968c,
 };
 
-/** Couche de texture de chaque couleur de pièce (voir render/textures.ts ; 5 = pas de texture). */
-export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5,
-  leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5 };
+/**
+ * Matière de chaque couleur de pièce (voir render/textures.ts et render/materials.ts) : 0 blindage, 1 métal,
+ * 2 métal sombre, 3 danger, 4 verre, 5 lumineux (sans texture), 6 caoutchouc, 7 cuivre, 8 béton.
+ */
+export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, steel: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5,
+  leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5, rubber: 6, copper: 7, concrete: 8 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -43,13 +50,19 @@ export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "
 export interface BuiltPivot {
   name: string;
   geometry: THREE.BufferGeometry;
+  /** sans les pièces fines (caméra lointaine) ; absent si le modèle n'en a pas */
+  geometryLo?: THREE.BufferGeometry;
   origin: THREE.Vector3;
 }
 export interface BuiltModel {
   body: THREE.BufferGeometry;
+  /** corps sans les pièces fines (niveau de détail réduit) ; absent si le modèle n'a pas de pièce fine */
+  bodyLo?: THREE.BufferGeometry;
   pivots: BuiltPivot[];
   box: THREE.Box3;
   triangles: number;
+  /** triangles sans les pièces fines */
+  trianglesLo: number;
 }
 
 const DEG = Math.PI / 180;
@@ -93,13 +106,129 @@ function bevelGeometry(sx: number, sy: number, sz: number, c: number): THREE.Buf
   return g.clone();
 }
 
+/** Profil (rayon, hauteur) tourné autour de y ; `arc` en degrés. */
+function latheGeometry(profile: [number, number][], sides: number, arc = 360): THREE.BufferGeometry {
+  const pts = profile.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y));
+  if (pts.length < 2) pts.push(new THREE.Vector2(0.5, 0), new THREE.Vector2(0.5, 1));
+  return new THREE.LatheGeometry(pts, sides, 0, Math.min(360, arc) * DEG);
+}
+
+/** Contour (x, y) extrudé sur `depth` le long de z, centré ; chanfrein `bevel` sur les arêtes des deux faces. */
+function extrudeGeometry(profile: [number, number][], depth: number, bevel: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape(profile.map(([x, y]) => new THREE.Vector2(x, y)));
+  const b = Math.max(0, Math.min(bevel, depth * 0.45));
+  const g = new THREE.ExtrudeGeometry(shape, { depth: depth - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 1, curveSegments: 6 });
+  g.translate(0, 0, -(depth - 2 * b) / 2);
+  return g;
+}
+
+/**
+ * Tuyau de section circulaire (`sides` côtés) le long d'un tracé polygonal, coudes arrondis de rayon `bend`,
+ * extrémités fermées. Repères transportés parallèlement : la section ne vrille pas dans les coudes.
+ */
+function tubeGeometry(path: [number, number, number][], radius: number, sides: number, bend: number): THREE.BufferGeometry {
+  const P = path.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+  if (P.length < 2) P.push(new THREE.Vector3(0, 1, 0));
+  const pts: THREE.Vector3[] = [P[0]];
+  for (let i = 1; i < P.length - 1; i++) {
+    const d1 = P[i].clone().sub(P[i - 1]);
+    const d2 = P[i + 1].clone().sub(P[i]);
+    const l1 = d1.length();
+    const l2 = d2.length();
+    d1.normalize();
+    d2.normalize();
+    const r = Math.min(bend, l1 * 0.45, l2 * 0.45);
+    if (d1.dot(d2) > 0.999 || r <= 0) {
+      pts.push(P[i]);
+      continue;
+    }
+    // coude : courbe de Bézier quadratique entre les points d'entrée et de sortie
+    const a = P[i].clone().addScaledVector(d1, -r);
+    const c = P[i].clone().addScaledVector(d2, r);
+    const k = 3;
+    for (let j = 0; j <= k; j++) {
+      const t = j / k;
+      pts.push(a.clone().multiplyScalar((1 - t) * (1 - t)).addScaledVector(P[i], 2 * t * (1 - t)).addScaledVector(c, t * t));
+    }
+  }
+  pts.push(P[P.length - 1]);
+  const n = pts.length;
+  const tang = pts.map((_, i) => pts[Math.min(n - 1, i + 1)].clone().sub(pts[Math.max(0, i - 1)]).normalize());
+  const nrm: THREE.Vector3[] = [];
+  const up = Math.abs(tang[0].y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  nrm.push(new THREE.Vector3().crossVectors(tang[0], up).normalize());
+  for (let i = 1; i < n; i++) {
+    const v = nrm[i - 1].clone().addScaledVector(tang[i], -nrm[i - 1].dot(tang[i]));
+    nrm.push(v.lengthSq() > 1e-8 ? v.normalize() : nrm[i - 1].clone());
+  }
+  const ring = (i: number, s: number) => {
+    const a = (s / sides) * Math.PI * 2;
+    const b = new THREE.Vector3().crossVectors(tang[i], nrm[i]);
+    return pts[i].clone().addScaledVector(nrm[i], Math.cos(a) * radius).addScaledVector(b, Math.sin(a) * radius);
+  };
+  const out: number[] = [];
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for (let i = 0; i + 1 < n; i++) {
+    for (let s = 0; s < sides; s++) {
+      const a = ring(i, s), b = ring(i, s + 1), c = ring(i + 1, s + 1), d = ring(i + 1, s);
+      tri(a, c, b);
+      tri(a, d, c);
+    }
+  }
+  for (let s = 1; s + 1 < sides; s++) {
+    tri(ring(0, 0), ring(0, s), ring(0, s + 1));
+    tri(ring(n - 1, 0), ring(n - 1, s + 1), ring(n - 1, s));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(out, 3));
+  return g;
+}
+
+/**
+ * Pièce pour le niveau de détail réduit : formes rondes à moitié moins de côtés (au moins 6, 4 pour un
+ * tuyau), cylindres et profils extrudés sans chanfrein.
+ */
+function coarser(part: Part): Part {
+  switch (part.shape) {
+    case "lathe":
+    case "torus":
+      return { ...part, sides: Math.max(6, Math.round((part.sides ?? 16) / 2)) };
+    case "cylinder":
+    case "cone":
+      // et sans chanfrein (un cylindre chanfreiné coûte trois fois plus de facettes)
+      return { ...part, bevel: 0, sides: (part.sides ?? 6) > 8 ? Math.max(6, Math.round((part.sides ?? 6) / 2)) : part.sides };
+    case "extrude":
+      return { ...part, bevel: 0 };
+    case "tube":
+      return { ...part, sides: 4 };
+    default:
+      return part;
+  }
+}
+
 function shapeGeometry(part: Part): THREE.BufferGeometry {
   const sides = part.sides ?? 6;
   switch (part.shape) {
     case "cylinder": {
       const r = part.radius ?? 0.5;
-      return new THREE.CylinderGeometry(part.radiusTop ?? r, r, part.height ?? 1, sides, 1);
+      const rt = part.radiusTop ?? r;
+      const h = part.height ?? 1;
+      const c = Math.min(part.bevel ?? 0, h * 0.45, r * 0.9, rt * 0.9);
+      // cylindre chanfreiné : profil tourné (mêmes facettes que le cylindre simple)
+      if (c > 0) return latheGeometry([[0, -h / 2], [r - c, -h / 2], [r, -h / 2 + c], [rt, h / 2 - c], [rt - c, h / 2], [0, h / 2]], sides);
+      return new THREE.CylinderGeometry(rt, r, h, sides, 1);
     }
+    case "lathe":
+      return latheGeometry(part.profile ?? [], part.sides ?? 16, part.arc);
+    case "extrude":
+      return extrudeGeometry(part.profile ?? [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]], part.depth ?? 1, part.bevel ?? 0);
+    case "tube": {
+      const r = part.radius ?? 0.05;
+      return tubeGeometry(part.path ?? [[0, 0, 0], [0, 1, 0]], r, part.sides ?? 6, part.bend ?? r * 2);
+    }
+    case "torus":
+      // section du tube : 4 côtés pour 16 autour de l'anneau (un anneau fin n'en demande pas plus)
+      return new THREE.TorusGeometry(part.radius ?? 0.5, part.tube ?? 0.08, Math.max(3, Math.round((part.sides ?? 16) / 4)), part.sides ?? 16, Math.min(360, part.arc ?? 360) * DEG).rotateX(Math.PI / 2);
     case "cone":
       return new THREE.ConeGeometry(part.radius ?? 0.5, part.height ?? 1, sides, 1);
     case "wedge": {
@@ -128,6 +257,10 @@ interface Flat {
   pivotPos?: THREE.Vector3;
   /** volume plein de la pièce (occlusion ambiante) */
   vol?: Vol;
+  /** normales déjà calculées (ombrage lissé) */
+  smooth?: boolean;
+  /** pièce de détail fin, absente du niveau de détail réduit */
+  fine?: boolean;
 }
 
 /**
@@ -143,9 +276,20 @@ interface Vol {
   box: THREE.Box3;
 }
 
-function partVolume(part: Part, m: THREE.Matrix4): Vol {
+function partVolume(part: Part, m: THREE.Matrix4, local?: THREE.Box3): Vol | undefined {
   let hx = 0.5, hy = 0.5, hz = 0.5;
   let round: 0 | 1 | 2 = 0;
+  // tuyaux et anneaux : volume creux ou mince, ils n'assombrissent pas leurs voisins
+  if (part.shape === "tube" || part.shape === "torus") return undefined;
+  if ((part.shape === "lathe" || part.shape === "extrude") && local) {
+    // volume pris dans la boîte locale de la forme (cylindre pour le profil tourné)
+    const c = local.getCenter(new THREE.Vector3());
+    const sz = local.getSize(new THREE.Vector3());
+    const mc = m.clone().multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
+    const r: 0 | 1 = part.shape === "lathe" ? 1 : 0;
+    const box = new THREE.Box3(new THREE.Vector3(-sz.x / 2, -sz.y / 2, -sz.z / 2), new THREE.Vector3(sz.x / 2, sz.y / 2, sz.z / 2)).applyMatrix4(mc);
+    return { inv: mc.invert(), hx: sz.x / 2, hy: sz.y / 2, hz: sz.z / 2, round: r, box };
+  }
   if (part.shape === "cylinder" || part.shape === "cone") {
     const r = Math.max(part.radius ?? 0.5, part.radiusTop ?? 0);
     hx = hz = r;
@@ -195,51 +339,83 @@ const AO_STEPS: [number, number][] = [[0.15, 1], [0.5, 0.6]];
  * sol (y < 0). Calculée une fois au chargement, sans coût au rendu ; les creux, jointures et bas de
  * caisse s'assombrissent. Grille de répartition des volumes pour limiter les tests.
  */
-function bakeAO(geos: { g: THREE.BufferGeometry; self: number }[], vols: (Vol | undefined)[], bounds: THREE.Box3): void {
+function bakeAO(geos: { g: THREE.BufferGeometry; self: number; f: Flat }[], vols: (Vol | undefined)[], bounds: THREE.Box3): void {
   const N = 10;
   const size = bounds.getSize(new THREE.Vector3()).addScalar(1.6);
   const min = bounds.min.clone().subScalar(0.8);
-  const cell = (v: number, k: 0 | 1 | 2) => Math.max(0, Math.min(N - 1, Math.floor(((v - min.getComponent(k)) / size.getComponent(k)) * N)));
+  const mx = min.x, my = min.y, mz = min.z;
+  const kx = N / size.x, ky = N / size.y, kz = N / size.z;
+  const Mx = mx + size.x, My = my + size.y, Mz = mz + size.z;
+  const cl = (c: number) => (c < 0 ? 0 : c > N - 1 ? N - 1 : c);
+  const cx = (v: number) => cl(Math.floor((v - mx) * kx));
+  const cy = (v: number) => cl(Math.floor((v - my) * ky));
+  const cz = (v: number) => cl(Math.floor((v - mz) * kz));
   const grid: number[][] = Array.from({ length: N * N * N }, () => []);
   vols.forEach((v, i) => {
     if (!v) return;
-    for (let x = cell(v.box.min.x, 0); x <= cell(v.box.max.x, 0); x++)
-      for (let y = cell(v.box.min.y, 1); y <= cell(v.box.max.y, 1); y++)
-        for (let z = cell(v.box.min.z, 2); z <= cell(v.box.max.z, 2); z++) grid[(x * N + y) * N + z].push(i);
+    for (let x = cx(v.box.min.x); x <= cx(v.box.max.x); x++)
+      for (let y = cy(v.box.min.y); y <= cy(v.box.max.y); y++)
+        for (let z = cz(v.box.min.z); z <= cz(v.box.max.z); z++) grid[(x * N + y) * N + z].push(i);
   });
   const occluded = (p: THREE.Vector3, self: number): boolean => {
     if (p.y < 0) return true;
-    if (p.x < min.x || p.y < min.y || p.z < min.z || p.x > min.x + size.x || p.y > min.y + size.y || p.z > min.z + size.z) return false;
-    for (const i of grid[(cell(p.x, 0) * N + cell(p.y, 1)) * N + cell(p.z, 2)]) if (i !== self && insideVol(vols[i]!, p)) return true;
+    if (p.x < mx || p.y < my || p.z < mz || p.x > Mx || p.y > My || p.z > Mz) return false;
+    for (const i of grid[(cx(p.x) * N + cy(p.y)) * N + cz(p.z)]) if (i !== self && insideVol(vols[i]!, p)) return true;
     return false;
   };
   const t = new THREE.Vector3();
   const b = new THREE.Vector3();
   const nrm = new THREE.Vector3();
-  const d = new THREE.Vector3();
   const p = new THREE.Vector3();
   const a = new THREE.Vector3();
+  const o = new THREE.Vector3();
   const e1 = new THREE.Vector3();
   const e2 = new THREE.Vector3();
-  for (const { g, self } of geos) {
+  // directions de l'hémisphère de la face courante (calculées une fois par face)
+  const dirs = AO_DIRS.map(() => new THREE.Vector3());
+  // sommets répétés (même position, même normale de face : triangles voisins d'une même facette) calculés une fois
+  const seen = new Map<string, number>();
+  const q = (v: number) => Math.round(v * 1e4);
+  /** repère de l'hémisphère autour de la normale `nrm` */
+  const frame = () => {
+    t.set(Math.abs(nrm.y) < 0.9 ? 0 : 1, Math.abs(nrm.y) < 0.9 ? 1 : 0, 0).cross(nrm).normalize();
+    b.crossVectors(nrm, t);
+    AO_DIRS.forEach((dir, j) => dirs[j].set(0, 0, 0).addScaledVector(t, dir.x).addScaledVector(b, dir.y).addScaledVector(nrm, dir.z));
+  };
+  for (const { g, self, f } of geos) {
     const pos = g.getAttribute("position");
     const matAttr = g.getAttribute("mat");
+    // pièce lissée : hémisphère autour de la normale du sommet (partagée par les facettes voisines : un seul calcul)
+    const vnorm = f.smooth ? g.getAttribute("normal") : null;
     const ao = new Float32Array(pos.count).fill(1);
+    seen.clear();
     for (let i = 0; i + 2 < pos.count; i += 3) {
-      // normale de la face
-      a.fromBufferAttribute(pos, i);
-      e1.fromBufferAttribute(pos, i + 1).sub(a);
-      e2.fromBufferAttribute(pos, i + 2).sub(a);
-      nrm.crossVectors(e1, e2);
-      if (nrm.lengthSq() < 1e-12) continue;
-      nrm.normalize();
-      t.set(Math.abs(nrm.y) < 0.9 ? 0 : 1, Math.abs(nrm.y) < 0.9 ? 1 : 0, 0).cross(nrm).normalize();
-      b.crossVectors(nrm, t);
+      if (!vnorm) {
+        // normale de la face
+        a.fromBufferAttribute(pos, i);
+        e1.fromBufferAttribute(pos, i + 1).sub(a);
+        e2.fromBufferAttribute(pos, i + 2).sub(a);
+        nrm.crossVectors(e1, e2);
+        if (nrm.lengthSq() < 1e-12) continue;
+        nrm.normalize();
+        frame();
+      }
       for (let k = 0; k < 3; k++) {
-        const o = new THREE.Vector3().fromBufferAttribute(pos, i + k).addScaledVector(nrm, 0.01);
+        o.fromBufferAttribute(pos, i + k);
+        if (vnorm) nrm.fromBufferAttribute(vnorm, i + k);
+        const key = `${q(o.x)},${q(o.y)},${q(o.z)},${q(nrm.x)},${q(nrm.y)},${q(nrm.z)}`;
+        const known = seen.get(key);
+        if (known !== undefined) {
+          ao[i + k] = known;
+          continue;
+        }
+        if (vnorm) {
+          if (nrm.lengthSq() < 1e-6) continue;
+          frame();
+        }
+        o.addScaledVector(nrm, 0.01);
         let occ = 0;
-        for (const dir of AO_DIRS) {
-          d.set(0, 0, 0).addScaledVector(t, dir.x).addScaledVector(b, dir.y).addScaledVector(nrm, dir.z);
+        for (const d of dirs) {
           for (const [dist, w] of AO_STEPS) {
             p.copy(o).addScaledVector(d, dist);
             if (occluded(p, self)) {
@@ -250,6 +426,7 @@ function bakeAO(geos: { g: THREE.BufferGeometry; self: number }[], vols: (Vol | 
         }
         // occ / directions : part pondérée des directions bouchées (1 par direction au plus)
         ao[i + k] = Math.max(0.3, 1 - 0.85 * (occ / AO_DIRS.length));
+        seen.set(key, ao[i + k]);
       }
     }
     for (let i = 0; i < pos.count; i++) matAttr.setY(i, ao[i]);
@@ -274,27 +451,62 @@ function partMatrix(part: Part, mirror: boolean): THREE.Matrix4 {
   return mirror ? m.premultiply(MIRROR_X) : m;
 }
 
-function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inherit: { pivot?: string; parent?: string; color?: ColorName }, depth = 0): void {
+/** Retire les triangles d'aire nulle (pôles des profils tournés qui reviennent à l'axe, tracés droits). */
+function dropDegenerate(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const p = g.getAttribute("position");
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const keep: number[] = [];
+  for (let i = 0; i + 2 < p.count; i += 3) {
+    a.fromBufferAttribute(p, i);
+    b.fromBufferAttribute(p, i + 1).sub(a);
+    c.fromBufferAttribute(p, i + 2).sub(a);
+    if (b.cross(c).lengthSq() > 1e-12) keep.push(i);
+  }
+  if (keep.length * 3 === p.count) return g;
+  const out = new Float32Array(keep.length * 9);
+  keep.forEach((i, k) => {
+    for (let j = 0; j < 9; j++) out[k * 9 + j] = (p.array as Float32Array)[i * 3 + j];
+  });
+  return new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(out, 3));
+}
+
+/** Angle sous lequel deux facettes voisines d'une pièce lissée se fondent. */
+const CREASE = 40 * DEG;
+/** niveau de détail réduit : formes rondes à moitié moins de côtés, encore lissées */
+const CREASE_LO = 50 * DEG;
+
+function isSmooth(part: Part): boolean {
+  if (part.smooth !== undefined) return part.smooth;
+  if (part.shape === "lathe" || part.shape === "tube" || part.shape === "torus") return true;
+  return (part.shape === "cylinder" || part.shape === "cone") && (part.sides ?? 6) >= 10;
+}
+
+function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inherit: { pivot?: string; parent?: string; color?: ColorName; fine?: boolean }, depth = 0, lo = false): void {
   if (depth > 4) return;
   for (const part of parts) {
+    if (lo && (part.fine ?? inherit.fine)) continue;
     const variants = part.mirror ? [false, true] : [false];
     for (const mirror of variants) {
       const m = new THREE.Matrix4().multiplyMatrices(parentMatrix, partMatrix(part, mirror));
       const pivot = part.pivot ?? inherit.pivot;
       const parent = part.parent ?? inherit.parent;
+      const fine = part.fine ?? inherit.fine;
       if (part.use) {
         const sub = KIT[part.use];
         if (!sub) continue;
-        flatten(sub, m, out, { pivot, parent, color: part.color ?? inherit.color }, depth + 1);
+        flatten(sub, m, out, { pivot, parent, color: part.color ?? inherit.color, fine }, depth + 1, lo);
         // la position du pivot d'un sous-ensemble est son origine
         if (part.pivot && !mirror) {
           out.push({ geo: new THREE.BufferGeometry(), color: "metal", pivot: part.pivot, pivotPos: new THREE.Vector3().setFromMatrixPosition(m) });
         }
         continue;
       }
-      let g = shapeGeometry(part);
+      let g = shapeGeometry(lo ? coarser(part) : part);
+      g.computeBoundingBox();
+      const local = g.boundingBox!.clone();
       g.applyMatrix4(m);
       if (g.index) g = g.toNonIndexed();
+      g = dropDegenerate(g);
       if (m.determinant() < 0) {
         // une réflexion (nombre impair de symétries) inverse l'orientation des faces : on échange deux sommets par triangle
         const p = g.getAttribute("position");
@@ -304,17 +516,26 @@ function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inheri
           p.setXYZ(i + 2, x, y, z);
         }
       }
-      const f: Flat = { geo: g, color: inherit.color && !part.color ? inherit.color : part.color ?? inherit.color ?? "metal", pivot, parent, vol: partVolume(part, m) };
+      const smooth = isSmooth(part);
+      if (smooth) {
+        g.deleteAttribute("normal");
+        g.deleteAttribute("uv");
+        g = toCreasedNormals(g, lo ? CREASE_LO : CREASE);
+      }
+      const f: Flat = { geo: g, color: inherit.color && !part.color ? inherit.color : part.color ?? inherit.color ?? "metal", pivot, parent, vol: partVolume(part, m, local), smooth, fine };
       if (part.pivot && !mirror) f.pivotPos = new THREE.Vector3().setFromMatrixPosition(m);
       out.push(f);
     }
   }
 }
 
-function colorize(g: THREE.BufferGeometry, color: ColorName): THREE.BufferGeometry {
+function colorize(g: THREE.BufferGeometry, color: ColorName, smooth = false): THREE.BufferGeometry {
   let ng = g.index ? g.toNonIndexed() : g;
+  const normal = ng.getAttribute("normal");
   ng = new THREE.BufferGeometry().setAttribute("position", ng.getAttribute("position"));
-  ng.computeVertexNormals();
+  // pièce lissée : normales moyennées déjà calculées ; sinon une normale par facette
+  if (smooth && normal) ng.setAttribute("normal", normal);
+  else ng.computeVertexNormals();
   const n = ng.getAttribute("position").count;
   const c = new THREE.Color(PALETTE[color]);
   const col = new Float32Array(n * 3);
@@ -350,11 +571,20 @@ function emptyGeometry(): THREE.BufferGeometry {
   return g;
 }
 
-export function buildModel(model: Model): BuiltModel {
+interface Assembled {
+  body: THREE.BufferGeometry;
+  pivots: Map<string, THREE.BufferGeometry>;
+  origins: Map<string, THREE.Vector3>;
+  box: THREE.Box3;
+  triangles: number;
+}
+
+/** Assemble un modèle ; `lo` : niveau de détail réduit (sans pièces fines, formes rondes à moitié moins de côtés). */
+function assemble(model: Model, lo: boolean): Assembled {
   const flats: Flat[] = [];
-  flatten(model.parts, new THREE.Matrix4(), flats, {});
-  const pivotOrigins = new Map<string, THREE.Vector3>();
-  for (const f of flats) if (f.pivotPos && f.pivot && !pivotOrigins.has(f.pivot)) pivotOrigins.set(f.pivot, f.pivotPos);
+  flatten(model.parts, new THREE.Matrix4(), flats, {}, 0, lo);
+  const origins = new Map<string, THREE.Vector3>();
+  for (const f of flats) if (f.pivotPos && f.pivot && !origins.has(f.pivot)) origins.set(f.pivot, f.pivotPos);
   const bodyParts: THREE.BufferGeometry[] = [];
   const pivotParts = new Map<string, THREE.BufferGeometry[]>();
   const box = new THREE.Box3();
@@ -363,7 +593,7 @@ export function buildModel(model: Model): BuiltModel {
   const colored: { g: THREE.BufferGeometry; self: number; f: Flat }[] = [];
   flats.forEach((f, i) => {
     if (!f.geo.getAttribute("position")) return;
-    const g = colorize(f.geo, f.color);
+    const g = colorize(f.geo, f.color, f.smooth);
     g.computeBoundingBox();
     if (g.boundingBox) box.union(g.boundingBox);
     colored.push({ g, self: i, f });
@@ -372,8 +602,8 @@ export function buildModel(model: Model): BuiltModel {
   for (const { g, f } of colored) {
     triangles += g.getAttribute("position").count / 3;
     const key = f.pivot ?? f.parent;
-    if (key && pivotOrigins.has(key)) {
-      const o = pivotOrigins.get(key)!;
+    if (key && origins.has(key)) {
+      const o = origins.get(key)!;
       g.translate(-o.x, -o.y, -o.z);
       if (!pivotParts.has(key)) pivotParts.set(key, []);
       pivotParts.get(key)!.push(g);
@@ -381,13 +611,51 @@ export function buildModel(model: Model): BuiltModel {
       bodyParts.push(g);
     }
   }
-  const body = bodyParts.length ? mergeGeometries(bodyParts, false) ?? emptyGeometry() : emptyGeometry();
+  const merge = (geos: THREE.BufferGeometry[]) => (geos.length ? mergeGeometries(geos, false) ?? emptyGeometry() : emptyGeometry());
+  const pivots = new Map<string, THREE.BufferGeometry>();
+  for (const [name, geos] of pivotParts) pivots.set(name, merge(geos));
+  return { body: merge(bodyParts), pivots, origins, box, triangles };
+}
+
+/** Le niveau de détail réduit n'est gardé que s'il économise au moins cette part des triangles. */
+const LOD_MIN_SAVING = 0.15;
+
+/** Le modèle a des pièces que le niveau de détail réduit retire ou simplifie (sinon on ne le construit pas). */
+function hasDetail(parts: Part[], depth = 0): boolean {
+  if (depth > 4) return false;
+  return parts.some((p) => {
+    if (p.fine) return true;
+    if (p.use) return hasDetail(KIT[p.use] ?? [], depth + 1);
+    if (p.shape === "lathe" || p.shape === "torus" || p.shape === "tube") return true;
+    if (p.shape === "extrude" && (p.bevel ?? 0) > 0) return true;
+    return (p.shape === "cylinder" || p.shape === "cone") && ((p.sides ?? 6) > 8 || (p.bevel ?? 0) > 0);
+  });
+}
+
+/**
+ * Modèles déjà construits (par description) : le rendu des entités, les fantômes de pose et les
+ * vignettes reprennent les mêmes géométries, qu'il ne faut pas modifier (les cloner avant).
+ */
+const builtCache = new WeakMap<Model, BuiltModel>();
+
+export function buildModel(model: Model): BuiltModel {
+  const hit = builtCache.get(model);
+  if (hit) return hit;
+  const hi = assemble(model, false);
+  const lo = hasDetail(model.parts) ? assemble(model, true) : null;
+  const useLo = !!lo && lo.triangles < hi.triangles * (1 - LOD_MIN_SAVING);
   const pivots: BuiltPivot[] = [];
-  for (const [name, geos] of pivotParts) {
-    pivots.push({ name, geometry: mergeGeometries(geos, false) ?? emptyGeometry(), origin: pivotOrigins.get(name)! });
+  for (const [name, geometry] of hi.pivots) {
+    const p: BuiltPivot = { name, geometry, origin: hi.origins.get(name)! };
+    // un pivot fait entièrement de pièces fines disparaît au loin
+    if (useLo) p.geometryLo = lo!.pivots.get(name) ?? emptyGeometry();
+    pivots.push(p);
   }
-  if (box.isEmpty()) box.set(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5));
-  return { body, pivots, box, triangles };
+  const box = hi.box.isEmpty() ? new THREE.Box3(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5)) : hi.box;
+  const built: BuiltModel = { body: hi.body, pivots, box, triangles: hi.triangles, trianglesLo: useLo ? lo!.triangles : hi.triangles };
+  if (useLo) built.bodyLo = lo!.body;
+  builtCache.set(model, built);
+  return built;
 }
 
 /** Modèle de secours : une boîte aux couleurs du joueur. */

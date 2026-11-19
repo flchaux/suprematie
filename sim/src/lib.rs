@@ -298,6 +298,15 @@ pub extern "C" fn projectiles_demo() -> u32 {
     h
 }
 
+/// Vitrine des modèles : un exemplaire de chaque bâtiment et de chaque unité (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn showcase_demo() -> u32 {
+    let w = stress::showcase_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Scène de démonstration des armes (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn weapons_demo() -> u32 {

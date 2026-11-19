@@ -2017,3 +2017,17 @@ fn projectiles_demo_fires_every_projectile_kind() {
     println!("familles de projectiles : {:?}", kinds);
     assert!(kinds.len() >= 10, "presque toutes les familles tirent : {:?}", kinds);
 }
+
+#[test]
+fn showcase_demo_places_every_land_building_and_unit() {
+    let mut w = crate::stress::showcase_demo();
+    for _ in 0..40 {
+        w.step(&[]);
+    }
+    // tous les bâtiments terrestres (ceux qui demandent de l'eau manquent) et toutes les unités du joueur 0
+    let land = BUILDINGS.iter().filter(|d| !d.water).count();
+    let placed = w.buildings.iter().filter(|b| b.alive && b.owner == 0).count();
+    assert!(placed >= land - 2, "{placed} bâtiments posés sur {land}");
+    let units = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0).count();
+    assert!(units >= UNITS.len(), "{units} unités");
+}

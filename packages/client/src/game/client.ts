@@ -255,6 +255,7 @@ export class GameClient {
     // ?demo=logistique : trains, drones et entrepôt d'équipe (vu comme le joueur 1, brouillard coupé)
     // ?demo=armes : expérimentales, balles, traits d'énergie et rayons prolongés face à une armée
     // ?demo=projectiles : une rangée par arme qui tire au sol, pour juger chaque projectile
+    // ?demo=vitrine : un exemplaire de chaque bâtiment et de chaque unité, pour juger les modèles en jeu
     const scene = new URLSearchParams(location.search).get("demo") ?? "";
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;

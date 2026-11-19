@@ -353,11 +353,15 @@ Le jeu cible Chrome uniquement. Le rendu utilise Three.js avec son moteur WebGPU
 
 Les modèles sont décrits en données à partir d'un kit de formes simples, et un générateur TypeScript les construit au chargement. Claude n'écrit jamais de sommets ni de fichiers OBJ ou glTF.
 
-- Le générateur prend une liste de pièces (bloc, cylindre à 5 ou 6 faces, cône, biseau), les place, les colore avec la palette commune et les fusionne en un seul mesh à facettes.
+- Le générateur prend une liste de pièces, les place, les colore avec la palette commune et les fusionne en un seul mesh. Formes : bloc, bloc chanfreiné, cylindre (chanfreiné ou non), cône, biseau, sphère, profil tourné (`lathe` : cuves, dômes, canons, tuyères), contour extrudé (`extrude` : caisses profilées, voûtes, flancs), tuyau à coudes arrondis (`tube`) et anneau (`torus` : brides, carènes).
+- Les pièces plates gardent leurs facettes. Les pièces rondes (profils tournés, tuyaux, anneaux, cylindres de 10 côtés ou plus) sont lissées : les facettes de moins de 40° se fondent.
+- Matières : blindage peint, métal, métal sombre, peinture de danger, verre, lumineux, plus cuivre, acier clair, caoutchouc et béton. Chacune a sa texture triplanaire (le béton a la sienne), sa rugosité et son aspect métallique.
+- Niveau de détail : le générateur construit aussi une version allégée de chaque modèle détaillé, sans les pièces marquées `fine` (boulons, rambardes, échelles, petits tuyaux), avec des formes rondes à moitié moins de côtés et sans chanfrein. Le jeu passe à cette version quand la caméra s'éloigne (au-delà de 95, retour en deçà de 85) en échangeant seulement les géométries des maillages instanciés.
 - Les éléments fréquents sont des sous-ensembles réutilisables : chenilles, tourelles, canons, réacteurs, socles de bâtiments.
 - Les pièces mobiles sont marquées `pivot`, et les pièces qu'elles portent sont marquées `parent`. Le jeu les fait tourner lui-même, sans animation par squelette.
 - La palette compte 6 à 8 couleurs communes plus une couleur par joueur, soit 8 couleurs de joueur. Avec une seule faction, toutes les unités partagent le même kit.
-- Une unité compte 100 à 300 triangles.
+- Budget : une unité compte au plus 2 500 triangles de près et 1 000 de loin ; un bâtiment au plus 4 000 de près et 1 600 de loin. La plupart des unités anciennes comptent 300 à 500 triangles.
+- Mesure de novembre 2026 (mode démo, 8 000 unités) : 60 à 80 appels de dessin et 1 à 1,9 million de triangles par image, ombres comprises. Des modèles cinq fois plus lourds portent ce total à 2,5 à 6,3 millions, sans changer le temps processeur : la limite est la carte graphique, d'où la version allégée au loin.
 
 Exemple de description d'une unité :
 
@@ -372,7 +376,7 @@ export const charLeger: UnitModel = {
 };
 ```
 
-Une page de visualisation (`tools/viewer`) affiche toutes les unités côte à côte, avec l'angle et la distance de la caméra du jeu. Playwright en fait une capture d'environ 800 pixels de large, que Claude regarde pour vérifier son travail.
+Une page de visualisation (`tools/viewer`) affiche toutes les unités côte à côte, avec l'angle et la distance de la caméra du jeu (`&zoom=2` pour s'approcher, `&lo` pour la version allégée). En jeu, `?demo=vitrine` pose un exemplaire de chaque bâtiment et de chaque unité. Playwright en fait une capture d'environ 800 pixels de large, que Claude regarde pour vérifier son travail.
 
 Pour tester le gameplay avant d'avoir les vrais modèles, les packs gratuits sous licence CC0 de Kenney et Quaternius peuvent servir. Si le kit paraît trop simple plus tard, Blender piloté par des scripts Python écrits par Claude permettra des pièces plus travaillées, exportées en .glb.
 

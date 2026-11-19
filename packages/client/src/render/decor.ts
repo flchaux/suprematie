@@ -104,8 +104,9 @@ export function decorGeometry(kind: DecorKind): { geo: THREE.BufferGeometry; tri
     const size = new THREE.Vector3();
     built.box.getSize(size);
     const s = 1 / Math.max(size.x, size.y, size.z, 0.01);
-    built.body.scale(s, s, s);
-    hit = { geo: built.body, triangles: built.triangles };
+    // géométrie partagée par le cache du générateur : on met à l'échelle une copie
+    const geo = built.body.clone().scale(s, s, s);
+    hit = { geo, triangles: built.triangles };
     baseCache.set(kind, hit);
   }
   return hit;

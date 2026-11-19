@@ -43,16 +43,32 @@ class KindMesh {
   }
   /** le modèle a des jambes articulées (pivots « jambe… ») */
   legs = false;
+  /** niveau de détail réduit (caméra lointaine) : géométries sans les pièces fines */
+  lo = false;
+  private bodyGeo(): THREE.BufferGeometry {
+    return (this.lo && this.built.bodyLo) || this.built.body;
+  }
+  private pivotGeo(i: number): THREE.BufferGeometry {
+    const p = this.built.pivots[i];
+    return (this.lo && p.geometryLo) || p.geometry;
+  }
+  /** Change le niveau de détail : on échange seulement les géométries (mêmes attributs, mêmes instances). */
+  setLod(lo: boolean): void {
+    if (lo === this.lo || !this.built.bodyLo) return;
+    this.lo = lo;
+    if (this.body) this.body.mesh.geometry = this.bodyGeo();
+    this.pivots.forEach((p, i) => (p.tm.mesh.geometry = this.pivotGeo(i)));
+  }
   ensure(need: number): void {
     if (need <= this.cap) return;
     const cap = Math.max(16, this.cap * 2, need);
     if (this.body) this.scene.remove(this.body.mesh);
     for (const p of this.pivots) this.scene.remove(p.tm.mesh);
-    this.body = teamInstancedMesh(this.built.body, cap, this.texPerTile * this.scale);
+    this.body = teamInstancedMesh(this.bodyGeo(), cap, this.texPerTile * this.scale);
     this.body.mesh.castShadow = this.shadows;
     this.scene.add(this.body.mesh);
-    this.pivots = this.built.pivots.map((p) => {
-      const tm = teamInstancedMesh(p.geometry, cap, this.texPerTile * this.scale);
+    this.pivots = this.built.pivots.map((p, i) => {
+      const tm = teamInstancedMesh(this.pivotGeo(i), cap, this.texPerTile * this.scale);
       this.scene.add(tm.mesh);
       // jambe : 1 ou 2 selon la phase (gauche ou arrière décalée d'un demi-pas), 0 sinon
       const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
@@ -484,6 +500,15 @@ export class Entities {
    * Met à jour toutes les instances pour l'image courante.
    * alpha : interpolation entre le tick précédent et le tick courant (0..1).
    */
+  /** Niveau de détail réduit pour tous les modèles (pièces fines retirées), selon la distance de la caméra. */
+  setDetail(lo: boolean): void {
+    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.chute];
+    for (const l of this.levelMeshes.values()) all.push(...l);
+    for (const l of this.beltCurves.values()) all.push(...l);
+    for (const l of this.beltJunctions.values()) all.push(...l);
+    for (const k of all) k?.setLod(lo);
+  }
+
   update(f: Frame, alpha: number, me: number, myTeam: number, selected: Set<number>, strategic: boolean, iconScale: number, dt: number, spectator: boolean, viewRect: [number, number, number, number]): void {
     // nettoyage de l'état d'animation des unités disparues ou longtemps hors de vue
     if (++this.animFrame % 600 === 0) for (const [k, v] of this.anim) if (this.animFrame - v.seen > 600) this.anim.delete(k);

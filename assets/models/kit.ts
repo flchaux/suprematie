@@ -1,6 +1,21 @@
 // Sous-ensembles réutilisables : chenilles, tourelles, canons, réacteurs, socles.
 import type { Part } from "./types.ts";
 
+/** Contour en stade (rectangle aux bouts arrondis) de longueur `l` (axe x) et de hauteur `h`, centré. */
+export function stade(l: number, h: number, n = 5): [number, number][] {
+  const r = h / 2;
+  const out: [number, number][] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = -Math.PI / 2 + (i / n) * Math.PI;
+    out.push([l / 2 - r + Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  for (let i = 0; i <= n; i++) {
+    const a = Math.PI / 2 + (i / n) * Math.PI;
+    out.push([-l / 2 + r + Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  return out;
+}
+
 export const KIT: Record<string, Part[]> = {
   // Chenille : à placer sur un côté (utiliser mirror pour l'autre)
   chenille: [
@@ -69,6 +84,52 @@ export const KIT: Record<string, Part[]> = {
     { shape: "box", size: [1.12, 0.2, 0.2], pos: [0.5, 0.25, 0], rot: [0, 0, 26.6], color: "faction" },
     { shape: "box", size: [0.2, 1.62, 0.2], pos: [1.3, -0.25, 0], rot: [0, 0, 21.7], color: "metal" },
     { shape: "box", size: [0.3, 0.1, 0.3], pos: [1.6, -0.97, 0], color: "dark" },
+  ],
+  // Chenille détaillée (côté droit, utiliser mirror) : bande de caoutchouc en stade, quatre galets, barbotin
+  // à l'avant, roue folle à l'arrière ; galets et moyeux sont des pièces fines. 2,3 de long, 0,5 de haut.
+  chenille_d: [
+    { shape: "extrude", profile: stade(2.3, 0.5, 4), depth: 0.42, bevel: 0.04, pos: [0, 0.25, 0], rot: [0, -90, 0], color: "rubber" },
+    { shape: "extrude", profile: stade(2.12, 0.34, 4), depth: 0.46, pos: [0, 0.25, 0], rot: [0, -90, 0], color: "dark", fine: true },
+    { shape: "cylinder", sides: 10, radius: 0.15, height: 0.48, pos: [0, 0.2, 0.42], rot: [0, 0, 90], color: "metal", fine: true },
+    { shape: "cylinder", sides: 10, radius: 0.15, height: 0.48, pos: [0, 0.2, -0.05], rot: [0, 0, 90], color: "metal", fine: true },
+    { shape: "cylinder", sides: 10, radius: 0.15, height: 0.48, pos: [0, 0.2, -0.52], rot: [0, 0, 90], color: "metal", fine: true },
+    { shape: "cylinder", sides: 8, radius: 0.2, height: 0.5, bevel: 0.03, pos: [0, 0.27, 0.92], rot: [0, 0, 90], color: "steel" },
+    { shape: "cylinder", sides: 8, radius: 0.18, height: 0.5, bevel: 0.03, pos: [0, 0.27, -0.92], rot: [0, 0, 90], color: "steel" },
+    { shape: "cylinder", sides: 6, radius: 0.07, height: 0.54, pos: [0, 0.27, 0.92], rot: [0, 0, 90], color: "dark", fine: true },
+  ],
+  // Roue à pneu (axe x), diamètre 1, largeur 0,4 : pneu de caoutchouc, jante d'acier et moyeu (fin)
+  roue_d: [
+    { shape: "lathe", sides: 12, profile: [[0.36, -0.2], [0.46, -0.2], [0.5, -0.12], [0.5, 0.12], [0.46, 0.2], [0.36, 0.2]], rot: [0, 0, 90], color: "rubber" },
+    { shape: "cylinder", sides: 12, radius: 0.36, height: 0.34, rot: [0, 0, 90], color: "steel" },
+    { shape: "cylinder", sides: 6, radius: 0.12, height: 0.42, rot: [0, 0, 90], color: "dark", fine: true },
+  ],
+  // Garde-corps de 1 de long (axe x), 0,3 de haut, posé à l'origine : main courante et trois montants (pièce fine)
+  garde_corps: [
+    { shape: "tube", radius: 0.018, sides: 4, path: [[-0.5, 0.3, 0], [0.5, 0.3, 0]], color: "hazard", fine: true },
+    { shape: "tube", radius: 0.012, sides: 4, path: [[-0.5, 0.15, 0], [0.5, 0.15, 0]], color: "light", fine: true },
+    { shape: "box", size: [0.03, 0.3, 0.03], pos: [-0.48, 0.15, 0], color: "light", fine: true },
+    { shape: "box", size: [0.03, 0.3, 0.03], pos: [0, 0.15, 0], color: "light", fine: true },
+    { shape: "box", size: [0.03, 0.3, 0.03], pos: [0.48, 0.15, 0], color: "light", fine: true },
+  ],
+  // Échelle de 1 de haut (axe y), base à l'origine, plaquée contre une paroi en -z (pièce fine)
+  echelle: [
+    { shape: "box", size: [0.03, 1, 0.03], pos: [-0.1, 0.5, 0], color: "light", fine: true },
+    { shape: "box", size: [0.03, 1, 0.03], pos: [0.1, 0.5, 0], color: "light", fine: true },
+    { shape: "box", size: [0.2, 0.02, 0.02], pos: [0, 0.2, 0], color: "metal", fine: true },
+    { shape: "box", size: [0.2, 0.02, 0.02], pos: [0, 0.4, 0], color: "metal", fine: true },
+    { shape: "box", size: [0.2, 0.02, 0.02], pos: [0, 0.6, 0], color: "metal", fine: true },
+    { shape: "box", size: [0.2, 0.02, 0.02], pos: [0, 0.8, 0], color: "metal", fine: true },
+  ],
+  // Cuve verticale de rayon 0,5 et de 1 de haut, base à l'origine : jupe, fût, dôme, cerclages fins
+  cuve: [
+    { shape: "lathe", sides: 12, profile: [[0, 0], [0.52, 0], [0.52, 0.06], [0.5, 0.08], [0.5, 0.78], [0.4, 0.93], [0.2, 0.995], [0, 1.0]], color: "light" },
+    { shape: "torus", radius: 0.505, tube: 0.02, sides: 12, pos: [0, 0.3, 0], color: "metal", fine: true },
+    { shape: "torus", radius: 0.505, tube: 0.02, sides: 12, pos: [0, 0.6, 0], color: "metal", fine: true },
+  ],
+  // Volant de vanne (axe y) de rayon 0,1 sur sa tige (pièce fine)
+  vanne: [
+    { shape: "cylinder", sides: 6, radius: 0.025, height: 0.12, pos: [0, 0.06, 0], color: "metal", fine: true },
+    { shape: "torus", radius: 0.08, tube: 0.015, sides: 10, pos: [0, 0.12, 0], color: "red", fine: true },
   ],
   // Coque de navire : 1 de large, 3.4 de long, étrave en +z (mettre à l'échelle [largeur, 1, longueur/3.4])
   coque: [
