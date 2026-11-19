@@ -449,27 +449,32 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.1,0.06,0.03], pos: [1.1,0.4,1.21], color: "amber" },
     ],
   },
-  // lab : dôme vitré sur anneau clair, liseré cyan, pupitre holographique (600 triangles)
+  // lab : caisson carré (ses parois portent les trappes), dôme vitré sur anneau clair, liseré cyan, pupitre holographique
   lab: {
     parts: [
       ...socle(3),
       ...filets(3),
-      { shape: "cylinder", sides: 8, radius: 1.3, radiusTop: 1.2, height: 0.42, pos: [0,0.46,0], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 1.32, height: 0.06, pos: [0,0.4,0], color: "glow" },
-      { shape: "cylinder", sides: 8, radius: 1.21, height: 0.08, pos: [0,0.68,0], color: "faction" },
-      { shape: "bevel", size: [0.6,0.32,0.2], pos: [0,0.44,1.2], color: "dark" },
-      { shape: "box", size: [0.4,0.04,0.03], pos: [0,0.5,1.31], color: "glow" },
-      { shape: "box", size: [0.08,0.05,0.03], pos: [0.55,0.5,1.2], rot: [0,22,0], color: "amber", mirror: true },
+      // caisson : parois droites jusqu'au bord de l'emprise, coins chanfreinés clairs, liseré haut
+      { shape: "bevel", size: [2.84,0.6,2.84], pos: [0,0.55,0], bevel: 0.08, color: "dark" },
+      { shape: "bevel", size: [0.36,0.66,0.36], pos: [1.26,0.56,1.26], bevel: 0.06, color: "light", mirror: true },
+      { shape: "bevel", size: [0.36,0.66,0.36], pos: [1.26,0.56,-1.26], bevel: 0.06, color: "light", mirror: true },
+      { shape: "box", size: [2.3,0.04,0.03], pos: [0,0.8,1.43], color: "glow" },
+      { shape: "box", size: [0.03,0.04,2.3], pos: [1.43,0.8,0], color: "glow", mirror: true },
+      { shape: "box", size: [2.3,0.04,0.03], pos: [0,0.8,-1.43], color: "glow" },
+      // anneau posé sur le caisson
+      { shape: "cylinder", sides: 8, radius: 1.3, radiusTop: 1.2, height: 0.3, pos: [0,1.0,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 1.32, height: 0.06, pos: [0,0.88,0], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 1.21, height: 0.08, pos: [0,1.16,0], color: "faction" },
       // dôme vitré et ses nervures
-      { shape: "sphere", radius: 1.0, detail: 1, pos: [0,0.72,0], scale: [1,0.72,1], color: "glass" },
-      { shape: "cylinder", sides: 8, radius: 0.93, height: 0.05, pos: [0,1.0,0], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.66, height: 0.05, pos: [0,1.27,0], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.1, pos: [0,1.48,0], color: "faction" },
-      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.04, pos: [0,1.54,0], color: "glow" },
-      // pupitre holographique
-      { shape: "cylinder", sides: 8, radius: 0.3, height: 0.5, pos: [1.05,0.5,-1.05], color: "light" },
-      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.08, pos: [1.05,0.76,-1.05], color: "dark" },
-      { shape: "cone", sides: 8, radius: 0.32, height: 0.6, pos: [1.05,1.1,-1.05], rot: [180,0,0], color: "glow" },
+      { shape: "sphere", radius: 1.0, detail: 1, pos: [0,1.18,0], scale: [1,0.72,1], color: "glass" },
+      { shape: "cylinder", sides: 8, radius: 0.93, height: 0.05, pos: [0,1.46,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.66, height: 0.05, pos: [0,1.73,0], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.32, height: 0.1, pos: [0,1.94,0], color: "faction" },
+      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.04, pos: [0,2.0,0], color: "glow" },
+      // pupitre holographique, sur un coin du caisson
+      { shape: "cylinder", sides: 8, radius: 0.24, height: 0.36, pos: [1.1,1.03,-1.1], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.27, height: 0.07, pos: [1.1,1.24,-1.1], color: "dark" },
+      { shape: "cone", sides: 8, radius: 0.28, height: 0.5, pos: [1.1,1.53,-1.1], rot: [180,0,0], color: "glow" },
     ],
   },
   // depot : conteneur blindé sombre, rideau à lames à l'avant, coins clairs, toit d'équipe (620 triangles)

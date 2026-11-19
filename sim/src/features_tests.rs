@@ -1844,3 +1844,61 @@ fn fuel_carrying_belts_and_arms_run_without_power_and_alerts_fire_once() {
     }
     assert_eq!((low, dry), (1, 1), "une alerte « moins d'une minute », puis une « à sec »");
 }
+
+/// Deux assembleurs collés qui font la même recette partagent leurs ingrédients : celui qui ne reçoit
+/// rien produit aussi. Un troisième, collé mais sur une autre recette, ne reçoit rien.
+#[test]
+fn twin_crafters_share_their_inputs() {
+    use crate::buildings::{accepts, twins_of};
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
+    let b = put(&mut w, 0, B_ASSEMBLER1, 102, 100, 0);
+    let c = put(&mut w, 0, B_ASSEMBLER1, 100, 102, 0);
+    let gear = RECIPES.iter().position(|r| r.key == "gear").unwrap() as i32;
+    let other = RECIPES.iter().position(|r| r.crafter == Crafter::Assembler && r.key != "gear").unwrap() as i32;
+    for (m, r) in [(a, gear), (b, gear), (c, other)] {
+        let id = w.building_ref(m) as i32;
+        w.step(&[4, crate::orders::O_SET_RECIPE, 0, id, r]);
+    }
+    assert_eq!(twins_of(&w, a), vec![b]);
+    for _ in 0..1200 {
+        if accepts(&w, a, IRON_PLATE) {
+            insert_item(&mut w, a, IRON_PLATE);
+        }
+        w.buildings[a].out = 0;
+        w.buildings[b].out = 0;
+        w.step(&[]);
+    }
+    let made = |m: usize| crate::buildings::flow_per_min(&w.buildings[m], w.tick);
+    assert!(made(b) > 0, "la jumelle produit avec les ingrédients partagés");
+    assert!(made(a) > 0);
+    assert_eq!(made(c), 0, "une recette différente ne partage pas");
+    assert!(w.buildings[c].inv.iter().all(|&x| x == 0));
+}
+
+/// Deux usines collées qui produisent la même unité équilibrent leur réserve de composants.
+#[test]
+fn twin_factories_share_their_components() {
+    use crate::buildings::{factory_has, twins_of};
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    let a = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
+    let b = put(&mut w, 0, B_LAND_FACTORY, 103, 100, 0);
+    let k = unit_kind("light_tank") as u16;
+    for f in [a, b] {
+        w.buildings[f].queue.push((k, 5));
+    }
+    assert_eq!(twins_of(&w, b), vec![a]);
+    let cost = udef(k).cost;
+    for &(it, n) in cost {
+        crate::buildings::factory_put(&mut w.buildings[a], it, n * 2);
+    }
+    run(&mut w, 200);
+    for &(it, _) in cost {
+        assert!(factory_has(&w.buildings[b], it) > 0 || w.buildings[b].working || w.buildings[b].flow.iter().any(|&x| x > 0), "objet {it} partagé");
+    }
+    // une autre unité en tête : plus de partage
+    w.buildings[b].queue[0].0 = unit_kind("line_robot") as u16;
+    assert!(twins_of(&w, a).is_empty());
+}

@@ -1176,6 +1176,110 @@ pub fn factory_trim(w: &mut World, b: usize) {
     }
 }
 
+/// Machines jumelles qui travaillent : elles équilibrent leurs ingrédients une fois toutes les `TWIN_PERIOD` ticks
+/// (à l'arrêt, à chacun de leurs passages).
+const TWIN_PERIOD: u32 = 10;
+
+/// Fabriquent-elles la même chose ? Même recette (fabricants), même unité en tête de file (usines) ;
+/// les laboratoires travaillent tous à la recherche du joueur.
+fn same_product(a: &Building, c: &Building) -> bool {
+    match a.def().class {
+        BClass::Crafter => a.recipe != RECIPE_NONE && a.recipe == c.recipe,
+        BClass::Factory => matches!((a.queue.first(), c.queue.first()), (Some(x), Some(y)) if x.0 == y.0),
+        BClass::Lab => true,
+        _ => false,
+    }
+}
+
+/// Machines jumelles de `b`, par indice croissant : bâtiments terminés du même type et du même joueur,
+/// collés à une de ses faces, qui fabriquent la même chose. Elles partagent leurs ingrédients.
+pub fn twins_of(w: &World, b: usize) -> Vec<usize> {
+    let mut v = [0usize; MAX_TWINS];
+    let n = twins_into(w, b, &mut v);
+    v[..n].to_vec()
+}
+
+/// Au plus autant de jumelles que de cases autour du plus grand bâtiment de fabrication (5 × 5).
+const MAX_TWINS: usize = 20;
+
+/// Jumelles de `b` rangées dans `v` (sans allocation), par indice croissant ; renvoie leur nombre.
+fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
+    let bb = &w.buildings[b];
+    let (bw, bh) = bb.size();
+    let mut n = 0;
+    for ty in bb.y - 1..=bb.y + bh {
+        for tx in bb.x - 1..=bb.x + bw {
+            if !on_face(bb.x, bb.y, bw, bh, tx, ty) || !w.map.inside(tx, ty) {
+                continue;
+            }
+            let o = w.map.occ[w.map.idx(tx, ty)];
+            if o == 0 {
+                continue;
+            }
+            let c = (o - 1) as usize;
+            if c == b || v[..n].contains(&c) || n == MAX_TWINS {
+                continue;
+            }
+            let cb = &w.buildings[c];
+            if cb.alive && cb.complete() && cb.upgrade == 0 && cb.kind == bb.kind && cb.owner == bb.owner && same_product(bb, cb) {
+                v[n] = c;
+                n += 1;
+            }
+        }
+    }
+    v[..n].sort_unstable();
+    n
+}
+
+/// Partage des ingrédients avec les machines jumelles : pour chaque ingrédient, un objet passe de la
+/// mieux pourvue à l'autre quand l'écart atteint 2. Une jumelle servie est réveillée.
+fn share_with_twins(w: &mut World, b: usize) {
+    let working = w.buildings[b].working;
+    if working && !w.tick.is_multiple_of(TWIN_PERIOD) {
+        return;
+    }
+    let mut twins = [0usize; MAX_TWINS];
+    let n = twins_into(w, b, &mut twins);
+    if n == 0 {
+        return;
+    }
+    // emplacements partagés : (indice dans inv ou stash, objet)
+    let slots: Vec<(usize, u8)> = {
+        let bb = &w.buildings[b];
+        match bb.def().class {
+            BClass::Crafter => RECIPES[bb.recipe as usize].inputs.iter().enumerate().map(|(j, x)| (j, x.0)).collect(),
+            BClass::Lab => (0..6).map(|j| (j, PACK1 + j as u8)).collect(),
+            BClass::Factory => udef(bb.queue[0].0).cost.iter().map(|c| (c.0 as usize, c.0)).collect(),
+            _ => return,
+        }
+    };
+    let factory = w.buildings[b].def().class == BClass::Factory;
+    let get = |bb: &Building, j: usize| if factory { factory_has(bb, j as u8) } else { bb.inv[j] };
+    for &c in &twins[..n] {
+        for &(j, it) in &slots {
+            let (mine, theirs) = (get(&w.buildings[b], j), get(&w.buildings[c], j));
+            let (from, to) = if mine >= theirs + 2 {
+                (b, c)
+            } else if theirs >= mine + 2 {
+                (c, b)
+            } else {
+                continue;
+            };
+            if factory {
+                if factory_room(&w.buildings[to], it) == 0 {
+                    continue;
+                }
+                w.buildings[from].stash[j] -= 1;
+                factory_put(&mut w.buildings[to], it, 1);
+            } else {
+                w.buildings[from].inv[j] -= 1;
+                w.buildings[to].inv[j] += 1;
+            }
+            w.buildings[to].wake = 0;
+        }
+    }
+}
+
 /// Un dépôt collé à une usine lui donne un objet de la réserve du joueur toutes les `DEPOT_FEED_PERIOD` ticks
 /// (1 par seconde) : un appoint lent, bien en deçà d'un tapis. Un seul dépôt compte par usine.
 pub const DEPOT_FEED_PERIOD: u32 = 20;
@@ -1858,6 +1962,9 @@ fn tick_crafter(w: &mut World, b: usize) {
     // trappes de sortie et transfert direct : un tapis qui part du bâtiment, ou un voisin collé qui
     // reçoit des objets, prend ses produits sans bras
     let outlets = w.buildings[b].out > 0 && push_out(w, b);
+    if w.buildings[b].recipe != RECIPE_NONE {
+        share_with_twins(w, b);
+    }
     tick_crafter_work(w, b);
     if outlets && w.buildings[b].out > 0 {
         // produits en attente : revenir bientôt les poser (le tapis avance)
@@ -1912,6 +2019,7 @@ fn tick_crafter_work(w: &mut World, b: usize) {
 
 fn tick_lab(w: &mut World, b: usize) {
     let owner = w.buildings[b].owner as usize;
+    share_with_twins(w, b);
     if !w.buildings[b].working {
         let t = w.players[owner].research;
         if t == 0 {
@@ -1970,6 +2078,7 @@ fn tick_factory(w: &mut World, b: usize) {
         return;
     };
     feed_from_depots(w, b);
+    share_with_twins(w, b);
     let def = udef(kind);
     if !w.buildings[b].working {
         let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1).map(|c| c.0);
