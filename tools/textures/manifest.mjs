@@ -38,4 +38,8 @@ export const GROUND = [
   { key: "dry", mean: [0.45, 0.42, 0.32], contrast: 0.05, desc: "dry steppe: sparse yellowed dry grass tufts over cracked dusty brown earth with small stones." },
   { key: "snow", mean: [0.8, 0.81, 0.85], contrast: 0.035, desc: "wind-packed snow with soft drifts, a few tiny ice crystals and very faint blue shading, with rare small grey rocks poking through." },
   { key: "rock", mean: [0.37, 0.35, 0.33], contrast: 0.06, desc: "rough grey granite rock face with natural cracks, small ledges, lichen specks and gravel, slightly warm grey." },
+  // variantes mêlées par taches (bruit à grande échelle) dans les zones de la chaîne
+  { key: "grass_lush", mean: [0.18, 0.33, 0.13], contrast: 0.05, desc: "lush dense taller meadow grass seen from above, deep saturated green with darker shadowed clumps, a few tiny white and yellow wildflower specks." },
+  { key: "dirt", mean: [0.36, 0.28, 0.19], contrast: 0.05, desc: "bare brown forest-floor soil with small dry leaf litter, twigs, tiny roots and a few small pebbles, slightly damp." },
+  { key: "gravel", mean: [0.47, 0.44, 0.38], contrast: 0.055, desc: "loose gravel and small rounded pebbles of mixed grey, beige and light brown tones packed over dusty ground." },
 ];

@@ -180,14 +180,46 @@ export const DECOR_MODELS: Record<string, Model> = {
     ],
   },
 
-  /** Débris métalliques : plaques tordues, tuyau et roue à demi enterrés. */
-  metal_debris: {
+  /** Tronc abattu : bûche couchée au cœur clair, mousse, branche cassée, champignons et herbes au pied. */
+  fallen_log: {
     parts: [
-      { shape: "box", size: [0.7, 0.05, 0.45], pos: [0, 0.1, 0], rot: [0, 15, 14], color: "metal" },
-      { shape: "box", size: [0.4, 0.05, 0.35], pos: [-0.25, 0.16, -0.22], rot: [30, -20, 0], color: "rust" },
-      { shape: "box", size: [0.1, 0.1, 0.6], pos: [0.18, 0.06, -0.25], rot: [0, 55, 8], color: "dark" },
-      { shape: "cylinder", sides: 6, radius: 0.07, height: 0.75, pos: [-0.1, 0.06, 0.28], rot: [0, 0, 84], color: "rust" },
-      { shape: "cylinder", sides: 8, radius: 0.24, height: 0.1, pos: [0.36, 0.14, 0.22], rot: [70, 20, 0], color: "dark" },
+      { shape: "cylinder", sides: 7, radius: 0.17, radiusTop: 0.14, height: 1.05, pos: [0, 0.15, 0], rot: [0, 0, 90], color: "wood" },
+      { shape: "cylinder", sides: 7, radius: 0.14, height: 0.03, pos: [0.535, 0.15, 0], rot: [0, 0, 90], color: "dry" },
+      { shape: "cylinder", sides: 7, radius: 0.11, height: 0.03, pos: [-0.535, 0.15, 0], rot: [0, 0, 90], color: "dry" },
+      stick(0.12, 0.22, -0.08, 0.32, 55, 200, 0.045, "wood"),
+      { shape: "sphere", detail: 0, radius: 0.13, pos: [-0.18, 0.29, 0.03], scale: [1.7, 0.42, 1.1], color: "leaf" },
+      { shape: "sphere", detail: 0, radius: 0.1, pos: [0.26, 0.28, -0.02], scale: [1.4, 0.4, 1.1], color: "leaf_dark" },
+      { shape: "cylinder", sides: 5, radius: 0.025, height: 0.1, pos: [0.06, 0.05, 0.2], color: "snow" },
+      { shape: "cone", sides: 6, radius: 0.075, height: 0.06, pos: [0.06, 0.12, 0.2], color: "rust" },
+      { shape: "cylinder", sides: 5, radius: 0.02, height: 0.07, pos: [0.14, 0.035, 0.22], color: "snow" },
+      { shape: "cone", sides: 6, radius: 0.055, height: 0.045, pos: [0.14, 0.08, 0.22], color: "rust" },
+      blade(-0.36, 0.17, 0.3, 26, 20, "leaf"),
+      blade(-0.3, -0.18, 0.26, 30, 160, "leaf_dark"),
+      blade(0.4, 0.16, 0.24, 30, 60, "leaf"),
+    ],
+  },
+
+  /** Colonne en ruine : fût de pierre brisé en biseau sur un socle, tambour tombé, lierre et mousse. */
+  ruined_pillar: {
+    parts: [
+      { shape: "bevel", size: [0.62, 0.12, 0.62], pos: [0, 0.06, 0], rot: [0, 12, 0], color: "rock" },
+      { shape: "cylinder", sides: 8, radius: 0.2, radiusTop: 0.19, height: 0.72, pos: [0, 0.48, 0], color: "rock" },
+      { shape: "wedge", size: [0.38, 0.2, 0.38], pos: [0, 0.94, 0], rot: [0, 25, 0], color: "rock" },
+      { shape: "cylinder", sides: 8, radius: 0.18, height: 0.3, pos: [0.44, 0.17, 0.22], rot: [10, 35, 90], color: "rock" },
+      { shape: "sphere", detail: 0, radius: 0.12, pos: [0.13, 0.4, 0.12], scale: [0.7, 1.9, 0.7], color: "leaf_dark" },
+      { shape: "sphere", detail: 0, radius: 0.1, pos: [-0.15, 0.28, 0.1], scale: [0.8, 1.4, 0.8], color: "leaf" },
+      { shape: "sphere", detail: 0, radius: 0.12, pos: [0, 0.86, 0], scale: [1.5, 0.35, 1.5], color: "leaf" },
+      blade(-0.27, -0.22, 0.3, 24, -140, "leaf"),
+      blade(0.3, -0.25, 0.26, 28, 150, "leaf_dark"),
+    ],
+  },
+
+  /** Fougère : couronne de frondes arquées vers l'extérieur, cœur plus sombre. */
+  fern: {
+    parts: [
+      ...[0, 45, 90, 135, 180, 225, 270, 315].map((d, i) => blade(0, 0, 0.62 + (i % 3) * 0.06, 62 - (i % 2) * 8, d + (i % 2) * 12, i % 3 ? "leaf" : "leaf_dark", 0.085)),
+      ...[20, 140, 260].map((d) => blade(0, 0, 0.5, 32, d, "leaf_dark", 0.07)),
+      blade(0, 0, 0.36, 6, 0, "leaf", 0.06),
     ],
   },
 

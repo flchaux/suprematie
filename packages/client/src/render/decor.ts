@@ -28,7 +28,9 @@ export const DECOR_KINDS = {
   rocks: { size: [0.65, 1.0], sway: 0, small: true, sink: 0.08, shadow: false },
   boulder: { size: [0.9, 1.5], sway: 0, small: false, sink: 0.1, shadow: true },
   reeds: { size: [0.8, 1.1], sway: 1, small: false, sink: 0.02, shadow: false },
-  metal_debris: { size: [0.7, 1.1], sway: 0, small: false, sink: 0.06, shadow: true },
+  fallen_log: { size: [0.9, 1.3], sway: 0, small: false, sink: 0.04, shadow: true },
+  ruined_pillar: { size: [0.9, 1.3], sway: 0, small: false, sink: 0.04, shadow: true },
+  fern: { size: [0.6, 0.95], sway: 0.5, small: true, sink: 0.02, shadow: false },
   crystal: { size: [0.8, 1.2], sway: 0, small: false, sink: 0.05, shadow: true },
   snow_pine: { size: [1.6, 2.3], sway: 0.1, small: false, sink: 0.03, shadow: true },
   ice_rock: { size: [0.7, 1.1], sway: 0, small: false, sink: 0.08, shadow: true },
@@ -42,9 +44,9 @@ const KIND_INDEX = Object.fromEntries(KIND_KEYS.map((k, i) => [k, i])) as Record
 /** Zones : densité (décorations par case) et poids des sortes. */
 interface Zone { density: number; kinds: [Kind, number][] }
 const SHORE: Zone = { density: 0.14, kinds: [["reeds", 5], ["grass_tuft", 2], ["rocks", 1]] };
-const SAND: Zone = { density: 0.04, kinds: [["dry_shrub", 2], ["rocks", 2], ["boulder", 0.5], ["metal_debris", 0.6]] };
-const GRASS: Zone = { density: 0.19, kinds: [["grass_tuft", 6], ["bush", 3], ["flowers", 2.5], ["conifer", 1.4], ["stump", 0.5], ["rocks", 1], ["boulder", 0.4], ["metal_debris", 0.25], ["crystal", 0.08]] };
-const DRY: Zone = { density: 0.13, kinds: [["dry_shrub", 4], ["dead_tree", 0.9], ["rocks", 2], ["boulder", 1], ["grass_tuft", 1.5], ["metal_debris", 0.5], ["stump", 0.3]] };
+const SAND: Zone = { density: 0.04, kinds: [["dry_shrub", 2], ["rocks", 2], ["boulder", 0.5], ["ruined_pillar", 0.35]] };
+const GRASS: Zone = { density: 0.19, kinds: [["grass_tuft", 6], ["bush", 3], ["flowers", 2.5], ["conifer", 1.4], ["stump", 0.5], ["rocks", 1], ["boulder", 0.4], ["fern", 1.6], ["fallen_log", 0.35], ["ruined_pillar", 0.12], ["crystal", 0.08]] };
+const DRY: Zone = { density: 0.13, kinds: [["dry_shrub", 4], ["dead_tree", 0.9], ["rocks", 2], ["boulder", 1], ["grass_tuft", 1.5], ["fallen_log", 0.4], ["ruined_pillar", 0.2], ["stump", 0.3]] };
 const SNOW: Zone = { density: 0.07, kinds: [["snow_pine", 2], ["ice_rock", 3], ["rocks", 0.4], ["crystal", 0.5]] };
 const ROCKY: Zone = { density: 0.08, kinds: [["boulder", 2], ["rocks", 3], ["crystal", 0.35], ["dead_tree", 0.3]] };
 const CHAIN_ZONES = [SAND, SAND, GRASS, DRY, SNOW];

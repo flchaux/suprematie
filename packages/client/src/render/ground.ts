@@ -3,7 +3,8 @@
 // une « chaîne » d'altitude (fond marin → sable → herbe → herbe sèche → neige) dont seules deux
 // couches voisines sont lues en chaque point, la roche sur les pentes (projection triplanaire), un
 // bruit à grande échelle pour les taches de végétation et une seconde lecture à grande échelle pour
-// casser la répétition. Lectures inconditionnelles avec dérivées explicites (`.grad`) : valable en
+// casser la répétition. Trois variantes (herbe dense, terre nue, gravier) se posent par taches, selon des
+// bruits indépendants, sur les zones de la chaîne qui leur conviennent. Lectures inconditionnelles avec dérivées explicites (`.grad`) : valable en
 // WebGPU comme en WebGL2, sans couture de niveau de détail au raccord des cases.
 import * as THREE from "three/webgpu";
 import {
@@ -15,10 +16,13 @@ type N = ReturnType<typeof float>;
 type V2 = ReturnType<typeof vec2>;
 
 /** Ordre des couches : identique à GROUND dans tools/textures/manifest.mjs. */
-export const GROUND_KEYS = ["seabed", "sand", "grass", "dry", "snow", "rock"] as const;
+export const GROUND_KEYS = ["seabed", "sand", "grass", "dry", "snow", "rock", "grass_lush", "dirt", "gravel"] as const;
 const ROCK = 5;
+const LUSH = 6;
+const DIRT = 7;
+const GRAVEL = 8;
 /** Luminance moyenne de chaque couche (sRGB décodé), pour le mélange selon le relief des textures. */
-const LUM = [0.35, 0.62, 0.34, 0.41, 0.81, 0.35];
+const LUM = [0.35, 0.62, 0.34, 0.41, 0.81, 0.35, 0.26, 0.29, 0.44];
 /** Taille d'une répétition de texture, en cases. */
 const TILE_CELLS = 7.5;
 const ROCK_CELLS = 6;
@@ -29,7 +33,7 @@ const TILE = 512;
 const PAD = 32;
 const CELL = TILE + 2 * PAD;
 const COLS = 3;
-const ROWS = 2;
+const ROWS = 3;
 
 const placeholder = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
 placeholder.needsUpdate = true;
@@ -124,6 +128,23 @@ export function groundColor(): ReturnType<typeof vec3> {
   // mélange selon le relief des textures : 0 en f = 0, 1 en f = 1 (continu quand la couche change)
   const bw = smoothstep(0, 1, clamp(f.sub(0.5).mul(2.2).add(db.sub(da).mul(3)).add(0.5), 0, 1));
   let col = mix(ca, cb, bw);
+  // variantes par taches : herbe dense dans les prairies, terre nue dans l'herbe et la steppe, gravier
+  // sur le sable et la steppe ; chacune avec son bruit et sa propre orientation de texture
+  const grassZ = smoothstep(1.5, 2.0, tn).mul(float(1).sub(smoothstep(2.5, 3.0, tn)));
+  const dryZ = smoothstep(2.4, 2.9, tn).mul(float(1).sub(smoothstep(3.4, 3.8, tn)));
+  const sandZ = smoothstep(0.6, 1.0, tn).mul(float(1).sub(smoothstep(1.4, 1.8, tn)));
+  const n1 = mx_noise_float(p2.mul(0.035).add(vec2(17.3, -4.1)));
+  const n2 = mx_noise_float(p2.mul(0.09).add(vec2(-9.7, 31.2)));
+  const n3 = mx_noise_float(p2.mul(0.07).add(vec2(43.1, 12.9)));
+  const uvC = vec2(uv.x.add(uv.y), uv.y.sub(uv.x)).mul(0.7071).add(0.61);
+  /** pose `layer` sur `base` avec le poids `w`, selon le relief de la texture (bords irréguliers) */
+  const patch = (base: ReturnType<typeof vec3>, layer: ReturnType<typeof vec3>, lumRef: number, w: N) => {
+    const d = clamp(lum(layer).sub(lumRef), -0.1, 0.1);
+    return mix(base, layer, smoothstep(0, 1, clamp(w.sub(0.5).mul(2.2).add(d.mul(3)).add(0.5), 0, 1)));
+  };
+  col = patch(col, sampleLayer(float(LUSH), uvC), LUM[LUSH], smoothstep(0.05, 0.4, n1).mul(grassZ));
+  col = patch(col, sampleLayer(float(DIRT), uvB.add(0.23)), LUM[DIRT], smoothstep(0.3, 0.55, n2).mul(grassZ.mul(0.8).add(dryZ)));
+  col = patch(col, sampleLayer(float(GRAVEL), uvC.add(0.4)), LUM[GRAVEL], smoothstep(0.25, 0.55, n3).mul(sandZ.add(dryZ.mul(0.7))));
   // roche : projection triplanaire (le dessus et les deux côtés), mêlée selon la pente
   const n = abs(normalWorld);
   const w4 = pow(n, vec3(4, 4, 4));
