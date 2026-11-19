@@ -190,6 +190,8 @@ export class Entities {
   levelMeshes = new Map<number, KindMesh[]>();
   /** virages des tapis par type : [entrée à gauche, entrée à droite] (forme 1 et 2 de la simulation) */
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
+  /** tapis droits rejoints par le côté (jonction en T) : ouverts à gauche (-x), à droite (+x), des deux côtés */
+  beltJunctions = new Map<number, [KindMesh, KindMesh, KindMesh]>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
   wallSeg: KindMesh | null = null;
   /** goulottes entre les sorties d'un extracteur et les tapis devant lui */
@@ -301,6 +303,8 @@ export class Entities {
         const g = BUILDING_MODELS[b.key + "_virage_g"];
         const d = BUILDING_MODELS[b.key + "_virage_d"];
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
+        const jn = ["_jonction_g", "_jonction_d", "_jonction_gd"].map((suf) => BUILDING_MODELS[b.key + suf]);
+        if (jn.every((m) => m)) this.beltJunctions.set(this.buildingMeshes.length - 1, jn.map((m) => new KindMesh(this.group, buildModel(m!), scale, TEX_PER_TILE_BUILDING)) as [KindMesh, KindMesh, KindMesh]);
       }
       if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, buildModel(BUILDING_MODELS.wall_seg), scale, TEX_PER_TILE_BUILDING);
       if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
@@ -490,6 +494,7 @@ export class Entities {
       g.begin();
       d.begin();
     }
+    for (const l of this.beltJunctions.values()) for (const m of l) m.begin();
     this.wallSeg?.begin();
     this.chute?.begin();
     for (const m of this.vehicleMeshes) m.begin();
@@ -684,7 +689,9 @@ export class Entities {
       const shape = def.cls === BClass.Belt ? buf[o + 5] & 3 : 0;
       // extracteur, dépôt ou générateur amélioré : modèle de son niveau
       const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power || def.key === "splitter" ? (buf[o + 5] >>> 24) & 3 : 0;
-      const km = shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]);
+      // tapis droit au sol rejoint par le côté : variante au rebord ouvert (jonction en T continue)
+      const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts) : undefined;
+      const km = junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
       km.ensure(km.n + 1);
@@ -932,6 +939,7 @@ export class Entities {
       g.end();
       d.end();
     }
+    for (const l of this.beltJunctions.values()) for (const m of l) m.end();
     this.wallSeg?.end();
     this.chute?.end();
     this.levelPips.count = npip;
@@ -1454,6 +1462,30 @@ export class Entities {
     }
     this.hatchInsetCache.set(key, out);
     return out;
+  }
+
+  /**
+   * Variante d'un tapis droit en (x, z), tourné vers `dir`, rejoint par le côté : un tapis au sol voisin,
+   * perpendiculaire, qui pointe vers lui (`belts` : case x | z << 16 -> direction). Indéfini sinon.
+   */
+  private beltJunction(kind: number, x: number, z: number, dir: number, belts: Map<number, number>): KindMesh | undefined {
+    const set = this.beltJunctions.get(kind);
+    if (!set) return undefined;
+    const DX = [1, 0, -1, 0];
+    const DZ = [0, 1, 0, -1];
+    // repère du modèle : tourné de yaw = π/2 - dir·π/2 (voir le placement des bâtiments) ; -x à gauche
+    const yaw = Math.PI / 2 - (dir * Math.PI) / 2;
+    let neg = false;
+    let pos = false;
+    for (const s of [(dir + 1) & 3, (dir + 3) & 3]) {
+      const nx = x + DX[s];
+      const nz = z + DZ[s];
+      if (nx < 0 || nz < 0 || belts.get(nx | (nz << 16)) !== ((s + 2) & 3)) continue;
+      const mx = Math.round(DX[s] * Math.cos(yaw) - DZ[s] * Math.sin(yaw));
+      if (mx < 0) neg = true;
+      else pos = true;
+    }
+    return neg && pos ? set[2] : neg ? set[0] : pos ? set[1] : undefined;
   }
 
   private roofHeight(kind: number, lvl = 0): number {

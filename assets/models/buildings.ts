@@ -34,6 +34,41 @@ function tapis(surface: Part["color"], fleche: Part["color"], filet: Part["color
 }
 
 /**
+ * Tapis droit rejoint par le côté (jonction en T) : le rebord s'ouvre du côté de l'arrivée (-x pour
+ * `g`, +x pour `d`, les deux), et une languette de tapis bordée prolonge la surface jusqu'au bord de la
+ * case, à la rencontre du tapis qui arrive.
+ */
+function tapisJonction(surface: Part["color"], fleche: Part["color"], filet: Part["color"], lf: number, cotes: (-1 | 1)[]): Model {
+  const parts: Part[] = [
+    { shape: "box", size: [0.62, 0.06, 1], pos: [0, 0.03, 0], color: "dark" },
+    { shape: "box", size: [0.5, 0.03, 0.98], pos: [0, 0.075, 0], color: surface },
+    { shape: "wedge", size: [0.03, 0.2, 0.26], pos: [0.1, 0.1, 0.02], color: fleche, rot: [0, 0, -90], mirror: true },
+  ];
+  for (const sx of [-1, 1] as const) {
+    if (!cotes.includes(sx)) {
+      parts.push(
+        { shape: "box", size: [0.06, 0.12, 1], pos: [sx * 0.28, 0.06, 0], color: "light" },
+        { shape: "box", size: [0.03, 0.02, lf], pos: [sx * 0.28, 0.13, 0], color: filet },
+      );
+      continue;
+    }
+    // rebord coupé : deux montants de part et d'autre de l'ouverture
+    parts.push(
+      { shape: "box", size: [0.06, 0.12, 0.19], pos: [sx * 0.28, 0.06, 0.405], color: "light" },
+      { shape: "box", size: [0.06, 0.12, 0.19], pos: [sx * 0.28, 0.06, -0.405], color: "light" },
+      // languette : socle, surface et rebords dans le prolongement du tapis qui arrive
+      { shape: "box", size: [0.2, 0.06, 0.62], pos: [sx * 0.405, 0.03, 0], color: "dark" },
+      { shape: "box", size: [0.26, 0.03, 0.5], pos: [sx * 0.375, 0.075, 0], color: surface },
+      { shape: "box", size: [0.25, 0.12, 0.06], pos: [sx * 0.375, 0.06, 0.28], color: "light" },
+      { shape: "box", size: [0.25, 0.12, 0.06], pos: [sx * 0.375, 0.06, -0.28], color: "light" },
+      { shape: "box", size: [0.2, 0.02, 0.03], pos: [sx * 0.39, 0.13, 0.28], color: filet },
+      { shape: "box", size: [0.2, 0.02, 0.03], pos: [sx * 0.39, 0.13, -0.28], color: filet },
+    );
+  }
+  return { parts };
+}
+
+/**
  * Tapis en virage : quart de cercle de rayon 1/2 case centré sur le coin d'entrée, en 6 segments.
  * Les objets entrent par le côté (côté gauche du modèle si `side` = -1, droit si +1) et sortent vers +z,
  * comme sur un tapis droit. Tapis étroit (0,62 case) bordé de rebords intérieur et extérieur.
@@ -272,16 +307,28 @@ export const BUILDING_MODELS: Record<string, Model> = {
   // belt1_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
   belt1_virage_g: tapisVirage("metal", "dark", "amber", -1),
   belt1_virage_d: tapisVirage("metal", "dark", "amber", 1),
+  // belt1_jonction_g / _d / _gd : tapis droit rejoint par le côté gauche (-x), droit (+x) ou les deux
+  belt1_jonction_g: tapisJonction("metal", "dark", "amber", 0.3, [-1]),
+  belt1_jonction_d: tapisJonction("metal", "dark", "amber", 0.3, [1]),
+  belt1_jonction_gd: tapisJonction("metal", "dark", "amber", 0.3, [-1, 1]),
   // belt2 : tapis sombre, flèche jaune, filets cyan (96 triangles)
   belt2: tapis("dark", "hazard", "glow", 0.4),
   // belt2_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
   belt2_virage_g: tapisVirage("dark", "hazard", "glow", -1),
   belt2_virage_d: tapisVirage("dark", "hazard", "glow", 1),
+  // belt2_jonction_g / _d / _gd : tapis droit rejoint par le côté gauche (-x), droit (+x) ou les deux
+  belt2_jonction_g: tapisJonction("dark", "hazard", "glow", 0.4, [-1]),
+  belt2_jonction_d: tapisJonction("dark", "hazard", "glow", 0.4, [1]),
+  belt2_jonction_gd: tapisJonction("dark", "hazard", "glow", 0.4, [-1, 1]),
   // belt3 : tapis sombre, flèche et longs filets cyan (96 triangles)
   belt3: tapis("dark", "glow", "glow", 0.8),
   // belt3_virage_g / _d : virage (objets entrant par la gauche / la droite du sens de marche)
   belt3_virage_g: tapisVirage("dark", "glow", "glow", -1),
   belt3_virage_d: tapisVirage("dark", "glow", "glow", 1),
+  // belt3_jonction_g / _d / _gd : tapis droit rejoint par le côté gauche (-x), droit (+x) ou les deux
+  belt3_jonction_g: tapisJonction("dark", "glow", "glow", 0.8, [-1]),
+  belt3_jonction_d: tapisJonction("dark", "glow", "glow", 0.8, [1]),
+  belt3_jonction_gd: tapisJonction("dark", "glow", "glow", 0.8, [-1, 1]),
   // inserter : petit socle rond à liseré cyan, colonne fine, bras long et pince (84 triangles)
   inserter: {
     parts: [
