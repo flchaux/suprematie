@@ -198,6 +198,14 @@ export class SkirmishAI implements Bot {
   cmdHoldUntil = -1;
   cmdMoved = -1e9;
   prof = typeof process !== "undefined" && process.env?.BOTPROF === "1";
+  /** mines de combustible (extracteur d'hydrocarbure + dépôt) : indices dans `spots` */
+  fuelMines: number[] = [];
+  /** charge électrique lissée (kW) : dimensionne les mines de combustible */
+  loadAvg = 0;
+  /** générateurs auxquels aucun dépôt ne peut être collé : pas de nouvel essai avant ce tick */
+  noFuelDepot = new Map<number, number>();
+  /** tick de la dernière mine de combustible lancée */
+  lastFuelMine = -1e9;
 
   constructor(ctx: BotContext) {
     this.ctx = ctx;
@@ -606,10 +614,23 @@ export class SkirmishAI implements Bot {
 
   setupBase(): void {
     const [sx, sy] = this.home;
+    // générateur principal posé au départ : ses cases sont prises et sa zone alimente la base
+    let startProd = 0;
+    for (const b of this.ix.buildingsBy[this.ctx.slot]) {
+      if (b.kind !== this.ids.b.main_generator) continue;
+      this.planner.addExisting(b.kind, b.x, b.y);
+      startProd += this.ctx.data.buildings[b.kind].powerProd;
+    }
     const near = this.spots.filter((s) => Math.abs(s.x - sx) < 50 && Math.abs(s.y - sy) < 50);
-    const m = this.planner.findModule(sx, sy, near, [50, 44, 38, 32, 26], 10);
+    // départ encombré (gisements, générateur principal, relief) : chercher un peu plus loin
+    let m: Module | null = null;
+    for (const shift of [10, 16, 24]) {
+      m = this.planner.findModule(sx, sy, near, [50, 44, 38, 32, 26], shift);
+      if (m) break;
+    }
     if (m) {
       m.role = "main";
+      m.prod += startProd;
       this.pendingPlan.set(m, [...this.persona.plan0]);
       this.produces.set(m, new Set());
     }
@@ -962,7 +983,8 @@ export class SkirmishAI implements Bot {
         continue;
       }
       // énergie
-      const starved = this.powerLow.has(m);
+      // un réseau qui manque de combustible n'a pas besoin de générateurs de plus (voir fuelBuilders)
+      const starved = this.powerLow.has(m) && !this.fuelShort();
       if (m.prod < m.use * 1.1 + 60 || starved) {
         L.push({
           name: "power" + m.id,
@@ -974,7 +996,7 @@ export class SkirmishAI implements Bot {
             if (!g) return null;
             m.prod += 400;
             this.powerLow.delete(m);
-            return this.newProject("power" + m.id, [g], { module: m, remote: m.id > 0 });
+            return this.newProject("power" + m.id, g, { module: m, remote: m.id > 0 });
           },
         });
       }
@@ -1071,7 +1093,109 @@ export class SkirmishAI implements Bot {
     if (cap > 0 && this.extraDepots < 8 && this.tick - this.lastDepot > 1200 && this.me.stock.some((n) => n >= cap * 0.85)) {
       L.push({ name: "depot", prio: 830, est: [8], make: () => this.makeDepot(m0) });
     }
+    this.fuelBuilders(L);
     return L;
+  }
+
+  // ---------- Combustible ----------
+  // Les générateurs brûlent de l'hydrocarbure : sans combustible, ils ne produisent rien. Chaque
+  // générateur a un dépôt collé qui lui verse l'hydrocarbure de la réserve ; des mines de combustible
+  // (extracteur d'hydrocarbure, qui tourne sans électricité, et dépôt collé) remplissent la réserve.
+  // Un extracteur de base donne 2 hydrocarbures en 3 s, soit environ 1 000 kW.
+
+  /** La réserve d'hydrocarbure est restée presque vide ces 30 dernières secondes. */
+  fuelShort(): boolean {
+    const hc = this.ids.item.hydrocarbon;
+    if (this.tick < 2400 || this.stock(hc) >= 6) return false;
+    return this.stockHist.every((h) => h[hc] < 6);
+  }
+
+  /** Mines de combustible en place ou en chantier (une mine détruite libère son gisement). */
+  fuelMineCount(): number {
+    this.fuelMines = this.fuelMines.filter((i) => {
+      const s = this.spots[i];
+      if (this.projects.some((p) => p.spot === s)) return true;
+      const st = this.placementState({ kind: this.ids.b.extractor, x: s.x, y: s.y, dir: 0 });
+      if (st === 1 || st === 3) return true;
+      if (s.st === 1) s.st = 0;
+      return false;
+    });
+    return this.fuelMines.length;
+  }
+
+  fuelBuilders(L: EngBuilder[]): void {
+    const me = this.ctx.slot;
+    const data = this.ctx.data;
+    const dep = this.ids.b.depot;
+    // générateurs sans dépôt collé (construit ou prévu) : le générateur principal d'abord
+    const depots: [number, number][] = [];
+    for (const b of this.ix.buildingsBy[me]) if (b.kind === dep) depots.push([b.x, b.y]);
+    for (const p of this.projects) p.places.forEach((pl, i) => {
+      if (pl.kind === dep && p.st[i] === 0) depots.push([pl.x, pl.y]);
+    });
+    const glued = (gx: number, gy: number, s: number) =>
+      depots.some(([x, y]) => ((x + 2 === gx || x === gx + s) && y < gy + s && y + 2 > gy) || ((y + 2 === gy || y === gy + s) && x < gx + s && x + 2 > gx));
+    let lonely: BotBuilding | null = null;
+    for (const b of this.ix.buildingsBy[me]) {
+      const d = data.buildings[b.kind];
+      if (d.powerProd <= 0 || (this.noFuelDepot.get(b.ref) ?? 0) > this.tick || glued(b.x, b.y, d.w)) continue;
+      if (!lonely || b.kind === this.ids.b.main_generator) lonely = b;
+    }
+    if (lonely) {
+      const g = lonely;
+      L.push({
+        name: "fueldepot",
+        prio: g.kind === this.ids.b.main_generator ? 994 : 940,
+        est: [8],
+        make: () => {
+          const s = data.buildings[g.kind].w;
+          const pos = this.planner.depotSpotNear(g.x, g.y, s, true);
+          if (!pos) {
+            this.noFuelDepot.set(g.ref, this.tick + 3000);
+            return null;
+          }
+          return this.newProject("fueldepot", [this.planner.takeFuelDepot(pos[0], pos[1], g.x, g.y, s)]);
+        },
+      });
+    }
+    // mines de combustible : autant que la charge le demande, une de plus si la réserve reste vide
+    const n = this.fuelMineCount();
+    let want = 1 + Math.floor(this.loadAvg / 900);
+    // réserve vide : une mine de plus, le temps que la précédente se fasse sentir
+    const short = this.fuelShort() && this.tick - this.lastFuelMine > 2400;
+    if (short) want = Math.max(want, n + 1);
+    if (n >= Math.min(want, 10) || (n > 0 && this.stock(this.ids.item.hydrocarbon) > 150)) return;
+    L.push({ name: "fuel", prio: n === 0 ? 995 : short ? 950 : 770, remote: n > 0, est: [18, 5], make: () => this.makeFuelMine(n) });
+  }
+
+  makeFuelMine(n: number): Project | null {
+    const [hx, hy] = this.home;
+    const w = this.ctx.map.w;
+    const comp = landComponents(this.ctx.map);
+    const home = comp[hy * w + hx];
+    const maxD = n === 0 ? 45 : 120;
+    const cand = this.spots
+      .map((s, i) => ({ s, i, d: Math.hypot(s.x - hx, s.y - hy) }))
+      .filter((c) => c.s.kind === this.ids.item.hydrocarbon && c.s.st === 0 && c.s.next <= this.tick && c.d < maxD && comp[c.s.y * w + c.s.x] === home)
+      .sort((a, b) => a.d - b.d);
+    for (const { s, i, d } of cand.slice(0, 3)) {
+      const places = this.planner.planFuelMine(s.x, s.y);
+      if (!places) {
+        this.log("échec de la mine de combustible en", s.x, s.y, ":", this.planner.lastFail);
+        s.tries++;
+        s.next = this.tick + 2400;
+        if (s.tries > 3) s.st = 2;
+        continue;
+      }
+      s.st = 1;
+      this.fuelMines.push(i);
+      this.lastFuelMine = this.tick;
+      const p = this.newProject("fuel", places, { spot: s, remote: d > 45, critical: true });
+      // pas un extracteur de module (voir finishProject)
+      (s as SpotState & { key?: number }).key = -1;
+      return p;
+    }
+    return null;
   }
 
   /** Dépôt seul autour du module : agrandit la réserve. */
@@ -1420,6 +1544,7 @@ export class SkirmishAI implements Bot {
     const it = this.ids.item;
     this.stockHist.push(Array.from(this.me.stock));
     if (this.stockHist.length > 30) this.stockHist.shift();
+    this.loadAvg += (this.me.powerUse - this.loadAvg) * 0.05;
     const sim = this.ctx.sim;
     const data = this.ctx.data;
     const demand = new Map<Module, Set<number>>();

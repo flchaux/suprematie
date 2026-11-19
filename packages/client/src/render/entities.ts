@@ -79,7 +79,7 @@ class KindMesh {
 }
 
 /** Bâtiments qui reçoivent des objets (et ont donc des trappes) ; ce sont aussi ceux qui reçoivent par transfert direct. */
-const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad]);
+const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad, BClass.Power]);
 const RECIPE_NONE = 255;
 /** teinte d'un bâtiment en cours d'amélioration (chantier ambre) */
 const UPGRADE_TINT = new THREE.Color(0xffc266);

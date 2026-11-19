@@ -40,6 +40,10 @@ fn spot(w: &mut World, kind: u8, x: i32, y: i32) {
 fn put(w: &mut World, kind: u16, x: i32, y: i32, dir: u8) -> usize {
     let b = place_building(w, 0, kind, x, y, dir).unwrap_or_else(|| panic!("pose impossible {} en {},{}", bdef(kind).key, x, y));
     complete_building(w, b);
+    // les générateurs des tests ont un réservoir inépuisable (la combustion a ses propres tests)
+    if bdef(kind).class == BClass::Power {
+        w.buildings[b].fuel = 1_000_000_000;
+    }
     b
 }
 

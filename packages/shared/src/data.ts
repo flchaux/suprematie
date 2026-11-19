@@ -19,6 +19,8 @@ export interface GameData {
   items: ItemDef[]; recipes: RecipeDef[]; weapons: WeaponDef[]; techs: TechDef[]; buildings: BuildingDef[]; units: UnitDef[];
   missileCost: [number, number][]; interceptorCost: [number, number][];
   /** niveaux d'un extracteur : vitesse et consommation en % du niveau 0, coût et recherche du passage à ce niveau */
+  /** combustible des générateurs : énergie par unité (kW × ticks) et taille du réservoir (unités) */
+  fuel?: { hydrocarbon: number; refined: number; cell: number; tankUnits: number };
   /** dépôts : réserve de base, capacité par niveau, amélioration (sorties filtrées) */
   depot?: { base: number; cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number };
   extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; /** durée de l'amélioration vers ce niveau (s) */ time?: number }[];
@@ -39,6 +41,10 @@ export const Layer = { Land: 0, Hover: 1, Naval: 2, Sub: 3, Air: 4 } as const;
 export const Factory = { None: 0, Land: 1, Air: 2, Naval: 3, Exp: 4 } as const;
 export const RECIPE_NONE = 255;
 export const PACK1 = 21;
+/** objets brûlés par les générateurs (identifiants de sim/src/data.rs) */
+export const HYDROCARBON = 4;
+export const FUEL_ITEM = 16;
+export const ENERGY_CELL = 19;
 export const BUILD_FULL = 65536;
 
 export function keyIndex<T extends { key: string }>(list: T[]): Record<string, number> {

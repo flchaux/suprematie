@@ -81,7 +81,8 @@ pub extern "C" fn out_len() -> u32 {
 #[no_mangle]
 pub extern "C" fn init(n_words: u32) -> u32 {
     let p = read_i32s(n_words);
-    let w = World::new(&p);
+    let mut w = World::new(&p);
+    w.place_start_buildings();
     let h = w.hash();
     WORLD.with(|x| *x.borrow_mut() = Some(w));
     h
