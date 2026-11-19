@@ -215,6 +215,7 @@ export class GameScene {
     this.overlay = new CommandOverlay(data, map);
     this.scene.add(this.overlay.group);
     this.entities = new Entities(data, map);
+    this.entities.warmUp();
     this.entities.camera = this.camera;
     this.entities.effects.quality = this.gfx.effects;
     this.scene.add(this.entities.group);

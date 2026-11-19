@@ -20,29 +20,48 @@ const ANG = (Math.PI * 2) / 65536;
 /** épaves dessinées par modèle (au plus) */
 const WRECK_CAP = 1024;
 
+type Built = ReturnType<typeof buildModel>;
+
+/**
+ * Modèle d'une sorte d'entité et ses maillages instanciés. Le modèle peut être construit à la demande
+ * (première apparition de la sorte à l'écran) : `built` et `scale` sont alors des fonctions, évaluées
+ * une fois au premier accès (le chargement d'une partie ne construit pas les modèles qu'on ne voit pas).
+ */
 class KindMesh {
   body: TeamMesh | null = null;
   pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number }[] = [];
   cap = 0;
   n = 0;
-  /** hauteur du modèle à l'échelle (pour placer la fumée au sommet) */
-  height = 1;
+  private builtV: Built | null;
+  private scaleV: number | null;
   constructor(
     public scene: THREE.Object3D,
-    public built: ReturnType<typeof buildModel>,
-    public scale: number,
+    private builtSrc: Built | (() => Built),
+    private scaleSrc: number | ((b: Built) => number),
     /** répétitions de texture par case du monde */
     public texPerTile = 0,
     /** ombres portées (désactivées pour les objets des tapis, très nombreux) */
     public shadows = true,
   ) {
-    const size = new THREE.Vector3();
-    built.box.getSize(size);
-    this.height = size.y * scale;
-    this.legs = built.pivots.some((p) => /^jambe/.test(p.name));
+    this.builtV = typeof builtSrc === "function" ? null : builtSrc;
+    this.scaleV = typeof scaleSrc === "function" ? null : scaleSrc;
+  }
+  get built(): Built {
+    if (!this.builtV) this.builtV = (this.builtSrc as () => Built)();
+    return this.builtV;
+  }
+  get scale(): number {
+    if (this.scaleV === null) this.scaleV = (this.scaleSrc as (b: Built) => number)(this.built);
+    return this.scaleV;
+  }
+  /** hauteur du modèle à l'échelle (pour placer la fumée au sommet) */
+  get height(): number {
+    return (this.built.box.max.y - this.built.box.min.y) * this.scale;
   }
   /** le modèle a des jambes articulées (pivots « jambe… ») */
-  legs = false;
+  get legs(): boolean {
+    return this.built.pivots.some((p) => /^jambe/.test(p.name));
+  }
   /** niveau de détail réduit (caméra lointaine) : géométries sans les pièces fines */
   lo = false;
   private bodyGeo(): THREE.BufferGeometry {
@@ -54,8 +73,10 @@ class KindMesh {
   }
   /** Change le niveau de détail : on échange seulement les géométries (mêmes attributs, mêmes instances). */
   setLod(lo: boolean): void {
-    if (lo === this.lo || !this.built.bodyLo) return;
+    if (lo === this.lo) return;
     this.lo = lo;
+    // modèle pas encore construit (ou sans version allégée) : rien à échanger, ensure() prendra la bonne
+    if (!this.builtV?.bodyLo) return;
     if (this.body) this.body.mesh.geometry = this.bodyGeo();
     this.pivots.forEach((p, i) => (p.tm.mesh.geometry = this.pivotGeo(i)));
   }
@@ -292,37 +313,36 @@ export class Entities {
     public data: GameData,
     public map: MapData,
   ) {
+    // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
-      const built = buildModel(UNIT_MODELS[u.key] ?? fallbackModel(0.5));
-      const size = new THREE.Vector3();
-      built.box.getSize(size);
       const target = Math.max(0.7, (u.radius * 2.3) / TILE);
-      const scale = target / Math.max(size.x, size.z, 0.01);
-      this.unitMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_UNIT));
+      const scaleOf = (built: Built) => target / Math.max(built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z, 0.01);
+      this.unitMeshes.push(new KindMesh(this.group, () => buildModel(UNIT_MODELS[u.key] ?? fallbackModel(0.5)), scaleOf, TEX_PER_TILE_UNIT));
     }
+    const bScale = (b: (typeof data.buildings)[number]) => (built: Built) => buildingScale(b.w, built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z, b.reach);
     for (const b of data.buildings) {
-      const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4));
-      const size = new THREE.Vector3();
-      built.box.getSize(size);
-      const scale = buildingScale(b.w, size.x, size.z, b.reach);
-      this.buildingMeshes.push(new KindMesh(this.group, built, scale, TEX_PER_TILE_BUILDING));
+      if (b.cls === BClass.Belt) {
+        const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(0.4));
+        this.buildingMeshes.push(new KindMesh(this.group, built, bScale(b)(built), TEX_PER_TILE_BUILDING));
+      } else this.buildingMeshes.push(new KindMesh(this.group, () => buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4)), bScale(b), TEX_PER_TILE_BUILDING));
+      const km = this.buildingMeshes[this.buildingMeshes.length - 1];
       const lv: KindMesh[] = [];
       for (let n = 2; BUILDING_MODELS[`${b.key}_n${n}`]; n++) {
-        const bl = buildModel(BUILDING_MODELS[`${b.key}_n${n}`]);
-        const sz = new THREE.Vector3();
-        bl.box.getSize(sz);
-        lv.push(new KindMesh(this.group, bl, buildingScale(b.w, sz.x, sz.z, b.reach), TEX_PER_TILE_BUILDING));
+        const desc = BUILDING_MODELS[`${b.key}_n${n}`];
+        lv.push(new KindMesh(this.group, () => buildModel(desc), bScale(b), TEX_PER_TILE_BUILDING));
       }
       if (lv.length) this.levelMeshes.set(this.buildingMeshes.length - 1, lv);
       // tapis : virages (objets entrant par la gauche, par la droite), à l'échelle du tapis droit
       if (b.cls === BClass.Belt) {
+        const scale = km.scale;
         const g = BUILDING_MODELS[b.key + "_virage_g"];
         const d = BUILDING_MODELS[b.key + "_virage_d"];
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
         const jn = ["_jonction_g", "_jonction_d", "_jonction_gd"].map((suf) => BUILDING_MODELS[b.key + suf]);
         if (jn.every((m) => m)) this.beltJunctions.set(this.buildingMeshes.length - 1, jn.map((m) => new KindMesh(this.group, buildModel(m!), scale, TEX_PER_TILE_BUILDING)) as [KindMesh, KindMesh, KindMesh]);
       }
-      if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, buildModel(BUILDING_MODELS.wall_seg), scale, TEX_PER_TILE_BUILDING);
+      // segment de mur : à l'échelle du poteau (construits ensemble, à la demande)
+      if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.wall_seg), () => km.scale, TEX_PER_TILE_BUILDING);
       if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
@@ -500,6 +520,28 @@ export class Entities {
    * Met à jour toutes les instances pour l'image courante.
    * alpha : interpolation entre le tick précédent et le tick courant (0..1).
    */
+  /**
+   * Construit en tâche de fond, pendant les temps morts du navigateur, les modèles pas encore apparus :
+   * la première apparition d'une sorte d'entité ne fige pas l'image. Un modèle par temps mort.
+   */
+  warmUp(): void {
+    const all: KindMesh[] = [...this.unitMeshes, ...this.buildingMeshes];
+    for (const l of this.levelMeshes.values()) all.push(...l);
+    if (this.wallSeg) all.push(this.wallSeg);
+    let i = 0;
+    const idle: (cb: (d?: { timeRemaining(): number }) => void) => void =
+      typeof requestIdleCallback === "function" ? (cb) => requestIdleCallback(cb, { timeout: 2000 }) : (cb) => setTimeout(cb, 30);
+    const step = (d?: { timeRemaining(): number }) => {
+      // tant qu'il reste du temps dans ce temps mort (au moins un modèle)
+      do {
+        if (i >= all.length) return;
+        void all[i++].scale; // construit le modèle et son échelle
+      } while (d && d.timeRemaining() > 8);
+      idle(step);
+    };
+    idle(step);
+  }
+
   /** Niveau de détail réduit pour tous les modèles (pièces fines retirées), selon la distance de la caméra. */
   setDetail(lo: boolean): void {
     const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.chute];
