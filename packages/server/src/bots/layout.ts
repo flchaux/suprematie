@@ -645,6 +645,76 @@ export class Planner {
   }
 
   /**
+   * Relais le long d'une file de tapis : une file entière s'arrête dès qu'une seule de ses cases est
+   * hors zone électrique. Chaque relais couvre le plus de cases encore hors zone et se relie au réseau
+   * (relais prévus compris), de proche en proche depuis le bout déjà alimenté ; un relais isolé est
+   * relié par linkPylon (relais intermédiaire ou générateur). Relais sur des cases libres près des
+   * tapis, ou sur les cases `extra` (bande d'un module, loin des ateliers) ; la zone de tête d'un
+   * module (gardée pour les tapis d'amenée) seulement à défaut.
+   */
+  powerBelts(tiles: [number, number][], extra: [number, number][] = []): Placement[] {
+    const pyl = this.ids.b.pylon;
+    const pd = this.ids.data.buildings[pyl];
+    const sup = pd.supply;
+    const out: Placement[] = [];
+    let unc = tiles.filter(([x, y]) => !this.covered(x, y, 1, 1));
+    const extraSet = new Set<number>();
+    for (const [x, y] of extra) if (this.inside(x, y)) extraSet.add(this.idx(x, y));
+    for (let guard = 0; unc.length > 0 && guard < 40; guard++) {
+      const seen = new Set<number>();
+      const cands: number[] = [];
+      const add = (x: number, y: number) => {
+        if (!this.inside(x, y)) return;
+        const i = this.idx(x, y);
+        if (seen.has(i)) return;
+        seen.add(i);
+        const p = this.plan[i];
+        if (p === P_FREE || p === P_KEEP || (p === P_RES && extraSet.has(i))) cands.push(i);
+      };
+      for (const [x, y] of unc) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) add(x + dx, y + dy);
+      for (const i of extraSet) add(i % this.w, (i / this.w) | 0);
+      let best = -1;
+      let bestScore = -1e9;
+      let bestLinked = false;
+      for (const i of cands) {
+        const x = i % this.w;
+        const y = (i / this.w) | 0;
+        let cover = 0;
+        for (const [tx, ty] of unc) if (Math.abs(tx - x) <= sup && Math.abs(ty - y) <= sup) cover++;
+        if (cover === 0) continue;
+        const score = cover - (this.plan[i] === P_KEEP ? 4 : 0);
+        const linked = this.connected(x, y, 1, pd.connect);
+        if (bestLinked && !linked) continue;
+        if (linked === bestLinked && score <= bestScore) continue;
+        if (!this.sim.canPlace(this.slot, pyl, x, y, 0)) continue;
+        best = i;
+        bestScore = score;
+        bestLinked = linked;
+      }
+      if (best < 0) break;
+      const x = best % this.w;
+      const y = (best / this.w) | 0;
+      if (!bestLinked) {
+        const link = this.linkPylon(x, y);
+        if (!link) break;
+        out.push(...link);
+      }
+      out.push(this.takePole(pyl, x, y));
+      unc = unc.filter(([tx, ty]) => !this.covered(tx, ty, 1, 1));
+    }
+    if (unc.length > 0 && process.env.BOTDEBUG) console.log("tapis hors zone :", unc.length, "cases");
+    return out;
+  }
+
+  /** Tapis principal d'un module, avec les relais qui le gardent en zone (rangées extérieures de la bande). */
+  busPlaces(m: Module): Placement[] {
+    const tiles: [number, number][] = m.bus.filter((p) => p.kind !== this.ids.b.depot).map((p) => [p.x, p.y]);
+    const extra: [number, number][] = [];
+    for (let u = m.H; u < m.L; u++) for (const v of [-(BAND - 1), BAND - 1]) extra.push([this.wx(m, u, v), this.wy(m, u, v)]);
+    return [...m.bus, ...this.powerBelts(tiles, extra)];
+  }
+
+  /**
    * Géométrie d'une cellule d'après la taille des bâtiments : bâtiments séparés d'une colonne libre
    * (bras de liaison sur la rangée médiane des deux bâtiments, pylône sur la rangée des bras du tapis),
    * un pylône après le dernier bâtiment.
@@ -1113,11 +1183,16 @@ export class Planner {
     places.push({ kind: ins, x: c.ix, y: c.iy, dir: c.idir, tag: "out" });
     this.mark(c.ix, c.iy, 1, P_BLD);
     places.push(...this.pathPlaces(best.path, net));
+    places.push(...this.powerBelts(this.pathTiles(best.path)));
     places.push(...this.ensurePower(sx, sy, 2, 2));
     places.push(...this.ensurePower(c.fx, c.fy, 2, 2));
     places.push(...this.ensurePower(c.ix, c.iy, 1, 1));
     m.feeders++;
     return places;
+  }
+
+  pathTiles(path: number[]): [number, number][] {
+    return path.map((i) => [i % this.w, (i / this.w) | 0]);
   }
 
   pathPlaces(path: number[], net: number): Placement[] {
@@ -1168,6 +1243,7 @@ export class Planner {
     places.push({ kind: ext, x: sx, y: sy, dir: best.dir, tag: "extractor" });
     this.mark(sx, sy, 2, P_BLD);
     places.push(...this.pathPlaces(best.path, net));
+    places.push(...this.powerBelts(this.pathTiles(best.path)));
     places.push(...this.ensurePower(sx, sy, 2, 2));
     m.feeders++;
     return places;
