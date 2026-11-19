@@ -1,10 +1,12 @@
-// dragon : « Gros Chinois », dragon robot volant à la chinoise (3792 triangles).
+// dragon : « Gros Chinois », dragon robot volant à la chinoise.
 // Tête pivotante (pivot « laser » : origine du souffle de feu) : crâne et museau en plaques, gueule
-// ouverte sur une langue de feu ambre, crocs, yeux lumineux sous des arcades dorées, bois de cerf,
-// moustaches tombantes, collerette de crinière en plaques effilées, barbiche, perle d'énergie.
-// Corps en anneaux fins qui ondulent (pivots ondule2…ondule11, de la tête vers la queue) : fût
-// octogonal, deux rangées d'écailles en quinconce, plaques ventrales claires, crête dorsale ambre.
-// Quatre pattes griffues (anneaux 3 et 7) et queue en panache de plaques effilées.
+// ouverte sur une langue de feu ambre, crocs d'acier, naseaux, yeux lumineux sous des arcades dorées,
+// joyau frontal, bois de cerf en tubes coudés, longues moustaches ondulantes, collerette de crinière en
+// plaques effilées, barbiche, perle d'énergie dans son anneau doré.
+// Corps en anneaux fins qui ondulent (pivots ondule2…ondule11, de la tête vers la queue) : fût tourné
+// bombé, bagues d'acier aux jointures, deux rangées d'écailles en quinconce, plaques ventrales claires à
+// joints, crête dorsale ambre, perles dorées. Quatre pattes griffues (anneaux 3 et 7) et queue en panache
+// de plaques effilées. Pièces fines : bagues, joints, perles, naseaux, gaines des griffes, rivets.
 import type { Model, Part, Vec3 } from "../types.ts";
 
 const r3 = (v: number) => +v.toFixed(3);
@@ -56,7 +58,9 @@ function anneauDragon(k: number, z: number, w: number): Part[] {
   const n = `ondule${k}`;
   const R = r3(w * 0.4);
   const out: Part[] = [
-    { shape: "cylinder", sides: 8, radius: R, height: 0.96, pos: [0, Y, z], rot: [90, 0, 22.5], color: "faction", pivot: n },
+    { shape: "lathe", sides: 10, pos: [0, Y, z], rot: [90, 0, 0], color: "faction", pivot: n,
+      profile: [[r3(R * 0.84), -0.48], [r3(R * 0.98), -0.3], [r3(R * 1.02), 0.12], [r3(R * 0.9), 0.48]] },
+    { shape: "torus", radius: r3(R * 0.88), tube: 0.035, sides: 12, pos: [0, Y, r3(z + 0.47)], rot: [90, 0, 0], color: "steel", parent: n, fine: true },
   ];
   const sw = r3(R * 0.78);
   const rows: [number, number[]][] = [
@@ -78,6 +82,8 @@ function anneauDragon(k: number, z: number, w: number): Part[] {
     { shape: "box", size: [r3(R * 1.25), 0.1, 0.4], pos: [0, r3(Y - R * 0.98), r3(z - 0.23)], rot: [-6, 0, 0], color: "light", parent: n },
     seg([0, r3(Y + R * 1.05), r3(z + 0.22)], [0, r3(Y + R * 1.05 + 0.2 + w * 0.22), r3(z - 0.32)], { shape: "wedge", size: [0.07, 1, 0.36], color: "amber", parent: n }),
     { shape: "box", size: [0.04, 0.05, 0.5], pos: [r3(R * 0.98), r3(Y - R * 0.3), z], rot: [0, 0, -20], color: "glow", mirror: true, parent: n },
+    { shape: "box", size: [r3(R * 1.2), 0.02, 0.03], pos: [0, r3(Y - R * 0.99 - 0.05), r3(z - 0.01)], color: "dark", parent: n, fine: true },
+    { shape: "sphere", radius: 0.045, pos: [r3(R * 0.5), r3(Y + R * 0.95), r3(z - 0.3)], color: "amber", mirror: true, parent: n, fine: true },
   );
   return out;
 }
@@ -94,11 +100,12 @@ function griffeDragon(k: number, z: number, w: number, dir: 1 | -1): Part[] {
     // plaque d'épaule
     seg([r3(H[0] + 0.12), r3(H[1] + 0.16), r3(z + 0.12 * dir)], [r3(K[0] + 0.02), r3(K[1] + 0.12), r3(K[2] - 0.05 * dir)],
       { shape: "wedge", size: [0.26, 1, 0.08], color: "amber", mirror: true, parent: n }, [0, 1, 0]),
-    { shape: "sphere", radius: 0.13, pos: K, color: "metal", mirror: true, parent: n },
+    { shape: "sphere", radius: 0.13, pos: K, color: "steel", mirror: true, parent: n },
     seg(K, F, { shape: "cylinder", sides: 6, radius: 0.085, radiusTop: 0.11, color: "light", mirror: true, parent: n }),
     // touffe de coude en flamme
     seg([K[0], r3(K[1] + 0.02), K[2]], [r3(K[0] + 0.14), r3(K[1] + 0.12), r3(K[2] - 0.42 * dir)], { shape: "wedge", size: [0.18, 1, 0.08], color: "amber", mirror: true, parent: n }, [1, 0, 0]),
-    { shape: "bevel", size: [0.26, 0.11, 0.26], pos: [F[0], r3(F[1] - 0.02), r3(F[2] + 0.03)], color: "metal", mirror: true, parent: n },
+    { shape: "bevel", size: [0.26, 0.11, 0.26], pos: [F[0], r3(F[1] - 0.02), r3(F[2] + 0.03)], color: "steel", mirror: true, parent: n },
+    { shape: "torus", radius: 0.1, tube: 0.025, sides: 8, pos: [r3((K[0] + F[0]) / 2), r3((K[1] + F[1]) / 2), r3((K[2] + F[2]) / 2)], color: "amber", mirror: true, parent: n, fine: true },
   ];
   // quatre griffes : trois vers l'avant en éventail, un ergot vers l'arrière
   for (const dx of [-0.09, 0, 0.09]) {
@@ -142,38 +149,43 @@ const tete: Part[] = [
   seg([0.52, 0.12, 4.7], [0.8, -0.05, 4.0], { shape: "wedge", size: [0.3, 1, 0.08], color: "amber", mirror: true, parent: L }, [1, 0, 0]),
   { shape: "bevel", size: [0.9, 0.48, 1.45], pos: [0, 0.5, 5.4], color: "faction", parent: L },
   { shape: "wedge", size: [0.7, 0.2, 1.15], pos: [0, 0.83, 5.32], color: "light", parent: L },
-  { shape: "bevel", size: [0.74, 0.36, 0.34], pos: [0, 0.6, 6.18], color: "metal", parent: L },
+  { shape: "bevel", size: [0.74, 0.36, 0.34], pos: [0, 0.6, 6.18], color: "steel", parent: L },
+  { shape: "cylinder", sides: 8, radius: 0.06, height: 0.05, pos: [0.2, 0.74, 6.33], rot: [90, 0, 0], color: "dark", mirror: true, parent: L, fine: true },
+  { shape: "sphere", radius: 0.09, pos: [0, 1.1, 4.95], color: "glow", parent: L },
+  { shape: "torus", radius: 0.1, tube: 0.025, sides: 10, pos: [0, 1.08, 4.95], color: "amber", parent: L, fine: true },
+  ...[4.7, 5.1, 5.5].map((z): Part => ({ shape: "box", size: [0.5, 0.025, 0.04], pos: [0, r3(0.93 - (z - 4.7) * 0.06), z], color: "dark", parent: L, fine: true })),
   { shape: "sphere", radius: 0.075, pos: [0.2, 0.74, 6.3], color: "glow", mirror: true, parent: L },
   // gueule ouverte : babine dorée, langue de feu, mâchoire inférieure abaissée, menton
   { shape: "box", size: [0.92, 0.05, 1.35], pos: [0, 0.27, 5.45], color: "amber", parent: L },
   { shape: "box", size: [0.6, 0.16, 1.1], pos: [0, 0.1, 5.42], rot: [8, 0, 0], color: "amber", parent: L },
-  { shape: "bevel", size: [0.8, 0.2, 1.45], pos: [0, -0.1, 5.3], rot: [14, 0, 0], color: "metal", parent: L },
+  { shape: "bevel", size: [0.8, 0.2, 1.45], pos: [0, -0.1, 5.3], rot: [14, 0, 0], color: "steel", parent: L },
   { shape: "bevel", size: [0.56, 0.18, 0.32], pos: [0, -0.28, 5.95], rot: [14, 0, 0], color: "dark", parent: L },
   // crocs : deux paires en haut, une paire en bas
-  { shape: "cone", sides: 4, radius: 0.06, height: 0.3, pos: [0.35, 0.12, 6.02], rot: [180, 0, 0], color: "light", mirror: true, parent: L },
-  { shape: "cone", sides: 4, radius: 0.045, height: 0.22, pos: [0.37, 0.15, 5.5], rot: [180, 0, 0], color: "light", mirror: true, parent: L },
-  { shape: "cone", sides: 4, radius: 0.05, height: 0.26, pos: [0.27, 0.02, 5.82], rot: [14, 0, 0], color: "light", mirror: true, parent: L },
+  { shape: "cone", sides: 6, radius: 0.06, height: 0.3, pos: [0.35, 0.12, 6.02], rot: [180, 0, 0], color: "light", mirror: true, parent: L },
+  { shape: "cone", sides: 6, radius: 0.045, height: 0.22, pos: [0.37, 0.15, 5.5], rot: [180, 0, 0], color: "light", mirror: true, parent: L, fine: true },
+  { shape: "cone", sides: 6, radius: 0.05, height: 0.26, pos: [0.27, 0.02, 5.82], rot: [14, 0, 0], color: "light", mirror: true, parent: L },
   // yeux sous des arcades dorées
   { shape: "sphere", radius: 0.12, pos: [0.5, 0.78, 5.0], color: "glow", mirror: true, parent: L },
   { shape: "wedge", size: [0.32, 0.1, 0.44], pos: [0.4, 0.97, 4.88], rot: [0, -12, -14], color: "amber", mirror: true, parent: L },
   // cou sous la crinière
-  { shape: "cylinder", sides: 8, radius: 0.5, height: 0.7, pos: [0, 0.38, 3.55], rot: [90, 0, 22.5], color: "faction", parent: L },
+  { shape: "lathe", sides: 12, pos: [0, 0.38, 3.2], rot: [90, 0, 0], color: "faction", parent: L, profile: [[0.48, 0], [0.52, 0.2], [0.5, 0.5], [0.44, 0.7]] },
+  { shape: "torus", radius: 0.5, tube: 0.035, sides: 12, pos: [0, 0.38, 3.42], rot: [90, 0, 0], color: "amber", parent: L, fine: true },
   // bois de cerf : merrain, pointe et deux andouillers
-  seg([0.32, 0.95, 3.95], [0.62, 1.62, 3.12], { shape: "cylinder", sides: 5, radius: 0.085, radiusTop: 0.06, color: "light", mirror: true, parent: L }),
-  seg([0.62, 1.62, 3.12], [0.74, 1.8, 2.55], { shape: "cone", sides: 5, radius: 0.06, color: "light", mirror: true, parent: L }),
+  { shape: "tube", radius: 0.07, sides: 6, path: [[0.32, 0.92, 3.98], [0.45, 1.3, 3.6], [0.62, 1.62, 3.12]], bend: 0.3, color: "light", mirror: true, parent: L },
+  seg([0.62, 1.62, 3.12], [0.74, 1.8, 2.55], { shape: "cone", sides: 6, radius: 0.065, color: "light", mirror: true, parent: L }),
+  { shape: "torus", radius: 0.085, tube: 0.025, sides: 8, pos: [0.33, 0.96, 3.94], rot: [30, 0, -20], color: "amber", mirror: true, parent: L, fine: true },
   seg([0.45, 1.24, 3.6], [0.68, 1.62, 3.8], { shape: "cone", sides: 4, radius: 0.045, color: "light", mirror: true, parent: L }),
   seg([0.58, 1.54, 3.22], [0.9, 1.74, 3.16], { shape: "cone", sides: 4, radius: 0.04, color: "light", mirror: true, parent: L }),
   // moustaches tombantes en trois brins
-  seg([0.38, 0.52, 6.15], [0.92, 0.48, 5.95], { shape: "cylinder", sides: 4, radius: 0.032, color: "amber", mirror: true, parent: L }),
-  seg([0.92, 0.48, 5.95], [1.36, 0.24, 5.35], { shape: "cylinder", sides: 4, radius: 0.028, color: "amber", mirror: true, parent: L }),
-  seg([1.36, 0.24, 5.35], [1.58, -0.14, 4.6], { shape: "cylinder", sides: 4, radius: 0.022, color: "amber", mirror: true, parent: L }),
+  { shape: "tube", radius: 0.03, sides: 5, path: [[0.38, 0.52, 6.15], [0.92, 0.48, 5.95], [1.36, 0.24, 5.35], [1.58, -0.14, 4.6]], bend: 0.25, color: "amber", mirror: true, parent: L },
   ...criniere(),
   // barbiche sous le menton
   seg([0, -0.3, 5.7], [0, -0.75, 5.3], { shape: "wedge", size: [0.26, 1, 0.08], color: "light", parent: L }, [0, 0, 1]),
   seg([0.16, -0.24, 5.45], [0.24, -0.62, 5.08], { shape: "wedge", size: [0.18, 1, 0.07], color: "light", mirror: true, parent: L }, [0, 0, 1]),
   // perle d'énergie dans son anneau, sous la gueule
   { shape: "sphere", radius: 0.3, detail: 1, pos: [0, -0.7, 6.35], color: "glow", parent: L },
-  { shape: "cylinder", sides: 10, radius: 0.4, height: 0.05, pos: [0, -0.7, 6.35], rot: [90, 0, 0], color: "amber", parent: L },
+  { shape: "torus", radius: 0.4, tube: 0.04, sides: 16, pos: [0, -0.7, 6.35], rot: [90, 0, 0], color: "amber", parent: L },
+  ...[0, 90, 180].map((a): Part => ({ shape: "cone", sides: 6, radius: 0.04, height: 0.14, pos: [r3(0.47 * Math.cos((a * Math.PI) / 180)), r3(-0.7 + 0.47 * Math.sin((a * Math.PI) / 180)), 6.35], rot: [0, 0, a - 90], color: "amber", parent: L, fine: true })),
 ];
 
 /** Plaque du panache de la queue, du point `a` au point `b`, à plat dans l'éventail. */
@@ -185,6 +197,8 @@ function plume(a: Vec3, b: Vec3, w: number, color: Part["color"]): Part {
 const queue: Part[] = [
   { shape: "cylinder", sides: 8, radius: 0.15, radiusTop: 0.27, height: 0.95, pos: [0, Y, -5.4], rot: [90, 0, 22.5], color: "faction", pivot: "ondule11" },
   { shape: "wedge", size: [0.22, 0.11, 0.44], pos: [0, 0.6, -5.2], color: "faction", parent: "ondule11" },
+  { shape: "torus", radius: 0.26, tube: 0.03, sides: 12, pos: [0, Y, -4.95], rot: [90, 0, 0], color: "steel", parent: "ondule11", fine: true },
+  { shape: "sphere", radius: 0.1, pos: [0, 0.4, -5.85], color: "glow", parent: "ondule11" },
   { shape: "wedge", size: [0.2, 0.1, 0.42], pos: [0.17, 0.52, -5.25], rot: [0, 0, -50], color: "faction", mirror: true, parent: "ondule11" },
   { shape: "box", size: [0.3, 0.08, 0.5], pos: [0, 0.14, -5.3], rot: [-8, 0, 0], color: "light", parent: "ondule11" },
   seg([0, 0.6, -5.15], [0, 0.92, -5.7], { shape: "wedge", size: [0.06, 1, 0.26], color: "amber", parent: "ondule11" }),
