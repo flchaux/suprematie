@@ -72,6 +72,8 @@ export const ui = $state({
   buildFloor: 0,
   /** vue logistique affichée (touche maintenue) */
   logisticsView: false,
+  /** répartiteur à poser : sorties (0 : les trois, 1 : gauche et avant, 2 : droite et avant) */
+  buildSplit: 0,
   /** vue électrique (touche maintenue) */
   powerView: false,
   /** réseaux électriques de l'équipe (légende de la vue électrique) */

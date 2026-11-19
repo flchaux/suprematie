@@ -280,6 +280,8 @@ pub struct Building {
     /// bras : rotation de la prise à la dépose, en quarts de tour (1 : prend à droite, 2 : derrière,
     /// 3 : à gauche ; 0 vaut 2, le demi-tour habituel)
     pub turn: u8,
+    /// répartiteur : sorties (0 : gauche, avant et droite ; 1 : gauche et avant ; 2 : droite et avant)
+    pub split: u8,
     /// gare, héliport : objets par voyage des véhicules qui en partent (0 : automatique, ils partent
     /// dès qu'ils ont quelque chose ; sinon ils chargent au plus ce nombre et l'attendent avant de partir)
     pub lot: u16,
@@ -308,7 +310,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split
 });
 
 impl Building {

@@ -942,6 +942,13 @@ export class GameClient {
     e.preventDefault();
     const sc = this.scene;
     if (!sc) return;
+    // pose d'un répartiteur : la molette choisit ses sorties (les trois, gauche et avant, droite et avant)
+    if (ui.mode === "build" && this.data?.buildings[ui.buildKind]?.key === "splitter" && !e.ctrlKey) {
+      ui.buildSplit = (ui.buildSplit + (e.deltaY < 0 ? 1 : 2)) % 3;
+      sfx.click();
+      this.updateGhost();
+      return;
+    }
     // pose de tapis : la molette choisit le niveau (sol, étage 1, étage 2) au lieu du zoom
     if (ui.mode === "build" && this.isBeltKind() && !e.ctrlKey) {
       const f = Math.max(0, Math.min(2, ui.buildFloor + (e.deltaY < 0 ? 1 : -1)));
@@ -1989,6 +1996,8 @@ export class GameClient {
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
       this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: this.beltShape(c.x, c.y, c.dir, belts) })));
+    } else if (this.data?.buildings[ui.buildKind]?.key === "splitter") {
+      this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: ui.buildSplit })));
     } else this.scene.setGhost(ui.buildKind, this.ghostCells);
     const wpn = def.weapon >= 0 ? this.data.weapons[def.weapon] : null;
     this.scene.showRange(cur.x + def.w / 2, cur.y + def.h / 2, wpn ? wpn.range : def.radar || def.shieldR || 0);
@@ -2008,7 +2017,9 @@ export class GameClient {
     }
     const rf = this.replaceFlag();
     // niveau propre à chaque case (montée automatique au-dessus des obstacles)
-    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf | ((c.floor ?? 0) & 3) << 3, shift || i > 0)));
+    // répartiteur : ses sorties dans les bits 5-6 de la direction
+    const split = this.data?.buildings[ui.buildKind]?.key === "splitter" ? (ui.buildSplit & 3) << 5 : 0;
+    cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf | (((c.floor ?? 0) & 3) << 3) | split, shift || i > 0)));
     sfx.confirm();
     this.ghostStart = null;
     if (!shift) {
@@ -2083,6 +2094,10 @@ export class GameClient {
       this.cmd(Ord.upgrade(ui.selBuilding.ref));
       sfx.confirm();
     }
+  }
+  /** Sorties du répartiteur sélectionné (0 : les trois, 1 : gauche et avant, 2 : droite et avant). */
+  setSplit(mode: number): void {
+    if (ui.selBuilding) this.cmd(Ord.setSplit(ui.selBuilding.ref, mode));
   }
   /** Rotation du bras sélectionné, en quarts de tour (1 : prend à droite, 2 : derrière, 3 : à gauche). */
   /** Objets par voyage des véhicules qui partent de la gare sélectionnée (0 : automatique). */

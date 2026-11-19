@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ui, hasTechUI } from "../game/state.svelte.ts";
   import { UNIT_TRAITS } from "../game/traits.ts";
+  import SplitIcon from "./SplitIcon.svelte";
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
@@ -375,7 +376,15 @@
           </select></div>
         <div class="row wrap">{#each ui.teamStock as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>
       {:else if bdef.cls === BClass.Router}
-        {#if bdef.key === "splitter"}<span class="dim small">Répartit les objets à tour de rôle à gauche, devant et à droite. Entrée par l'arrière ; R pour tourner à la pose.</span>
+        {#if bdef.key === "splitter"}
+          {@const sp = info.split ?? 0}
+          <div class="row turn">
+            <span class="kicker">Sorties</span>
+            {#each [[0, "Gauche, avant et droite"], [1, "Gauche et avant"], [2, "Droite et avant"]] as [m, label]}
+              <button class="icon-btn split" class:on={sp === m} disabled={!mine} title={label as string} aria-label={label as string} onclick={() => client.setSplit(m as number)}><SplitIcon mode={m as number} /></button>
+            {/each}
+          </div>
+          <span class="dim small">Répartit les objets à tour de rôle {sp === 1 ? "à gauche et devant" : sp === 2 ? "à droite et devant" : "à gauche, devant et à droite"}. Entrée par l'arrière ; à la pose, R tourne et la molette choisit les sorties.</span>
         {:else if bdef.key === "overflow"}<span class="dim small">Envoie devant ; quand l'avant est bloqué, déborde à gauche puis à droite.</span>
         {:else}
           <span class="dim small">L'objet choisi part à gauche, tout le reste continue devant.</span>
@@ -635,4 +644,5 @@
   .fuelbar > span { display: block; height: 100%; background: var(--amber); }
   .fuelbar.empty { outline: 1px solid var(--bad, #ff5a4f); }
   .nowrap { white-space: nowrap; }
+  .turn .icon-btn.split { padding: 2px 6px; }
 </style>

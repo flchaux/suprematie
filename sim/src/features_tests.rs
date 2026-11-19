@@ -1844,3 +1844,59 @@ fn fuel_carrying_belts_and_arms_run_without_power_and_alerts_fire_once() {
     }
     assert_eq!((low, dry), (1, 1), "une alerte « moins d'une minute », puis une « à sec »");
 }
+
+/// Répartiteur : ses sorties se règlent — les trois (par défaut), un angle et l'avant — à la pose (bits
+/// 5-6 de la direction de l'ordre de construction) et après (ordre SET_SPLIT).
+#[test]
+fn splitter_outputs_are_configurable() {
+    use crate::orders::{O_BUILD, O_SET_SPLIT};
+    let count = |w: &World, b: usize| w.belts.lines[w.buildings[b].line as usize].items.len();
+    let setup = |w: &mut World| -> (usize, [usize; 3]) {
+        // répartiteur tourné vers l'est en (100, 100) ; un tapis en cul-de-sac à chaque sortie
+        let r = put(w, 0, B_SPLITTER, 100, 100, 0);
+        let left = put(w, 0, B_BELT1, 100, 99, 3);
+        let front = put(w, 0, B_BELT1, 101, 100, 0);
+        let right = put(w, 0, B_BELT1, 100, 101, 1);
+        (r, [left, front, right])
+    };
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let (r, outs) = setup(&mut w);
+    assert_eq!(w.buildings[r].split, 0);
+    feed(&mut w, r, IRON_PLATE, 6);
+    assert_eq!(outs.map(|b| count(&w, b)), [2, 2, 2], "par défaut : les trois sorties");
+    // gauche et avant
+    let rr = w.building_ref(r) as i32;
+    w.step(&[4, O_SET_SPLIT, 0, rr, 1]);
+    assert_eq!(w.buildings[r].split, 1);
+    for b in outs {
+        let l = w.buildings[b].line as usize;
+        w.belts.lines[l].items.clear();
+    }
+    feed(&mut w, r, IRON_PLATE, 6);
+    assert_eq!(outs.map(|b| count(&w, b)), [3, 3, 0], "gauche et avant");
+    // droite et avant
+    w.step(&[4, O_SET_SPLIT, 0, rr, 2]);
+    for b in outs {
+        let l = w.buildings[b].line as usize;
+        w.belts.lines[l].items.clear();
+    }
+    feed(&mut w, r, IRON_PLATE, 6);
+    assert_eq!(outs.map(|b| count(&w, b)), [0, 3, 3], "droite et avant");
+    // valeur invalide : ignorée
+    w.step(&[4, O_SET_SPLIT, 0, rr, 3]);
+    assert_eq!(w.buildings[r].split, 2);
+    // réglé à la pose : bits 5-6 de la direction de l'ordre de construction
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let c = w.players[0].commander as i32;
+    let cs = w.unit(c as u32).unwrap();
+    w.units.x[cs] = 100 * TILE;
+    w.units.y[cs] = 103 * TILE;
+    w.step(&[9, O_BUILD, 0, 0, B_SPLITTER as i32, 100, 100, 1 << 5, 1, c]);
+    run(&mut w, 400);
+    let b = building_at(&w, 100, 100).expect("répartiteur posé");
+    assert_eq!(w.buildings[b].kind, B_SPLITTER);
+    assert_eq!(w.buildings[b].split, 1, "réglé à la pose");
+    assert_eq!(w.buildings[b].dir, 0);
+}
