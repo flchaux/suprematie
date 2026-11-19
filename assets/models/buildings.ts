@@ -620,6 +620,41 @@ export const BUILDING_MODELS: Record<string, Model> = {
     ],
   },
   // pylon : mât effilé sur pied d'équipe, traverse et isolateurs lumineux (126 triangles)
+  // main_generator : générateur de départ (3 × 3) — grande turbine, cuve d'hydrocarbure à jauge ambre, deux
+  // cheminées, et un haut mât émetteur à anneaux lumineux (sa grande zone d'alimentation)
+  main_generator: {
+    parts: [
+      ...socle(3),
+      ...filets(3),
+      // halle de la turbine, côté gauche
+      { shape: "bevel", size: [1.3,0.9,2.2], pos: [-0.65,0.7,0.1], color: "dark" },
+      { shape: "bevel", size: [1.1,0.16,2.0], pos: [-0.65,1.2,0.1], color: "faction" },
+      ...turbine(-0.65, 0.55, 1.15),
+      { shape: "box", size: [0.03,0.06,1.8], pos: [-1.31,0.6,0.1], color: "glow" },
+      // cuve d'hydrocarbure à l'arrière droite, jauge ambre
+      { shape: "cylinder", sides: 8, radius: 0.42, height: 0.9, pos: [0.85,0.7,-0.8], color: "light" },
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.08, pos: [0.85,0.5,-0.8], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.45, height: 0.08, pos: [0.85,0.95,-0.8], color: "dark" },
+      { shape: "box", size: [0.06,0.6,0.03], pos: [0.85,0.72,-0.37], color: "amber" },
+      { shape: "sphere", radius: 0.3, pos: [0.85,1.18,-0.8], color: "metal" },
+      // deux cheminées
+      { shape: "cylinder", sides: 8, radius: 0.13, height: 1.5, pos: [-1.1,1.6,-0.95], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.16, height: 0.12, pos: [-1.1,2.36,-0.95], color: "dark" },
+      { shape: "cylinder", sides: 8, radius: 0.11, height: 1.2, pos: [-0.75,1.45,-0.95], color: "metal" },
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 0.12, pos: [-0.75,2.06,-0.95], color: "dark" },
+      // mât émetteur au centre droit, anneaux lumineux, coiffe aux couleurs du camp
+      { shape: "bevel", size: [0.7,0.4,0.7], pos: [0.75,0.45,0.55], color: "light" },
+      { shape: "cylinder", sides: 6, radius: 0.12, height: 2.2, pos: [0.75,1.7,0.55], color: "metal", radiusTop: 0.06 },
+      { shape: "cylinder", sides: 8, radius: 0.34, height: 0.05, pos: [0.75,1.3,0.55], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.26, height: 0.05, pos: [0.75,1.85,0.55], color: "glow" },
+      { shape: "cylinder", sides: 8, radius: 0.18, height: 0.05, pos: [0.75,2.35,0.55], color: "glow" },
+      { shape: "cone", sides: 6, radius: 0.14, height: 0.3, pos: [0.75,2.95,0.55], color: "faction" },
+      { shape: "sphere", radius: 0.08, pos: [0.75,3.14,0.55], color: "amber" },
+      // conduite cuve → turbine, voyants
+      { shape: "box", size: [1.2,0.12,0.12], pos: [0.2,0.5,-0.8], color: "dark" },
+      { shape: "box", size: [0.1,0.06,0.03], pos: [0.3,0.4,1.49], color: "amber", mirror: true },
+    ],
+  },
   pylon: {
     parts: [
       { shape: "box", size: [0.6,0.12,0.6], pos: [0,0.06,0], color: "dark" },

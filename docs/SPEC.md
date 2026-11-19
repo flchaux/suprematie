@@ -39,7 +39,9 @@ Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste 
 - Cinq ressources brutes sont extraites sur des gisements : minerai de fer, minerai de cuivre, silicium, hydrocarbure et cristal.
 - Les ressources circulent physiquement, comme dans Factorio : extracteurs, tapis, bras, fonderies, assembleurs.
 - Transfert direct : un extracteur ou un fabricant donne ses produits, sans bras ni tapis, à un bâtiment collé à une de ses faces qui les accepte (dépôt, laboratoire, usine, fabricant dont la recette en cours les utilise), à tour de rôle avec ses autres sorties. Le contact ne change jamais la recette d'un fabricant voisin, sauf pour un extracteur qui amorce une fonderie vide.
-- L'énergie passe par un réseau électrique relié par des pylônes. Un bâtiment hors réseau ne fonctionne pas.
+- Électricité par zones. Chaque joueur démarre avec un générateur principal (1 500 kW, zone de 18 cases) posé près de son commandant, avec 20 hydrocarbures. Tout générateur crée une zone ; des relais l'étendent (petite zone) ; des zones qui se recouvrent ou que des relais relient forment un seul réseau. Un bâtiment hors de toute zone ne fonctionne pas.
+- Les générateurs brûlent de l'hydrocarbure ou du carburant (5 fois plus d'énergie) ; le réacteur à cristal brûle des cellules d'énergie. Un hydrocarbure vaut 1 500 kW·s. Chaque générateur fournit sa part de la charge de la zone, au prorata de sa puissance, et brûle exactement l'énergie fournie : plus la zone consomme, plus vite le combustible part. Sans combustible, un générateur ne produit rien. Réservoir : 20 unités. Alimentation par tapis, bras, transfert direct (un extracteur collé) ou dépôt collé (1 unité par seconde depuis la réserve).
+- Un extracteur posé sur un gisement d'hydrocarbure fonctionne sans électricité. Chaque départ a un gisement d'hydrocarbure tout proche. La centrale à hydrocarbure se pose n'importe où.
 - Le générateur s'améliore sur place, comme l'extracteur : 400 kW, puis 650 kW (automatisation), puis 1 000 kW (électronique). Il ne produit rien pendant le chantier.
 - Les usines d'unités reçoivent leurs composants par tapis, bras ou transfert direct. Un dépôt collé à une face d'une usine l'alimente lentement depuis la réserve du joueur (1 objet par seconde) ; un seul dépôt compte par usine. L'usine garde d'avance les composants de 2 unités pour chaque type de sa file ; ce qui dépasse quand la file change retourne à la réserve. Une usine à l'arrêt faute de composants depuis 10 s déclenche une alerte.
 - Les drones ingénieurs construisent les bâtiments avec un stock commun au joueur, alimenté par les dépôts : ce qui entre dans un dépôt devient disponible pour les ingénieurs sur toute la carte.
@@ -177,9 +179,10 @@ Les bâtiments de production viennent de Factorio, les bâtiments militaires de 
 | Usine chimique | Fabrique les composites | 3 |
 | Laboratoire | Consomme les lots de recherche | 0 |
 | Dépôt | Alimente le stock commun utilisé par les ingénieurs, dont il agrandit le plafond ; amélioré, rend des objets filtrés | 0 |
-| Générateur | Petite production d'énergie sans combustible | 0 |
-| Pylône | Relie le réseau électrique | 0 |
-| Centrale à hydrocarbure | Grosse production d'énergie, posée sur un gisement d'hydrocarbure | 2 |
+| Générateur principal | Générateur de départ : grande zone, brûle de l'hydrocarbure | 0 |
+| Générateur | Crée une zone électrique, brûle de l'hydrocarbure ou du carburant | 0 |
+| Relais | Étend une zone électrique (petite zone) et relie les zones | 0 |
+| Centrale à hydrocarbure | Grosse production d'énergie, brûle de l'hydrocarbure ou du carburant | 2 |
 
 ### Militaire
 

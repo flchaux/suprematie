@@ -4,7 +4,7 @@
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
-  import { BClass, RECIPE_NONE, PACK1 } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, PACK1, HYDROCARBON, ENERGY_CELL } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
   import Icon from "./Icon.svelte";
@@ -67,8 +67,11 @@
     if (!info || !bdef || !d) return { text: "", kind: "" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (arrêté pendant le chantier)`, kind: "build" };
-    if (bdef.powerUse > 0 && !info.net) return { text: "Hors réseau électrique : reliez-le à un générateur (pylônes)", kind: "warn" };
-    if (bdef.powerUse > 0 && info.sat < 512) return { text: `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : il manque des générateurs`, kind: "warn" };
+    // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
+    const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
+    if (powered && !info.net) return { text: "Hors zone électrique : rapprochez-le d'un générateur ou d'un relais", kind: "warn" };
+    if (powered && info.sat < 512) return { text: info.sat === 0 ? "Sans courant : les générateurs de la zone n'ont plus de combustible" : `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : il manque des générateurs ou du combustible`, kind: "warn" };
+    if (bdef.cls === BClass.Power && (info.fuel ?? 0) <= 0 && info.build >= 65536) return { text: "Sans combustible : il ne produit rien", kind: "warn" };
     if (bdef.cls === BClass.Crafter && info.recipe !== RECIPE_NONE && !info.working) {
       const r = d.recipes[info.recipe];
       if (info.out + r.output[1] > Math.max(4, r.output[1] * 3)) return { text: `Sortie bloquée : ${d.items[r.output[0]].name} n'est pas emporté (bras ou tapis de sortie)`, kind: "warn" };
@@ -85,7 +88,7 @@
       if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
     if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
-    const low = bdef.powerUse > 0 && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
+    const low = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON) && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
     return info.working ? { text: "En marche" + low, kind: low ? "warn" : "good" } : { text: "En attente" + low, kind: "idle" };
   });
   /** Débit d'un fabricant : objets par minute à pleine vitesse, et au niveau d'énergie actuel. */
@@ -191,6 +194,18 @@
       {#if bdef.cls === BClass.Power && info.build >= 65536}
         {@const gl = d.generatorLevels && bdef.key === "generator" ? d.generatorLevels : null}
         {@const kw = info.upgrade > 0 ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd}
+        {@const fu = d.fuel}
+        {@const cell = bdef.key === "crystal_reactor"}
+        {@const unit = fu ? (cell ? fu.cell : fu.hydrocarbon) : 0}
+        {@const tank = info.fuelTank ?? 0}
+        {@const fuel = info.fuel ?? 0}
+        {@const out = info.genOut ?? 0}
+        <div class="row small"><span class="kicker">Combustible</span> <Item id={cell ? ENERGY_CELL : HYDROCARBON} size={16} />
+          <span class="fuelbar" class:empty={fuel <= 0}><span style:width={tank ? (100 * fuel) / tank + "%" : "0"}></span></span>
+          {#if unit}<span class="num">{(fuel / unit).toFixed(1)}</span><span class="dim"> / {(tank / unit).toFixed(0)}</span>{/if}
+          {#if fuel > 0 && out > 0}<span class="dim"> · encore <span class="num">{Math.ceil(fuel / out / 20)}</span> s à cette charge</span>{/if}
+        </div>
+        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{kw}</span> kW <span class="dim">· brûle {cell ? "des cellules d'énergie" : "de l'hydrocarbure ou du carburant (5 fois plus)"}, plus vite quand la zone consomme</span></div>
         <div class="row small"><span class="kicker">Production</span> <span class="num">{kw}</span> kW{#if gl} <span class="dim">· niveau {(info.level ?? 0) + 1}/{gl.length}</span>{/if}{#if info.upgrade > 0} <span class="dim">(arrêtée pendant l'amélioration)</span>{/if}</div>
       {/if}
       {#if flow}
@@ -616,4 +631,7 @@
   @keyframes blink { 50% { opacity: 0.3; } }
   .turn .icon-btn { padding: 3px 9px; }
   .turn .icon-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(62, 240, 255, 0.12); }
+  .fuelbar { display: inline-block; width: 70px; height: 6px; background: rgba(255, 255, 255, 0.08); margin: 0 4px; vertical-align: middle; }
+  .fuelbar > span { display: block; height: 100%; background: var(--amber); }
+  .fuelbar.empty { outline: 1px solid var(--bad, #ff5a4f); }
 </style>
