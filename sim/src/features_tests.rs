@@ -33,6 +33,10 @@ fn flatten(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
 fn put(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> usize {
     let b = place_building(w, owner, kind, x, y, dir).unwrap_or_else(|| panic!("pose impossible {} en {},{}", bdef(kind).key, x, y));
     complete_building(w, b);
+    // les générateurs des tests ont un réservoir inépuisable (la combustion a ses propres tests)
+    if bdef(kind).class == BClass::Power {
+        w.buildings[b].fuel = 1_000_000_000;
+    }
     b
 }
 
@@ -1580,4 +1584,124 @@ fn bombs_dropped_over_a_shield_hit_the_shield() {
     }
     assert_eq!(w.buildings[target].hp, bdef(B_DEPOT).hp, "le dépôt sous le bouclier n'est pas touché");
     assert!(hits > 0, "le bouclier a encaissé les bombes");
+}
+
+/// Générateur au combustible : sans combustible il ne produit rien ; il brûle d'autant plus vite que sa
+/// zone consomme ; un dépôt collé l'alimente depuis la réserve.
+#[test]
+fn generators_burn_fuel_according_to_load() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 80, 80, 150, 130);
+    // deux zones séparées, chacune un générateur ; 1 laboratoire dans la première, 4 dans la seconde
+    let g1 = put(&mut w, 0, B_GENERATOR, 90, 100, 0);
+    let g2 = put(&mut w, 0, B_GENERATOR, 130, 100, 0);
+    put(&mut w, 0, B_LAB, 90, 103, 0);
+    for k in 0..4 {
+        put(&mut w, 0, B_LAB, 126 + 2 * (k % 2) + 4 * (k / 2), 103, 0);
+    }
+    w.buildings[g1].fuel = 0;
+    w.buildings[g2].fuel = 0;
+    crate::buildings::rebuild_power(&mut w);
+    // les laboratoires sans recherche ne consomment pas : on fait tirer chaque laboratoire à la main
+    let labs1: Vec<usize> = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].kind == B_LAB && w.buildings[b].x < 110).collect();
+    let labs2: Vec<usize> = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].kind == B_LAB && w.buildings[b].x > 110).collect();
+    assert_eq!((labs1.len(), labs2.len()), (1, 4));
+    let draw = |w: &mut World| {
+        for &b in labs1.iter().chain(labs2.iter()) {
+            crate::buildings::use_power(w, b, 60);
+        }
+        crate::buildings::power_tick(w);
+    };
+    draw(&mut w);
+    draw(&mut w);
+    let n1 = w.buildings[labs1[0]].net as usize;
+    assert_eq!(w.nets[n1].sat, 0, "sans combustible : rien");
+    assert_eq!(w.nets[n1].prod, 0);
+    // un hydrocarbure chacun (par un bras ou un tapis : insert_item)
+    assert!(crate::buildings::accepts(&w, g1, HYDROCARBON));
+    assert!(!crate::buildings::accepts(&w, g1, IRON_PLATE), "seulement du combustible");
+    crate::buildings::insert_item(&mut w, g1, HYDROCARBON);
+    crate::buildings::insert_item(&mut w, g2, HYDROCARBON);
+    assert_eq!(w.buildings[g1].fuel, FUEL_HYDROCARBON);
+    for _ in 0..100 {
+        draw(&mut w);
+    }
+    assert_eq!(w.nets[n1].sat, 1024, "alimenté");
+    let used1 = FUEL_HYDROCARBON - w.buildings[g1].fuel;
+    let used2 = FUEL_HYDROCARBON - w.buildings[g2].fuel;
+    assert_eq!(used1, 60 * 100, "brûle exactement ce que la zone consomme");
+    assert_eq!(used2, 4 * used1, "quatre fois plus de consommation, quatre fois plus de combustible");
+    // épuisé : plus rien
+    w.buildings[g2].fuel = 1;
+    draw(&mut w);
+    draw(&mut w);
+    let n2 = w.buildings[labs2[0]].net as usize;
+    assert_eq!(w.nets[n2].sat, 0, "réservoir vide : la zone s'éteint");
+    // réservoir plein : il refuse
+    w.buildings[g1].fuel = crate::buildings::fuel_tank(B_GENERATOR);
+    assert!(!crate::buildings::accepts(&w, g1, HYDROCARBON));
+    // un dépôt collé l'alimente depuis la réserve (1 par seconde)
+    w.buildings[g1].fuel = 0;
+    put(&mut w, 0, B_DEPOT, 92, 100, 0);
+    w.players[0].stock[HYDROCARBON as usize] = 10;
+    run(&mut w, 70);
+    assert!(w.buildings[g1].fuel >= 3 * FUEL_HYDROCARBON, "le dépôt collé verse de l'hydrocarbure");
+    assert!(w.players[0].stock[HYDROCARBON as usize] <= 7);
+}
+
+/// Un extracteur sur un gisement d'hydrocarbure fonctionne sans électricité ; collé à un générateur, il
+/// le remplit directement. Les zones reliées par des relais n'en font qu'une.
+#[test]
+fn hydrocarbon_extractor_needs_no_power_and_zones_merge() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 80, 80, 150, 130);
+    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let i = w.map.idx(96 + dx, 100 + dy);
+        w.map.deposit[i] = HYDROCARBON;
+    }
+    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: 96, y: 100 });
+    // aucun générateur alimenté : l'extracteur tourne quand même ; tourné vers l'ouest, il donne au générateur
+    let g = put(&mut w, 0, B_GENERATOR, 94, 100, 0);
+    w.buildings[g].fuel = 0;
+    let e = put(&mut w, 0, B_EXTRACTOR, 96, 100, 2);
+    run(&mut w, 400);
+    // 400 ticks à 1 objet / 30 ticks : 13 objets, versés au générateur (rien ne consomme)
+    assert!(w.buildings[g].fuel >= 10 * FUEL_HYDROCARBON, "l'extracteur tourne sans électricité et remplit le générateur collé : {}", w.buildings[g].fuel);
+    let _ = e;
+    // zones : un second générateur loin, relié par des relais (22 cases entre deux relais)
+    let far = put(&mut w, 0, B_GENERATOR, 140, 100, 0);
+    w.buildings[far].fuel = 0;
+    put(&mut w, 0, B_PYLON, 114, 101, 0);
+    put(&mut w, 0, B_PYLON, 132, 101, 0);
+    let lab = put(&mut w, 0, B_LAB, 140, 103, 0);
+    crate::buildings::rebuild_power(&mut w);
+    assert_eq!(w.buildings[lab].net, w.buildings[g].net, "une seule zone");
+    let n = w.buildings[lab].net as usize;
+    assert_eq!(w.nets[n].gens.len(), 2);
+    crate::buildings::use_power(&mut w, lab, 60);
+    crate::buildings::power_tick(&mut w);
+    crate::buildings::use_power(&mut w, lab, 60);
+    crate::buildings::power_tick(&mut w);
+    assert_eq!(w.nets[n].sat, 1024, "le laboratoire loin est alimenté par le générateur qui a du combustible");
+}
+
+/// Départ d'une vraie partie : chaque joueur a son générateur principal, avec du combustible, et sa zone
+/// alimente les bâtiments posés près du commandant.
+#[test]
+fn main_generator_is_placed_at_start_with_fuel() {
+    let mut w = world(&[0, 1]);
+    w.place_start_buildings();
+    for p in 0..2u8 {
+        let (sx, sy) = w.map.starts[p as usize];
+        let g = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == p && w.buildings[b].kind == B_MAIN_GENERATOR).expect("générateur principal");
+        assert!(w.buildings[g].complete());
+        assert_eq!(w.buildings[g].fuel, START_FUEL_UNITS * FUEL_HYDROCARBON);
+        let (gx, gy) = (w.buildings[g].x, w.buildings[g].y);
+        assert!((gx - sx).abs() <= 6 && (gy - sy).abs() <= 6, "près du commandant");
+        assert!(w.buildings[g].net != 0);
+        assert_eq!(w.nets[w.buildings[g].net as usize].cap, 1500);
+    }
+    // une centrale à hydrocarbure se pose désormais hors gisement
+    let (sx, sy) = w.map.starts[0];
+    assert!(crate::buildings::place_building(&mut w, 0, B_HYDRO, sx + 8, sy + 8, 0).is_some() || crate::buildings::place_building(&mut w, 0, B_HYDRO, sx - 10, sy + 8, 0).is_some());
 }

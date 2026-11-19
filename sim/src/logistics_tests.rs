@@ -29,6 +29,10 @@ fn flatten(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
 fn put(w: &mut World, owner: u8, kind: u16, x: i32, y: i32) -> usize {
     let b = place_building(w, owner, kind, x, y, 0).unwrap_or_else(|| panic!("pose impossible {} en {},{}", bdef(kind).key, x, y));
     complete_building(w, b);
+    // les générateurs des tests ont un réservoir inépuisable (la combustion a ses propres tests)
+    if bdef(kind).class == BClass::Power {
+        w.buildings[b].fuel = 1_000_000_000;
+    }
     b
 }
 

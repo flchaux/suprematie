@@ -85,6 +85,8 @@ fn build_reference(verbose: bool) -> World {
             for x in [bx + 2, bx + 20, bx + 40] {
                 if let Some(b) = place_building(&mut w, owner, B_GENERATOR, x, y + 1, 0) {
                     complete_building(&mut w, b);
+                    // banc : réservoir inépuisable
+                    w.buildings[b].fuel = 1_000_000_000;
                 }
             }
         }
@@ -217,6 +219,10 @@ pub fn logistics_demo() -> World {
         let b = place_building(w, owner, kind, x, y, dir).unwrap_or(usize::MAX);
         if b != usize::MAX {
             complete_building(w, b);
+            // démo : générateurs au réservoir inépuisable
+            if bdef(kind).class == BClass::Power {
+                w.buildings[b].fuel = 1_000_000_000;
+            }
         }
         b
     };

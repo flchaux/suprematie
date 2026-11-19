@@ -504,7 +504,21 @@ pub const B_ROBOPORT: u16 = 43;
 pub const B_LONG_INSERTER: u16 = 44;
 pub const B_COLLECTOR: u16 = 45;
 
-pub const BUILDINGS: [BuildingDef; 46] = [
+/// Énergie d'une unité de combustible, en kW × ticks (1 s = 20 ticks) : un hydrocarbure fait tourner un
+/// générateur de 1 500 kW pendant 1 s ; un extracteur de base (0,67 objet/s) alimente environ 1 000 kW.
+pub const FUEL_HYDROCARBON: i32 = 30_000;
+/// carburant raffiné (2 hydrocarbures) : 5 fois l'hydrocarbure
+pub const FUEL_REFINED: i32 = 150_000;
+/// cellule d'énergie (réacteur à cristal) : 4 min d'un réacteur de 12 MW à pleine charge… divisées par 12
+pub const FUEL_CELL: i32 = 4_800_000;
+/// Réservoir d'un générateur : 20 unités de son combustible principal.
+pub const FUEL_TANK_UNITS: i32 = 20;
+/// Combustible du générateur principal au départ (unités d'hydrocarbure).
+pub const START_FUEL_UNITS: i32 = 20;
+
+pub const B_MAIN_GENERATOR: u16 = 46;
+
+pub const BUILDINGS: [BuildingDef; 47] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -519,8 +533,8 @@ pub const BUILDINGS: [BuildingDef; 46] = [
     BuildingDef { key: "lab", name: "Laboratoire", size: (2, 2), hp: 400, power_use: 60, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 10)], build: 4, class: BClass::Lab, ..BD },
     BuildingDef { key: "depot", name: "Dépôt", size: (2, 2), hp: 500, cost: &[(IRON_PLATE, 8)], build: 2, class: BClass::Depot, ..BD },
     BuildingDef { key: "generator", name: "Générateur", size: (2, 2), hp: 500, power_prod: 400, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 8)], build: 4, class: BClass::Power, supply: 8, connect: 20, ..BD },
-    BuildingDef { key: "pylon", name: "Pylône", hp: 150, cost: &[(IRON_PLATE, 2), (COPPER_PLATE, 2)], build: 1, class: BClass::Pylon, supply: 7, connect: 22, vision: 0, ..BD },
-    BuildingDef { key: "hydro_plant", name: "Centrale à hydrocarbure", size: (2, 2), hp: 1200, power_prod: 2500, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 5)], build: 10, tech: 5, class: BClass::Power, supply: 10, connect: 22, deposit: HYDROCARBON, ..BD },
+    BuildingDef { key: "pylon", name: "Relais", hp: 150, cost: &[(IRON_PLATE, 2), (COPPER_PLATE, 2)], build: 1, class: BClass::Pylon, supply: 7, connect: 22, vision: 0, ..BD },
+    BuildingDef { key: "hydro_plant", name: "Centrale à hydrocarbure", size: (2, 2), hp: 1200, power_prod: 2500, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 5)], build: 10, tech: 5, class: BClass::Power, supply: 10, connect: 22, ..BD },
     BuildingDef { key: "land_factory", name: "Usine terrestre", size: (3, 3), hp: 4000, power_use: 400, cost: &[(IRON_PLATE, 30), (GEAR, 10), (COPPER_PLATE, 10)], build: 15, tech: 2, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, ..BD },
     BuildingDef { key: "air_factory", name: "Usine aérienne", size: (3, 3), hp: 4000, power_use: 500, cost: &[(STEEL, 20), (CIRCUIT, 15), (GEAR, 10)], build: 20, tech: 4, class: BClass::Factory, factory: FactoryKind::Air, vision: 12, ..BD },
     BuildingDef { key: "naval_factory", name: "Usine navale", size: (3, 3), hp: 5000, power_use: 500, cost: &[(STEEL, 30), (CIRCUIT, 15), (ENGINE, 5)], build: 20, tech: 11, class: BClass::Factory, factory: FactoryKind::Naval, water: true, vision: 14, ..BD },
@@ -554,6 +568,8 @@ pub const BUILDINGS: [BuildingDef; 46] = [
     BuildingDef { key: "long_inserter", name: "Bras long", hp: 100, power_use: 20, cost: &[(IRON_PLATE, 3), (GEAR, 1), (COPPER_PLATE, 2)], build: 1, tech: 1, class: BClass::Inserter, passable: true, vision: 0, reach: 2, ..BD },
     // tapis surmonté d'un portique : il se pose sur un tapis (qu'il remplace) et met le surplus en réserve
     BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, class: BClass::Belt, speed: 72, passable: true, vision: 0, collect: true, ..BD }, // vitesse express : ne ralentit aucune file
+    // générateur principal : posé au départ (et reconstructible), grande zone ; brûle de l'hydrocarbure
+    BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 1, class: BClass::Power, supply: 18, connect: 30, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -843,7 +859,7 @@ pub fn data_json() -> String {
     let gens: Vec<String> = GENERATOR_LEVELS.iter().map(|l| format!("{{\"prod\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.prod, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"generatorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"generatorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
@@ -856,7 +872,11 @@ pub fn data_json() -> String {
         cost_js(DEPOT_UPGRADE_COST),
         DEPOT_UPGRADE_TECH,
         DEPOT_UPGRADE_TIME,
-        MAX_FILTERS
+        MAX_FILTERS,
+        FUEL_HYDROCARBON,
+        FUEL_REFINED,
+        FUEL_CELL,
+        FUEL_TANK_UNITS
     ));
     s
 }

@@ -283,6 +283,8 @@ pub struct Building {
     /// gare, héliport : objets par voyage des véhicules qui en partent (0 : automatique, ils partent
     /// dès qu'ils ont quelque chose ; sinon ils chargent au plus ce nombre et l'attendent avant de partir)
     pub lot: u16,
+    /// générateur : combustible en réserve, en kW × ticks (voir FUEL_HYDROCARBON)
+    pub fuel: i32,
     /// bras : compteur de tour de rôle (ordonnancement à pas pondérés)
     pub pass: u64,
     /// source servie par plusieurs bras : temps virtuel du dernier service
@@ -304,7 +306,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel
 });
 
 impl Building {
@@ -389,15 +391,20 @@ crate::ser_struct!(Wreck { alive, gen, x, y, iron, steel, size, born, model, rot
 /// Épave d'un bâtiment (sinon d'une unité) dans `Wreck::model`.
 pub const WRECK_BUILDING: u16 = 0x8000;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct Net {
+    /// puissance des générateurs qui ont du combustible (kW)
     pub prod: i32,
     pub demand: i32,
     pub demand_next: i32,
     pub sat: i32, // 0..1024
     pub owner: u8,
+    /// générateurs de la zone, par indice croissant
+    pub gens: Vec<u32>,
+    /// puissance installée (tous générateurs terminés, avec ou sans combustible)
+    pub cap: i32,
 }
-crate::ser_struct!(Net { prod, demand, demand_next, sat, owner });
+crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap });
 
 // Événements pour le rendu (non hachés, non sérialisés)
 pub const EV_BEAM: i32 = 2;
@@ -559,6 +566,22 @@ impl World {
         }
         w.update_vis_all();
         w
+    }
+
+    /// Bâtiments de départ d'une vraie partie : le générateur principal de chaque joueur, près de son
+    /// commandant, avec un peu de combustible (les tests partent d'un monde vide).
+    pub fn place_start_buildings(&mut self) {
+        for p in 0..self.players.len() {
+            let (sx, sy) = self.map.starts[p];
+            for &(dx, dy) in &[(3, -1), (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
+                if let Some(b) = crate::buildings::place_building(self, p as u8, B_MAIN_GENERATOR, sx + dx, sy + dy, 0) {
+                    crate::buildings::complete_building(self, b);
+                    self.buildings[b].fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
+                    break;
+                }
+            }
+        }
+        crate::buildings::rebuild_power(self);
     }
 
     pub fn team_of(&self, p: u8) -> u8 {

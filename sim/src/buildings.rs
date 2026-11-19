@@ -15,7 +15,7 @@ pub const RECIPE_SCALE: u32 = 100 * 1024;
 fn needs_tick(c: BClass) -> bool {
     matches!(
         c,
-        BClass::Extractor | BClass::Depot | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport
+        BClass::Extractor | BClass::Depot | BClass::Power | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport
     )
 }
 
@@ -464,6 +464,60 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
 }
 
 // ---------- Réseau électrique ----------
+
+/// Énergie que donne cet objet au générateur `kind` (0 : il ne le brûle pas). Le réacteur à cristal brûle
+/// des cellules d'énergie, les autres de l'hydrocarbure ou du carburant.
+pub fn fuel_energy(kind: u16, item: u8) -> i32 {
+    if bdef(kind).class != BClass::Power {
+        return 0;
+    }
+    match (kind == B_CRYSTAL_REACTOR, item) {
+        (true, ENERGY_CELL) => FUEL_CELL,
+        (false, HYDROCARBON) => FUEL_HYDROCARBON,
+        (false, FUEL) => FUEL_REFINED,
+        _ => 0,
+    }
+}
+
+/// Réservoir d'un générateur (kW × ticks).
+pub fn fuel_tank(kind: u16) -> i32 {
+    FUEL_TANK_UNITS * if kind == B_CRYSTAL_REACTOR { FUEL_CELL / 4 } else { FUEL_HYDROCARBON }
+}
+
+/// Le bâtiment a-t-il besoin d'électricité ? (un extracteur sur un gisement d'hydrocarbure n'en a pas)
+#[inline]
+pub fn needs_power(bb: &Building) -> bool {
+    bb.def().power_use > 0 && !(bb.def().class == BClass::Extractor && bb.recipe == HYDROCARBON)
+}
+
+/// Générateur : un dépôt collé l'alimente depuis la réserve du joueur (1 unité de combustible par
+/// seconde au plus, quand le réservoir a la place) ; il dort le reste du temps.
+fn tick_generator(w: &mut World, b: usize) {
+    let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner as usize);
+    w.buildings[b].wake = w.tick + DEPOT_FEED_PERIOD;
+    if touching_depots(w, b) == 0 {
+        return;
+    }
+    for it in [HYDROCARBON, FUEL, ENERGY_CELL] {
+        let e = fuel_energy(kind, it);
+        if e > 0 && w.buildings[b].fuel + e <= fuel_tank(kind) && w.avail(owner, it) > 0 {
+            w.pay(owner, it, 1);
+            w.buildings[b].fuel += e;
+            break;
+        }
+    }
+}
+
+/// Puissance que le générateur `b` fournit en ce moment (kW) : sa part de la charge de sa zone.
+pub fn gen_output(w: &World, b: usize) -> i32 {
+    let bb = &w.buildings[b];
+    let Some(n) = w.nets.get(bb.net as usize) else { return 0 };
+    if bb.net == 0 || bb.fuel <= 0 || n.prod <= 0 {
+        return 0;
+    }
+    (power_prod_of(bb) as i64 * (n.demand.min(n.prod)) as i64 / n.prod as i64) as i32
+}
+
 pub fn rebuild_power(w: &mut World) {
     w.power_dirty = false;
     let np = w.players.len();
@@ -550,7 +604,11 @@ pub fn rebuild_power(w: &mut World) {
             });
             let net = if best != usize::MAX { pole_net[best] } else { 0 };
             if b.complete() && def.power_prod > 0 && net != 0 {
-                w.nets[net as usize].prod += power_prod_of(b);
+                // les générateurs de la zone : leur production dépend de leur combustible (power_tick)
+                let cap = power_prod_of(b);
+                let n = &mut w.nets[net as usize];
+                n.gens.push(bi as u32);
+                n.cap += cap;
             }
             w.buildings[bi].net = net;
             if net != 0 {
@@ -563,18 +621,43 @@ pub fn rebuild_power(w: &mut World) {
     }
 }
 
+/// Un tick du réseau : seuls les générateurs qui ont du combustible produisent ; ils brûlent leur part
+/// de la charge (au prorata de leur puissance), donc d'autant plus vite que la zone consomme.
 pub fn power_tick(w: &mut World) {
     for p in w.players.iter_mut() {
         p.power_prod = 0;
         p.power_use = 0;
     }
-    for n in w.nets.iter_mut().skip(1) {
-        n.demand = n.demand_next;
+    for ni in 1..w.nets.len() {
+        let gens = std::mem::take(&mut w.nets[ni].gens);
+        let mut cap = 0i64;
+        for &g in &gens {
+            let bb = &w.buildings[g as usize];
+            if bb.alive && bb.fuel > 0 {
+                cap += power_prod_of(bb) as i64;
+            }
+        }
+        let demand = w.nets[ni].demand_next as i64;
+        if cap > 0 && demand > 0 {
+            let used = demand.min(cap);
+            for &g in &gens {
+                let bb = &mut w.buildings[g as usize];
+                if bb.alive && bb.fuel > 0 {
+                    let burn = (power_prod_of(bb) as i64 * used / cap).max(1) as i32;
+                    bb.fuel = (bb.fuel - burn).max(0);
+                }
+            }
+        }
+        let n = &mut w.nets[ni];
+        n.gens = gens;
+        n.prod = cap as i32;
+        n.demand = demand as i32;
         n.demand_next = 0;
-        n.sat = if n.demand <= 0 { 1024 } else { ((n.prod as i64 * 1024 / n.demand as i64) as i32).min(1024) };
-        if let Some(p) = w.players.get_mut(n.owner as usize) {
-            p.power_prod += n.prod;
-            p.power_use += n.demand;
+        n.sat = if demand <= 0 { 1024 } else { ((cap * 1024 / demand) as i32).min(1024) };
+        let (prod, dem, owner) = (n.prod, n.demand, n.owner as usize);
+        if let Some(p) = w.players.get_mut(owner) {
+            p.power_prod += prod;
+            p.power_use += dem;
         }
     }
 }
@@ -655,7 +738,7 @@ pub fn takers_of(w: &World, sb: usize) -> Vec<usize> {
 
 /// Bâtiments qui reçoivent directement les produits d'un voisin collé (transfert direct, sans bras).
 fn direct_receiver(c: BClass) -> bool {
-    matches!(c, BClass::Depot | BClass::Warehouse | BClass::Station | BClass::CargoPad | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Silo | BClass::AntiMissile)
+    matches!(c, BClass::Depot | BClass::Warehouse | BClass::Station | BClass::CargoPad | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Silo | BClass::AntiMissile | BClass::Power)
 }
 
 /// Bâtiments qui donnent directement leurs produits à un voisin collé.
@@ -1117,6 +1200,10 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
     match bb.def().class {
         BClass::Depot => w.stock_room(bb.owner as usize, item) > 0,
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::accepts(w, b, item),
+        BClass::Power => {
+            let e = fuel_energy(bb.kind, item);
+            e > 0 && bb.fuel + e <= fuel_tank(bb.kind)
+        }
         BClass::Router => bb.stash.len() < 4,
         BClass::Crafter => {
             if bb.recipe == RECIPE_NONE {
@@ -1150,6 +1237,10 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
             flow_add(&mut w.buildings[b], tick, 1);
         }
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::insert(w, b, item),
+        BClass::Power => {
+            let bb = &mut w.buildings[b];
+            bb.fuel += fuel_energy(bb.kind, item);
+        }
         BClass::Router => {
             let bb = &mut w.buildings[b];
             bb.stash.push(item as u16);
@@ -1288,8 +1379,8 @@ pub fn update_buildings(w: &mut World) {
                 tick_ammo_builder(w, b, INTERCEPTOR_COST, 3, 400);
                 crate::combat::antimissile(w, b);
             }
-            // générateur entré dans la liste pour une amélioration (voir upgrade) : dort jusqu'à la prochaine
-            BClass::Power => w.buildings[b].wake = NONE,
+            // générateur : alimenté par un dépôt collé (et amélioration, voir upgrade)
+            BClass::Power => tick_generator(w, b),
             BClass::Orbital => {
                 let need = bdef(B_ORBITAL).power_use;
                 let s = use_power(w, b, need);
@@ -1613,7 +1704,8 @@ fn tick_extractor(w: &mut World, b: usize) {
         }
     }
     let lvl = &EXTRACTOR_LEVELS[(w.buildings[b].level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
-    let s = use_power(w, b, bdef(B_EXTRACTOR).power_use * lvl.power / 100);
+    // sur un gisement d'hydrocarbure, l'extracteur fonctionne sans électricité
+    let s = if w.buildings[b].recipe == HYDROCARBON { 1024 } else { use_power(w, b, bdef(B_EXTRACTOR).power_use * lvl.power / 100) };
     let mult = w.players[owner].res_mult as u32;
     let bb = &mut w.buildings[b];
     bb.working = s > 0;

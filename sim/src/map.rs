@@ -176,7 +176,8 @@ impl Map {
             true
         };
         // Gisements autour de chaque départ
-        let base_kinds = [IRON_ORE, IRON_ORE, IRON_ORE, COPPER_ORE, COPPER_ORE, SILICON, HYDROCARBON, IRON_ORE, COPPER_ORE];
+        // un hydrocarbure tout près (combustible du générateur principal), un second plus loin
+        let base_kinds = [IRON_ORE, HYDROCARBON, IRON_ORE, IRON_ORE, COPPER_ORE, COPPER_ORE, SILICON, HYDROCARBON, IRON_ORE, COPPER_ORE];
         for &(sx, sy) in &starts {
             for (k, &kind) in base_kinds.iter().enumerate() {
                 for _try in 0..60 {
