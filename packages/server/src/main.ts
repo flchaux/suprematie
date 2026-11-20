@@ -5,7 +5,8 @@ import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, readdirSy
 import { extname, join, normalize } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import type { LobbyState, LobbyPlayer, ClientMsg, SaveMeta } from "@supreme/shared";
+import type { LobbyState, LobbyPlayer, ClientMsg, SaveMeta, Fauna } from "@supreme/shared";
+import { FAUNA_LEVELS } from "@supreme/shared";
 import { Game, type Peer } from "./game.ts";
 import { listSaves, readSave, readSaveMeta, deleteSave, validSaveId } from "./saves.ts";
 import { PERSONALITIES } from "./bots/index.ts";
@@ -112,9 +113,9 @@ interface Client extends Peer {
   token: string;
 }
 const clients = new Set<Client>();
-let lobby: LobbyState = { players: [], mapSize: 512, water: true, seed: (Math.random() * 1e9) | 0, running: false, tick: 0, save: null };
+let lobby: LobbyState = { players: [], mapSize: 512, water: true, seed: (Math.random() * 1e9) | 0, fauna: "normal", running: false, tick: 0, save: null };
 /** paramètres de carte avant le chargement d'une sauvegarde (rétablis si on l'annule) */
-let preLoad: { mapSize: number; water: boolean; seed: number } | null = null;
+let preLoad: { mapSize: number; water: boolean; seed: number; fauna: Fauna } | null = null;
 let game: Game | null = null;
 let endTimer: NodeJS.Timeout | null = null;
 const tokens = new Map<string, number>(); // jeton -> emplacement
@@ -200,12 +201,13 @@ function claimFor(c: Client, wanted = -1): boolean {
 
 /** Charge une sauvegarde dans le salon : composition, équipes et carte viennent de la sauvegarde. */
 function loadSaveInLobby(meta: SaveMeta): void {
-  if (!preLoad) preLoad = { mapSize: lobby.mapSize, water: lobby.water, seed: lobby.seed };
+  if (!preLoad) preLoad = { mapSize: lobby.mapSize, water: lobby.water, seed: lobby.seed, fauna: lobby.fauna };
   const humans = humanClients();
   lobby.save = meta;
   lobby.mapSize = meta.mapSize;
   lobby.water = meta.water;
   lobby.seed = meta.seed;
+  lobby.fauna = meta.fauna ?? "none";
   lobby.players = meta.players.map((p, i) => ({
     slot: i,
     name: p.name,
@@ -408,6 +410,7 @@ wss.on("connection", (ws, req) => {
           if (msg.mapSize === 512 || msg.mapSize === 1024) lobby.mapSize = msg.mapSize;
           if (typeof msg.water === "boolean") lobby.water = msg.water;
           if (Number.isInteger(msg.seed)) lobby.seed = msg.seed! | 0;
+          if (msg.fauna && FAUNA_LEVELS.includes(msg.fauna)) lobby.fauna = msg.fauna;
         } else if (msg.action === "start") {
           void startGame();
           return;

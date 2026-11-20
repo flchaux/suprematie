@@ -18,7 +18,7 @@ La partie de référence, qui sert d'objectif de performance, réunit 8 joueurs,
 
 ## Règles du jeu
 
-Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste qu'une équipe avec un robot de commandement.
+Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste qu'une équipe avec un robot de commandement. La faune (nids de bêtes hostiles, voir Faune) ne compte pas.
 
 ### Cartes
 
@@ -53,6 +53,19 @@ Une partie se joue sur une carte de 10 ou 20 km et se termine quand il ne reste 
 - Les drones ingénieurs construisent les bâtiments avec un stock commun au joueur, alimenté par les dépôts : ce qui entre dans un dépôt devient disponible pour les ingénieurs sur toute la carte.
 - Cette réserve est plafonnée, objet par objet : 400 de base, plus 600 par dépôt terminé (2 000 pour un dépôt amélioré). Réserve pleine pour un objet : les dépôts le refusent (le tapis attend), le collecteur de surplus le laisse passer, les ingénieurs cessent de le ramasser ou de le recycler. Les remboursements ne sont pas plafonnés. Un dépôt amélioré (automatisation) gagne un étage et des sorties filtrées (jusqu'à 4 objets) : il pose ces objets, pris dans la réserve à tour de rôle, sur les tapis qui partent de ses faces, et les bras peuvent les y prendre.
 - Les unités détruites laissent des épaves que les ingénieurs recyclent en plaques de fer et en acier, comme dans Supreme Commander.
+
+### Faune
+
+Des nids de bêtes hostiles occupent la carte, comme les nids de Factorio. L'hôte règle la faune dans le salon : aucune, paisible, normale (par défaut) ou agressive. Code : `sim/src/nature.rs` ; modèles : `assets/models/faune.ts`.
+
+- La faune est un joueur caché, d'équipe 8, ajouté après les vrais joueurs. Elle ne reçoit aucun ordre par le réseau, ne compte pas pour la victoire et n'apparaît ni dans les statistiques ni comme adversaire des bots (qui la traitent en menace).
+- Nids de départ dans les zones disputées seulement : une colonie de 2 ou 3 nids autour de chaque gisement de cristal et au milieu de chaque paire de départs voisins, jamais à moins de 60 cases d'une position de départ (120 sur 20 km). Chaque nid commence avec 3 bêtes.
+- Un nid fait naître une bête toutes les 10 s (15 s paisible, 6 s agressive) jusqu'à un plafond qui grandit avec son âge, de façon logarithmique : 5 + 7 × log2(1 + âge / 4 min), soit 5 à la fondation, 12 à 4 min, 19 à 12 min, 33 à 1 h, 40 à 2 h (+30 % en agressive, 60 au plus).
+- Évolution : avec le temps de jeu, les bêtes naissent plus grosses (petit mordeur, mordeur, grand mordeur), selon 280 × log2(1 + t / 10 min) ‰.
+- Attaques (normale et agressive) : toutes les 10 s, un nid dont la horde atteint les 2/3 de son plafond évalue la pression des bâtiments des joueurs dans un rayon de 48 cases (tapis, bras, murs et relais exclus) : chaque bâtiment pèse de 4 (au bord) à 16 (au contact). La chance d'attaque vaut cette somme en ‰ (doublée en agressive, 50 % au plus) : un bâtiment isolé n'attire presque jamais d'attaque, une usine entière presque sûrement. La horde part entière, avec celles des nids voisins prêts, se rassemble puis attaque le bâtiment de ce joueur le plus proche du nid, puis les suivants ; les survivants rentrent quand il n'y a plus rien autour.
+- Les bêtes mordent au corps-à-corps ce qui est au sol, et rongent les murs qui leur barrent la route. Un ennemi qui entre dans le territoire d'un nid (14 cases) est attaqué ; en faune paisible, les bêtes ne ripostent que si on les attaque. Un nid touché alerte la horde, qui fonce vers le tireur ; hors alerte, il se referme peu à peu (20 PV/s).
+- Expansion : toutes les 7 à 12 min (4 à 7 en agressive, 10 à 15 en paisible), un nid de plus de 5 min envoie 4 bêtes fonder un nid à 12-28 cases, à plus de 32 cases de tout bâtiment de joueur. Le nombre de nids est plafonné (trois fois celui du départ), comme celui des bêtes (768 sur 10 km, 1 536 sur 20 km).
+- Un nid détruit ne laisse ni épave ni fantôme ; les bêtes non plus.
 
 ## Technologie
 

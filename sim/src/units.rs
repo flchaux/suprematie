@@ -40,7 +40,7 @@ pub fn fixed_wing(kind: u16) -> bool {
 pub fn legged(kind: u16) -> bool {
     matches!(
         udef(kind).key,
-        "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress"
+        "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l"
     )
 }
 

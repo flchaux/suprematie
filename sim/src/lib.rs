@@ -11,6 +11,7 @@ pub mod flow;
 pub mod grid;
 pub mod logistics;
 pub mod map;
+pub mod nature;
 pub mod orders;
 pub mod render;
 pub mod rng;
@@ -319,4 +320,6 @@ mod tests;
 mod logistics_tests;
 #[cfg(test)]
 mod features_tests;
+#[cfg(test)]
+mod nature_tests;
 pub mod stress;

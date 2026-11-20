@@ -260,6 +260,10 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
     if !w.players[owner as usize].has_tech(def.tech) {
         return false;
     }
+    // un nid n'appartient qu'à la faune, et la faune ne pose que des nids
+    if (def.class == BClass::Nest) != (w.team_of(owner) == crate::nature::NATURE_TEAM) {
+        return false;
+    }
     let (bw, bh) = dims(kind, dir);
     if x < 1 || y < 1 || x + bw > w.map.w - 1 || y + bh > w.map.h - 1 {
         return false;

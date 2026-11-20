@@ -191,6 +191,8 @@ pub enum Proj {
     Fire = 10,
     /// canon de rail : projectile cinétique très rapide, trait bleu-blanc
     Rail = 11,
+    /// morsure des bêtes de la faune (corps-à-corps, instantanée, sans trait)
+    Bite = 12,
 }
 
 pub const M_LAND: u8 = 1;
@@ -228,7 +230,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 55] = [
+pub const WEAPONS: [WeaponDef; 58] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -284,6 +286,10 @@ pub const WEAPONS: [WeaponDef; 55] = [
     w!(20, 18, 10, Bullet, 50, 0, M_AIR),                               // 52 tourelle AA du transport lourd
     w!(35, 28, 8, Bullet, 60, 0, M_AIR),                                // 53 défense AA du porte-avions
     w!(700, 75, 120, Rail, 120, 192, M_SURF, min_range: 8),             // 54 canons de rail du cuirassé
+    // faune (voir nature.rs) : morsures au corps-à-corps, contre ce qui est au sol
+    w!(12, 1, 15, Bite, 0, 0, M_LAND),                                  // 55 petit mordeur
+    w!(40, 2, 18, Bite, 0, 0, M_LAND),                                  // 56 mordeur
+    w!(140, 2, 24, Bite, 0, 0, M_LAND),                                 // 57 grand mordeur
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -399,6 +405,8 @@ pub enum BClass {
     Portal,
     /// Base de robots logistiques : alimente les fabricants voisins depuis le stock, évacue les sorties bloquées.
     Roboport,
+    /// Nid de la faune (voir nature.rs) : fait naître des bêtes ; jamais posé par un joueur.
+    Nest,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -526,8 +534,10 @@ pub const FUEL_TANK_UNITS: i32 = 20;
 pub const START_FUEL_UNITS: i32 = 20;
 
 pub const B_MAIN_GENERATOR: u16 = 46;
+/// Nid de la faune (voir nature.rs).
+pub const B_NEST: u16 = 47;
 
-pub const BUILDINGS: [BuildingDef; 47] = [
+pub const BUILDINGS: [BuildingDef; 48] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -579,6 +589,8 @@ pub const BUILDINGS: [BuildingDef; 47] = [
     BuildingDef { key: "collector", name: "Collecteur de surplus", hp: 150, cost: &[(IRON_PLATE, 8), (GEAR, 4), (CIRCUIT, 2)], build: 3, tech: T_AUTOMATION, power_use: 3, class: BClass::Belt, speed: 72, passable: true, vision: 0, collect: true, ..BD }, // vitesse express : ne ralentit aucune file
     // générateur principal : posé au départ (et reconstructible), grande zone ; brûle de l'hydrocarbure
     BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 0, class: BClass::Power, supply: 18, connect: 30, ..BD },
+    // nid de la faune : posé par la carte ou par une expansion, jamais par un joueur (voir can_place)
+    BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, vision: 0, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -694,12 +706,16 @@ pub const U_EW_PLANE: u16 = 45;
 pub const U_HEAVY_TRANSPORT: u16 = 46;
 pub const U_CARRIER: u16 = 47;
 pub const U_RAILGUN_SHIP: u16 = 48;
+/// Bêtes de la faune (voir nature.rs), de la plus petite à la plus grande.
+pub const U_BEAST_S: u16 = 49;
+pub const U_BEAST_M: u16 = 50;
+pub const U_BEAST_L: u16 = 51;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 49] = [
+pub const UNITS: [UnitDef; 52] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, tier: 3, altitude: 170, ..UD },
@@ -750,6 +766,10 @@ pub const UNITS: [UnitDef; 49] = [
     UnitDef { key: "heavy_transport", name: "Transport lourd", layer: Layer::Air, hp: 4000, speed: 80, radius: 330, weapons: &[52], carry: 16, cost: &[(STEEL, 24), (ENGINE, 8), (COMPOSITE, 6), (FUEL, 12)], build: 26, tech: 13, factory: FactoryKind::Air, tier: 4, altitude: 2304, ..UD },
     UnitDef { key: "carrier", name: "Porte-avions", layer: Layer::Naval, hp: 9000, speed: 28, radius: 520, weapons: &[53], vision: 34, radar: 50, cost: &[(STEEL, 70), (ENGINE, 14), (PROCESSOR, 8), (FUEL, 20)], build: 50, tech: T_HEAVY_NAVY, factory: FactoryKind::Naval, tier: 5, ..UD },
     UnitDef { key: "railgun_ship", name: "Cuirassé à canons de rail", layer: Layer::Naval, hp: 9500, speed: 26, radius: 500, weapons: &[54, 26], vision: 34, radar: 40, cost: &[(STEEL, 70), (COMPOSITE, 25), (PROCESSOR, 12), (ENGINE, 12)], build: 55, tech: T_HEAVY_NAVY, factory: FactoryKind::Naval, tier: 5, ..UD },
+    // faune (voir nature.rs) : elle naît dans les nids, aucune usine ne la produit, elle ne laisse pas d'épave
+    UnitDef { key: "beast_s", name: "Petit mordeur", hp: 120, speed: 46, radius: 90, weapons: &[55], vision: 16, factory: FactoryKind::None, tier: 1, ..UD },
+    UnitDef { key: "beast_m", name: "Mordeur", hp: 450, speed: 40, radius: 150, weapons: &[56], vision: 18, factory: FactoryKind::None, tier: 2, ..UD },
+    UnitDef { key: "beast_l", name: "Grand mordeur", hp: 1600, speed: 34, radius: 230, weapons: &[57], vision: 20, factory: FactoryKind::None, tier: 3, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

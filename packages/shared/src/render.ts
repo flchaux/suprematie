@@ -1,4 +1,5 @@
 // Lecture du tampon de rendu produit par la simulation (voir sim/src/render.rs).
+import { NATURE_TEAM } from "./data.ts";
 
 export const HEADER = 16;
 export const NUM_ITEMS = 27;
@@ -48,6 +49,16 @@ export interface Frame {
   winner: number;
   vis: Uint8Array | null;
   visW: number;
+}
+
+/** Le joueur `i` est-il la faune (joueur caché) ? */
+export function isFauna(players: { team: number }[], i: number): boolean {
+  return players[i]?.team === NATURE_TEAM;
+}
+
+/** Nombre de vrais joueurs (la faune, s'il y en a une, est toujours la dernière). */
+export function realPlayers<T extends { team: number }>(players: T[]): T[] {
+  return players.filter((p) => p.team !== NATURE_TEAM);
 }
 
 export function hasTech(p: PlayerView, t: number): boolean {

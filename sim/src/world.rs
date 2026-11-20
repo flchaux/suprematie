@@ -493,10 +493,13 @@ pub struct World {
     /// prochain tick où un événement « attaque subie » peut être émis, par joueur et par type
     /// (sortie pour l'interface seulement : ni hachée ni sauvegardée)
     pub attack_ev: Vec<u32>,
+    /// faune : nids, hordes, expansion (voir nature.rs) ; son joueur caché est le dernier de `players`
+    pub nature: crate::nature::Nature,
 }
 
 impl World {
-    /// params : [graine, taille, eau, nb joueurs, puis par joueur : équipe, bot, mult. ressources %, mult. construction %]
+    /// params : [graine, taille, eau, nb joueurs, puis par joueur : équipe, bot, mult. ressources %, mult. construction %,
+    /// puis la faune (0 aucune, 1 paisible, 2 normale, 3 agressive ; absente : aucune)]
     pub fn new(params: &[i32]) -> World {
         let seed = params.first().copied().unwrap_or(1) as u32;
         let size = if params.get(1).copied().unwrap_or(512) >= 1024 { 1024 } else { 512 };
@@ -537,6 +540,12 @@ impl World {
                 stock_cap: STOCK_BASE,
             });
         }
+        // faune : un joueur caché de plus, après les vrais joueurs
+        let fauna = params.get(4 + np * 4).copied().unwrap_or(0).clamp(0, 3) as u8;
+        let nature = crate::nature::Nature::new(fauna, np as u8, map.w);
+        if nature.active() {
+            players.push(crate::nature::nature_player());
+        }
         let vis_w = map.w / 4;
         let nav = Nav::new(&map);
         let mut w = World {
@@ -574,6 +583,7 @@ impl World {
             shooter: NONE,
             hit_from: (i32::MIN, 0),
             attack_ev: Vec::new(),
+            nature,
         };
         for p in 0..np {
             let (sx, sy) = w.map.starts[p];
@@ -585,9 +595,9 @@ impl World {
     }
 
     /// Bâtiments de départ d'une vraie partie : le générateur principal de chaque joueur, près de son
-    /// commandant, avec un peu de combustible (les tests partent d'un monde vide).
+    /// commandant, avec un peu de combustible, et les nids de la faune (les tests partent d'un monde vide).
     pub fn place_start_buildings(&mut self) {
-        for p in 0..self.players.len() {
+        for p in 0..self.map.starts.len() {
             let (sx, sy) = self.map.starts[p];
             for &(dx, dy) in &[(3, -1), (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
                 if let Some(b) = crate::buildings::place_building(self, p as u8, B_MAIN_GENERATOR, sx + dx, sy + dy, 0) {
@@ -598,6 +608,7 @@ impl World {
             }
         }
         crate::buildings::rebuild_power(self);
+        crate::nature::place_initial_nests(self);
     }
 
     pub fn team_of(&self, p: u8) -> u8 {
@@ -805,6 +816,7 @@ impl World {
         crate::combat::collect_shields(self);
         crate::buildings::update_buildings(self);
         crate::belts::update_belts(self);
+        crate::nature::update(self);
         crate::units::update_units(self);
         crate::combat::update_projectiles(self);
         crate::logistics::update_carriers(self);
@@ -913,6 +925,7 @@ impl World {
             h.add_i32(c.x);
             h.add_i32(c.y);
         }
+        crate::nature::hash_into(self, &mut h);
         h.finish32()
     }
 }

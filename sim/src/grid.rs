@@ -14,8 +14,8 @@ pub struct Grid {
     pub ch: i32,
     pub start: Vec<u32>,
     pub items: Vec<u32>,
-    /// Équipes présentes dans chaque case (un bit par équipe).
-    pub teams: Vec<u8>,
+    /// Équipes présentes dans chaque case (un bit par équipe ; bit 8 : la faune, voir nature.rs).
+    pub teams: Vec<u16>,
     cells_tmp: Vec<u32>,
     fill_tmp: Vec<u32>,
 }
@@ -32,7 +32,7 @@ impl Grid {
         let cy = (y / self.cell).clamp(0, self.ch - 1);
         (cy * self.cw + cx) as usize
     }
-    pub fn rebuild(&mut self, units: &Units, filter: impl Fn(usize) -> bool, team_bit: impl Fn(usize) -> u8) {
+    pub fn rebuild(&mut self, units: &Units, filter: impl Fn(usize) -> bool, team_bit: impl Fn(usize) -> u16) {
         let n = (self.cw * self.ch) as usize;
         for v in self.start.iter_mut() {
             *v = 0;
@@ -72,7 +72,7 @@ impl Grid {
     }
     /// Comme `query`, mais seulement dans les cases où une équipe de `mask` est présente.
     #[inline]
-    pub fn query_teams(&self, x: i32, y: i32, r: i32, mask: u8, mut f: impl FnMut(usize)) {
+    pub fn query_teams(&self, x: i32, y: i32, r: i32, mask: u16, mut f: impl FnMut(usize)) {
         let x0 = ((x - r) / self.cell).clamp(0, self.cw - 1);
         let x1 = ((x + r) / self.cell).clamp(0, self.cw - 1);
         let y0 = ((y - r) / self.cell).clamp(0, self.ch - 1);
@@ -107,6 +107,12 @@ impl Grid {
     }
 }
 
+/// Bit d'une équipe dans les masques des grilles : équipes des joueurs 0 à 7, faune 8.
+#[inline]
+pub fn team_bit(team: u8) -> u16 {
+    1u16 << (team & 15)
+}
+
 pub struct Grids {
     pub fine: Grid,
     pub coarse: Grid,
@@ -114,9 +120,9 @@ pub struct Grids {
     pub bcw: i32,
     pub bcells: Vec<Vec<u32>>,
     /// Bit d'équipe de chaque bâtiment de `bcells` (même ordre).
-    pub bteams: Vec<Vec<u8>>,
+    pub bteams: Vec<Vec<u16>>,
     /// Équipes présentes par case de la grille des bâtiments.
-    pub bmask: Vec<u8>,
+    pub bmask: Vec<u16>,
 }
 
 impl Grids {
@@ -134,13 +140,13 @@ impl Grids {
     }
     pub fn rebuild_units(&mut self, units: &Units, team_of_owner: &[u8]) {
         let carried = |s: usize| units.cold[s].carried_by == u32::MAX;
-        let bit = |s: usize| 1u8 << (team_of_owner.get(units.owner[s] as usize).copied().unwrap_or(0) & 7);
+        let bit = |s: usize| team_bit(team_of_owner.get(units.owner[s] as usize).copied().unwrap_or(0));
         self.fine.rebuild(units, carried, bit);
         self.coarse.rebuild(units, carried, bit);
     }
     pub fn add_building(&mut self, slot: u32, x: i32, y: i32, w: i32, h: i32, team: u8) {
         let bch = self.bcells.len() as i32 / self.bcw;
-        let bit = 1u8 << (team & 7);
+        let bit = team_bit(team);
         for cy in (y / BCELL)..=((y + h - 1) / BCELL).min(bch - 1) {
             for cx in (x / BCELL)..=((x + w - 1) / BCELL).min(self.bcw - 1) {
                 let c = (cy * self.bcw + cx) as usize;
@@ -168,7 +174,7 @@ impl Grids {
         }
     }
     /// Comme `query_buildings`, seulement dans les cases où une équipe de `mask` est présente.
-    pub fn query_buildings_teams(&self, x: i32, y: i32, r: i32, mask: u8, mut f: impl FnMut(usize)) {
+    pub fn query_buildings_teams(&self, x: i32, y: i32, r: i32, mask: u16, mut f: impl FnMut(usize)) {
         let bch = self.bcells.len() as i32 / self.bcw;
         let c = BCELL * TILE;
         let x0 = ((x - r) / c).clamp(0, self.bcw - 1);

@@ -33,6 +33,7 @@ pub fn snapshot(w: &World) -> Vec<u8> {
     w.team_stock.ser(&mut o);
     w.carriers.ser(&mut o);
     w.ghosts.ser(&mut o);
+    w.nature.ser(&mut o);
     o.buf
 }
 
@@ -62,6 +63,7 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
     w.team_stock = Ser::de(&mut r);
     w.carriers = Ser::de(&mut r);
     w.ghosts = Ser::de(&mut r);
+    w.nature = Ser::de(&mut r);
     w.events.clear();
     // reconstruire l'occupation, la passabilité, la grille des bâtiments
     for i in 0..w.map.occ.len() {

@@ -104,7 +104,8 @@ pub fn apply_orders(w: &mut World, data: &[i32]) {
             continue;
         }
         let p = cmd[1];
-        if p < 0 || p as usize >= w.players.len() || !w.players[p as usize].alive {
+        // la faune ne reçoit pas d'ordres par le réseau (voir nature.rs)
+        if p < 0 || p as usize >= w.players.len() || !w.players[p as usize].alive || w.players[p as usize].team == crate::nature::NATURE_TEAM {
             continue;
         }
         apply_one(w, p as u8, cmd[0], Cur { a: cmd, i: 2 });

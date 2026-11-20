@@ -4,11 +4,12 @@
 //
 //   node tools/bench/bench.ts [--minutes N] [--size 512|1024] [--players 8] [--seed S]
 //                             [--water 0|1] [--personality a,b,...] [--aix 100] [--level normal]
-//                             [--check] [--until-victory] [--quiet] [--wasm chemin]
+//                             [--fauna 0..3] [--check] [--until-victory] [--quiet] [--wasm chemin]
 //
 // --check : une seconde simulation reçoit les mêmes ordres ; les hash doivent être égaux à chaque tick
 //           (sortie 1 en cas de désynchronisation ou de blocage de la partie).
 // --until-victory : joue jusqu'à la victoire d'une équipe (120 minutes au plus) ; sortie 0 seulement si victoire.
+// --fauna : nids de la faune (0 aucune, par défaut ; 1 paisible, 2 normale, 3 agressive).
 // Résultat écrit dans tools/bench/last.json ; une dégradation de plus de 10 % du temps moyen de
 // simulation par rapport à la mesure précédente (même configuration) fait échouer le banc.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -38,6 +39,7 @@ const water = arg("water", "1") !== "0";
 const aix = Number(arg("aix", "100"));
 const level = arg("level", "normal");
 const personas = arg("personality", PERSONALITIES.join(",")).split(",");
+const fauna = Math.max(0, Math.min(3, Number(arg("fauna", "0"))));
 const maxTicks = Math.round(minutes * TICKS_PER_MIN);
 
 const root = new URL("../../", import.meta.url).pathname;
@@ -46,6 +48,7 @@ const wasm = readFileSync(arg("wasm", root + "packages/client/public/sim.wasm"))
 
 const params = [seed, size, water ? 1 : 0, nPlayers];
 for (let i = 0; i < nPlayers; i++) params.push(i, 1, aix, aix);
+if (fauna) params.push(fauna);
 
 const sim = await Sim.load(wasm);
 sim.init(params);
@@ -200,7 +203,7 @@ if (winner >= 0) console.log(`VICTOIRE de l'équipe ${winner} au tick ${tick} ($
 else if (winner === -2) console.log(`fin sans vainqueur au tick ${tick}`);
 
 // ---------- Comparaison avec la mesure précédente ----------
-const key = `size=${size} players=${nPlayers} seed=${seed} water=${water ? 1 : 0} minutes=${untilVictory ? "victory" : minutes} aix=${aix} pers=${personas.join("+")}`;
+const key = `size=${size} players=${nPlayers} seed=${seed} water=${water ? 1 : 0} minutes=${untilVictory ? "victory" : minutes} aix=${aix} pers=${personas.join("+")}${fauna ? ` fauna=${fauna}` : ""}`;
 const file = root + "tools/bench/last.json";
 let db: Record<string, { simMean: number; simP99: number; botPerThink: number; ticks: number; date: string; winner: number }> = {};
 if (existsSync(file)) {

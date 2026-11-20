@@ -16,11 +16,14 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient les 49 unités, 47 bâtiments et 48 recherches", () => {
-    expect(data.units.length).toBe(49);
-    expect(data.buildings.length).toBe(47);
+  it("contient les 52 unités (dont 3 bêtes de la faune), 48 bâtiments (dont le nid) et 48 recherches", () => {
+    expect(data.units.length).toBe(52);
+    expect(data.buildings.length).toBe(48);
     expect(data.techs.length).toBe(48);
     expect(data.units[0].key).toBe("commander");
+    // la faune : aucune usine ne produit ses bêtes, et son nid n'est pas une construction de joueur
+    for (const k of ["beast_s", "beast_m", "beast_l"]) expect(data.units.find((u) => u.key === k)?.factory).toBe(0);
+    expect(data.buildings.find((b) => b.key === "nest")?.cls).toBe(26);
   });
 });
 

@@ -137,6 +137,11 @@ export const sfx = {
     else if (proj === 2) noise(0.35, 1800, g * 0.8, 0.7, "bandpass");
     else if (proj === 1) noise(0.25, 400, g * 1.4);
     else if (proj === 9) tone(1800, 420, 0.1, g * 0.55, "sawtooth"); // trait de blaster
+    else if (proj === 12) {
+      // morsure : craquement sourd et court
+      noise(0.07, 650, g * 1.3, 0.5, "lowpass");
+      tone(160, 70, 0.08, g * 0.5, "square");
+    }
     else if (proj === 11) {
       // canon de rail : claquement sec puis sifflement descendant
       noise(0.08, 3200, g * 1.6, 0.9, "highpass");

@@ -3,7 +3,7 @@
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
-import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1 } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, instancedBufferAttribute, normalView } from "three/tsl";
 import { BUILDING_FILL, buildingScale, buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
@@ -206,7 +206,8 @@ export class Entities {
   /** tapis surélevés : piliers, et cages d'ascenseur (montants et traverse) là où un tapis change de niveau */
   supports: THREE.InstancedMesh;
   liftGlow: THREE.InstancedMesh;
-  teamColors: THREE.Color[] = PLAYER_COLORS.map((c) => new THREE.Color(c));
+  /** couleurs des joueurs, puis (indice 8) celle de la faune */
+  teamColors: THREE.Color[] = [...PLAYER_COLORS, NATURE_COLOR].map((c) => new THREE.Color(c));
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
   itemColors: THREE.Color[] = [];
@@ -497,6 +498,8 @@ export class Entities {
       return (vis[cz * vw + cx] & bit) !== 0;
     };
     const teamOf = (p: number) => f.players[p]?.team ?? p;
+    /** indice de couleur d'un propriétaire : 0 à 7 pour les joueurs, 8 pour la faune */
+    const cslot = (p: number) => (f.players[p]?.team === NATURE_TEAM ? 8 : p % 8);
     for (const m of this.unitMeshes) m.begin();
     for (const m of this.buildingMeshes) m.begin();
     for (const l of this.levelMeshes.values()) for (const m of l) m.begin();
@@ -540,7 +543,7 @@ export class Entities {
       const def = this.data.units[kind];
       const y = this.unitHeight(kind, x, z);
       this.screen.push({ id, kind, owner, x, y, z, visible });
-      const col = this.teamColors[owner % 8];
+      const col = this.teamColors[cslot(owner)];
       const inView = x > vx0 - 4 && x < vx1 + 4 && z > vz0 - 4 && z < vz1 + 4;
       if (strategic || radar) {
         const layer = def.layer;
@@ -682,7 +685,7 @@ export class Entities {
       const cz = bz + def.h / 2;
       const enemy = teamOf(owner) !== myTeam;
       if (enemy && !seen(cx, cz, 8 | 1)) continue;
-      const col = this.teamColors[owner % 8];
+      const col = this.teamColors[cslot(owner)];
       if (strategic && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) {
         const ic = this.icons[3];
         if (ic.count < 12000) {

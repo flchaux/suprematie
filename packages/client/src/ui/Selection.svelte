@@ -11,6 +11,7 @@
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
   import { PLAYER_COLORS } from "../models/generator.ts";
+  import { NATURE_COLOR } from "@supreme/shared";
   import { factoryUnitKinds } from "../game/catalog.ts";
   import { keyOf } from "../game/keys.svelte.ts";
 
@@ -73,7 +74,8 @@
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   // diagnostic : ce qui bloque le bâtiment, en clair
   const status = $derived.by(() => {
-    if (!info || !bdef || !d) return { text: "", kind: "" };
+    // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
+    if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (arrêté pendant le chantier)`, kind: "build" };
     // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
@@ -146,11 +148,17 @@
     const dps = ws.reduce((t, w) => t + (w.dmg * Math.max(1, w.salvo) * Math.max(1, w.sustain) * 20) / Math.max(1, w.cooldown), 0);
     return { u, range: ws.length ? Math.max(...ws.map((w) => w.range)) : 0, dps, speed: (u.speed * 20) / 256 };
   };
-  const foreignColor = $derived(ui.selForeign >= 0 ? "#" + PLAYER_COLORS[ui.selForeign % 8].toString(16).padStart(6, "0") : "");
+  /** la faune est le propriétaire caché qui suit les vrais joueurs */
+  const isFauna = (o: number) => ui.players.length > 0 && o >= ui.players.length;
+  const ownerName = (o: number) => (isFauna(o) ? "Faune" : (ui.names[o] ?? ""));
+  const hexOf = (o: number) => "#" + (isFauna(o) ? NATURE_COLOR : PLAYER_COLORS[o % 8]).toString(16).padStart(6, "0");
+  const foreignColor = $derived(ui.selForeign >= 0 ? hexOf(ui.selForeign) : "");
   const enemyTeam = $derived(ui.selForeign >= 0 && (ui.players[ui.selForeign]?.team ?? -1) !== (ui.players[ui.me]?.team ?? -2));
   const dep = $derived(ui.selDeposit);
   const depUser = $derived(dep ? (ui.tick, client.depositUser()) : null);
-  const owner = $derived(sb ? "#" + PLAYER_COLORS[sb.owner % 8].toString(16).padStart(6, "0") : "");
+  const owner = $derived(sb ? hexOf(sb.owner) : "");
+  /** nid de la faune : [bêtes au nid, plafond, seuil d'attaque, âge (s), évolution ‰, pression, chance ‰] */
+  const nest = $derived(info?.nest as number[] | null | undefined);
   // choix de recette : la grille ne s'ouvre que par « Changer de recette » (ou si aucune n'est choisie) ;
   // elle se referme quand on sélectionne un autre bâtiment
   let picking = $state(false);
@@ -169,7 +177,7 @@
     <div class="head" style:--pc={owner}>
       <div class="thumb">{#if sprite("buildings", bdef.key)}<img src={sprite("buildings", bdef.key)} alt="" />{/if}</div>
       <div class="ht">
-        <div class="kicker">{ui.names[sb.owner] ?? ""}</div>
+        <div class="kicker">{ownerName(sb.owner)}</div>
         <b class="title">{bdef.name}</b>
         {#if info}
           <div class="hpline"><span class="hp" class:mid={hpf < 0.6} class:low={hpf < 0.3}><span style:width={hpf * 100 + "%"}></span></span><span class="num small">{info.hp}/{bdef.hp}</span></div>
@@ -178,6 +186,18 @@
     </div>
     {#if BUILDING_DESCS[bdef.key]}<p class="udesc small">{BUILDING_DESCS[bdef.key]}</p>{/if}
     {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
+    {#if nest && nest.length}
+      {@const [home, max, need, age, evo, press, chance] = nest}
+      <div class="sgrid small nest">
+        <span class="dim">Horde au nid</span><span class="num">{home} / {max}</span>
+        <span class="dim">Attaque dès</span><span class="num">{need} bêtes</span>
+        <span class="dim">Âge du nid</span><span class="num">{Math.floor(age / 60)} min</span>
+        <span class="dim">Évolution</span><span class="num">{(evo / 10).toFixed(0)} %</span>
+        <span class="dim">Bâtiments proches</span><span class="num">{press ? `pression ${press}` : "aucun"}</span>
+        <span class="dim">Risque d'attaque</span><span class="num">{chance ? `${(chance / 10).toFixed(1)} % / 10 s` : "nul"}</span>
+      </div>
+      <div class="status {home >= need && chance ? 'warn' : 'build'}"><span class="led"></span>{home >= need ? (chance ? "Horde prête : elle peut attaquer à tout moment" : "Horde prête, mais aucun bâtiment ne l'inquiète") : `La horde grossit : ${need - home} bête${need - home > 1 ? "s" : ""} avant de pouvoir attaquer`}</div>
+    {/if}
     {#if mine && info}
       {#if info.build < 65536}
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
@@ -470,7 +490,7 @@
   <!-- unités d'un autre joueur : statistiques seulement (ni ordres ni commandes) -->
   <div class="panel sel">
     <div class="uhead">
-      <span class="kicker" style:color={foreignColor}>{enemyTeam ? "Ennemi" : "Allié"} · {ui.names[ui.selForeign] ?? ""}</span>
+      <span class="kicker" style:color={foreignColor}>{isFauna(ui.selForeign) ? "Faune sauvage" : `${enemyTeam ? "Ennemi" : "Allié"} · ${ui.names[ui.selForeign] ?? ""}`}</span>
       <b class="title num">{total}</b>
       <span class="dim">unité{total > 1 ? "s" : ""}</span>
     </div>
@@ -608,6 +628,7 @@
   .sthumb img { width: 42px; height: 42px; object-fit: contain; }
   .sbody { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
   .sgrid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 2px 10px; }
+  .sgrid.nest { margin: 6px 0 4px; }
   .vet2 { font-size: 9px; color: #ffd060; }
   .share input[type="range"] { width: 100%; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }

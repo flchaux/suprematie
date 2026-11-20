@@ -385,6 +385,13 @@ export class Effects {
     }
   }
 
+  /** Morsure d'une bête de la faune : éclat sombre et brève poussière au point mordu. */
+  bite(x: number, y: number, z: number, big: number): void {
+    if (!this.inView(x, z, 2)) return;
+    this.fire.spawn({ x, y, z, life: 0.1, s0: 0.35 * big, s1: 0.6 * big, c0: [1.6, 0.35, 0.18], c1: [0.4, 0.05, 0.02] });
+    if (Math.random() < 0.5 * this.quality) this.smoke.spawn({ x, y, z, vy: 0.4, life: rnd(0.3, 0.6), s0: 0.15 * big, s1: 0.5 * big, c0: [0.35, 0.27, 0.2], a: 0.45, drag: 1.5 });
+  }
+
   /** Éclair de départ d'un tir. */
   muzzle(x: number, y: number, z: number, proj: number, big: number): void {
     if (!this.inView(x, z, 2)) return;

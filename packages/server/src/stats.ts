@@ -1,7 +1,7 @@
 // Statistiques de partie : relevés périodiques calculés sur la copie de référence du serveur.
 // Ce code ne tourne que sur le serveur (hors simulation) : les nombres à virgule y sont permis,
 // mais les valeurs envoyées sont arrondies à l'entier.
-import { BClass, BUILD_FULL, hasTech } from "@supreme/shared";
+import { BClass, BUILD_FULL, hasTech, realPlayers } from "@supreme/shared";
 import type { GameData, BotView, StatSample, PlayerStats } from "@supreme/shared";
 
 /** Intervalle entre deux relevés (600 ticks = 30 s de jeu). */
@@ -97,7 +97,8 @@ export class StatsCalc {
 
   /** Relevé de tous les joueurs à partir de l'état complet (botDump). */
   sample(view: BotView): StatSample {
-    const np = view.players.length;
+    // la faune (joueur caché, le dernier) n'a pas de relevé
+    const np = realPlayers(view.players).length;
     const army = new Array<number>(np).fill(0);
     const armyValue = new Array<number>(np).fill(0);
     const buildings = new Array<number>(np).fill(0);
@@ -109,7 +110,7 @@ export class StatsCalc {
     for (const b of view.buildings) {
       if (b.owner < np && b.build >= BUILD_FULL && this.counted[b.kind]) buildings[b.owner]++;
     }
-    const players: PlayerStats[] = view.players.map((p, i) => {
+    const players: PlayerStats[] = view.players.slice(0, np).map((p, i) => {
       let ore = 0;
       for (const it of this.ores) ore += p.produced[it] ?? 0;
       let research = 0;

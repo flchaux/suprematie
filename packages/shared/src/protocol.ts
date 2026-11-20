@@ -14,6 +14,11 @@ export interface LobbyPlayer {
   savedName?: string;
 }
 
+/** Faune (nids de mordeurs, voir sim/src/nature.rs) : absente, paisible, normale ou agressive. */
+export type Fauna = "none" | "peaceful" | "normal" | "aggressive";
+export const FAUNA_LEVELS: Fauna[] = ["none", "peaceful", "normal", "aggressive"];
+export const FAUNA_NAMES: Record<Fauna, string> = { none: "Aucune", peaceful: "Paisible", normal: "Normale", aggressive: "Agressive" };
+
 /** Résumé d'une sauvegarde (liste du salon). */
 export interface SaveMeta {
   id: string;
@@ -24,6 +29,7 @@ export interface SaveMeta {
   mapSize: number;
   water: boolean;
   seed: number;
+  fauna?: Fauna;
   players: { name: string; bot: boolean; team: number; personality?: string; aix?: number; level?: string }[];
 }
 
@@ -32,6 +38,8 @@ export interface LobbyState {
   mapSize: number; // 512 ou 1024
   water: boolean;
   seed: number;
+  /** faune : nids de bêtes qui attaquent les joueurs qui s'étendent trop près */
+  fauna: Fauna;
   running: boolean;
   tick: number;
   /** sauvegarde chargée dans le salon : la composition et les paramètres en viennent (non modifiables) */
@@ -75,7 +83,7 @@ export interface StatSample {
 
 export type ClientMsg =
   | { t: "hello"; name: string; token: string; key: string }
-  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; personality?: string; aix?: number; level?: string; id?: string }
+  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; fauna?: Fauna; personality?: string; aix?: number; level?: string; id?: string }
   | { t: "save" }
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
@@ -113,5 +121,7 @@ export function simParams(lobby: LobbyState): number[] {
     const m = pl.bot ? Math.round((pl.aix ?? 100) * (pl.level === "facile" ? 0.8 : 1)) : 100;
     p.push(pl.team, pl.bot ? 1 : 0, m, m);
   }
+  // faune : dernier paramètre (0 aucune … 3 agressive)
+  p.push(Math.max(0, FAUNA_LEVELS.indexOf(lobby.fauna ?? "none")));
   return p;
 }

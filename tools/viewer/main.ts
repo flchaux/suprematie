@@ -10,6 +10,7 @@ import { ITEM_MODELS } from "../../assets/models/items.ts";
 import { DECOR_MODELS } from "../../assets/models/decor.ts";
 import { DECOR_KINDS, decorBatch, decorGeometry, decorMaterial, type DecorKind } from "../../packages/client/src/render/decor.ts";
 import data from "./data.json";
+import { NATURE_COLOR } from "../../packages/shared/src/data.ts";
 
 const params = new URLSearchParams(location.search);
 const set = params.get("set") ?? "units";
@@ -105,7 +106,9 @@ if (set !== "decor") list.forEach((d, i) => {
   const x = (i % cols) * cell;
   const z = Math.floor(i / cols) * cell;
   const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.6, 0)), new THREE.Vector3(s, s, s));
-  const color = new THREE.Color(set === "items" ? itemColor(d.key) : PLAYER_COLORS[i % 8]);
+  // la faune (mordeurs, nid) a sa propre couleur, brune
+  const fauna = d.key.startsWith("beast_") || d.key === "nest";
+  const color = new THREE.Color(set === "items" ? itemColor(d.key) : fauna ? NATURE_COLOR : PLAYER_COLORS[i % 8]);
   const texScale = s * (set === "units" ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING);
   const body = teamInstancedMesh(built.body, 1, texScale);
   body.mesh.count = 1;

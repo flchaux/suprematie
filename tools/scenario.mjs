@@ -15,7 +15,8 @@ export function randomOrders(seed, sim) {
     const out = [];
     if (t % 7 !== 0) return out;
     const view = parseBotDump(sim.botDump());
-    const np = view.players.length;
+    // la faune (équipe 8, toujours la dernière) ne donne pas d'ordres
+    const np = view.players.filter((pl) => pl.team !== 8).length;
     for (let p = 0; p < np; p++) {
       const mine = view.units.filter((u) => u.owner === p);
       if (mine.length === 0) continue;

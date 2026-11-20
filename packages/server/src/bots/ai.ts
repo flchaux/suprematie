@@ -13,7 +13,7 @@
 import type { Bot, BotContext } from "./types.ts";
 import { serialize, deserialize } from "node:v8";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
-import { build, move, target, O, factoryQueue, rally, setRecipe, research, hasTech, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
+import { build, move, target, O, factoryQueue, rally, setRecipe, research, hasTech, isFauna, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
 import { Ids, indexView, TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { Planner, CELLS, type Module, type Placement, type Slot, type CellSlot } from "./layout.ts";
 import { PERSONAS, AIR_PLAN, TECH_PLAN, ARMY_PLAN, MAIN_AIR_PLAN, type Persona } from "./personas.ts";
@@ -187,7 +187,10 @@ export class SkirmishAI implements Bot {
   level: string;
   intel!: Intel;
   board!: TeamBoard;
+  /** adversaires (joueurs) : la faune n'en fait pas partie */
   enemyIds: number[] = [];
+  /** tout ce qui menace : adversaires et faune (cartes de menace) */
+  hostileIds: number[] = [];
   friendIds: number[] = [];
   /** aviation ennemie / défense antiaérienne : > 1 = il manque de l'antiaérien */
   airRatio = 0;
@@ -316,7 +319,7 @@ export class SkirmishAI implements Bot {
     let bd = Infinity;
     for (let i = 0; i < this.view.players.length; i++) {
       const p = this.view.players[i];
-      if (i === this.ctx.slot || !p.alive || p.team === this.me.team) continue;
+      if (i === this.ctx.slot || !p.alive || p.team === this.me.team || isFauna(this.view.players, i)) continue;
       if (land && !this.reachable(i)) continue;
       const [x, y] = this.playerPos(i);
       // plus proche, et plus faible (puissance terrestre et défenses d'après le renseignement)
@@ -352,7 +355,7 @@ export class SkirmishAI implements Bot {
 
   // ---------- Renseignement (cartes de menace) ----------
   enemySum(layer: T, x: number, y: number, rTiles: number): number {
-    return this.intel.sum(this.enemyIds, layer, x, y, rTiles);
+    return this.intel.sum(this.hostileIds, layer, x, y, rTiles);
   }
   friendSum(layer: T, x: number, y: number, rTiles: number): number {
     return this.intel.sum(this.friendIds, layer, x, y, rTiles);
@@ -511,7 +514,7 @@ export class SkirmishAI implements Bot {
   }
   anyUnreachable(): boolean {
     for (let i = 0; i < this.view.players.length; i++) {
-      if (i === this.ctx.slot || !this.view.players[i].alive || this.sameTeam(i)) continue;
+      if (i === this.ctx.slot || !this.view.players[i].alive || this.sameTeam(i) || isFauna(this.view.players, i)) continue;
       if (!this.reachable(i) || !this.baseReachable(i)) return true;
     }
     return false;
@@ -578,12 +581,16 @@ export class SkirmishAI implements Bot {
       this.savedBoard = null;
     }
     this.enemyIds = [];
+    this.hostileIds = [];
     this.friendIds = [];
     for (let i = 0; i < view.players.length; i++) {
       const pl = view.players[i];
       if (!pl.alive) continue;
       if (pl.team === this.me.team) this.friendIds.push(i);
-      else this.enemyIds.push(i);
+      else {
+        this.hostileIds.push(i);
+        if (!isFauna(view.players, i)) this.enemyIds.push(i);
+      }
     }
     if (this.thinkN % 10 === 1 && this.level !== "facile") this.analyse();
     if (this.debug && this.thinkN % 120 === 1) {

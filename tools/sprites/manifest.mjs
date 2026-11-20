@@ -84,6 +84,7 @@ export const BUILDINGS = {
   overflow: "a compact conveyor overflow valve block with a bright forward arrow and two dim side arrows",
   main_generator: "a large industrial power station block with a turbine hall, an hydrocarbon fuel tank with an amber gauge, two smokestacks and a tall transmitter mast with glowing rings",
   collector: "a short conveyor belt segment straddled by a small boxy gantry hood on four legs, a glowing amber suction mouth over the belt, a small hopper on top",
+  nest: "an alien creature nest: an organic mound of earth and brown chitin with dark burrow holes, curved bone ribs and clusters of glowing amber eggs",
   gift_portal: "a glowing gateway arch on a platform where allied troops walk through to join another commander",
   roboport: "a logistics robot hub: a square tower with a landing pad on top, beacon lights and small flying robots",
   gate: "a large circular transit portal gate with a swirling energy field",
@@ -145,6 +146,9 @@ export const UNITS = {
   heavy_transport: "a massive armored heavy-lift transport aircraft with a square cargo hold and four large ducted rotors",
   carrier: "a long naval aircraft carrier warship with a flat flight deck, an island superstructure on one side and small jets parked on deck",
   railgun_ship: "a heavy battleship warship with two front turrets carrying very long twin railgun barrels with glowing coils, massive central superstructure",
+  beast_s: "a small six-legged alien beetle creature with a segmented brown chitin carapace, bone spines on its back, hooked mandibles and glowing amber eyes",
+  beast_m: "a six-legged alien beetle beast with a segmented brown chitin carapace, rows of bone spines, big hooked mandibles, a red maw and glowing amber eyes",
+  beast_l: "a huge six-legged armored alien beetle beast with thick brown chitin shoulder plates, curved bone horns, crushing mandibles and glowing amber eyes",
 };
 
 /** Illustrations (pas d'arrière-plan transparent). */

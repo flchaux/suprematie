@@ -3,6 +3,7 @@
 // Style (comme les unités refaites) : volumes à arêtes chanfreinées (bevel), blindage clair et acier,
 // couleur d'équipe sur le dessus (toits, bandeaux), filets cyan (glow) et voyants ambre.
 import type { Model, Part, Vec3 } from "./types.ts";
+import { NEST_MODELS } from "./faune.ts";
 
 /** Socle chanfreiné de w x d cases (dessus à y = 0.25), sans dépasser de l'emprise. 88 triangles. */
 function socle(w: number, d = w): Part[] {
@@ -1550,4 +1551,6 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "sphere", radius: 0.14, pos: [-1.0,2.85,-1.0], color: "glow" },
     ],
   },
+  // faune : nid de mordeurs (voir faune.ts)
+  ...NEST_MODELS,
 };

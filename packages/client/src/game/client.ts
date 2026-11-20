@@ -4,13 +4,13 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
-import { PLAYER_COLORS } from "../models/generator.ts";
+import { ownerColor, ownerHex } from "./colors.ts";
 import { ui, pushMessage, hasTechUI } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
@@ -500,6 +500,12 @@ export class GameClient {
         case EV.FIRE: {
           const w = this.data!.weapons[a];
           sfx.fire(w?.proj ?? 0, near(c / TILE, d / TILE));
+          // morsure (proj 12) : pas de projectile, un éclat au point mordu
+          if (w?.proj === 12 && seen(c / TILE, d / TILE)) {
+            const x = c / TILE;
+            const z = d / TILE;
+            fx?.bite(x, groundHeight(this.map!, x, z) + 0.4, z, w.dmg > 60 ? 1.6 : w.dmg > 20 ? 1.2 : 0.8);
+          }
           break;
         }
         case EV.BUILT:
@@ -551,7 +557,7 @@ export class GameClient {
           const owner = e;
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.units[d];
-            if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(PLAYER_COLORS[owner % 8]), false);
+            if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(ownerColor(owner, this.frame?.players)), false);
           }
           void owner;
           break;
@@ -559,7 +565,7 @@ export class GameClient {
         case EV.BUILDING_DIED:
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.buildings[d];
-            if (def && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) fx?.wreckage(a / TILE, c / TILE, Math.max(def.w, def.h), new THREE.Color(PLAYER_COLORS[e % 8]), true);
+            if (def && def.cls !== BClass.Belt && def.cls !== BClass.Inserter) fx?.wreckage(a / TILE, c / TILE, Math.max(def.w, def.h), new THREE.Color(ownerColor(e, this.frame?.players)), true);
           }
           break;
         case EV.PROMOTED: {
@@ -639,7 +645,8 @@ export class GameClient {
       ui.researchedLo = me.researchedLo;
       ui.researchedHi = me.researchedHi;
     }
-    ui.players = f.players.map((p, i) => ({ name: ui.names[i] ?? `Joueur ${i + 1}`, alive: p.alive, team: p.team, units: p.unitCount, kills: p.kills, losses: p.losses, bot: p.bot, power: p.powerProd }));
+    // la faune (joueur caché, le dernier) n'apparaît pas parmi les joueurs
+    ui.players = realPlayers(f.players).map((p, i) => ({ name: ui.names[i] ?? `Joueur ${i + 1}`, alive: p.alive, team: p.team, units: p.unitCount, kills: p.kills, losses: p.losses, bot: p.bot, power: p.powerProd }));
     // sélection : retirer les morts, regrouper par type
     const groups = new Map<number, number[]>();
     const lvls = new Map<number, number>();
@@ -2478,7 +2485,7 @@ export class GameClient {
       const x = f.buf[o + 2] & 0xffff;
       const z = (f.buf[o + 2] >>> 16) & 0xffff;
       if (this.teamOf(owner) !== myTeam && !seen(x, z, 9)) continue;
-      ctx.fillStyle = "#" + PLAYER_COLORS[owner % 8].toString(16).padStart(6, "0");
+      ctx.fillStyle = ownerHex(owner, f.players);
       ctx.fillRect(x * k, z * k, Math.max(1.5, def.w * k), Math.max(1.5, def.h * k));
     }
     for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
@@ -2489,7 +2496,7 @@ export class GameClient {
       if (enemy && !seen(x, z, 3)) continue;
       const kind = f.buf[o + 1] & 0xff;
       const big = this.data!.units[kind].tier === 6 || kind === 0;
-      ctx.fillStyle = this.selected.has(f.buf[o] >>> 0) ? "#ffffff" : "#" + PLAYER_COLORS[owner % 8].toString(16).padStart(6, "0");
+      ctx.fillStyle = this.selected.has(f.buf[o] >>> 0) ? "#ffffff" : ownerHex(owner, f.players);
       const s = big ? 4 : 2;
       ctx.fillRect(x * k - s / 2, z * k - s / 2, s, s);
     }

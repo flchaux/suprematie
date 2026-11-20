@@ -77,8 +77,17 @@ fn wall_between(w: &World, team: u8, x0: i32, y0: i32, x1: i32, y1: i32) -> Opti
     None
 }
 
+/// Équipe sans grille de vision (la faune) : elle voit tout.
+#[inline]
+fn omniscient(w: &World, team: u8) -> bool {
+    team as usize >= w.vis.len()
+}
+
 #[inline]
 fn visible(w: &World, team: u8, x: i32, y: i32, sub: bool) -> bool {
+    if omniscient(w, team) {
+        return true;
+    }
     let vw = w.vis_w;
     let cx = (x / (4 * TILE)).clamp(0, vw - 1);
     let cy = (y / (4 * TILE)).clamp(0, vw - 1);
@@ -122,6 +131,9 @@ pub fn radar_stealth(w: &World, s: usize) -> bool {
 
 /// L'équipe `team` voit-elle l'unité `s` (vue, radar, détection selon sa furtivité) ?
 pub fn unit_seen(w: &World, team: u8, s: usize) -> bool {
+    if omniscient(w, team) {
+        return true;
+    }
     let (x, y) = (w.units.x[s], w.units.y[s]);
     if layer_mask(w, s) == M_SUB {
         return visible(w, team, x, y, true);
@@ -213,7 +225,7 @@ fn find_target(w: &World, team: u8, wi: usize, x: i32, y: i32) -> u32 {
     let r = wd.range * TILE;
     let mut best = NONE;
     let mut best_d = i64::MAX;
-    let enemies = !(1u8 << (team & 7));
+    let enemies = !crate::grid::team_bit(team);
     if !wd.prefer_buildings {
         w.grid.coarse.query_teams(x, y, r + 1024, enemies, |o| {
             if unit_target_ok(w, team, wi, o, x, y) {
@@ -330,6 +342,16 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
             src,
         });
         w.ev(EV_FIRE, wi as i32, x, y, owner as i32);
+        return;
+    }
+    if wd.proj == Proj::Bite {
+        // morsure : coup direct, sans trait (le rendu montre un éclat à l'impact)
+        w.shooter = src;
+        w.hit_from = (x, y);
+        hit_ref(w, t, dmg, owner, 0);
+        w.shooter = NONE;
+        w.hit_from = (i32::MIN, 0);
+        w.ev(EV_FIRE, wi as i32, tx, ty, owner as i32);
         return;
     }
     if wd.speed == 0 {
@@ -593,6 +615,9 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     if dmg > 0 {
         let (o, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
         w.note_attacked(o, attacker, x, y, w.units.kind[s] == U_COMMANDER);
+        if w.team_of(o) == crate::nature::NATURE_TEAM && w.team_of(attacker) != crate::nature::NATURE_TEAM {
+            crate::nature::on_hit(w, x, y);
+        }
     }
     if w.shooter != NONE {
         w.units.cold[s].last_hit = w.shooter;
@@ -611,7 +636,11 @@ pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
     }
     if dmg > 0 {
         let (cx, cy) = w.buildings[b].center();
-        w.note_attacked(w.buildings[b].owner, attacker, cx, cy, false);
+        let o = w.buildings[b].owner;
+        w.note_attacked(o, attacker, cx, cy, false);
+        if w.team_of(o) == crate::nature::NATURE_TEAM && w.team_of(attacker) != crate::nature::NATURE_TEAM {
+            crate::nature::on_hit(w, cx, cy);
+        }
     }
     let bb = &mut w.buildings[b];
     bb.hp -= dmg;
@@ -918,11 +947,13 @@ pub fn cleanup_dead(w: &mut World) {
             w.ev(EV_BUILDING_DIED, cx, cy, kind as i32, owner as i32);
             w.ev(EV_EXPLOSION, cx, cy, bw.max(bh) * TILE / 2, 0);
             // bâtiment terminé d'un joueur encore en jeu : fantôme à reconstruire par ses ingénieurs
-            if w.buildings[b].complete() && w.players[owner as usize].alive {
+            // (un nid de la faune ne se reconstruit pas et ne laisse pas d'épave)
+            let fauna = w.team_of(owner) == crate::nature::NATURE_TEAM;
+            if w.buildings[b].complete() && w.players[owner as usize].alive && !fauna {
                 buildings::add_ghost(w, b);
             }
             // chantier rendu au joueur à moitié ? non : perdu
-            buildings::remove_building(w, b, true);
+            buildings::remove_building(w, b, !fauna);
             if kind == B_CRYSTAL_REACTOR {
                 w.ev(EV_EXPLOSION, cx, cy, 15 * TILE, 3);
                 area_damage(w, cx, cy, 15 * TILE, 8000, owner, M_SURF | M_AIR, true);
@@ -980,7 +1011,8 @@ fn kill_unit(w: &mut World, s: usize) {
     w.units.free.push(s as u32);
     w.players[owner as usize].unit_count = w.players[owner as usize].unit_count.saturating_sub(1);
     w.players[owner as usize].losses += 1;
-    if def.layer != Layer::Air || def.tier == 6 {
+    // une bête de la faune ne laisse pas d'épave
+    if (def.layer != Layer::Air || def.tier == 6) && w.team_of(owner) != crate::nature::NATURE_TEAM {
         let rot = w.units.facing[s];
         w.spawn_wreck(x, y, def.cost, (def.radius / TILE + 1) as u8, kind + 1, rot);
     }
@@ -1015,11 +1047,13 @@ fn check_victory(w: &mut World) {
     if w.winner != -1 {
         return;
     }
-    let mut teams: Vec<u8> = w.players.iter().filter(|p| p.alive).map(|p| p.team).collect();
+    // la faune ne compte pas : elle ne gagne ni ne perd
+    let fauna = crate::nature::NATURE_TEAM;
+    let mut teams: Vec<u8> = w.players.iter().filter(|p| p.alive && p.team != fauna).map(|p| p.team).collect();
     teams.sort_unstable();
     teams.dedup();
     let distinct_start = {
-        let mut t: Vec<u8> = w.players.iter().map(|p| p.team).collect();
+        let mut t: Vec<u8> = w.players.iter().filter(|p| p.team != fauna).map(|p| p.team).collect();
         t.sort_unstable();
         t.dedup();
         t.len()
@@ -1109,6 +1143,9 @@ pub fn update_visibility(w: &mut World) {
             continue;
         }
         let team = w.players[bb.owner as usize].team as usize;
+        if team >= w.vis.len() {
+            continue;
+        }
         let (x, y) = bb.center();
         let vis = &mut w.vis[team];
         stamp(vis, x, y, def.vision, 1 | 8);
