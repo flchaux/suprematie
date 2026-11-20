@@ -128,9 +128,17 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
                 w.units.cold[s].goal = key;
             }
             let key = w.units.cold[s].goal;
-            let fd = flow::flow_dir(w, key, x / TILE, y / TILE);
+            let (fd, fan) = flow::flow_cell(w, key, x / TILE, y / TILE);
             if fd != NO_DIR && fd != AT_GOAL {
-                heading = (fd as u16).wrapping_mul(8192);
+                // le champ ne connaît que 8 directions ; si la ligne droite vers la destination passe
+                // entre deux directions qui sont toutes deux sur un plus court chemin, l'unité la suit
+                // (sinon elle avancerait en escalier, d'abord en diagonale puis tout droit)
+                let fh = (fd as u16).wrapping_mul(8192);
+                let diff = angle_diff(heading, fh);
+                let side = if diff > 0 { (fd + 1) & 7 } else { (fd + 7) & 7 };
+                if !(diff.abs() <= 8192 && fan & (1 << fd) != 0 && fan & (1 << side) != 0) {
+                    heading = fh;
+                }
                 following = true;
             }
         }
