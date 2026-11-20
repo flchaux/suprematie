@@ -451,6 +451,11 @@
         </div>
         <div class="row wrap"><span class="kicker">À envoyer</span>{#each stashList(false) as x}<Item id={x.i} n={x.n} size={16} />{:else}<span class="dim small">vide</span>{/each}</div>
         <div class="row wrap"><span class="kicker">Reçus</span>{#each stashList(true) as x}<Item id={x.i} n={x.n} size={16} />{:else}<span class="dim small">vide</span>{/each}</div>
+        {#if mine && (stashList(false).length > 0 || stashList(true).length > 0)}
+          <div class="row">
+            <button class="ghost icon-btn" title="« À envoyer » et « Reçus » retournent à votre stock" onclick={() => client.emptyStash()}><Icon name="unload" size={14} /> {air ? "Vider l'héliport" : "Vider la gare"}</button>
+          </div>
+        {/if}
         <div class="row wrap"><span class="kicker">{air ? "Drones" : "Trains"}</span>
           {#each info.carriers ?? [] as c}<span class="chip small" title={ui.names[c.owner] ?? ""}>{c.out ? "→" : "←"} {STATE[c.state] ?? ""} · <span class="num">{c.load}</span></span>{:else}<span class="dim small">aucun</span>{/each}</div>
         <div class="row">

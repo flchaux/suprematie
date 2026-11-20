@@ -189,6 +189,36 @@ fn train_trip_size_is_configurable() {
     assert_eq!(w.buildings[b].lot, 0, "la gare de l'allié n'est pas à nous");
 }
 
+/// Vider une gare ou un héliport : « à envoyer » et « reçus » retournent au stock du propriétaire, sans
+/// plafond ; seulement pour ses propres bâtiments.
+#[test]
+fn emptying_a_station_returns_its_contents_to_stock() {
+    use crate::orders::O_EMPTY_STASH;
+    let (mut w, a, b) = rail_world();
+    let pad = station(&mut w, 0, B_CARGO_PAD, 30, 80);
+    run(&mut w, 5);
+    let cap = w.players[0].stock_cap;
+    w.players[0].stock[IRON_PLATE as usize] = cap;
+    w.players[0].stock[CIRCUIT as usize] = 0;
+    w.buildings[a].stash[IRON_PLATE as usize] = 30;
+    w.buildings[a].stash[N + IRON_PLATE as usize] = 12;
+    w.buildings[a].stash[N + CIRCUIT as usize] = 7;
+    w.buildings[pad].stash[CIRCUIT as usize] = 5;
+    w.buildings[pad].stash[N + CIRCUIT as usize] = 3;
+    w.buildings[b].stash[COPPER_PLATE as usize] = 9;
+    let copper = w.players[0].stock[COPPER_PLATE as usize];
+    let (ra, rp, rb) = (w.building_ref(a) as i32, w.building_ref(pad) as i32, w.building_ref(b) as i32);
+    // la gare de l'allié n'est pas à nous : rien ne bouge
+    w.step(&[3, O_EMPTY_STASH, 0, rb]);
+    assert_eq!(w.buildings[b].stash[COPPER_PLATE as usize], 9);
+    assert_eq!(w.players[0].stock[COPPER_PLATE as usize], copper);
+    w.step(&[3, O_EMPTY_STASH, 0, ra, 3, O_EMPTY_STASH, 0, rp]);
+    assert!(w.buildings[a].stash.iter().all(|&n| n == 0), "gare vide");
+    assert!(w.buildings[pad].stash.iter().all(|&n| n == 0), "héliport vide");
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize], cap + 42, "rendu au-delà du plafond");
+    assert_eq!(w.players[0].stock[CIRCUIT as usize], 15);
+}
+
 /// Gares sans électricité : une gare dans une zone sous-alimentée (ou éteinte) reçoit quand même le train
 /// et le décharge (on peut toujours livrer du combustible à une zone en panne).
 #[test]

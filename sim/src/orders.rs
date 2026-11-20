@@ -43,6 +43,8 @@ pub const O_SET_TURN: i32 = 43;
 pub const O_SET_LOT: i32 = 44;
 /// sorties d'un répartiteur : [réf., mode] (0 : les trois, 1 : gauche et avant, 2 : droite et avant)
 pub const O_SET_SPLIT: i32 = 45;
+/// vider une gare ou un héliport : [réf.] ; « à envoyer » et « reçus » retournent au stock du joueur
+pub const O_EMPTY_STASH: i32 = 46;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
@@ -480,6 +482,11 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                         w.buildings[b].lot = n.min(CARRIERS[kind as usize].capacity);
                     }
                 }
+            }
+        }
+        O_EMPTY_STASH => {
+            if let Some(b) = own_building(w, p, c.next()) {
+                crate::logistics::empty_stash(w, b);
             }
         }
         O_SET_TURN => {

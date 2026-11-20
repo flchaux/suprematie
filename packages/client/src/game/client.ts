@@ -2113,6 +2113,10 @@ export class GameClient {
   setLot(n: number): void {
     if (ui.selBuilding) this.cmd(Ord.setLot(ui.selBuilding.ref, n));
   }
+  /** Vide une gare ou un héliport : son contenu retourne au stock. */
+  emptyStash(): void {
+    if (ui.selBuilding) this.cmd(Ord.emptyStash(ui.selBuilding.ref));
+  }
   setTurn(quarters: number): void {
     if (ui.selBuilding) this.cmd(Ord.setTurn(ui.selBuilding.ref, quarters));
   }
