@@ -12,6 +12,7 @@
     normal: "Les nids attaquent en horde les joueurs qui s'étendent trop près",
     aggressive: "Nids plus grands, bêtes plus tôt évoluées, attaques plus fréquentes",
   };
+  const FOG_DESC = "Désactivé : chacun voit toute la carte, unités et bâtiments ennemis compris, sans repérage";
 
   const lobby = $derived(ui.lobby);
   const isHost = $derived(!!lobby && lobby.players.some((p) => p.host && p.slot === ui.slot));
@@ -177,6 +178,8 @@
                 {#each FAUNA_LEVELS as f}<option value={f}>{FAUNA_NAMES[f]}</option>{/each}
               </select></label>
             <p class="dim small fauna">{FAUNA_DESC[lobby.fauna ?? "none"]}</p>
+            <label class="set" title={FOG_DESC}><Icon name="fog" /> <span>Brouillard de guerre</span><input type="checkbox" checked={lobby.fog ?? true} onchange={(e) => client.lobbyAction("setMap", { fog: (e.target as HTMLInputElement).checked })} /></label>
+            {#if lobby.fog === false}<p class="dim small fauna">Toute la carte est visible en permanence par tous les joueurs</p>{/if}
             <div class="grow"></div>
             <button class="primary launch" onclick={() => client.lobbyAction("start")}><Icon name="play" size={15} /> Lancer la partie</button>
           {:else}
@@ -184,6 +187,7 @@
             <div class="set ro"><Icon name="water" /> <span>Eau</span><b>{lobby.water ? "Oui" : "Non"}</b></div>
             <div class="set ro"><Icon name="seed" /> <span>Graine</span><b class="num">{lobby.seed}</b></div>
             <div class="set ro" title={FAUNA_DESC[lobby.fauna ?? "none"]}><Icon name="fauna" /> <span>Faune</span><b>{FAUNA_NAMES[lobby.fauna ?? "none"]}</b></div>
+            <div class="set ro" title={FOG_DESC}><Icon name="fog" /> <span>Brouillard de guerre</span><b>{lobby.fog === false ? "Non" : "Oui"}</b></div>
             <div class="grow"></div>
             {#if loaded && !lobby.running && missing > 0}
               <p class="dim waiting"><span class="dot"></span> En attente de {missing} joueur{missing > 1 ? "s" : ""} de la sauvegarde</p>

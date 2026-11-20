@@ -495,11 +495,15 @@ pub struct World {
     pub attack_ev: Vec<u32>,
     /// faune : nids, hordes, expansion (voir nature.rs) ; son joueur caché est le dernier de `players`
     pub nature: crate::nature::Nature,
+    /// brouillard de guerre (réglage du salon, tiré de `params`) ; sans lui, chaque équipe voit toute la
+    /// carte, et toute unité, même furtive ou immergée, est ciblable sans repérage
+    pub fog: bool,
 }
 
 impl World {
     /// params : [graine, taille, eau, nb joueurs, puis par joueur : équipe, bot, mult. ressources %, mult. construction %,
-    /// puis la faune (0 aucune, 1 paisible, 2 normale, 3 agressive ; absente : aucune)]
+    /// puis la faune (0 aucune, 1 paisible, 2 normale, 3 agressive ; absente : aucune),
+    /// puis le brouillard de guerre (0 désactivé, 1 activé ; absent : activé)]
     pub fn new(params: &[i32]) -> World {
         let seed = params.first().copied().unwrap_or(1) as u32;
         let size = if params.get(1).copied().unwrap_or(512) >= 1024 { 1024 } else { 512 };
@@ -546,6 +550,8 @@ impl World {
         if nature.active() {
             players.push(crate::nature::nature_player());
         }
+        // brouillard de guerre : après la faune ; absent (anciennes sauvegardes) : activé
+        let fog = params.get(5 + np * 4).copied().unwrap_or(1) != 0;
         let vis_w = map.w / 4;
         let nav = Nav::new(&map);
         let mut w = World {
@@ -584,6 +590,7 @@ impl World {
             hit_from: (i32::MIN, 0),
             attack_ev: Vec::new(),
             nature,
+            fog,
         };
         for p in 0..np {
             let (sx, sy) = w.map.starts[p];

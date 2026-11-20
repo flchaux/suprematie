@@ -295,6 +295,7 @@ export class Game {
         water: this.lobby.water,
         seed: this.lobby.seed,
         fauna: this.lobby.fauna,
+        fog: this.lobby.fog,
         players: this.lobby.players.map((p) => ({ name: p.name, bot: p.bot, team: p.team, personality: p.personality, aix: p.aix, level: p.level })),
       };
       const bots = this.bots.filter((b) => b.bot.save).map((b) => ({ slot: b.slot, state: Buffer.from(b.bot.save!()).toString("base64") }));

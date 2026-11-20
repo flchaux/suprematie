@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -213,6 +213,7 @@ export class GameClient {
     this.start = start;
     ui.me = start.you;
     ui.spectator = start.you < 0;
+    ui.fog = fogFromParams(start.params);
     ui.names = start.names;
     ui.gameOver = null;
     ui.ended = false;
@@ -233,6 +234,7 @@ export class GameClient {
     ui.me = -1;
     ui.spectator = true;
     ui.names = rep.names;
+    ui.fog = fogFromParams(rep.params ?? []);
     ui.stats = Array.isArray(rep.stats) ? rep.stats : [];
     ui.screen = "loading";
     this.start = { params: rep.params, names: rep.names, you: -1, startTick: 0 };
@@ -343,7 +345,7 @@ export class GameClient {
     this.panCamera(dt);
     const alpha = this.frame ? Math.min(1, ((performance.now() - this.frameTime) * ui.speed) / 50) : 0;
     const myTeam = this.frame?.players[ui.me]?.team ?? -1;
-    if (!NORENDER) sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator);
+    if (!NORENDER) sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator, ui.fog);
     // zone vue envoyée au Worker
     const r = sc.viewRect();
     this.worker?.postMessage({ type: "view", x0: Math.floor(r[0]), y0: Math.floor(r[1]), x1: Math.ceil(r[2]), y1: Math.ceil(r[3]), detail: sc.strategic ? 0 : sc.distance > 150 ? 1 : 2, player: ui.me });
@@ -470,7 +472,7 @@ export class GameClient {
     const vis = f.vis;
     const vw = f.visW;
     const seen = (x: number, z: number) => {
-      if (ui.spectator || !vis) return true;
+      if (ui.spectator || !ui.fog || !vis) return true;
       const cx = Math.min(vw - 1, Math.max(0, (x / 4) | 0));
       const cz = Math.min(vw - 1, Math.max(0, (z / 4) | 0));
       return (vis[cz * vw + cx] & 1) !== 0;
@@ -2450,8 +2452,8 @@ export class GameClient {
     ctx.putImageData(this.minimapBase, 0, 0);
     const S = c.width;
     const k = S / m.w;
-    // brouillard
-    if (f.vis && !ui.spectator) {
+    // brouillard (aucun en spectateur ou dans une partie sans brouillard de guerre)
+    if (f.vis && !ui.spectator && ui.fog) {
       const vw = f.visW;
       ctx.fillStyle = "rgba(5,8,12,0.55)";
       const cs = (S / vw);
@@ -2469,7 +2471,7 @@ export class GameClient {
     const myTeam = f.players[ui.me]?.team ?? -1;
     const vis = f.vis;
     const vw = f.visW;
-    const seen = (x: number, z: number, bit: number) => ui.spectator || !vis || (vis[Math.min(vw - 1, (z / 4) | 0) * vw + Math.min(vw - 1, (x / 4) | 0)] & bit) !== 0;
+    const seen = (x: number, z: number, bit: number) => ui.spectator || !ui.fog || !vis || (vis[Math.min(vw - 1, (z / 4) | 0) * vw + Math.min(vw - 1, (x / 4) | 0)] & bit) !== 0;
     // zones électriques de l'équipe : aplats par réseau, zones mortes en rouge
     const zones = this.zones;
     const hex = (c: number) => "#" + c.toString(16).padStart(6, "0");

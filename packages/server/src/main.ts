@@ -113,9 +113,9 @@ interface Client extends Peer {
   token: string;
 }
 const clients = new Set<Client>();
-let lobby: LobbyState = { players: [], mapSize: 512, water: true, seed: (Math.random() * 1e9) | 0, fauna: "normal", running: false, tick: 0, save: null };
+let lobby: LobbyState = { players: [], mapSize: 512, water: true, seed: (Math.random() * 1e9) | 0, fauna: "normal", fog: true, running: false, tick: 0, save: null };
 /** paramètres de carte avant le chargement d'une sauvegarde (rétablis si on l'annule) */
-let preLoad: { mapSize: number; water: boolean; seed: number; fauna: Fauna } | null = null;
+let preLoad: { mapSize: number; water: boolean; seed: number; fauna: Fauna; fog: boolean } | null = null;
 let game: Game | null = null;
 let endTimer: NodeJS.Timeout | null = null;
 const tokens = new Map<string, number>(); // jeton -> emplacement
@@ -201,13 +201,14 @@ function claimFor(c: Client, wanted = -1): boolean {
 
 /** Charge une sauvegarde dans le salon : composition, équipes et carte viennent de la sauvegarde. */
 function loadSaveInLobby(meta: SaveMeta): void {
-  if (!preLoad) preLoad = { mapSize: lobby.mapSize, water: lobby.water, seed: lobby.seed, fauna: lobby.fauna };
+  if (!preLoad) preLoad = { mapSize: lobby.mapSize, water: lobby.water, seed: lobby.seed, fauna: lobby.fauna, fog: lobby.fog };
   const humans = humanClients();
   lobby.save = meta;
   lobby.mapSize = meta.mapSize;
   lobby.water = meta.water;
   lobby.seed = meta.seed;
   lobby.fauna = meta.fauna ?? "none";
+  lobby.fog = meta.fog ?? true;
   lobby.players = meta.players.map((p, i) => ({
     slot: i,
     name: p.name,
@@ -411,6 +412,7 @@ wss.on("connection", (ws, req) => {
           if (typeof msg.water === "boolean") lobby.water = msg.water;
           if (Number.isInteger(msg.seed)) lobby.seed = msg.seed! | 0;
           if (msg.fauna && FAUNA_LEVELS.includes(msg.fauna)) lobby.fauna = msg.fauna;
+          if (typeof msg.fog === "boolean") lobby.fog = msg.fog;
         } else if (msg.action === "start") {
           void startGame();
           return;
