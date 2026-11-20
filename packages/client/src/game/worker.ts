@@ -136,6 +136,7 @@ addEventListener("message", async (e: MessageEvent) => {
   if (m.scene === "logistique") sim.logisticsDemo();
   else if (m.scene === "armes") sim.weaponsDemo();
   else if (m.scene === "projectiles") sim.projectilesDemo();
+  else if (m.scene === "vitrine") sim.showcaseDemo();
   else if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;

@@ -4,14 +4,19 @@
 // triplanaire dans le repère du modèle. Canaux : rouge = détail (module la couleur), vert = relief,
 // bleu = rugosité relative.
 import * as THREE from "three/webgpu";
-import { texture, uniform, vec2, vec3, float, fract, floor, mod, dFdx, dFdy, abs, pow, positionGeometry, normalGeometry, attribute, min } from "three/tsl";
+import { texture, uniform, vec2, vec3, float, fract, floor, mod, dFdx, dFdy, abs, pow, positionGeometry, normalGeometry, attribute } from "three/tsl";
 
 type N = ReturnType<typeof float>;
 
-/** Ordre des couches (couleur de pièce → couche) : identique à tools/textures/manifest.mjs. */
-export const MATERIAL_KEYS = ["armor", "metal", "dark", "hazard", "glass"] as const;
-/** Couche « sans texture » (pièces lumineuses). */
+/** Cases de l'atlas, dans l'ordre de tools/textures/manifest.mjs. */
+export const MATERIAL_KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete"] as const;
+/** Matière « sans texture » (pièces lumineuses). */
 export const NO_TEXTURE = 5;
+/**
+ * Case de l'atlas de chaque matière (attribut « mat », voir MATERIAL_LAYER du générateur) : les cinq
+ * premières ont la leur, le caoutchouc reprend le métal sombre, le cuivre le métal, le béton sa case.
+ */
+const LAYER_CELL = [0, 1, 2, 3, 4, 0, 2, 1, 5];
 
 const files = import.meta.glob("../assets/textures/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 
@@ -80,7 +85,8 @@ export async function loadModelTextures(): Promise<void> {
 export function modelTexture(scale: number): { detail: N; height: N; rough: N; amount: N } {
   // couche de matière : premier composant de l'attribut « mat » (le second est l'occlusion ambiante)
   const mat = attribute("mat", "vec2").x;
-  const layer = min(mat, float(MATERIAL_KEYS.length - 1));
+  let layer: N = float(LAYER_CELL[LAYER_CELL.length - 1]) as unknown as N;
+  for (let i = LAYER_CELL.length - 2; i >= 0; i--) layer = mat.lessThan(float(i + 0.5)).select(float(LAYER_CELL[i]), layer) as unknown as N;
   const cell = vec2(mod(layer, float(COLS)), floor(layer.div(COLS)));
   const cellUV = vec2(CELL / (COLS * CELL), CELL / (ROWS * CELL));
   const padUV = vec2(PAD / (COLS * CELL), PAD / (ROWS * CELL));
@@ -100,6 +106,6 @@ export function modelTexture(scale: number): { detail: N; height: N; rough: N; a
   const sz = sample(vec2(p.x, p.y));
   const t = sx.mul(w.x).add(sy.mul(w.y)).add(sz.mul(w.z));
   // pas de texture sur les pièces lumineuses
-  const has = float(1).sub(mat.greaterThan(float(MATERIAL_KEYS.length - 0.5)).select(float(1), float(0)));
+  const has = float(1).sub(abs(mat.sub(float(NO_TEXTURE))).lessThan(float(0.5)).select(float(1), float(0)));
   return { detail: t.r as unknown as N, height: t.g as unknown as N, rough: t.b as unknown as N, amount: texAmount.mul(has) as unknown as N };
 }

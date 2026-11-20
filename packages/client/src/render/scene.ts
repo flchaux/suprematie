@@ -20,6 +20,9 @@ import { PowerCoverage } from "./power.ts";
 
 const PAD_OK = new THREE.Color(0.2, 0.75, 0.35);
 const PAD_BAD = new THREE.Color(1.6, 0.12, 0.1);
+/** distance de caméra où les pièces fines des modèles disparaissent (LOD_FAR) et reviennent (LOD_NEAR) */
+const LOD_FAR = 95;
+const LOD_NEAR = 85;
 
 /** Statistiques du rendu de la dernière image. */
 export interface RenderStats {
@@ -47,6 +50,8 @@ export class GameScene {
   tilt = 0.95; // radians depuis l'horizontale (1.57 = vue de dessus)
   yaw = 0;
   iconDistance = 260;
+  /** niveau de détail réduit en cours (caméra lointaine) */
+  private lodLo = false;
   backend = "";
   ghost: { mesh: THREE.InstancedMesh; kind: number } | null = null;
   /** couverture électrique (surimpression pendant la pose d'un bâtiment électrique) */
@@ -210,6 +215,7 @@ export class GameScene {
     this.overlay = new CommandOverlay(data, map);
     this.scene.add(this.overlay.group);
     this.entities = new Entities(data, map);
+    this.entities.warmUp();
     this.entities.camera = this.camera;
     this.entities.effects.quality = this.gfx.effects;
     this.scene.add(this.entities.group);
@@ -579,6 +585,10 @@ export class GameScene {
     this.terrain?.tick(dt, this.time);
     const view = this.viewRect();
     if (frame && this.entities) {
+      // niveau de détail : pièces fines retirées au-delà de LOD_FAR, rétablies en deçà de LOD_NEAR (pas de battement)
+      if (this.distance > LOD_FAR) this.lodLo = true;
+      else if (this.distance < LOD_NEAR) this.lodLo = false;
+      this.entities.setDetail(this.lodLo);
       const iconScale = Math.max(1, this.distance / 160);
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, view);
     }

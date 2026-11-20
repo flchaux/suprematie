@@ -1,5 +1,6 @@
 // Capture du visualiseur (~800 px de large) avec Playwright, pour vérifier les modèles.
 // Usage : node tools/viewer/capture.mjs [units|buildings|items|decor] [clé1,clé2]
+// Variables : ZOOM=2 (caméra plus proche), LO=1 (niveau de détail réduit), SUFFIX=avant (nom de la capture), WEBGPU=1, UNIES=1
 import { launchBrowser } from "../browser.mjs";
 import { createServer } from "vite";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -17,11 +18,11 @@ const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
 page.on("console", (m) => console.log("[page]", m.text()));
 page.on("pageerror", (e) => console.log("[erreur]", e.message));
-await page.goto(`http://localhost:${process.env.VIEWER_PORT ?? 5199}/?set=${set}${only ? "&only=" + only : ""}${process.env.WEBGPU ? "" : "&webgl"}${process.env.UNIES ? "&unies" : ""}`);
+await page.goto(`http://localhost:${process.env.VIEWER_PORT ?? 5199}/?set=${set}${only ? "&only=" + only : ""}${process.env.WEBGPU ? "" : "&webgl"}${process.env.UNIES ? "&unies" : ""}${process.env.ZOOM ? "&zoom=" + process.env.ZOOM : ""}${process.env.LO ? "&lo" : ""}`);
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 60000 });
 await page.waitForTimeout(500);
 mkdirSync(root + "tools/viewer/captures", { recursive: true });
-const out = root + `tools/viewer/captures/${set}${only ? "-" + only.replace(/,/g, "_").slice(0, 40) : ""}${process.env.UNIES ? "-unies" : ""}.png`;
+const out = root + `tools/viewer/captures/${set}${only ? "-" + only.replace(/,/g, "_").slice(0, 40) : ""}${process.env.UNIES ? "-unies" : ""}${process.env.ZOOM ? "-z" + process.env.ZOOM : ""}${process.env.LO ? "-lo" : ""}${process.env.SUFFIX ? "-" + process.env.SUFFIX : ""}.png`;
 await page.screenshot({ path: out });
 console.log("capture :", out);
 await browser.close();

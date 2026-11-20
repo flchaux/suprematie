@@ -13,6 +13,7 @@ export const MATERIALS = [
   { key: "dark", colors: ["dark", "black"], desc: "dark grey mechanical surface with ventilation grilles, cooling fins, cable conduits and small technical greebles." },
   { key: "hazard", colors: ["hazard"], desc: "diagonal hazard stripes, alternating light grey and near-black bands of equal width, painted on worn metal with chipped edges." },
   { key: "glass", colors: ["glass"], desc: "dark tinted glass panels separated by a thin metal frame grid, with faint diagonal reflection streaks." },
+  { key: "concrete", colors: ["concrete"], desc: "poured industrial concrete slabs with a few straight expansion joints, small air pores, faint formwork marks and light weathering stains." },
 ];
 
 /**

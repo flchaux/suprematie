@@ -461,6 +461,43 @@ pub fn weapons_demo() -> World {
     w
 }
 
+/// Vitrine des modèles (?demo=vitrine) : un exemplaire terminé de chaque bâtiment, puis chaque unité à
+/// l'arrêt, en rangées (joueur 0, au centre de la carte, loin du commandant adverse). Les bâtiments qui
+/// demandent de l'eau manquent ; l'extracteur reçoit un gisement sous lui.
+pub fn showcase_demo() -> World {
+    let mut w = World::new(&[11, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    const COLS: i32 = 8;
+    const STEP: i32 = 7;
+    let rows = BUILDINGS.len() as i32 / COLS + 1;
+    let (x0, y0) = (w.map.w / 2 - COLS * STEP / 2, w.map.h / 2 - 40);
+    flat(&mut w, x0 - 4, y0 - 4, x0 + COLS * STEP + 4, y0 + rows * STEP + 40);
+    for (k, def) in BUILDINGS.iter().enumerate() {
+        let (x, y) = (x0 + (k as i32 % COLS) * STEP, y0 + (k as i32 / COLS) * STEP);
+        if def.deposit != 0 {
+            for dy in 0..def.size.1 as i32 {
+                for dx in 0..def.size.0 as i32 {
+                    let i = w.map.idx(x + dx, y + dy);
+                    w.map.deposit[i] = IRON_ORE;
+                }
+            }
+            w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x, y });
+        }
+        if let Some(b) = place_building(&mut w, 0, k as u16, x, y, 0) {
+            complete_building(&mut w, b);
+        }
+    }
+    let uy = y0 + rows * STEP + 4;
+    for k in 0..UNITS.len() as i32 {
+        let (x, y) = (x0 + (k % 12) * 5, uy + (k / 12) * 6);
+        w.spawn_unit(k as u16, 0, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    }
+    w
+}
+
 /// Galerie des projectiles : une rangée par arme, chaque tireur bombarde le sol à 20 cases devant lui
 /// (rien ne riposte) ; des transports adverses immobiles servent de cibles aux armes antiaériennes.
 /// Les navires sont posés à terre : ils ne bougent pas mais tirent.

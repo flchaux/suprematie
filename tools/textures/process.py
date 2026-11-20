@@ -24,7 +24,7 @@ RAW = HERE / "raw"
 OUT = HERE.parent.parent / "packages" / "client" / "src" / "assets" / "textures"
 SIZE = 512
 BAND = 0.14  # largeur de la bande de raccord (part de la taille)
-KEYS = ["armor", "metal", "dark", "hazard", "glass"]
+KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete"]
 
 
 def seamless(a: np.ndarray) -> np.ndarray:
