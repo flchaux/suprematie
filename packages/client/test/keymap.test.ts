@@ -128,6 +128,15 @@ describe("correspondance", () => {
     expect(az.match(ev("KeyX", { shiftKey: true }), { factory: true })).toEqual({ id: "factory2", shift: true });
   });
 
+  it("Tab : constructeur inactif suivant (Maj : précédent), dans tous les contextes ; O : statistiques", () => {
+    for (const ctx of [{}, { units: true }, { factory: true }, { units: true, build: true }]) {
+      expect(az.match(ev("Tab"), ctx)).toEqual({ id: "idleEngineer", shift: false });
+      expect(qw.match(ev("Tab", { shiftKey: true }), ctx)).toEqual({ id: "idleEngineer", shift: true });
+    }
+    expect(az.match(ev("Tab", { ctrlKey: true }), {})).toBeNull(); // Ctrl+Tab reste au navigateur
+    expect(az.match(ev("KeyO"), {})?.id).toBe("stats");
+  });
+
   it("l'usine sélectionnée l'emporte sur la touche globale", () => {
     expect(az.match(ev("KeyC"), {})?.id).toBe("commander");
     expect(az.match(ev("KeyC"), { factory: true })?.id).toBe("factory3");

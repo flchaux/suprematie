@@ -92,6 +92,9 @@ pub enum Order {
     /// commandant : se poster près d'un de nos tapis et en retirer les objets qui passent sur cette
     /// case, versés au stock commun (comme un dépôt)
     Collect { target: u32 },
+    /// commandant : récolter le gisement de la case (x, y) (cases) et fondre le minerai dans sa
+    /// fonderie intégrée ; le produit fondu va au stock du joueur (voir units::HARVEST_*)
+    Harvest { x: i32, y: i32 },
 }
 
 impl Order {
@@ -112,6 +115,7 @@ impl Order {
             Order::Enter { .. } => 13,
             Order::Face { .. } => 14,
             Order::Collect { .. } => 15,
+            Order::Harvest { .. } => 16,
         }
     }
 }
@@ -135,7 +139,7 @@ impl Ser for Order {
             Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::Face { a } => a.ser(w),
-            Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } => {
+            Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } => {
                 x.ser(w);
                 y.ser(w);
             }
@@ -166,6 +170,7 @@ impl Ser for Order {
             12 => Order::Jump { beacon: u(r) },
             14 => Order::Face { a: i(r) },
             15 => Order::Collect { target: u(r) },
+            16 => Order::Harvest { x: i(r), y: i(r) },
             _ => Order::Enter { target: u(r) },
         }
     }
@@ -878,6 +883,10 @@ impl World {
                 h.add_i32(u.hp[s]);
                 h.add(u.kind[s] as u64 | (u.owner[s] as u64) << 16 | (u.facing[s] as u64) << 24);
                 h.add(u.cold[s].orders.len() as u64);
+                if let Some(Order::Harvest { .. }) = u.cold[s].orders.first() {
+                    // récolte du commandant : avancement du cycle en cours
+                    h.add(u.cold[s].work as u64);
+                }
             }
         }
         for (i, b) in self.buildings.iter().enumerate() {

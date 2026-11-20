@@ -4,14 +4,14 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
-import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
+import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { ownerColor, ownerHex } from "./colors.ts";
-import { ui, pushMessage, hasTechUI } from "./state.svelte.ts";
+import { ui, pushMessage, hasTechUI, type HarvestInfo } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
@@ -275,6 +275,7 @@ export class GameClient {
         this.data = JSON.parse(m.data as string) as GameData;
         ui.data = this.data;
         this.map = parseMapInfo(m.mapInfo as Int32Array, m.heights as Uint8Array);
+        this.maxGround = -1;
         if (!this.scene) {
           this.scene = new GameScene(this.canvasEl!);
           await this.scene.init(new URLSearchParams(location.search).has("webgl"));
@@ -1080,6 +1081,9 @@ export class GameClient {
       case "assist":
         if (this.selected.size) this.setMode("assist");
         break;
+      case "harvest":
+        if (this.commandersOf(this.selectedUnits()).length) this.setMode("harvest");
+        break;
       case "deploy":
         this.deploySelected();
         break;
@@ -1129,7 +1133,7 @@ export class GameClient {
         this.selectAllArmy();
         break;
       case "idleEngineer":
-        this.selectIdleEngineer();
+        this.selectIdleEngineer(shift);
         break;
       case "cancelBuilding":
         this.demolishSelected();
@@ -1246,30 +1250,27 @@ export class GameClient {
     sfx.click();
   }
 
-  /** Ingénieur sans ordre suivant (identifiant croissant, en boucle), hors commandant ; centre la caméra. */
-  selectIdleEngineer(): void {
-    const f = this.frame;
-    if (!f || !this.data || ui.me < 0) return;
-    const idle: { id: number; x: number; y: number }[] = [];
-    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
-      const w = f.buf[o + 1];
-      if (((w >> 8) & 0xff) !== ui.me || !(((w >> 16) & 0xff) & UF.IDLE)) continue;
-      const def = this.data.units[w & 0xff];
-      if (def.buildPower <= 0 || def.key === "commander") continue;
-      idle.push({ id: f.buf[o] >>> 0, x: f.buf[o + 2], y: f.buf[o + 3] });
-    }
+  /**
+   * Constructeur inactif suivant (ingénieurs et commandant sans ordre : ni déplacement, construction,
+   * réparation ni récolte), par identifiant croissant et en boucle ; Maj : le précédent. Centre la caméra.
+   */
+  selectIdleEngineer(back = false): void {
+    if (ui.me < 0) return;
+    const idle = this.ownBuilders().filter((b) => b.idle);
     if (!idle.length) {
-      pushMessage("Aucun ingénieur inactif");
+      pushMessage("Aucun constructeur inactif");
       sfx.error();
       return;
     }
     idle.sort((a, b) => a.id - b.id);
-    const next = idle.find((u) => u.id > this.lastIdleEngineer) ?? idle[0];
+    const last = this.lastIdleEngineer;
+    if (back) idle.reverse();
+    const next = idle.find((u) => (back ? u.id < last : u.id > last)) ?? idle[0];
     this.lastIdleEngineer = next.id;
     this.selected = new Set([next.id]);
     if (this.scene) {
-      this.scene.target.x = next.x / TILE;
-      this.scene.target.z = next.y / TILE;
+      this.scene.target.x = next.x;
+      this.scene.target.z = next.y;
     }
     sfx.click();
     this.updateUi();
@@ -1325,7 +1326,8 @@ export class GameClient {
     const side = { x: 0, y: 0 };
     const right = new THREE.Vector3().setFromMatrixColumn(sc.camera.matrixWorld, 0);
     for (const u of sc.entities.screen) {
-      if (!u.visible) continue;
+      // une unité qu'on ne voit pas ne se clique pas : hors du dessin de cette image, ou cachée par le relief
+      if (!u.visible || !u.drawn) continue;
       if (!anyOwner && u.owner !== ui.me) continue;
       const km = sc.entities.unitMeshes[u.kind];
       const h = Math.max(0.4, km?.height ?? 0.8);
@@ -1339,13 +1341,38 @@ export class GameClient {
       const vy = top.y - foot.y;
       const t = Math.max(0, Math.min(1, ((x - foot.x) * vx + (y - foot.y) * vy) / (vx * vx + vy * vy || 1)));
       const d = Math.hypot(x - (foot.x + vx * t), y - (foot.y + vy * t));
-      if (d <= w + 5 && d < bd) {
+      if (d <= w + 5 && d < bd && !this.hiddenByTerrain(u.x, u.y + h / 2, u.z)) {
         bd = d;
         best = u;
       }
     }
     return best;
   }
+
+  /** Le relief s'interpose-t-il entre la caméra et ce point ? (échantillons le long du segment, jusqu'au plus haut sommet) */
+  private hiddenByTerrain(x: number, y: number, z: number): boolean {
+    const sc = this.scene;
+    const m = this.map;
+    if (!sc || !m) return false;
+    if (this.maxGround < 0) {
+      let top = 0;
+      for (let i = 0; i < m.heights.length; i++) if (m.heights[i] > top) top = m.heights[i];
+      this.maxGround = top * HSCALE;
+    }
+    const c = sc.camera.position;
+    const len = Math.hypot(c.x - x, c.y - y, c.z - z);
+    if (len < 1) return false;
+    // la première case autour de l'unité ne compte pas (pente sous ses pieds)
+    for (let s = 1; s < len; s += 0.5) {
+      const t = s / len;
+      const py = y + (c.y - y) * t;
+      if (py > this.maxGround) break;
+      if (groundHeight(m, x + (c.x - x) * t, z + (c.z - z) * t) > py + 0.2) return true;
+    }
+    return false;
+  }
+  /** plus haut point du relief (monde), calculé au premier besoin */
+  private maxGround = -1;
 
   private clickSelect(x: number, y: number, add: boolean, _ctrl: boolean): void {
     const u = this.ownedUnitAt(x, y, true);
@@ -1398,7 +1425,7 @@ export class GameClient {
             return;
           }
           // gisement (2 x 2 cases) sous le curseur : fiche du gisement
-          const s = this.map?.spots.find((p) => tx >= p.x && tx < p.x + 2 && tz >= p.y && tz < p.y + 2);
+          const s = this.spotAt(tx, tz);
           ui.selDeposit = s ? { kind: s.kind, x: s.x, y: s.y } : null;
           if (s) sfx.click();
         }
@@ -1550,7 +1577,7 @@ export class GameClient {
       return;
     }
     const id = g.ids[0];
-    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean } | null>("unit", [id]).then((r) => {
+    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null } | null>("unit", [id]).then((r) => {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });
@@ -1600,6 +1627,10 @@ export class GameClient {
           return "patrol";
         case "reclaim":
           return "reclaim";
+        case "harvest": {
+          const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
+          return s && this.harvestRecipe(s.kind) >= 0 ? "harvest" : "invalid";
+        }
         case "unload":
           return "unload";
         case "assist":
@@ -1626,6 +1657,10 @@ export class GameClient {
       if (def.cls === BClass.Gate) return "move";
       if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
       if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => this.data!.units[u.kind].key === "commander")) return "load";
+    }
+    if (!tb && units.some((u) => this.data!.units[u.kind].key === "commander")) {
+      const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
+      if (s && this.harvestRecipe(s.kind) >= 0) return "harvest";
     }
     if (engs) {
       const f = this.frame;
@@ -1709,6 +1744,8 @@ export class GameClient {
         return;
       }
     }
+    // commandant sur un gisement libre (sans extracteur) : récolte avec sa fonderie intégrée
+    if (!tb && this.harvestAt(units, g.x, g.z, queue, false)) return;
     // épave
     if (engs.length && this.frame) {
       const f = this.frame;
@@ -1724,6 +1761,63 @@ export class GameClient {
     this.cmd(Ord.move(units, gx, gy, queue, false));
     this.scene?.addMarker(g.x, g.z, 0x7dff9a);
     sfx.confirm();
+  }
+
+  /** Gisement (2 x 2 cases) qui couvre la case (tx, tz), s'il y en a un. */
+  private spotAt(tx: number, tz: number): { kind: number; x: number; y: number } | null {
+    return this.map?.spots.find((p) => tx >= p.x && tx < p.x + 2 && tz >= p.y && tz < p.y + 2) ?? null;
+  }
+
+  /**
+   * Recette de fonderie utilisée par la récolte du commandant sur un gisement de la ressource `raw`,
+   * ou -1 (hydrocarbure, cristal, ou recette pas encore débloquée : la plaquette de silicium demande
+   * l'électronique). Même règle que la simulation (units::harvest_recipe).
+   */
+  harvestRecipe(raw: number): number {
+    if (!this.data) return -1;
+    const r = smeltRecipe(this.data, raw);
+    if (r < 0) return -1;
+    const me = this.frame?.players[ui.me];
+    return !me || hasTech(me, this.data.recipes[r].tech) ? r : -1;
+  }
+
+  /** Commandants parmi les unités. */
+  private commandersOf(units: { id: number; kind: number }[]): number[] {
+    return units.filter((u) => this.data!.units[u.kind].key === "commander").map((u) => u.id);
+  }
+
+  /**
+   * Ordre de récolte au point (x, z) de la carte pour les commandants de `units` (les autres unités s'y
+   * rendent). Faux si rien n'est récoltable là ; `explain` dit alors pourquoi.
+   */
+  private harvestAt(units: { id: number; kind: number; x: number; y: number }[], x: number, z: number, queue: boolean, explain: boolean): boolean {
+    const tx = Math.floor(x);
+    const tz = Math.floor(z);
+    const spot = this.spotAt(tx, tz);
+    const cmdrs = this.commandersOf(units);
+    const fail = (msg: string): boolean => {
+      if (explain) {
+        pushMessage(msg, "alert");
+        sfx.error();
+      }
+      return false;
+    };
+    if (!cmdrs.length) return fail("Récolte : sélectionnez votre commandant");
+    if (!spot) return fail("Récolte : cliquez sur un gisement de minerai de fer, de cuivre ou de silicium");
+    const items = this.data!.items;
+    const r = this.harvestRecipe(spot.kind);
+    if (r < 0) {
+      const sr = smeltRecipe(this.data!, spot.kind);
+      return fail(sr < 0 ? `Récolte : la fonderie du commandant ne sait pas fondre ${items[spot.kind]?.name.toLowerCase() ?? "ce gisement"}` : `Récolte : la recette « ${items[this.data!.recipes[sr].output[0]]?.name} » n'est pas encore recherchée`);
+    }
+    this.cmd(Ord.harvest(cmdrs, tx, tz, queue));
+    const rest = units.filter((u) => !cmdrs.includes(u.id));
+    if (rest.length) this.cmd(Ord.move(rest, Math.round(x * TILE), Math.round(z * TILE), queue, false));
+    this.scene?.addMarker(x, z, 0xff9a3c);
+    const rec = this.data!.recipes[r];
+    pushMessage(`Commandant : récolte du ${items[spot.kind]?.name.toLowerCase()}, fondu en ${items[rec.output[0]]?.name.toLowerCase()} (versé au stock)`, "info");
+    sfx.confirm();
+    return true;
   }
 
   /** Recyclage : la simulation identifie l'épave la plus proche du point. */
@@ -1773,6 +1867,10 @@ export class GameClient {
         if (tu) this.cmd(Ord.target(O.ASSIST, ids, tu.id, queue));
         else if (tb) this.cmd(Ord.target(O.ASSIST, this.engineers(), tb.ref, queue));
         break;
+      case "harvest":
+        if (!this.harvestAt(units, g.x, g.z, queue, true)) return;
+        if (!queue) this.cancelMode();
+        return;
       case "teleport":
       case "jump": {
         const src = units.find((u) => (mode === "teleport" ? this.data!.units[u.kind].key === "commander" : this.data!.units[u.kind].key === "hyper_cruiser"));
@@ -2181,7 +2279,7 @@ export class GameClient {
     if (this.engineers().length) this.setMode("reclaim");
   }
 
-  /** Nos constructeurs (ingénieurs et commandant) : position en cases, libres ou non. */
+  /** Nos constructeurs (ingénieurs et commandant) : position en cases, inactifs (sans ordre) ou non. */
   private ownBuilders(): { id: number; x: number; y: number; idle: boolean }[] {
     const f = this.frame;
     const out: { id: number; x: number; y: number; idle: boolean }[] = [];

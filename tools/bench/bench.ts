@@ -98,6 +98,8 @@ let stalled = false;
 const t0 = performance.now();
 
 const unitKey = data.units.map((u) => u.key);
+/** décisions où le commandant de chaque joueur récoltait un gisement (ordre 16 en tête de file) */
+const harvesting = new Array(nPlayers).fill(0);
 function progress(min: number): string {
   const v = parseBotDump(sim.botDump());
   const lines: string[] = [];
@@ -115,7 +117,7 @@ function progress(min: number): string {
     for (let t = 1; t < data.techs.length; t++) if (hasTech(p, t)) techs++;
     const st = p.stock;
     lines.push(
-      `  J${i} ${bots[i].personality.padEnd(8)} ${p.alive ? "   " : "†  "}unités ${String(nu[i]).padStart(4)} (armée ${String(army[i]).padStart(4)}) bâtiments ${String(nb[i]).padStart(4)} recherches ${String(techs).padStart(2)}${p.research ? "+" + data.techs[p.research].key : ""} fer ${st[6]} cuivre ${st[7]} acier ${st[8]} kills ${p.kills} pertes ${p.losses}`,
+      `  J${i} ${bots[i].personality.padEnd(8)} ${p.alive ? "   " : "†  "}unités ${String(nu[i]).padStart(4)} (armée ${String(army[i]).padStart(4)}) bâtiments ${String(nb[i]).padStart(4)} recherches ${String(techs).padStart(2)}${p.research ? "+" + data.techs[p.research].key : ""} fer ${st[6]} cuivre ${st[7]} acier ${st[8]} kills ${p.kills} pertes ${p.losses} récolte ${Math.round((harvesting[i] * 100) / Math.max(1, botThinks))} %`,
     );
   }
   const sig = nu.join(",") + "|" + nb.join(",") + "|" + v.players.map((p) => p.produced.reduce((a, b) => a + b, 0)).join(",");
@@ -129,6 +131,7 @@ for (tick = 0; tick < maxTicks; tick++) {
   if (tick % BOT_EVERY === 0) {
     const tb = performance.now();
     const view = parseBotDump(sim.botDump());
+    for (const u of view.units) if (u.order === 16 && unitKey[u.kind] === "commander" && u.owner < nPlayers) harvesting[u.owner]++;
     for (const b of bots) {
       if (!view.players[b.slot]?.alive) continue;
       const b0 = performance.now();

@@ -54,6 +54,19 @@ export const HYDROCARBON = 4;
 export const FUEL_ITEM = 16;
 export const ENERGY_CELL = 19;
 export const BUILD_FULL = 65536;
+/** dernière ressource brute (minerai de fer 1 … cristal 5) */
+export const LAST_RAW = 5;
+
+/**
+ * Récolte du commandant : recette de fonderie qui fond la ressource brute `raw` (son unique ingrédient),
+ * ou -1 (hydrocarbure, cristal : pas de recette de fonderie). Même règle que `smelt_recipe` (sim/src/data.rs).
+ */
+export function smeltRecipe(data: GameData, raw: number): number {
+  if (raw <= 0 || raw > LAST_RAW) return -1;
+  return data.recipes.findIndex((r) => r.crafter === 0 && r.inputs.length === 1 && r.inputs[0][0] === raw);
+}
+/** Durée d'un cycle de récolte du commandant (ticks) : 2 fois la recette de fonderie (sim : units::HARVEST_SLOWDOWN). */
+export const HARVEST_SLOWDOWN = 2;
 
 export function keyIndex<T extends { key: string }>(list: T[]): Record<string, number> {
   const m: Record<string, number> = {};

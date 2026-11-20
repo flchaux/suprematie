@@ -333,4 +333,6 @@ mod features_tests;
 mod nature_tests;
 #[cfg(test)]
 mod twins_tests;
+#[cfg(test)]
+mod harvest_tests;
 pub mod stress;

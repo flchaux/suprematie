@@ -8,6 +8,7 @@
     patrol: '<path d="M4 9h13l-3-3"/><path d="M20 15H7l3 3"/>',
     assist: '<path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"/><path d="M9 12l2 2 4-4"/>',
     ground: '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1.5"/>',
+    harvest: '<path d="M5 20h14"/><path d="M7 20v-7h10v7"/><path d="M10 16h4"/><path d="M12 3c2 2.3 3 4 3 5.6A3 3 0 0 1 9 8.6c0-1 .5-1.8 1.2-2.5.2 1 .7 1.5 1.3 1.6-.3-1.6 0-3.1.5-4.7z"/>',
     reclaim: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/><path d="M9 12h6"/>',
     deploy: '<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/><path d="M6 21l2-4M18 21l-2-4"/>',
     unload: '<path d="M4 7h16v6H4z"/><path d="M12 13v8"/><path d="M8 17l4 4 4-4"/>',
