@@ -1,8 +1,10 @@
 // Test des raccourcis clavier dans Chromium.
 // 1) Partie réelle contre une IA : groupes (Maj+chiffre puis chiffre, touche « 1 » qui donne « & »),
-//    menu de construction B → catégorie → bâtiment puis pose à la souris, I sans ingénieur, marque-pages.
+//    menu de construction B → catégorie → bâtiment puis pose à la souris, Tab (commandant inactif, puis
+//    plus aucun constructeur inactif ; focus gardé ; sans effet dans la discussion), marque-pages.
 // 2) Démo locale (armées et usines déjà construites) avec une disposition AZERTY simulée :
-//    rangée de l'usine (Maj = ×5), I (ingénieur inactif suivant), libellés, écran « Raccourcis ».
+//    rangée de l'usine (Maj = ×5), Tab / Maj+Tab / I (constructeur inactif suivant ou précédent),
+//    libellés, écran « Raccourcis ».
 // Usage : node tools/e2e-keys.mjs http://127.0.0.1:3071
 import { mkdirSync } from "node:fs";
 import { launchBrowser } from "./browser.mjs";
@@ -78,6 +80,25 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
   const back = await page.evaluate(() => ({ x: window.__game.client.scene.target.x, z: window.__game.client.scene.target.z }));
   check(Math.abs(back.x - saved.x) < 1e-6 && Math.abs(back.z - saved.z) < 1e-6, "Maj+F2 puis F2 : marque-page");
 
+  // Tab : le commandant (seul constructeur, inactif) est sélectionné et centré ; vrai appui clavier,
+  // le focus ne part pas sur un élément de l'interface
+  await page.evaluate(() => { const { client } = window.__game; client.selectIds([]); client.scene.target.x += 25; });
+  const focusBefore = await page.evaluate(() => document.activeElement?.tagName);
+  await page.keyboard.press("Tab");
+  const tab1 = await page.evaluate(() => {
+    const { client } = window.__game;
+    const u = client.selectedUnits()[0];
+    return { sel: [...client.selected], cam: u ? Math.hypot(client.scene.target.x - u.x / 256, client.scene.target.z - u.y / 256) : 99, focus: document.activeElement?.tagName };
+  });
+  check(tab1.sel.length === 1 && tab1.sel[0] === cmdr && tab1.cam < 1e-3, "Tab : commandant inactif sélectionné et centré", JSON.stringify(tab1));
+  check(tab1.focus === focusBefore, "Tab ne déplace pas le focus", `${focusBefore} → ${tab1.focus}`);
+  await page.keyboard.press("Tab");
+  check(await page.evaluate((id) => window.__game.client.selected.size === 1 && window.__game.client.selected.has(id), cmdr), "Tab encore : toujours le commandant (boucle)");
+  check(await page.evaluate(() => !window.__game.ui.showStats), "Tab n'ouvre plus les statistiques");
+  await page.keyboard.press("KeyO");
+  check(await page.evaluate(() => window.__game.ui.showStats), "O ouvre les statistiques");
+  await page.keyboard.press("KeyO");
+
   // menu de construction : B, 4 (Énergie), 1 (Générateur)
   await page.waitForTimeout(400);
   await page.keyboard.press("KeyB");
@@ -94,7 +115,7 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
     const { ui } = window.__game;
     return { mode: ui.mode, key: ui.buildKind >= 0 ? ui.data.buildings[ui.buildKind].key : "" };
   });
-  check(placing.mode === "build" && placing.key === "generator", "1 entre dans la pose du générateur", JSON.stringify(placing));
+  check(placing.mode === "build" && placing.key === "main_generator", "1 entre dans la pose du générateur principal", JSON.stringify(placing));
   // sans rendu, la caméra ne projette pas la souris : on calcule le fantôme comme le ferait
   // le survol (requête canPlaceMany à côté du commandant), puis on pose par un vrai clic
   const ghost = await page.evaluate(async () => {
@@ -135,14 +156,19 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
   await page.keyboard.press("Escape");
   check(await page.evaluate(() => window.__game.kb.buildStep === "" && window.__game.client.selected.size === 1), "Échap referme le menu et garde la sélection");
 
-  // I sans ingénieur : message
-  await page.keyboard.press("KeyI");
-  check(await page.evaluate(() => window.__game.ui.messages.some((m) => m.text === "Aucun ingénieur inactif")), "I sans ingénieur inactif : message");
+  // Tab sans constructeur inactif (le commandant construit) : message, sélection inchangée
+  await page.keyboard.press("Tab");
+  check(await page.evaluate((id) => window.__game.ui.messages.some((m) => m.text === "Aucun constructeur inactif") && window.__game.client.selected.has(id), cmdr), "Tab sans constructeur inactif : message");
 
   // la discussion garde ses touches
   await page.keyboard.press("Enter");
   await page.waitForSelector(".chatbox input");
   await page.keyboard.type("bah1");
+  await page.evaluate(() => window.__game.client.selectIds([]));
+  await page.keyboard.press("Tab");
+  check(await page.evaluate(() => window.__game.client.selected.size === 0), "Tab dans la discussion : pas de sélection");
+  await page.evaluate((id) => window.__game.client.selectIds([id]), cmdr);
+  await page.focus(".chatbox input");
   check(await page.evaluate(() => window.__game.client.selected.size === 1 && !window.__game.ui.showHelp && window.__game.kb.buildStep === ""), "frappe dans la discussion : aucun raccourci");
   await page.keyboard.press("Escape");
   await page.close();
@@ -188,6 +214,11 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
       if (j < 3) idle.push(f.buf[o] >>> 0);
     });
     const units = ui.data.units.map((u, i) => ({ u, i })).filter(({ u }) => u.factory === 1).map(({ i }) => i);
+    // le commandant compte aussi s'il est sans ordre
+    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) {
+      const w = f.buf[o + 1];
+      if (((w >> 8) & 0xff) === 0 && ui.data.units[w & 0xff].key === "commander" && ((w >> 16) & 0xff) & 64) idle.push(f.buf[o] >>> 0);
+    }
     return { idle: idle.sort((a, b) => a - b), units, busy: f.buf[mine[3]] >>> 0, factoryKind: ui.data.buildings.findIndex((b) => b.key === "land_factory") };
   });
 
@@ -222,20 +253,26 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
     ui.buildingInfo = null;
   });
 
-  // I : ingénieurs inactifs du joueur 0, par identifiant croissant et en boucle
+  // Tab : constructeurs inactifs du joueur 0 (ingénieurs et commandant), par identifiant croissant et en boucle
+  const pick = () => page.evaluate(() => {
+    const { client } = window.__game;
+    const u = client.selectedUnits()[0];
+    return { sel: [...client.selected], cam: u ? Math.hypot(client.scene.target.x - u.x / 256, client.scene.target.z - u.y / 256) : 99 };
+  });
   const order = [];
-  for (let j = 0; j < 4; j++) {
-    await key(page, "KeyI", "i");
-    order.push(await page.evaluate(() => {
-      const { client } = window.__game;
-      const u = client.selectedUnits()[0];
-      return { sel: [...client.selected], cam: u ? Math.hypot(client.scene.target.x - u.x / 256, client.scene.target.z - u.y / 256) : 99 };
-    }));
+  for (let j = 0; j <= info.idle.length; j++) {
+    await key(page, "Tab", "Tab");
+    order.push(await pick());
   }
   const seq = order.map((o) => o.sel[0]);
-  check(JSON.stringify(seq) === JSON.stringify([...info.idle, info.idle[0]]), "I : ingénieurs inactifs dans l'ordre, puis retour au premier", JSON.stringify(seq));
-  check(order.every((o) => o.sel.length === 1 && o.cam < 1e-3), "I centre la caméra sur l'ingénieur");
-  check(!seq.includes(info.busy), "I ignore l'ingénieur occupé");
+  check(JSON.stringify(seq) === JSON.stringify([...info.idle, info.idle[0]]), "Tab : constructeurs inactifs dans l'ordre, puis retour au premier", JSON.stringify(seq) + " attendu " + JSON.stringify(info.idle));
+  check(order.every((o) => o.sel.length === 1 && o.cam < 1e-3), "Tab centre la caméra sur le constructeur");
+  check(!seq.includes(info.busy), "Tab ignore l'ingénieur occupé");
+  // Maj+Tab : sens inverse ; I : même cycle
+  await key(page, "Tab", "Tab", { shiftKey: true });
+  check((await pick()).sel[0] === info.idle[info.idle.length - 1], "Maj+Tab : le précédent (boucle vers le dernier)");
+  await key(page, "KeyI", "i");
+  check((await pick()).sel[0] === info.idle[0], "I : le suivant (même cycle que Tab)");
 
   // commandant sélectionné : badge « A » sur l'attaque, A (KeyQ) passe en attaque en mouvement
   await page.evaluate(() => { const { client, ui } = window.__game; client.selectIds([client.frame.players[0].commander]); ui.mode = ""; });
@@ -253,8 +290,8 @@ const key = (page, code, k, mods = {}) => page.evaluate(([code, k, mods]) => {
   const row = (label) => page.locator(".modal.keys .row", { has: page.locator(`.lbl:text-is("${label}")`) });
   await row("Arrêt").locator("button:has-text('Modifier')").click();
   check(await page.evaluate(() => window.__game.kb.capturing), "Modifier : attente d'une touche");
-  await page.keyboard.press("KeyK");
-  check(await page.evaluate(() => window.__game.keymap.get("stop")[0].code === "KeyK" && JSON.parse(localStorage.getItem("supreme.keys")).stop[0].code === "KeyK"), "Arrêt réassigné sur K et enregistré");
+  await page.keyboard.press("F7"); // touche libre (K sert à la vue électrique)
+  check(await page.evaluate(() => window.__game.keymap.get("stop")[0].code === "F7" && JSON.parse(localStorage.getItem("supreme.keys")).stop[0].code === "F7"), "Arrêt réassigné sur F7 et enregistré");
   await row("Patrouille").locator("button:has-text('Modifier')").click();
   await key(page, "KeyQ", "a"); // même touche que l'attaque
   const warn = await row("Patrouille").locator(".note.warn").textContent().catch(() => "");

@@ -221,7 +221,7 @@
                 <button class="ghost danger icon-btn" title="Supprimer" disabled={loaded?.id === m.id} onclick={() => removeSave(m)}><Icon name="trash" size={14} /></button>
               {/if}
             </div>
-          {:else}<span class="dim">Aucune sauvegarde. En partie : panneau Statistiques (Tab), bouton Sauvegarder ; une sauvegarde automatique est faite toutes les 5 minutes de jeu.</span>{/each}
+          {:else}<span class="dim">Aucune sauvegarde. En partie : panneau Statistiques (O), bouton Sauvegarder ; une sauvegarde automatique est faite toutes les 5 minutes de jeu.</span>{/each}
           {#if !isHost && saves.length}<p class="dim small">Seul l'hôte peut charger une sauvegarde.</p>{/if}
         </div></div>
       {/if}

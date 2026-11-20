@@ -204,6 +204,8 @@ export interface UnitScreen {
   y: number; // hauteur
   z: number;
   visible: boolean;
+  /** dessinée à cette image (modèle dans la vue, ou icône en vue stratégique) : seule une unité dessinée se clique */
+  drawn: boolean;
 }
 
 /** Teinte vive de chaque ressource extraite (plus lisible que la couleur d'objet, souvent terne). */
@@ -618,9 +620,9 @@ export class Entities {
       if (!visible && !radar) continue;
       const def = this.data.units[kind];
       const y = this.unitHeight(kind, x, z);
-      this.screen.push({ id, kind, owner, x, y, z, visible });
-      const col = this.teamColors[cslot(owner)];
       const inView = x > vx0 - 4 && x < vx1 + 4 && z > vz0 - 4 && z < vz1 + 4;
+      this.screen.push({ id, kind, owner, x, y, z, visible, drawn: strategic || inView });
+      const col = this.teamColors[cslot(owner)];
       if (strategic || radar) {
         const layer = def.layer;
         const ic = this.icons[layer === Layer.Air ? 1 : layer === Layer.Naval || layer === Layer.Sub ? 2 : 0];
