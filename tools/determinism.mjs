@@ -7,9 +7,10 @@ import { randomOrders } from "./scenario.mjs";
 
 const TICKS = Number(process.argv[2] ?? 10000);
 const bytes = readFileSync(new URL("../packages/client/public/sim.wasm", import.meta.url));
-// deux configurations : sans faune (comme les parties d'avant), puis avec une faune agressive
+// trois configurations : sans faune (comme les parties d'avant), avec une faune agressive, puis
+// sans brouillard de guerre (paramètre après la faune : 0)
 const base = [12345, 512, 1, 4, 0, 0, 100, 100, 1, 0, 100, 100, 2, 0, 100, 100, 3, 0, 100, 100];
-for (const [label, params] of [["sans faune", base], ["faune agressive", [...base, 3]]]) {
+for (const [label, params] of [["sans faune", base], ["faune agressive", [...base, 3]], ["sans brouillard", [...base, 2, 0]]]) {
   await check(label, params);
 }
 

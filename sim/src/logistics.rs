@@ -139,6 +139,23 @@ pub fn tick_station(w: &mut World, b: usize) {
 
 // ---------- ordres ----------
 
+/// Ordre « vider » : tout le contenu d'une gare ou d'un héliport (« à envoyer » et « reçus ») retourne
+/// au stock de son propriétaire, sans plafond, comme un remboursement (changement de recette, chantier
+/// annulé). Le chargement des véhicules en route n'est pas touché.
+pub fn empty_stash(w: &mut World, b: usize) {
+    if carrier_kind(w.buildings[b].def().class).is_none() || w.buildings[b].stash.len() < 2 * N {
+        return;
+    }
+    let owner = w.buildings[b].owner as usize;
+    for k in 0..2 * N {
+        let n = std::mem::take(&mut w.buildings[b].stash[k]);
+        w.players[owner].stock[k % N] += n as i32;
+    }
+    // des bras attendaient peut-être de la place pour déposer
+    w.buildings[b].wake = 0;
+    crate::buildings::wake_watchers(w, b);
+}
+
 /// Ordre « relier » : la gare `b` (du joueur `p`) reçoit un véhicule qui fera la navette vers `target`
 /// (gare ou héliport de même type, du joueur ou d'un allié). Relier une gare à elle-même retire ses
 /// véhicules. Le véhicule est payé sur le stock du joueur (puis le stock commun de l'équipe).

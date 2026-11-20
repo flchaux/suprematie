@@ -26,6 +26,8 @@ export const O = {
   SET_LOT: 44,
   /** sorties d'un répartiteur : [réf., mode] (0 : gauche, avant, droite ; 1 : gauche et avant ; 2 : droite et avant) */
   SET_SPLIT: 45,
+  /** vider une gare ou un héliport : [réf.] ; « à envoyer » et « reçus » retournent au stock du joueur */
+  EMPTY_STASH: 46,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
@@ -199,6 +201,9 @@ export function setSplit(ref: number, mode: number): Cmd {
 }
 export function setLot(ref: number, n: number): Cmd {
   return [O.SET_LOT, ref | 0, Math.max(0, Math.round(n))];
+}
+export function emptyStash(ref: number): Cmd {
+  return [O.EMPTY_STASH, ref | 0];
 }
 export function setTurn(ref: number, quarters: number): Cmd {
   return [O.SET_TURN, ref | 0, Math.max(1, Math.min(3, quarters | 0))];

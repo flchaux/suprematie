@@ -1,7 +1,9 @@
 // Chiffres des modèles : triangles de près et de loin (niveau de détail réduit), dimensions de la boîte.
 // Usage : node tools/viewer/stats.ts [units|buildings|items|decor|exp] [clé1,clé2]
 // Les dimensions comptent : le jeu met chaque modèle à l'échelle de sa boîte (garder celles d'avant).
-import { buildModel } from "../../packages/client/src/models/generator.ts";
+import { buildModel, withHatches } from "../../packages/client/src/models/generator.ts";
+import { RECEIVER_CLASSES } from "../../packages/shared/src/data.ts";
+import data from "./data.json" with { type: "json" };
 import { UNIT_MODELS } from "../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../assets/models/buildings.ts";
 import { ITEM_MODELS } from "../../assets/models/items.ts";
@@ -16,7 +18,9 @@ let tri = 0;
 let lo = 0;
 for (const [key, m] of Object.entries(models)) {
   if (only && !only.includes(key)) continue;
-  const b = buildModel(m);
+  // bâtiments qui reçoivent des objets : comptés avec leurs trappes, comme en jeu (niveaux _nN compris)
+  const def = set === "buildings" ? data.buildings.find((d) => d.key === key.replace(/_n\d+$/, "")) : undefined;
+  const b = def && RECEIVER_CLASSES.has(def.cls) && def.w === def.h && def.w > 1 ? withHatches(buildModel(m), def.w) : buildModel(m);
   tri += b.triangles;
   lo += b.trianglesLo;
   const s = { x: b.box.max.x - b.box.min.x, y: b.box.max.y - b.box.min.y, z: b.box.max.z - b.box.min.z };
