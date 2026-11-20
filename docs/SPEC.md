@@ -325,6 +325,8 @@ Ces choix d'algorithmes pèsent plus sur la performance que le langage. Ils sont
 - Les tapis roulants sont stockés comme une suite d'écarts entre objets. Faire avancer une ligne revient en général à modifier un seul nombre. Un objet sur un tapis n'est jamais une entité.
 - Un bâtiment qui attend un ingrédient ou de la place en sortie est mis en sommeil et ne fait aucun calcul. Il est réveillé par l'événement qu'il attend.
 - Les unités se déplacent avec des champs de flux (flow fields), calculés par secteur de carte et partagés par toutes les unités qui vont au même endroit. Seuls les secteurs où un bâtiment a été posé ou détruit sont recalculés.
+  - Dans un secteur, chaque case de sortie vers un secteur plus proche du but coûte sa distance octile au but : une unité quitte son secteur du côté de sa destination, pas par le bord le plus proche.
+  - Le champ ne donne que 8 directions. Quand la ligne droite vers la destination passe entre deux directions qui sont toutes deux sur un plus court chemin, l'unité suit la ligne droite au lieu d'avancer en escalier.
 - La recherche de cibles passe par une grille spatiale : une unité ne cherche ses cibles que dans les cases voisines.
 - Les données sont rangées en tableaux contigus par type d'entité, une colonne par propriété, et pas en objets dispersés en mémoire.
 

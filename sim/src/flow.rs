@@ -17,7 +17,7 @@ pub const AT_GOAL: u8 = 8;
 pub struct Goal {
     pub refs: u32,
     pub dist: Vec<u16>,
-    pub fields: BTreeMap<u32, Vec<u8>>,
+    pub fields: BTreeMap<u32, Vec<u16>>,
 }
 
 pub struct Nav {
@@ -320,128 +320,165 @@ pub fn process_dirty(w: &mut World) {
 
 const DIR8: [(i32, i32, u32); 8] = [(1, 0, 10), (1, 1, 14), (0, 1, 10), (-1, 1, 14), (-1, 0, 10), (-1, -1, 14), (0, -1, 10), (1, -1, 14)];
 
-fn compute_field(nav: &Nav, map: &Map, class: usize, goal_tile: usize, dist: &[u16], s: i32) -> Vec<u8> {
+/// Distance octile (pas droit 10, pas diagonal 14) entre deux cases.
+#[inline]
+fn octile(ax: i32, ay: i32, bx: i32, by: i32) -> u32 {
+    let dx = (ax - bx).unsigned_abs();
+    let dy = (ay - by).unsigned_abs();
+    10 * dx.max(dy) + 4 * dx.min(dy)
+}
+
+/// Champ fin d'un secteur : pour chaque case, la direction à suivre (octet bas) et le masque des
+/// directions qui sont toutes sur un plus court chemin (octet haut, voir `flow_cell`).
+///
+/// Les sorties du secteur sont les cases du bord voisines (en 8 directions) d'une région plus
+/// proche du but dans le graphe des régions. Chacune reçoit comme coût le pas de sortie plus la
+/// distance octile de la case voisine au but : l'unité quitte son secteur du côté du but, et pas
+/// par le bord le plus proche (avec un coût uniforme sur tout le bord, une unité au bord droit
+/// d'un secteur envoyée loin à gauche et un peu plus bas partait d'abord en diagonale vers la droite).
+fn compute_field(nav: &Nav, map: &Map, class: usize, goal_tile: usize, dist: &[u16], s: i32) -> Vec<u16> {
+    // le secteur et l'anneau d'une case qui l'entoure, en coordonnées locales (1..=ww, 1..=hh pour le secteur)
+    const L: i32 = SEC + 2;
+    const N: usize = (L * L) as usize;
     let (sx, sy) = ((s % nav.sw) * SEC, (s / nav.sw) * SEC);
     let mask = MASKS[class];
-    let x1 = (sx + SEC).min(map.w);
-    let y1 = (sy + SEC).min(map.h);
-    let loc = |x: i32, y: i32| ((y - sy) * SEC + (x - sx)) as usize;
-    let mut cost = vec![u32::MAX; (SEC * SEC) as usize];
-    let mut seed_dir = vec![NO_DIR; (SEC * SEC) as usize];
-    let mut heap: BinaryHeap<std::cmp::Reverse<(u32, u32)>> = BinaryHeap::new();
+    let ww = (sx + SEC).min(map.w) - sx;
+    let hh = (sy + SEC).min(map.h) - sy;
     let gx = goal_tile as i32 % map.w;
     let gy = goal_tile as i32 / map.w;
-    let node_d = |x: i32, y: i32| -> u16 {
-        let r = nav.region[class][(y * map.w + x) as usize];
-        if r == 255 {
-            return INF;
-        }
-        let ss = (y / SEC) * nav.sw + x / SEC;
-        dist[ss as usize * MAXREG + r as usize]
-    };
-    if gx >= sx && gx < x1 && gy >= sy && gy < y1 && map.pass[goal_tile] & mask != 0 {
-        let l = loc(gx, gy);
-        cost[l] = 0;
-        seed_dir[l] = AT_GOAL;
-        heap.push(std::cmp::Reverse((0, l as u32)));
-    }
-    for y in sy..y1 {
-        for x in sx..x1 {
-            let on_border = x == sx || y == sy || x == x1 - 1 || y == y1 - 1;
-            if !on_border || map.pass[(y * map.w + x) as usize] & mask == 0 {
+    // passabilité et distance de région (graphe des régions) de chaque case locale
+    let mut pass = [false; N];
+    let mut nd = [INF; N];
+    for ly in 0..=hh + 1 {
+        for lx in 0..=ww + 1 {
+            let (x, y) = (sx + lx - 1, sy + ly - 1);
+            if x < 0 || y < 0 || x >= map.w || y >= map.h {
                 continue;
             }
-            let db = node_d(x, y);
-            for (d, &(dx, dy, _)) in DIR8.iter().enumerate().step_by(2) {
-                let (nx, ny) = (x + dx, y + dy);
-                if nx >= sx && nx < x1 && ny >= sy && ny < y1 {
+            let i = (y * map.w + x) as usize;
+            if map.pass[i] & mask == 0 {
+                continue;
+            }
+            let k = (ly * L + lx) as usize;
+            pass[k] = true;
+            let r = nav.region[class][i];
+            if r != 255 {
+                nd[k] = dist[((y / SEC) * nav.sw + x / SEC) as usize * MAXREG + r as usize];
+            }
+        }
+    }
+    let inside = |lx: i32, ly: i32| lx >= 1 && lx <= ww && ly >= 1 && ly <= hh;
+    // un pas en diagonale exige les deux cases orthogonales libres (pas de coin coupé)
+    let step_ok = |k: i32, dx: i32, dy: i32| pass[(k + dy * L + dx) as usize] && (dx == 0 || dy == 0 || (pass[(k + dx) as usize] && pass[(k + dy * L) as usize]));
+    // valeur du voisin de la case locale (lx, ly) dans la direction d : son coût dans le secteur, ou,
+    // hors secteur, sa distance octile au but s'il appartient à une région plus proche du but
+    let neighbor = |cost: &[u32; N], lx: i32, ly: i32, d: usize| -> Option<u32> {
+        let (dx, dy, _) = DIR8[d];
+        let k = ly * L + lx;
+        if !step_ok(k, dx, dy) {
+            return None;
+        }
+        let nk = (k + dy * L + dx) as usize;
+        if inside(lx + dx, ly + dy) {
+            let c = cost[nk];
+            return (c != u32::MAX).then_some(c);
+        }
+        (nd[nk] < nd[k as usize]).then(|| octile(sx + lx - 1 + dx, sy + ly - 1 + dy, gx, gy))
+    };
+    let mut cost = [u32::MAX; N];
+    let mut seed_dir = [NO_DIR; N];
+    let mut heap: BinaryHeap<std::cmp::Reverse<(u32, u32)>> = BinaryHeap::new();
+    let (glx, gly) = (gx - sx + 1, gy - sy + 1);
+    if inside(glx, gly) && map.pass[goal_tile] & mask != 0 {
+        let k = (gly * L + glx) as usize;
+        cost[k] = 0;
+        seed_dir[k] = AT_GOAL;
+        heap.push(std::cmp::Reverse((0, k as u32)));
+    }
+    // sorties : cases du bord voisines d'une région plus proche du but, au coût du pas de sortie
+    // plus la distance octile de la case voisine au but
+    for ly in 1..=hh {
+        for lx in 1..=ww {
+            let k = (ly * L + lx) as usize;
+            if !(lx == 1 || ly == 1 || lx == ww || ly == hh) || !pass[k] || seed_dir[k] == AT_GOAL {
+                continue;
+            }
+            for (d, &(dx, dy, step)) in DIR8.iter().enumerate() {
+                if inside(lx + dx, ly + dy) {
                     continue;
                 }
-                if nx < 0 || ny < 0 || nx >= map.w || ny >= map.h || map.pass[(ny * map.w + nx) as usize] & mask == 0 {
-                    continue;
-                }
-                let dn = node_d(nx, ny);
-                if dn < db {
-                    let c = dn as u32 * 160 + 10;
-                    let l = loc(x, y);
-                    if c < cost[l] {
-                        cost[l] = c;
-                        seed_dir[l] = d as u8;
-                        heap.push(std::cmp::Reverse((c, l as u32)));
+                if let Some(h) = neighbor(&cost, lx, ly, d) {
+                    if h + step < cost[k] {
+                        cost[k] = h + step;
+                        seed_dir[k] = d as u8;
                     }
                 }
             }
+            if seed_dir[k] != NO_DIR {
+                heap.push(std::cmp::Reverse((cost[k], k as u32)));
+            }
         }
     }
-    while let Some(std::cmp::Reverse((c, l))) = heap.pop() {
-        if c > cost[l as usize] {
+    while let Some(std::cmp::Reverse((c, k))) = heap.pop() {
+        if c > cost[k as usize] {
             continue;
         }
-        let x = sx + (l as i32 % SEC);
-        let y = sy + (l as i32 / SEC);
+        let (lx, ly) = (k as i32 % L, k as i32 / L);
         for &(dx, dy, step) in DIR8.iter() {
-            let (nx, ny) = (x + dx, y + dy);
-            if nx < sx || ny < sy || nx >= x1 || ny >= y1 {
+            if !inside(lx + dx, ly + dy) || !step_ok(k as i32, dx, dy) {
                 continue;
             }
-            if map.pass[(ny * map.w + nx) as usize] & mask == 0 {
-                continue;
-            }
-            if dx != 0 && dy != 0 && (map.pass[(y * map.w + nx) as usize] & mask == 0 || map.pass[(ny * map.w + x) as usize] & mask == 0) {
-                continue;
-            }
-            let nl = loc(nx, ny);
+            let nk = (k as i32 + dy * L + dx) as usize;
             let nc = c + step;
-            if nc < cost[nl] {
-                cost[nl] = nc;
-                heap.push(std::cmp::Reverse((nc, nl as u32)));
+            if nc < cost[nk] {
+                cost[nk] = nc;
+                heap.push(std::cmp::Reverse((nc, nk as u32)));
             }
         }
     }
-    // directions : vers le voisin le moins coûteux
-    let mut out = vec![NO_DIR; (SEC * SEC) as usize];
-    for y in sy..y1 {
-        for x in sx..x1 {
-            let l = loc(x, y);
-            if cost[l] == u32::MAX {
+    // direction : vers le voisin de plus faible valeur ; masque : les pas qui restent sur un plus court chemin
+    let mut out = vec![NO_DIR as u16; (SEC * SEC) as usize];
+    for ly in 1..=hh {
+        for lx in 1..=ww {
+            let k = (ly * L + lx) as usize;
+            let o = ((ly - 1) * SEC + lx - 1) as usize;
+            if cost[k] == u32::MAX {
                 continue;
             }
-            if seed_dir[l] == AT_GOAL {
-                out[l] = AT_GOAL;
+            if seed_dir[k] == AT_GOAL {
+                out[o] = AT_GOAL as u16;
                 continue;
             }
-            let mut best = cost[l];
-            let mut bd = seed_dir[l];
-            for (d, &(dx, dy, _)) in DIR8.iter().enumerate() {
-                let (nx, ny) = (x + dx, y + dy);
-                if nx < sx || ny < sy || nx >= x1 || ny >= y1 {
-                    continue;
+            let mut best = u32::MAX;
+            let mut bd = NO_DIR;
+            let mut fan = 0u16;
+            for (d, &(_, _, step)) in DIR8.iter().enumerate() {
+                let Some(c) = neighbor(&cost, lx, ly, d) else { continue };
+                if c + step == cost[k] {
+                    fan |= 1 << d;
                 }
-                if dx != 0 && dy != 0 && (map.pass[(y * map.w + nx) as usize] & mask == 0 || map.pass[(ny * map.w + x) as usize] & mask == 0) {
-                    continue;
-                }
-                let c = cost[loc(nx, ny)];
                 if c < best {
                     best = c;
                     bd = d as u8;
                 }
             }
-            out[l] = bd;
+            out[o] = bd as u16 | fan << 8;
         }
     }
     out
 }
 
-/// Direction (0..7, AT_GOAL ou NO_DIR) du champ du but `key` à la case (x, y).
-pub fn flow_dir(w: &mut World, key: u64, x: i32, y: i32) -> u8 {
+/// Case (x, y) du champ du but `key` : direction (0..7, AT_GOAL ou NO_DIR) et masque des
+/// directions optimales (bit d : un pas dans la direction d reste sur un plus court chemin).
+pub fn flow_cell(w: &mut World, key: u64, x: i32, y: i32) -> (u8, u8) {
     if !w.map.inside(x, y) {
-        return NO_DIR;
+        return (NO_DIR, 0);
     }
     let s = ((y / SEC) * w.nav.sw + x / SEC) as u32;
     let class = ((key >> 32) & 0xff) as usize;
     let tile = (key & 0xffff_ffff) as usize;
     let nav = &mut w.nav;
-    let Some(g) = nav.goals.get(&key) else { return NO_DIR };
+    let Some(g) = nav.goals.get(&key) else { return (NO_DIR, 0) };
     if !g.fields.contains_key(&s) {
         let f = compute_field(nav, &w.map, class, tile, &g.dist, s as i32);
         if let Some(g) = nav.goals.get_mut(&key) {
@@ -451,7 +488,13 @@ pub fn flow_dir(w: &mut World, key: u64, x: i32, y: i32) -> u8 {
     let g = &nav.goals[&key];
     let f = &g.fields[&s];
     let (sx, sy) = ((s as i32 % nav.sw) * SEC, (s as i32 / nav.sw) * SEC);
-    f[((y - sy) * SEC + (x - sx)) as usize]
+    let v = f[((y - sy) * SEC + (x - sx)) as usize];
+    (v as u8, (v >> 8) as u8)
+}
+
+/// Direction (0..7, AT_GOAL ou NO_DIR) du champ du but `key` à la case (x, y).
+pub fn flow_dir(w: &mut World, key: u64, x: i32, y: i32) -> u8 {
+    flow_cell(w, key, x, y).0
 }
 
 /// Vrai si le but est atteignable depuis (x, y).

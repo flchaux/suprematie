@@ -749,3 +749,46 @@ fn cancel_plan_removes_planned_builds_and_ghosts() {
     assert!(w.ghosts.is_empty(), "le bâtiment à reconstruire est oublié");
     assert_eq!(w.units.cold[s].orders.len(), 1);
 }
+
+#[test]
+fn unit_leaves_its_sector_towards_the_goal() {
+    // une unité au bord droit de son secteur (16x16 cases) envoyée loin à gauche part tout de
+    // suite vers la gauche : elle ne va pas d'abord chercher le bord le plus proche de son secteur
+    let mut w0 = World::new(&params(1, 512));
+    w0.infinite_grid = true;
+    flatten(&mut w0, 10, 10, 250, 250);
+    w0.nav = crate::flow::Nav::new(&w0.map);
+    let snap = crate::save::snapshot(&w0);
+    // le char part aussi face à l'est : il reprend sa marche à demi-vitesse dès que son cap est à
+    // moins de 77° du bon, ce qui peut le décaler d'un souffle vers la droite pendant qu'il pivote ;
+    // on tolère alors 1/8 de case (le défaut corrigé, lui, l'envoyait plusieurs cases à droite).
+    // Une unité à pattes tourne en marchant : elle part ici face au sud.
+    for (kind, facing) in [(U_LIGHT_TANK, 16384u16), (U_LIGHT_TANK, 0), (U_LINE_ROBOT, 16384)] {
+        for (tx, ty) in [(111, 104), (108, 100), (104, 104), (111, 96)] {
+            for gdy in [-60, -20, 0, 20, 60] {
+                let mut w = crate::save::restore(&snap).unwrap();
+                let (x0, y0) = (tx * TILE + TILE - 8, ty * TILE + TILE / 2);
+                let s = slot_of(w.spawn_unit(kind, 0, x0, y0));
+                w.units.facing[s] = facing;
+                let (gx, gy) = (30 * TILE, (ty + gdy) * TILE + TILE / 2);
+                w.units.cold[s].orders.push(Order::Move { x: gx, y: gy, gx, gy, attack: false });
+                let slack = if facing == 0 { TILE / 8 } else { 0 };
+                let mut prev_x = x0;
+                for t in 0..400 {
+                    w.step(&[]);
+                    let x = w.units.x[s];
+                    // face au sud : x ne fait que décroître ; face à l'est : jamais plus de `slack` à droite du départ
+                    let ok = if slack == 0 { x <= prev_x } else { x <= x0 + slack };
+                    assert!(ok, "type {kind} parti de ({tx},{ty}) vers {gdy:+} : x passe de {prev_x} à {x} au tick {t}");
+                    prev_x = x;
+                }
+                // et elle avance franchement vers la gauche, à peu près en ligne droite vers le but
+                assert!(prev_x < x0 - 20 * TILE, "type {kind} parti de ({tx},{ty}) vers {gdy:+} : seulement {} cases parcourues", (x0 - prev_x) / TILE);
+                let (ux, uy) = (w.units.x[s] as i64, w.units.y[s] as i64);
+                let cross = ((gx - x0) as i64 * (uy - y0 as i64) - (gy - y0) as i64 * (ux - x0 as i64)).abs();
+                let off = cross / crate::fixed::dist(x0, y0, gx, gy) as i64;
+                assert!(off < 2 * TILE as i64, "type {kind} parti de ({tx},{ty}) vers {gdy:+} : {} cases d'écart à la ligne droite", off / TILE as i64);
+            }
+        }
+    }
+}
