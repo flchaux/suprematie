@@ -1959,6 +1959,60 @@ fn splitter_outputs_are_configurable() {
     assert_eq!(w.buildings[b].dir, 0);
 }
 
+/// Un répartiteur compte comme un tapis pour la forme des tapis voisins : un tapis posé en travers d'une
+/// de ses sorties devient un virage, celui qui part tout droit de son avant reste droit, et l'entrée (un
+/// virage qui débouche à l'arrière) ne change pas. Une sortie coupée par le mode ne compte plus ; un
+/// tapis alimenté par une sortie ne reçoit pas les produits d'un bâtiment voisin.
+#[test]
+fn splitter_outputs_shape_neighbour_belts() {
+    use crate::belts::belt_shape;
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let s = put(&mut w, 0, B_SPLITTER, 100, 100, 0);
+    // entrée : une file qui descend vers le sud puis tourne vers l'est dans l'arrière du répartiteur
+    let top = put(&mut w, 0, B_BELT1, 99, 98, 1);
+    put(&mut w, 0, B_BELT1, 99, 99, 1);
+    let input = put(&mut w, 0, B_BELT1, 99, 100, 0);
+    // sorties gauche (nord) et droite (sud) : des files vers l'est, en travers ; avant : tout droit
+    let left = put(&mut w, 0, B_BELT1, 100, 99, 0);
+    let left2 = put(&mut w, 0, B_BELT1, 101, 99, 0);
+    let right = put(&mut w, 0, B_BELT1, 100, 101, 0);
+    let right2 = put(&mut w, 0, B_BELT1, 101, 101, 0);
+    let front = put(&mut w, 0, B_BELT1, 101, 100, 0);
+    put(&mut w, 0, B_DEPOT, 102, 98, 0);
+    put(&mut w, 0, B_DEPOT, 102, 101, 0);
+    assert_eq!(belt_shape(&w, input), 2, "l'entrée reste un virage alimenté par le nord");
+    assert_eq!(belt_shape(&w, left), 1, "sortie gauche : virage alimenté par le sud");
+    assert_eq!(belt_shape(&w, right), 2, "sortie droite : virage alimenté par le nord");
+    assert_eq!(belt_shape(&w, front), 0, "sortie avant : droit");
+    assert_eq!((belt_shape(&w, left2), belt_shape(&w, right2)), (0, 0));
+    // les objets entrent par la file et sortent des trois côtés
+    let before = w.players[0].stock[IRON_PLATE as usize];
+    for _ in 0..6 {
+        while !crate::belts::put_on_belt(&mut w, top, IRON_PLATE) {
+            w.step(&[]);
+        }
+        run(&mut w, 10);
+    }
+    run(&mut w, 400);
+    assert_eq!(w.players[0].stock[IRON_PLATE as usize] - before, 4, "deux par la gauche, deux par la droite");
+    assert_eq!(w.belts.lines[w.buildings[front].line as usize].items.len(), 2, "deux devant (cul-de-sac)");
+    // gauche et avant seulement : le tapis de droite n'est plus alimenté, il redevient droit
+    w.buildings[s].split = 1;
+    assert_eq!((belt_shape(&w, left), belt_shape(&w, right)), (1, 0));
+    // avant et droite seulement
+    w.buildings[s].split = 2;
+    assert_eq!((belt_shape(&w, left), belt_shape(&w, right)), (0, 2));
+    // une fonderie touche le tapis de droite par le sud : il reste alimenté par le répartiteur, elle n'y
+    // dépose rien ; sans cette sortie, il devient le virage de sortie de la fonderie
+    let f = put(&mut w, 0, B_FURNACE, 100, 102, 0);
+    assert_eq!(belt_shape(&w, right), 2);
+    assert!(crate::buildings::out_belts(&w, f).is_empty(), "la sortie du répartiteur l'emporte");
+    w.buildings[s].split = 1;
+    assert_eq!(belt_shape(&w, right), 1, "virage alimenté par la fonderie");
+    assert_eq!(crate::buildings::out_belts(&w, f), vec![right]);
+}
+
 /// La fonderie s'améliore sur place (automatisation, puis électronique) : elle garde sa recette et va
 /// d'autant plus vite que son niveau est élevé.
 #[test]

@@ -385,6 +385,29 @@ pub fn logistics_demo() -> World {
         put(&mut w, 0, B_BELT1, x, ey, 0);
         put(&mut w, 0, B_BELT1, x, ey + 1, 0);
     }
+    // répartiteur alimenté par un extracteur : la file tourne vers le sud pour entrer par son arrière ; ses
+    // sorties gauche et droite partent vers le sud en virage (il compte comme un tapis pour leur forme),
+    // l'avant tout droit ; trois files jusqu'à deux dépôts
+    let (ex, ey) = (x0 + 58, y0 + 56);
+    for dy in 0..2 {
+        for dx in 0..2 {
+            let i = w.map.idx(ex + dx, ey + dy);
+            w.map.deposit[i] = IRON_ORE;
+        }
+    }
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey });
+    put(&mut w, 0, B_EXTRACTOR, ex, ey, 0);
+    put(&mut w, 0, B_BELT1, ex + 2, ey + 1, 0);
+    put(&mut w, 0, B_BELT1, ex + 3, ey + 1, 0);
+    put(&mut w, 0, B_BELT1, ex + 4, ey + 1, 1);
+    put(&mut w, 0, B_SPLITTER, ex + 4, ey + 2, 1);
+    for x in ex + 3..ex + 6 {
+        for y in ey + if x == ex + 4 { 3 } else { 2 }..ey + 6 {
+            put(&mut w, 0, B_BELT1, x, y, 1);
+        }
+    }
+    put(&mut w, 0, B_DEPOT, ex + 3, ey + 6, 0);
+    put(&mut w, 0, B_DEPOT, ex + 5, ey + 6, 0);
     for _ in 0..20 {
         w.step(&[]);
     }

@@ -1486,6 +1486,16 @@ fn take_output(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
 /// Pousse un objet vers la case (x, y) : tapis ou bâtiment qui l'accepte.
 /// Un tapis de contrôle ne reçoit que par l'arrière : l'objet doit avancer dans sa direction.
 #[inline]
+/// Sorties d'un répartiteur selon son mode, en indices de [gauche, avant, droite] : 0 les trois,
+/// 1 gauche et avant, 2 avant et droite.
+pub fn splitter_outs(split: u8) -> &'static [usize] {
+    match split {
+        1 => &[0, 1],
+        2 => &[1, 2],
+        _ => &[0, 1, 2],
+    }
+}
+
 pub fn router_entry_ok(bb: &Building, travel_dir: u8) -> bool {
     bb.def().class != BClass::Router || bb.dir & 3 == travel_dir & 3
 }
@@ -1597,11 +1607,7 @@ fn tick_router(w: &mut World, b: usize) {
     let item = bb.stash[0] as u8;
     let outs = [(d + 3) % 4, d, (d + 1) % 4]; // gauche, avant, droite
     // répartiteur : ses sorties (les trois, ou un angle et l'avant), servies à tour de rôle
-    let split_outs: &[usize] = match w.buildings[b].split {
-        1 => &[0, 1],
-        2 => &[1, 2],
-        _ => &[0, 1, 2],
-    };
+    let split_outs = splitter_outs(w.buildings[b].split);
     let mut rot = [0usize; 3];
     let order: &[usize] = match kind {
         B_SPLITTER => {

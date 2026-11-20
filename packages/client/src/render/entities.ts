@@ -13,6 +13,7 @@ import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
 import { ITEM_MODELS } from "../../../../assets/models/items.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
 import { Effects } from "./effects.ts";
+import { sideFeeds, splitterOuts } from "../game/belts.ts";
 import { sprite } from "../ui/sprites.ts";
 
 const TILE = 256;
@@ -742,11 +743,15 @@ export class Entities {
     const walls = new Map<number, number>();
     // tapis du sol terminés : case -> direction (goulottes des extracteurs)
     const groundBelts = new Map<number, number>();
+    // répartiteurs terminés : case -> sorties (masque de directions), comptés comme des tapis pour les jonctions
+    const splitterOutsAt = new Map<number, number>();
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-      const cls = this.data.buildings[buf[o + 1] & 0xff]?.cls;
+      const bd = this.data.buildings[buf[o + 1] & 0xff];
+      const cls = bd?.cls;
       if (cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
       else if (cls === BClass.Belt && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0) groundBelts.set(buf[o + 2] >>> 0, (buf[o + 1] >> 16) & 3);
+      else if (bd?.key === "splitter" && buf[o + 4] >= 65536) splitterOutsAt.set(buf[o + 2] >>> 0, splitterOuts((buf[o + 1] >> 16) & 3, (buf[o + 5] >>> 24) & 3));
     }
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
@@ -779,7 +784,7 @@ export class Entities {
       // extracteur, dépôt ou générateur amélioré : modèle de son niveau
       const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power || def.key === "splitter" || def.key === "furnace" ? (buf[o + 5] >>> 24) & 3 : 0;
       // tapis droit au sol rejoint par le côté : variante au rebord ouvert (jonction en T continue)
-      const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts) : undefined;
+      const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts, splitterOutsAt) : undefined;
       // rail en virage : forme 1 + c (simulation, d'après les rails voisins) reliant les côtés c et c + 1 ;
       // le modèle relie l'arrière (côté dir + 2) et la gauche (côté dir + 1) : dir = c + 3
       const railShape = def.cls === BClass.Rail ? buf[o + 5] & 7 : 0;
@@ -1532,25 +1537,21 @@ export class Entities {
 
   /**
    * Variante d'un tapis droit en (x, z), tourné vers `dir`, rejoint par le côté : un tapis au sol voisin,
-   * perpendiculaire, qui pointe vers lui (`belts` : case x | z << 16 -> direction). Indéfini sinon.
+   * perpendiculaire, qui pointe vers lui, ou une sortie de répartiteur (`belts` : case x | z << 16 ->
+   * direction ; `splitters` : case -> sorties). Indéfini sinon.
    */
-  private beltJunction(kind: number, x: number, z: number, dir: number, belts: Map<number, number>): KindMesh | undefined {
+  private beltJunction(kind: number, x: number, z: number, dir: number, belts: Map<number, number>, splitters: Map<number, number>): KindMesh | undefined {
     const set = this.beltJunctions.get(kind);
     if (!set) return undefined;
-    const DX = [1, 0, -1, 0];
-    const DZ = [0, 1, 0, -1];
-    // repère du modèle : tourné de yaw = π/2 - dir·π/2 (voir le placement des bâtiments) ; -x à gauche
-    const yaw = Math.PI / 2 - (dir * Math.PI) / 2;
-    let neg = false;
-    let pos = false;
-    for (const s of [(dir + 1) & 3, (dir + 3) & 3]) {
-      const nx = x + DX[s];
-      const nz = z + DZ[s];
-      if (nx < 0 || nz < 0 || belts.get(nx | (nz << 16)) !== ((s + 2) & 3)) continue;
-      const mx = Math.round(DX[s] * Math.cos(yaw) - DZ[s] * Math.sin(yaw));
-      if (mx < 0) neg = true;
-      else pos = true;
-    }
+    const inside = (nx: number, nz: number) => nx >= 0 && nz >= 0;
+    const m = sideFeeds(x, z, dir, {
+      belt: (nx, nz) => (inside(nx, nz) ? belts.get(nx | (nz << 16)) : undefined),
+      splitter: (nx, nz) => (inside(nx, nz) ? (splitters.get(nx | (nz << 16)) ?? 0) : 0),
+    });
+    // repère du modèle (tourné de π/2 - dir·π/2, voir le placement des bâtiments) : le côté dir + 1 est
+    // à gauche (-x), le côté dir + 3 à droite (+x)
+    const neg = (m & 1) !== 0;
+    const pos = (m & 2) !== 0;
     return neg && pos ? set[2] : neg ? set[0] : pos ? set[1] : undefined;
   }
 
