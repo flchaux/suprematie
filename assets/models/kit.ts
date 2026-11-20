@@ -126,6 +126,19 @@ export const KIT: Record<string, Part[]> = {
     { shape: "torus", radius: 0.505, tube: 0.02, sides: 12, pos: [0, 0.3, 0], color: "metal", fine: true },
     { shape: "torus", radius: 0.505, tube: 0.02, sides: 12, pos: [0, 0.6, 0], color: "metal", fine: true },
   ],
+  // Trappe d'entrée ou de sortie des objets, en unités de case, face vers +z, origine sur la paroi au
+  // centre de la trappe. Le jeu la pose sur chaque case de bord des bâtiments qui reçoivent des objets
+  // (voir withHatches) : plaque d'acier, volet sombre en retrait, cadre en saillie, seuil rayé. Ouverte,
+  // le jeu allume le pourtour du volet (cyan : entrée, ambre : sortie) et creuse l'ouverture.
+  trappe: [
+    { shape: "box", size: [0.6, 0.4, 0.04], color: "steel" },
+    { shape: "box", size: [0.46, 0.26, 0.03], pos: [0, 0, 0.03], color: "dark" },
+    { shape: "box", size: [0.6, 0.06, 0.05], pos: [0, 0.17, 0.045], color: "steel", fine: true },
+    { shape: "box", size: [0.6, 0.06, 0.05], pos: [0, -0.17, 0.045], color: "hazard", fine: true },
+    { shape: "box", size: [0.07, 0.28, 0.05], pos: [0.265, 0, 0.045], color: "steel", mirror: true, fine: true },
+    { shape: "box", size: [0.42, 0.02, 0.012], pos: [0, 0.06, 0.051], color: "metal", fine: true },
+    { shape: "box", size: [0.42, 0.02, 0.012], pos: [0, -0.06, 0.051], color: "metal", fine: true },
+  ],
   // Volant de vanne (axe y) de rayon 0,1 sur sa tige (pièce fine)
   vanne: [
     { shape: "cylinder", sides: 6, radius: 0.025, height: 0.12, pos: [0, 0.06, 0], color: "metal", fine: true },

@@ -43,6 +43,8 @@ export const BClass = {
 export const NATURE_TEAM = 8;
 /** Couleur des bêtes et des nids de la faune (brun de terre, distinct des 8 couleurs de joueur). */
 export const NATURE_COLOR = 0x8f6a4a;
+/** Bâtiments qui reçoivent des objets (tapis, bras, transfert direct) : leurs modèles portent des trappes. */
+export const RECEIVER_CLASSES: ReadonlySet<number> = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad, BClass.Power]);
 export const Layer = { Land: 0, Hover: 1, Naval: 2, Sub: 3, Air: 4 } as const;
 export const Factory = { None: 0, Land: 1, Air: 2, Naval: 3, Exp: 4 } as const;
 export const RECIPE_NONE = 255;
