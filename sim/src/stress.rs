@@ -385,6 +385,38 @@ pub fn logistics_demo() -> World {
         put(&mut w, 0, B_BELT1, x, ey, 0);
         put(&mut w, 0, B_BELT1, x, ey + 1, 0);
     }
+    // machines jumelles : deux paires d'assembleurs d'engrenages collés, nourries par un seul tapis
+    // (dépôt amélioré qui rend des plaques) qui entre dans la première de chaque paire.
+    // - à gauche, chacune a son tapis de sortie vers un dépôt : chacune sort sur le sien ;
+    // - à droite, seule la seconde a un tapis de sortie : la première sort par sa voisine.
+    let gear = RECIPES.iter().position(|r| r.key == "gear").unwrap_or(0) as u8;
+    let (tx, ty) = (x0 + 66, y0 + 54);
+    for (px, both) in [(tx, true), (tx + 10, false)] {
+        let d = put(&mut w, 0, B_DEPOT, px, ty - 6, 0);
+        if d != usize::MAX {
+            w.buildings[d].level = 1;
+            w.buildings[d].filters = vec![IRON_PLATE];
+            w.players[0].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
+        }
+        for y in ty - 4..ty {
+            put(&mut w, 0, B_BELT1, px, y, 1);
+        }
+        for m in [put(&mut w, 0, B_ASSEMBLER1, px, ty, 0), put(&mut w, 0, B_ASSEMBLER1, px + 2, ty, 0)] {
+            if m != usize::MAX {
+                w.buildings[m].recipe = gear;
+                w.buildings[m].repeat = true;
+            }
+        }
+        for (bx, dx) in [(px, px), (px + 3, px + 2)] {
+            if bx == px && !both {
+                continue;
+            }
+            for y in ty + 2..ty + 7 {
+                put(&mut w, 0, B_BELT1, bx, y, 1);
+            }
+            put(&mut w, 0, B_DEPOT, dx, ty + 7, 0);
+        }
+    }
     for _ in 0..20 {
         w.step(&[]);
     }

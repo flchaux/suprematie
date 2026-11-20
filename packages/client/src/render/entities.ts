@@ -299,7 +299,7 @@ export class Entities {
   private hatchFor: Frame | null = null;
   /** bâtiments sans trappe dans leur modèle (aucune paroi) : tables vides, par largeur */
   private noHatches: Float32Array[] = [];
-  /** conduites entre machines jumelles (ingrédients partagés) : gaine et liseré lumineux */
+  /** conduites entre machines jumelles (ingrédients et produits partagés) : gaine et liseré lumineux */
   twinPipe: THREE.InstancedMesh;
   twinGlow: THREE.InstancedMesh;
   /** icônes de production sur les toits : un maillage instancié par icône, et les pastilles de fond */
@@ -1416,7 +1416,7 @@ export class Entities {
             if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
             else if (inside(ox + r * DX[p], oz + r * DZ[p])) state = 2;
           }
-          // transfert direct avec un bâtiment collé ; machine jumelle (3) : ingrédients partagés
+          // transfert direct avec un bâtiment collé ; machine jumelle (3) : ingrédients et produits partagés
           if (state === 0) {
             const nb = cells.get(oz * W + ox);
             if (nb !== undefined && nb !== o && twins(o, nb)) state = 3;
