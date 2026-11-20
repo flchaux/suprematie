@@ -3,9 +3,9 @@
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
-import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, instancedBufferAttribute, normalView } from "three/tsl";
-import { BUILDING_FILL, buildingScale, buildModel, fallbackModel, PLAYER_COLORS } from "../models/generator.ts";
+import { buildingScale, buildModel, fallbackModel, hatchFace, HATCH_Y, PLAYER_COLORS, withHatches } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -116,14 +116,14 @@ class KindMesh {
 }
 
 /** Bâtiments qui reçoivent des objets (et ont donc des trappes) ; ce sont aussi ceux qui reçoivent par transfert direct. */
-const RECEIVERS = new Set<number>([BClass.Crafter, BClass.Lab, BClass.Depot, BClass.Factory, BClass.Silo, BClass.AntiMissile, BClass.Warehouse, BClass.Station, BClass.CargoPad, BClass.Power]);
+const RECEIVERS = RECEIVER_CLASSES;
 const RECIPE_NONE = 255;
+/** trappe ouverte logée dans la trappe du modèle : échelles du cadre lumineux (0,64 x 0,44 -> 0,46 x 0,28) et de l'ouverture (0,5 x 0,3 -> 0,38 x 0,2) */
+const FITTED_GLOW = new THREE.Vector3(0.46 / 0.64, 0.28 / 0.44, 0.1);
+const FITTED_HOLE = new THREE.Vector3(0.38 / 0.5, 0.2 / 0.3, 0.1);
 /** teinte d'un bâtiment en cours d'amélioration (chantier ambre) */
 const UPGRADE_TINT = new THREE.Color(0xffc266);
 const CRAFTER_ASSEMBLER = 1;
-/** trappes : départ du rayon devant la face nominale, et retrait maximal vers la paroi du modèle (cases) */
-const HATCH_OUT = 0.15;
-const HATCH_MAX_INSET = 0.5;
 
 const tmpM = new THREE.Matrix4();
 const tmpM2 = new THREE.Matrix4();
@@ -291,11 +291,12 @@ export class Entities {
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
   anim = new Map<number, { phase: number; torso: number; seen: number }>();
   animFrame = 0;
-  /** trappes des bâtiments qui reçoivent des objets : fermées, ou ouvertes (entrée cyan, sortie ambre) */
-  hatchClosed: THREE.InstancedMesh;
+  /** trappes ouvertes des bâtiments qui reçoivent des objets (entrée cyan, sortie ambre) ; les fermées sont dans leur modèle */
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
   private hatchFor: Frame | null = null;
+  /** bâtiments sans trappe dans leur modèle (aucune paroi) : tables vides, par largeur */
+  private noHatches: Float32Array[] = [];
   /** conduites entre machines jumelles (ingrédients partagés) : gaine et liseré lumineux */
   twinPipe: THREE.InstancedMesh;
   twinGlow: THREE.InstancedMesh;
@@ -306,8 +307,6 @@ export class Entities {
   private logoYaw = 0;
   /** hauteur du toit au centre de chaque type de bâtiment (à l'échelle), calculée à la demande */
   private roofCache = new Map<number, number>();
-  /** retrait des trappes vers la surface du modèle, par type de bâtiment et niveau (voir hatchInsets) */
-  private hatchInsetCache = new Map<number, Float32Array>();
   playerColor: number[] = [];
 
   constructor(
@@ -322,15 +321,17 @@ export class Entities {
     }
     const bScale = (b: (typeof data.buildings)[number]) => (built: Built) => buildingScale(b.w, built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z, b.reach);
     for (const b of data.buildings) {
+      // bâtiments qui reçoivent des objets : leurs trappes (fermées) font partie du modèle
+      const hatched = (built: Built) => (RECEIVERS.has(b.cls) && b.w === b.h && b.w > 1 ? withHatches(built, b.w) : built);
       if (b.cls === BClass.Belt) {
         const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(0.4));
         this.buildingMeshes.push(new KindMesh(this.group, built, bScale(b)(built), TEX_PER_TILE_BUILDING));
-      } else this.buildingMeshes.push(new KindMesh(this.group, () => buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4)), bScale(b), TEX_PER_TILE_BUILDING));
+      } else this.buildingMeshes.push(new KindMesh(this.group, () => hatched(buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4))), bScale(b), TEX_PER_TILE_BUILDING));
       const km = this.buildingMeshes[this.buildingMeshes.length - 1];
       const lv: KindMesh[] = [];
       for (let n = 2; BUILDING_MODELS[`${b.key}_n${n}`]; n++) {
         const desc = BUILDING_MODELS[`${b.key}_n${n}`];
-        lv.push(new KindMesh(this.group, () => buildModel(desc), bScale(b), TEX_PER_TILE_BUILDING));
+        lv.push(new KindMesh(this.group, () => hatched(buildModel(desc)), bScale(b), TEX_PER_TILE_BUILDING));
       }
       if (lv.length) this.levelMeshes.set(this.buildingMeshes.length - 1, lv);
       // tapis : virages (objets entrant par la gauche, par la droite), à l'échelle du tapis droit
@@ -437,15 +438,14 @@ export class Entities {
     this.wrecks.count = 0;
     this.wrecks.frustumCulled = false;
     this.wrecks.castShadow = true;
-    // trappes : plaque fermée ; ouverte = cadre lumineux coloré autour d'une ouverture sombre
+    // trappes ouvertes : pourtour lumineux coloré autour d'une ouverture sombre
     const HATCH_MAX = 6000;
-    this.hatchClosed = new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.4, 0.05), new THREE.MeshStandardNodeMaterial({ color: 0x3a434e, roughness: 0.55, metalness: 0.5 }), HATCH_MAX);
     this.hatchFrame = new THREE.InstancedMesh(new THREE.BoxGeometry(0.64, 0.44, 0.04), new THREE.MeshBasicNodeMaterial({}), HATCH_MAX);
     this.hatchHole = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.3, 0.05), new THREE.MeshBasicNodeMaterial({ color: 0x06090d }), HATCH_MAX);
     this.hatchFrame.setColorAt(0, new THREE.Color());
     this.twinPipe = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardNodeMaterial({ color: 0x4a5560, roughness: 0.45, metalness: 0.6 }), 3000);
     this.twinGlow = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0.3, 1.8, 0.6) }), 3000);
-    for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole, this.twinPipe, this.twinGlow]) {
+    for (const m of [this.hatchFrame, this.hatchHole, this.twinPipe, this.twinGlow]) {
       m.count = 0;
       m.frustumCulled = false;
       this.group.add(m);
@@ -1252,7 +1252,7 @@ export class Entities {
    */
   private updateHatches(f: Frame, strategic: boolean, myTeam: number, spectator: boolean): void {
     if (strategic) {
-      this.hatchClosed.count = this.hatchFrame.count = this.hatchHole.count = 0;
+      this.hatchFrame.count = this.hatchHole.count = 0;
       this.twinPipe.count = this.twinGlow.count = 0;
       this.hatchFor = null;
       return;
@@ -1332,8 +1332,7 @@ export class Entities {
       const def = this.data.buildings[kind];
       topOut[0] = Number.NaN;
       if (def.w !== def.h) return 0;
-      const face = 0.52 - (def.w * (1 - BUILDING_FILL)) / 2;
-      const insets = this.hatchInsets(kind, def.cls === BClass.Depot || def.cls === BClass.Power ? (buf[b + 5] >>> 24) & 3 : 0, def.w, face);
+      const insets = this.hatchInsets(kind, def.cls === BClass.Depot || def.cls === BClass.Power ? (buf[b + 5] >>> 24) & 3 : 0, def.w);
       const dir = (buf[b + 1] >> 16) & 3;
       // côté et case correspondants du modèle : rotation inverse (-yaw) de la normale et du centre de la case
       const yaw = Math.PI / 2 - (dir * Math.PI) / 2;
@@ -1362,7 +1361,6 @@ export class Entities {
       return false;
     };
     const twinCol = new THREE.Color(0.3, 1.8, 0.6);
-    let nc = 0;
     let no = 0;
     let nt = 0;
     o = f.buildingOff;
@@ -1379,7 +1377,9 @@ export class Entities {
       const h = dir & 1 ? def.w : def.h;
       const inside = (x: number, z: number) => x >= bx && x < bx + w && z >= bz && z < bz + h;
       // face du modèle, depuis le centre de la case de bord (le modèle laisse une marge sur l'emprise)
-      const face = 0.52 - (def.w * (1 - BUILDING_FILL)) / 2;
+      const face = hatchFace(def.w);
+      // base du modèle (comme le bâtiment : sol en son centre, ou surface de l'eau)
+      const base = def.water ? this.map.waterLevel * HSCALE : groundHeight(this.map, bx + w / 2, bz + h / 2);
       for (let side = 0; side < 4; side++) {
         const n = side & 1 ? w : h; // cases le long de la face
         for (let k = 0; k < n; k++) {
@@ -1424,23 +1424,23 @@ export class Entities {
               else if (inside(lx + 2 * DX[p], lz + 2 * DZ[p])) state = 2;
             }
           }
-          let inset = 0;
+          // fermée : la trappe du modèle suffit
+          if (state === 0) continue;
           const v = insetAt(o, side, ex, ez);
           const myTop = topOut[0];
-          // pas de paroi derrière : une trappe fermée n'a rien à fermer ; une ouverte reste au bord
-          if (Number.isNaN(v)) {
-            if (state === 0) continue;
-          } else inset = Math.max(-HATCH_OUT, v - 0.03);
+          // la paroi porte la trappe du modèle (l'éclairage s'y loge) ; sans paroi, la trappe ouverte reste au bord
+          const fitted = !Number.isNaN(v);
+          const inset = fitted ? v : 0;
           const px = ex + 0.5 + DX[side] * (face - inset);
           const pz = ez + 0.5 + DZ[side] * (face - inset);
           // jumelles : une conduite relie les deux trappes, tracée une fois (depuis la plus petite référence)
           if (state === 3 && nt < 3000) {
             const nb = cells.get(oz * W + ox)!;
             if (buf[o] >>> 0 < buf[nb] >>> 0) {
-              const nface = 0.52 - (this.data.buildings[buf[nb + 1] & 0xff].w * (1 - BUILDING_FILL)) / 2;
+              const nface = hatchFace(this.data.buildings[buf[nb + 1] & 0xff].w);
               const nv = insetAt(nb, (side + 2) % 4, ox, oz);
               const nTop = topOut[0];
-              const ninset = Number.isNaN(nv) ? 0 : Math.max(-HATCH_OUT, nv - 0.03);
+              const ninset = Number.isNaN(nv) ? 0 : nv;
               // passerelle posée sur le haut des deux parois, de l'une à l'autre (visible d'en haut)
               const a = face - inset;
               const b = 1 - (nface - ninset);
@@ -1458,31 +1458,28 @@ export class Entities {
               nt++;
             }
           }
-          const y = groundHeight(this.map, px, pz) + 0.3;
+          if (no >= 6000) continue;
+          const y = (fitted ? base : groundHeight(this.map, px, pz)) + HATCH_Y;
           q.setFromAxisAngle(UP, [Math.PI / 2, 0, -Math.PI / 2, Math.PI][side]);
-          if (state === 0) {
-            if (nc >= 6000) continue;
-            tmpM.compose(tmpV.set(px, y, pz), q, one);
-            this.hatchClosed.setMatrixAt(nc++, tmpM);
-          } else {
-            if (no >= 6000) continue;
-            tmpM.compose(tmpV.set(px, y, pz), q, one);
-            this.hatchFrame.setMatrixAt(no, tmpM);
-            this.hatchFrame.setColorAt(no, state === 1 ? inCol : state === 3 ? twinCol : outCol);
-            tmpM.compose(tmpV.set(px + DX[side] * 0.012, y, pz + DZ[side] * 0.012), q, one);
-            this.hatchHole.setMatrixAt(no, tmpM);
-            no++;
-          }
+          // dans la trappe du modèle (kit « trappe ») : pourtour lumineux sur le volet, ouverture sombre
+          // devant, le tout en retrait du cadre ; sans paroi : cadre lumineux complet au bord
+          const glowAt = fitted ? 0.06 : 0;
+          const holeAt = fitted ? 0.065 : 0.012;
+          tmpM.compose(tmpV.set(px + DX[side] * glowAt, y, pz + DZ[side] * glowAt), q, fitted ? FITTED_GLOW : one);
+          this.hatchFrame.setMatrixAt(no, tmpM);
+          this.hatchFrame.setColorAt(no, state === 1 ? inCol : state === 3 ? twinCol : outCol);
+          tmpM.compose(tmpV.set(px + DX[side] * holeAt, y, pz + DZ[side] * holeAt), q, fitted ? FITTED_HOLE : one);
+          this.hatchHole.setMatrixAt(no, tmpM);
+          no++;
         }
       }
     }
-    this.hatchClosed.count = nc;
     this.hatchFrame.count = no;
     this.hatchHole.count = no;
     this.twinPipe.count = this.twinGlow.count = nt;
     this.twinPipe.instanceMatrix.needsUpdate = true;
     this.twinGlow.instanceMatrix.needsUpdate = true;
-    for (const m of [this.hatchClosed, this.hatchFrame, this.hatchHole]) m.instanceMatrix.needsUpdate = true;
+    for (const m of [this.hatchFrame, this.hatchHole]) m.instanceMatrix.needsUpdate = true;
     if (this.hatchFrame.instanceColor) this.hatchFrame.instanceColor.needsUpdate = true;
   }
 
@@ -1510,62 +1507,12 @@ export class Entities {
   }
 
   /**
-   * Hauteur du toit d'un bâtiment à son centre : la face la plus haute du modèle qui recouvre le
-   * point central (et non le sommet d'une cheminée ou d'une antenne posée à côté).
+   * Retrait (en cases) de chaque trappe depuis sa face nominale jusqu'à la paroi du modèle qui la porte,
+   * puis hauteur du haut de cette paroi : voir BuiltModel.hatches (mesuré à la construction du modèle).
    */
-  /**
-   * Retrait (en cases) de chaque trappe depuis sa face nominale jusqu'à la paroi du modèle, mesuré
-   * au rayon sur le modèle non tourné : 4 côtés du modèle (+x, +z, -x, -z) × `w` cases. Un modèle
-   * plus étroit que son emprise (dôme, cuve, octogone) aurait sinon des trappes posées dans le vide.
-   * NaN : pas de paroi assez proche derrière la trappe. Suivent (4 × `w` valeurs) la hauteur du haut de
-   * la paroi juste derrière chaque trappe (conduites des machines jumelles), NaN si rien.
-   */
-  private hatchInsets(kind: number, lvl: number, w: number, face: number): Float32Array {
-    const key = kind * 8 + lvl;
-    const hit = this.hatchInsetCache.get(key);
-    if (hit) return hit;
+  private hatchInsets(kind: number, lvl: number, w: number): Float32Array {
     const km = (lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind];
-    const out = new Float32Array(8 * w).fill(Number.NaN);
-    if (km) {
-      const mesh = new THREE.Mesh(km.built.body, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
-      mesh.scale.setScalar(km.scale);
-      mesh.updateMatrixWorld(true);
-      const rc = new THREE.Raycaster();
-      const from = new THREE.Vector3();
-      const towards = new THREE.Vector3();
-      const d = w / 2 - 0.5 + face;
-      for (let side = 0; side < 4; side++) {
-        const nx = [1, 0, -1, 0][side];
-        const nz = [0, 1, 0, -1][side];
-        towards.set(-nx, 0, -nz);
-        for (let k = 0; k < w; k++) {
-          const t = k - (w - 1) / 2;
-          const ds: number[] = [];
-          for (const dy of [0.15, 0.3, 0.45]) {
-            for (const dt of [-0.2, 0, 0.2]) {
-              // départ un peu dehors : une paroi qui dépasse la face nominale compte aussi
-              from.set(nx * (d + HATCH_OUT) + (side & 1 ? t + dt : 0), dy, nz * (d + HATCH_OUT) + (side & 1 ? 0 : t + dt));
-              rc.set(from, towards);
-              rc.far = HATCH_OUT + HATCH_MAX_INSET;
-              const h = rc.intersectObject(mesh, false)[0];
-              ds.push(h ? h.distance - HATCH_OUT : Number.POSITIVE_INFINITY);
-            }
-          }
-          ds.sort((a, b) => a - b);
-          const med = ds[ds.length >> 1];
-          if (Number.isFinite(med)) out[side * w + k] = med;
-          // haut de la paroi : rayon vertical juste derrière la paroi
-          const back = d - Math.max(0, Number.isFinite(med) ? med : 0) - 0.12;
-          rc.set(from.set(nx * back + (side & 1 ? t : 0), 20, nz * back + (side & 1 ? 0 : t)), towards.set(0, -1, 0));
-          rc.far = 30;
-          const top = rc.intersectObject(mesh, false)[0];
-          if (top) out[4 * w + side * w + k] = top.point.y;
-          towards.set(-nx, 0, -nz);
-        }
-      }
-    }
-    this.hatchInsetCache.set(key, out);
-    return out;
+    return km?.built.hatches ?? (this.noHatches[w] ??= new Float32Array(8 * w).fill(Number.NaN));
   }
 
   /**
@@ -1592,6 +1539,10 @@ export class Entities {
     return neg && pos ? set[2] : neg ? set[0] : pos ? set[1] : undefined;
   }
 
+  /**
+   * Hauteur du toit d'un bâtiment à son centre : la face la plus haute du modèle qui recouvre le
+   * point central (et non le sommet d'une cheminée ou d'une antenne posée à côté).
+   */
   private roofHeight(kind: number, lvl = 0): number {
     const key = kind * 8 + lvl;
     const hit = this.roofCache.get(key);

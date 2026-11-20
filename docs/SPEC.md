@@ -373,7 +373,8 @@ Les modèles sont décrits en données à partir d'un kit de formes simples, et 
 - Les éléments fréquents sont des sous-ensembles réutilisables : chenilles, tourelles, canons, réacteurs, socles de bâtiments.
 - Les pièces mobiles sont marquées `pivot`, et les pièces qu'elles portent sont marquées `parent`. Le jeu les fait tourner lui-même, sans animation par squelette.
 - La palette compte 6 à 8 couleurs communes plus une couleur par joueur, soit 8 couleurs de joueur. Avec une seule faction, toutes les unités partagent le même kit.
-- Budget : une unité compte au plus 2 500 triangles de près et 1 000 de loin ; un bâtiment au plus 4 000 de près et 1 600 de loin. La plupart des unités anciennes comptent 300 à 500 triangles.
+- Trappes : les bâtiments qui reçoivent des objets (fabricants, laboratoires, dépôts, usines, générateurs, silos, entrepôts, gares, héliports) portent une trappe fermée (sous-ensemble `trappe` du kit) sur chaque case de bord de chaque côté. Le générateur la pose sur la paroi du modèle (`withHatches`), trouvée au rayon à 0,3 case du sol ; une case sans paroi proche n'a pas de trappe. Ses descriptions ne dessinent donc pas de trappe. En jeu, une trappe ouverte allume le pourtour de son volet (cyan : entrée, ambre : sortie, vert : machines jumelles) et creuse l'ouverture, au même endroit.
+- Budget : une unité compte au plus 2 500 triangles de près et 1 000 de loin ; un bâtiment au plus 4 000 de près et 1 600 de loin, plus ses trappes (96 triangles de près et 24 de loin chacune). La plupart des unités anciennes comptent 300 à 500 triangles.
 - Mesure de novembre 2026 (mode démo, 8 000 unités) : 60 à 80 appels de dessin et 1 à 1,9 million de triangles par image, ombres comprises. Des modèles cinq fois plus lourds portent ce total à 2,5 à 6,3 millions, sans changer le temps processeur : la limite est la carte graphique, d'où la version allégée au loin.
 
 Exemple de description d'une unité :

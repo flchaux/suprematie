@@ -1,7 +1,8 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
 // ?set=units|buildings|items|decor  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
 import * as THREE from "three/webgpu";
-import { buildModel, fallbackModel, PLAYER_COLORS } from "../../packages/client/src/models/generator.ts";
+import { buildModel, fallbackModel, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
+import { RECEIVER_CLASSES } from "../../packages/shared/src/data.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
 import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src/render/textures.ts";
 import { UNIT_MODELS } from "../../assets/models/units.ts";
@@ -15,14 +16,14 @@ import { NATURE_COLOR } from "../../packages/shared/src/data.ts";
 const params = new URLSearchParams(location.search);
 const set = params.get("set") ?? "units";
 const only = params.get("only")?.split(",");
-const defs: { key: string; name: string; size: number; w: number; h: number }[] =
+const defs: { key: string; name: string; size: number; w: number; h: number; cls?: number }[] =
   set === "decor"
     ? Object.keys(DECOR_MODELS).map((k) => ({ key: k, name: k, size: DECOR_KINDS[k as DecorKind]?.size[1] ?? 1, w: 0, h: 0 }))
     : set === "units"
     ? data.units.map((u: { key: string; name: string; radius: number }) => ({ key: u.key, name: u.name, size: Math.max(0.6, (u.radius * 2.4) / 256), w: 0, h: 0 }))
     : set === "items"
       ? data.items.slice(1).map((it: { key: string; name: string }) => ({ key: it.key, name: it.name, size: 1, w: 0, h: 0 }))
-      : data.buildings.map((b: { key: string; name: string; w: number; h: number; reach?: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h) * Math.max(1, b.reach ?? 1), w: b.w, h: b.h }));
+      : data.buildings.map((b: { key: string; name: string; w: number; h: number; reach?: number; cls: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h) * Math.max(1, b.reach ?? 1), w: b.w, h: b.h, cls: b.cls }));
 const models = set === "decor" ? DECOR_MODELS : set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
 // variantes de modèles sans définition propre (virages des tapis…) : affichées si demandées par leur clé
 // (un modèle de niveau amélioré, clé_n2…, prend la taille de son bâtiment)
@@ -98,7 +99,9 @@ if (set === "decor") {
 }
 if (set !== "decor") list.forEach((d, i) => {
   const desc = models[d.key];
-  const built = buildModel(desc ?? fallbackModel());
+  // bâtiments qui reçoivent des objets : avec leurs trappes, comme en jeu
+  const bare = buildModel(desc ?? fallbackModel());
+  const built = set === "buildings" && d.cls !== undefined && RECEIVER_CLASSES.has(d.cls) && d.w === d.h && d.w > 1 ? withHatches(bare, d.w) : bare;
   const size = new THREE.Vector3();
   built.box.getSize(size);
   const target = set === "units" ? Math.min(d.size, cell * 0.75) : Math.min(d.size, cell * 0.9);

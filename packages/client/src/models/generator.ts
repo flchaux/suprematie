@@ -63,6 +63,12 @@ export interface BuiltModel {
   triangles: number;
   /** triangles sans les pièces fines */
   trianglesLo: number;
+  /**
+   * Bâtiments à trappes (voir withHatches) : pour chaque côté du modèle (+x, +z, -x, -z) et chaque case
+   * de bord (`w` par côté), retrait de la paroi depuis la face nominale (cases ; NaN : pas de trappe),
+   * puis (4 × `w` valeurs) la hauteur du haut de cette paroi (cases ; NaN si rien).
+   */
+  hatches?: Float32Array;
 }
 
 const DEG = Math.PI / 180;
@@ -658,7 +664,6 @@ export function buildModel(model: Model): BuiltModel {
   return built;
 }
 
-/** Modèle de secours : une boîte aux couleurs du joueur. */
 /** Part de l'emprise couverte par un bâtiment de plusieurs cases (marge pour distinguer les voisins). */
 export const BUILDING_FILL = 0.94;
 
@@ -675,6 +680,103 @@ export function buildingScale(w: number, sx: number, sz: number, reach = 1): num
   return (w * BUILDING_FILL) / m;
 }
 
+/** Trappes : hauteur de leur centre, départ du rayon devant la face nominale, retrait maximal vers la paroi (cases). */
+export const HATCH_Y = 0.3;
+const HATCH_OUT = 0.15;
+const HATCH_MAX_INSET = 0.5;
+
+/** Distance du centre d'une case de bord à la face nominale d'un bâtiment de `w` cases (marge de BUILDING_FILL). */
+export function hatchFace(w: number): number {
+  return 0.52 - (w * (1 - BUILDING_FILL)) / 2;
+}
+
+/**
+ * Paroi derrière chaque trappe, mesurée au rayon sur le corps du modèle non tourné, mis à l'échelle
+ * du jeu (format de BuiltModel.hatches). Un modèle plus étroit que son emprise (dôme, cuve, octogone)
+ * a ainsi ses trappes sur sa paroi, et pas dans le vide ; la médiane de 9 rayons ignore les saillies.
+ */
+function hatchWalls(body: THREE.BufferGeometry, scale: number, w: number): Float32Array {
+  const out = new Float32Array(8 * w).fill(Number.NaN);
+  const mesh = new THREE.Mesh(body, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  mesh.scale.setScalar(scale);
+  mesh.updateMatrixWorld(true);
+  const rc = new THREE.Raycaster();
+  const from = new THREE.Vector3();
+  const towards = new THREE.Vector3();
+  const d = w / 2 - 0.5 + hatchFace(w);
+  for (let side = 0; side < 4; side++) {
+    const nx = [1, 0, -1, 0][side];
+    const nz = [0, 1, 0, -1][side];
+    for (let k = 0; k < w; k++) {
+      const t = k - (w - 1) / 2;
+      const ds: number[] = [];
+      towards.set(-nx, 0, -nz);
+      for (const dy of [HATCH_Y - 0.15, HATCH_Y, HATCH_Y + 0.15]) {
+        for (const dt of [-0.2, 0, 0.2]) {
+          // départ un peu dehors : une paroi qui dépasse la face nominale compte aussi
+          from.set(nx * (d + HATCH_OUT) + (side & 1 ? t + dt : 0), dy, nz * (d + HATCH_OUT) + (side & 1 ? 0 : t + dt));
+          rc.set(from, towards);
+          rc.far = HATCH_OUT + HATCH_MAX_INSET;
+          const h = rc.intersectObject(mesh, false)[0];
+          ds.push(h ? h.distance - HATCH_OUT : Number.POSITIVE_INFINITY);
+        }
+      }
+      ds.sort((a, b) => a - b);
+      const med = ds[ds.length >> 1];
+      if (Number.isFinite(med)) out[side * w + k] = med;
+      // haut de la paroi : rayon vertical juste derrière elle
+      const back = d - Math.max(0, Number.isFinite(med) ? med : 0) - 0.12;
+      rc.set(from.set(nx * back + (side & 1 ? t : 0), 20, nz * back + (side & 1 ? 0 : t)), towards.set(0, -1, 0));
+      rc.far = 30;
+      const top = rc.intersectObject(mesh, false)[0];
+      if (top) out[4 * w + side * w + k] = top.point.y;
+    }
+  }
+  return out;
+}
+
+const hatchedCache = new WeakMap<BuiltModel, Map<number, BuiltModel>>();
+
+/**
+ * Le modèle d'un bâtiment de `w` cases qui reçoit des objets, avec ses trappes : une pièce `trappe`
+ * du kit (fermée) sur chaque case de bord de chaque côté, plaquée sur la paroi du modèle. Le jeu
+ * n'ajoute que l'éclairage des trappes ouvertes, au même endroit (BuiltModel.hatches). La boîte reste
+ * celle du modèle nu : les trappes en saillie ne changent pas l'échelle du bâtiment.
+ */
+export function withHatches(built: BuiltModel, w: number): BuiltModel {
+  let byW = hatchedCache.get(built);
+  const hit = byW?.get(w);
+  if (hit) return hit;
+  const scale = buildingScale(w, built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z);
+  const walls = hatchWalls(built.body, scale, w);
+  const d = w / 2 - 0.5 + hatchFace(w);
+  const parts: Part[] = [];
+  for (let side = 0; side < 4; side++) {
+    const nx = [1, 0, -1, 0][side];
+    const nz = [0, 1, 0, -1][side];
+    for (let k = 0; k < w; k++) {
+      const v = walls[side * w + k];
+      if (Number.isNaN(v)) continue;
+      // en unités du modèle : le jeu le met à l'échelle `scale`, la trappe reste en unités de case
+      const r = (d - v) / scale;
+      const t = (k - (w - 1) / 2) / scale;
+      parts.push({ use: "trappe", pos: [nx * r + (side & 1 ? t : 0), HATCH_Y / scale, nz * r + (side & 1 ? 0 : t)], rot: [0, [90, 0, -90, 180][side], 0], scale: 1 / scale });
+    }
+  }
+  let out: BuiltModel = { ...built, hatches: walls };
+  if (parts.length) {
+    const hi = assemble({ parts }, false);
+    const lo = assemble({ parts }, true);
+    const join = (a: THREE.BufferGeometry, b: THREE.BufferGeometry) => mergeGeometries([a, b], false) ?? a;
+    out = { ...out, body: join(built.body, hi.body), triangles: built.triangles + hi.triangles, trianglesLo: built.trianglesLo + (built.bodyLo ? lo.triangles : hi.triangles) };
+    if (built.bodyLo) out.bodyLo = join(built.bodyLo, lo.body);
+  }
+  if (!byW) hatchedCache.set(built, (byW = new Map()));
+  byW.set(w, out);
+  return out;
+}
+
+/** Modèle de secours : une boîte aux couleurs du joueur. */
 export function fallbackModel(height = 0.6): Model {
   return {
     parts: [
