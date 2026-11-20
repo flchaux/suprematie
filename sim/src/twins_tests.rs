@@ -313,6 +313,10 @@ fn generator_with_own_belt_takes_fuel_last() {
     let burn = U / 4;
     let m = put(&mut w, B_MAIN_GENERATOR, 100, 100, 0);
     let g = put(&mut w, B_GENERATOR, 103, 100, 0);
+    // aperçu de pose : un générateur sous le principal sera son jumeau (liseré vert), pas un réacteur
+    use crate::twins::twin_preview;
+    assert_ne!(twin_preview(&w, 0, B_GENERATOR, &[(100, 103, 0)]), vec![0]);
+    assert_eq!(twin_preview(&w, 0, B_CRYSTAL_REACTOR, &[(100, 103, 0)]), vec![0]);
     let h = put(&mut w, B_GENERATOR, 100, 103, 0);
     // tapis (vide) qui entre dans G par sa face est
     for x in (105..111).rev() {

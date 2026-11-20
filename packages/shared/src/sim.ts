@@ -17,6 +17,7 @@ export interface SimExports {
   info_unit(id: number): number;
   power_zones(player: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
+  twin_preview(nWords: number): number;
   tile_info(x: number, y: number): number;
   building_at(x: number, y: number): number;
   tile_pass(x: number, y: number): number;
@@ -125,6 +126,13 @@ export class Sim {
   }
   canPlace(owner: number, kind: number, x: number, y: number, dir: number): boolean {
     return this.ex.can_place(owner, kind, x, y, dir) !== 0;
+  }
+  /**
+   * Aperçu de pose des machines jumelles : `args` = [joueur, type, puis (x, y, dir)…] ; par emplacement,
+   * les cases de bord collées à une future jumelle (bit côté × 8 + case ; côtés 0 : +x, 1 : +y, 2 : -x, 3 : -y).
+   */
+  twinPreview(args: number[]): Int32Array {
+    return this.outI32(this.ex.twin_preview(this.writeI32(args)));
   }
   tileInfo(x: number, y: number): number {
     return this.ex.tile_info(x, y);

@@ -84,6 +84,25 @@ describe("simulation", () => {
     expect(v2.buildings.some((b) => b.kind === 13 && b.build >= 65536)).toBe(true);
     expect(v2.players[0].stock[6]).toBeLessThan(300);
   });
+  it("aperçu des jumelles : deux laboratoires posés côte à côte sont liserés sur leur côté commun", async () => {
+    const a = await Sim.load(wasm);
+    a.init(params);
+    const lab = data.buildings.findIndex((b) => b.key === "lab");
+    const v = parseBotDump(a.botDump());
+    const c = v.units.find((u) => u.id === v.players[0].commander)!;
+    let spot: [number, number] | null = null;
+    for (let d = 3; d < 30 && !spot; d++) {
+      const [x, y] = [(c.x >> 8) + d, (c.y >> 8) + 3];
+      if (a.canPlace(0, lab, x, y, 0) && a.canPlace(0, lab, x + 2, y, 0)) spot = [x, y];
+    }
+    expect(spot).not.toBeNull();
+    const [x, y] = spot!;
+    // côtés : 0 (+x), 2 (-x) ; deux cases par côté (bits côté × 8 + case)
+    expect(Array.from(a.twinPreview([0, lab, x, y, 0, x + 2, y, 1]))).toEqual([0b11, 0b11 << 16]);
+    // un seul laboratoire, ou une case impossible : aucun liseré
+    expect(Array.from(a.twinPreview([0, lab, x, y, 0]))).toEqual([0]);
+    expect(Array.from(a.twinPreview([0, lab, x, y, 0, -50, -50, 0]))).toEqual([0, 0]);
+  });
   it("produit un tampon de rendu lisible", async () => {
     const a = await Sim.load(wasm);
     a.init(params);

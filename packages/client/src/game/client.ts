@@ -19,6 +19,8 @@ import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
+import { isMachine, machineRow } from "./machineRow.ts";
+import * as Belts from "./belts.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -64,7 +66,8 @@ export class GameClient {
   reqId = 0;
   pending = new Map<number, (r: unknown) => void>();
   lastTick = 0;
-  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[] = [];
+  /** `twins` : cases de bord collées à une future machine jumelle (liseré vert, voir sim twins::twin_preview) */
+  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[] = [];
   ghostStart: { x: number; y: number } | null = null;
   lastUiUpdate = 0;
   lastMinimap = 0;
@@ -2009,42 +2012,38 @@ export class GameClient {
     }
     return m;
   }
-  /**
-   * Direction automatique d'un tapis posé seul : il prolonge le tapis qui débouche sur sa case,
-   * sinon il alimente un tapis voisin (qui ne pointe pas vers lui) ; sinon la dernière direction choisie.
-   */
-  private autoBeltDir(x: number, y: number, belts: Map<number, { dir: number; owner: number }>): number {
-    const W = this.map!.w;
-    const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-    for (let d = 0; d < 4; d++) {
-      // tapis à côté dont l'avant est notre case
-      const b = belts.get((y - D[d][1]) * W + (x - D[d][0]));
-      if (b && b.owner === ui.me && b.dir === d) return d;
+  /** Répartiteurs terminés : case -> direction, sorties (masque de directions) et propriétaire. */
+  private splitterTiles(): Map<number, { dir: number; outs: number; owner: number }> {
+    const m = new Map<number, { dir: number; outs: number; owner: number }>();
+    const f = this.frame;
+    if (!f || !this.data || !this.map) return m;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      if (this.data.buildings[f.buf[o + 1] & 0xff]?.key !== "splitter" || f.buf[o + 4] < 65536) continue;
+      const dir = (f.buf[o + 1] >> 16) & 3;
+      const x = f.buf[o + 2] & 0xffff;
+      const y = (f.buf[o + 2] >>> 16) & 0xffff;
+      m.set(y * this.map.w + x, { dir, outs: Belts.splitterOuts(dir, (f.buf[o + 5] >>> 24) & 3), owner: (f.buf[o + 1] >> 8) & 0xff });
     }
-    for (let d = 0; d < 4; d++) {
-      const b = belts.get((y + D[d][1]) * W + (x + D[d][0]));
-      if (b && b.owner === ui.me && b.dir !== (d + 2) % 4) return d;
-    }
-    return ui.buildDir;
+    return m;
   }
-  /** Forme d'un tapis (règle de la simulation, belts::belt_shape) : 0 droit, 1 et 2 virages. */
-  private beltShape(x: number, y: number, dir: number, belts: Map<number, { dir: number; owner: number }>): number {
+  /** Voisins « tapis » (tapis et répartiteurs ; seulement les nôtres si `mine`) pour belts.ts. */
+  private beltNeighbours(belts: Map<number, { dir: number; owner: number }>, splitters: Map<number, { dir: number; outs: number; owner: number }>, mine: boolean): Belts.BeltNeighbours {
     const W = this.map!.w;
-    const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-    const back = belts.get((y + D[(dir + 2) % 4][1]) * W + (x + D[(dir + 2) % 4][0]));
-    if (back && back.dir === dir) return 0;
-    let shape = 0;
-    let n = 0;
-    for (const [k, sd] of [[1, (dir + 1) % 4], [2, (dir + 3) % 4]]) {
-      const b = belts.get((y + D[sd][1]) * W + (x + D[sd][0]));
-      if (b && (b.dir + 2) % 4 === sd) {
-        shape = k;
-        n++;
-      }
-    }
-    return n === 1 ? shape : 0;
+    const H = this.map!.h;
+    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+    return {
+      belt: (x, y) => {
+        const b = inside(x, y) ? belts.get(y * W + x) : undefined;
+        return b && (!mine || b.owner === ui.me) ? b.dir : undefined;
+      },
+      // un tapis (posé ou en cours de pose) sur la case l'emporte
+      splitter: (x, y) => {
+        if (!inside(x, y) || belts.has(y * W + x)) return 0;
+        const s = splitters.get(y * W + x);
+        return s && (!mine || s.owner === ui.me) ? s.outs : 0;
+      },
+    };
   }
-
   private ghostSeq = 0;
   private async updateGhost(): Promise<void> {
     if (ui.mode !== "build" || ui.buildKind < 0 || !this.scene || !this.data) return;
@@ -2052,10 +2051,21 @@ export class GameClient {
     if (!g) return;
     const def = this.data.buildings[ui.buildKind];
     const cur = this.snapBuild(g);
-    const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon;
+    // machines qui peuvent se jumeler : une rangée se pose en glissant
+    const machine = isMachine(def.cls);
+    const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine;
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
-    const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
+    const splitters = isBelt ? this.splitterTiles() : new Map<number, { dir: number; outs: number; owner: number }>();
+    // direction automatique d'un tapis posé seul : il prolonge ce qui débouche sur sa case, ou alimente un voisin
+    const autoDir = (x: number, y: number) => {
+      const s = (sx: number, sy: number) => {
+        const e = this.map && sx >= 0 && sy >= 0 ? splitters.get(sy * this.map.w + sx) : undefined;
+        return e && e.owner === ui.me ? e.dir : undefined;
+      };
+      return Belts.autoBeltDir(x, y, this.beltNeighbours(belts, splitters, true), s, ui.buildDir);
+    };
+    const cells = this.mouse.down && this.ghostStart && lineable ? (machine ? machineRow(this.ghostStart, cur, def, ui.buildDir) : this.lineCells(this.ghostStart, cur)) : [{ ...cur, dir: isBelt && !this.beltForced ? autoDir(cur.x, cur.y) : ui.buildDir }];
     /** un de nos tapis au sol sur la case, perpendiculaire à la direction `dir` */
     const across = (c: { x: number; y: number; dir: number }): boolean => {
       const e = this.map ? belts.get(c.y * this.map.w + c.x) : undefined;
@@ -2098,13 +2108,22 @@ export class GameClient {
       }
       okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i], i) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
     }
+    // jumelages qui se formeront : règle de la simulation, avec la recette que prendra chaque machine
+    // (générateurs : combustible partagé avec les générateurs collés)
+    let twins: number[] = [];
+    if (machine || def.cls === BClass.Power) {
+      const args = [ui.me, ui.buildKind];
+      for (const c of cells) args.push(c.x, c.y, c.dir | rf);
+      twins = (await this.query<number[] | null>("twinPreview", args)) ?? [];
+    }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.scene.ghostLift = 0;
-    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0 }));
+    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0, twins: twins[i] ?? 0 }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
-      this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: this.beltShape(c.x, c.y, c.dir, belts) })));
+      const n = this.beltNeighbours(belts, splitters, false);
+      this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: Belts.beltShape(c.x, c.y, c.dir, n) })));
     } else if (this.data?.buildings[ui.buildKind]?.key === "splitter") {
       this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: ui.buildSplit })));
     } else this.scene.setGhost(ui.buildKind, this.ghostCells);

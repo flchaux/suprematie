@@ -63,6 +63,8 @@ export class GameScene {
   lineGhost: THREE.InstancedMesh | null = null;
   /** pose d'un bras : flèche de la case de prise vers la case de dépôt, et cadres sur ces deux cases */
   armArrows: THREE.InstancedMesh;
+  /** liseré vert de l'aperçu de pose : côtés collés à une future machine jumelle */
+  twinEdges: THREE.InstancedMesh;
   /** aperçu d'une formation orientée (clic droit glissé) : une flèche par place, une grande flèche de direction */
   formArrows: THREE.InstancedMesh;
   armPads: THREE.InstancedMesh;
@@ -101,7 +103,10 @@ export class GameScene {
     this.armArrows = new THREE.InstancedMesh(new THREE.ShapeGeometry(arrow).rotateX(-Math.PI / 2), overlay(0.9), 512);
     this.armPads = new THREE.InstancedMesh(new THREE.RingGeometry(0.5, 0.64, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2), overlay(0.95), 1024);
     this.formArrows = new THREE.InstancedMesh(new THREE.ShapeGeometry(arrow).rotateX(-Math.PI / 2), overlay(0.85), 1024);
-    for (const m of [this.armArrows, this.armPads, this.formArrows]) {
+    // vert des jumelles (conduite, entities.ts), plus vif ; passe transparente (après le modèle translucide
+    // de l'aperçu) et sans test de profondeur : visible par-dessus l'aperçu et la machine voisine
+    this.twinEdges = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0.15, 2.4, 0.45), transparent: true, opacity: 1, depthTest: false, depthWrite: false }), 2048);
+    for (const m of [this.armArrows, this.armPads, this.formArrows, this.twinEdges]) {
       m.count = 0;
       m.frustumCulled = false;
       m.renderOrder = 9;
@@ -142,7 +147,7 @@ export class GameScene {
     loadModelTextures().catch((e) => console.warn("textures des modèles indisponibles", e));
     this.buildPost();
     this.scene.add(this.markers);
-    this.scene.add(this.armArrows, this.armPads);
+    this.scene.add(this.armArrows, this.armPads, this.twinEdges);
     this.scene.add(this.formArrows);
     this.scene.add(this.rangeRing);
     this.resize();
@@ -321,7 +326,7 @@ export class GameScene {
   /** dalles sous les cases du fantôme : vert pâle si la pose est possible, rouge si la case est occupée */
   ghostPads: THREE.InstancedMesh | null = null;
   private padN = 0;
-  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number; floor?: number }[]): void {
+  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number; floor?: number; twins?: number }[]): void {
     if (kind < 0) return this.setGhosts([]);
     const groups = [0, 1, 2].map((variant) => ({ kind, variant, cells: cells.filter((c) => (c.shape ?? 0) === variant) }));
     this.setGhosts(groups);
@@ -331,7 +336,7 @@ export class GameScene {
    * Fantômes de plusieurs types à la fois (plans) : vert si la case est libre, rouge sinon,
    * ou la teinte donnée (aperçu d'une copie). Les types absents de la liste sont cachés.
    */
-  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[]; tint?: number }[]): void {
+  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[]; tint?: number }[]): void {
     const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind * 4 + (g.variant ?? 0)));
     for (const [k, g] of this.ghostMeshes) g.mesh.visible = shown.has(k);
     if (!this.ghostPads) {
@@ -342,7 +347,10 @@ export class GameScene {
       this.scene.add(this.ghostPads);
     }
     this.padN = 0;
+    this.edgeN = 0;
     for (const { kind, cells, tint, variant } of groups) if (kind >= 0 && cells.length) this.fillGhost(kind, cells, tint, variant ?? 0);
+    this.twinEdges.count = this.edgeN;
+    this.twinEdges.instanceMatrix.needsUpdate = true;
     this.ghostPads.count = this.padN;
     this.ghostPads.instanceMatrix.needsUpdate = true;
     if (this.ghostPads.instanceColor) this.ghostPads.instanceColor.needsUpdate = true;
@@ -394,7 +402,8 @@ export class GameScene {
     }
   }
 
-  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[], tint?: number, variant = 0): void {
+  private edgeN = 0;
+  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[], tint?: number, variant = 0): void {
     const key = kind * 4 + variant;
     let g = this.ghostMeshes.get(key);
     if (!g || g.mesh.count === undefined) {
@@ -436,6 +445,7 @@ export class GameScene {
         pads.setColorAt(this.padN, c.ok ? PAD_OK : PAD_BAD);
         this.padN++;
       }
+      if (c.twins) this.fillTwinEdges(c.x, c.y, c.dir & 1 ? def.h : def.w, c.dir & 1 ? def.w : def.h, c.twins, lift);
       m.compose(new THREE.Vector3(cx, y + 0.05 + lift, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
       g.mesh.setMatrixAt(n, m);
       setTeamColor(g, n, c.ok ? good : bad);
@@ -445,6 +455,33 @@ export class GameScene {
     g.mesh.visible = true;
     g.mesh.instanceMatrix.needsUpdate = true;
     g.team.needsUpdate = true;
+  }
+
+  /**
+   * Liseré vert sur les cases de bord d'une emprise (x, z, fw × fh) collées à une future jumelle :
+   * bit (côté × 8 + case) de `mask`, côtés 0 : +x, 1 : +z, 2 : -x, 3 : -z (voir sim twins::twin_preview).
+   * Une barre lumineuse d'une case par case de bord, debout au sol juste à l'intérieur du bord, visible à travers tout.
+   */
+  private fillTwinEdges(x: number, z: number, fw: number, fh: number, mask: number, lift: number): void {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    const IN = 0.14; // retrait vers l'intérieur de l'emprise
+    for (let side = 0; side < 4; side++) {
+      const n = side & 1 ? fw : fh;
+      for (let k = 0; k < n; k++) {
+        if (!(mask & (1 << (side * 8 + k)))) continue;
+        if (this.edgeN >= 2048) return;
+        const px = side === 0 ? x + fw - IN : side === 2 ? x + IN : x + k + 0.5;
+        const pz = side === 1 ? z + fh - IN : side === 3 ? z + IN : z + k + 0.5;
+        pos.set(px, groundHeight(this.map, px, pz) + 0.25 + lift, pz);
+        q.setFromAxisAngle(up, side & 1 ? 0 : Math.PI / 2);
+        m.compose(pos, q, size.set(0.98, 0.5, 0.2));
+        this.twinEdges.setMatrixAt(this.edgeN++, m);
+      }
+    }
   }
 
   private area: THREE.Group | null = null;
@@ -497,6 +534,7 @@ export class GameScene {
     for (const g of this.ghostMeshes.values()) g.mesh.visible = false;
     this.armArrows.count = 0;
     this.armPads.count = 0;
+    this.twinEdges.count = 0;
   }
 
   addMarker(x: number, z: number, color: number): void {

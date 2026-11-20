@@ -418,6 +418,8 @@ pub fn complete_building(w: &mut World, b: usize) {
         let lv = (w.buildings[b].level as usize).min(DEPOT_CAP.len() - 1);
         w.players[owner as usize].stock_cap += DEPOT_CAP[lv];
     }
+    // fabricant sans recette collé à une machine identique : il prend sa recette (machines jumelles)
+    crate::twins::adopt_twin_recipe(w, b);
     w.buildings_version = w.buildings_version.wrapping_add(1);
     w.ev(EV_BUILT, owner as i32, kind as i32, x, y);
 }
@@ -1197,31 +1199,10 @@ pub fn factory_trim(w: &mut World, b: usize) {
 /// (à l'arrêt, à chacun de leurs passages).
 const TWIN_PERIOD: u32 = 10;
 
-/// Fabriquent-elles la même chose ? Même recette (fabricants), même unité en tête de file (usines) ;
-/// les laboratoires travaillent tous à la recherche du joueur.
-fn same_product(a: &Building, c: &Building) -> bool {
-    match a.def().class {
-        BClass::Crafter => a.recipe != RECIPE_NONE && a.recipe == c.recipe,
-        BClass::Factory => matches!((a.queue.first(), c.queue.first()), (Some(x), Some(y)) if x.0 == y.0),
-        BClass::Lab => true,
-        _ => false,
-    }
-}
-
-/// `a` et `c` sont-ils jumeaux (en plus d'être collés et au même joueur) ? Même type et même produit ;
-/// pour les générateurs, tous ceux qui brûlent les mêmes combustibles (le générateur principal, les
-/// générateurs et les centrales brûlent l'hydrocarbure et le carburant ; les réacteurs, les cellules).
-fn twin_pair(a: &Building, c: &Building) -> bool {
-    if a.def().class == BClass::Power {
-        return c.def().class == BClass::Power && (a.kind == B_CRYSTAL_REACTOR) == (c.kind == B_CRYSTAL_REACTOR);
-    }
-    c.kind == a.kind && same_product(a, c)
-}
-
 /// Machines jumelles de `b`, par indice croissant : bâtiments terminés du même joueur, collés à une de
-/// ses faces, qui fabriquent la même chose (ou générateurs aux mêmes combustibles, voir `twin_pair`).
-/// Elles partagent leurs ingrédients (leur combustible) et leurs produits, en dernier recours (voir
-/// `share_with_twins`).
+/// ses faces, qui fabriquent la même chose, ou générateurs qui brûlent les mêmes combustibles (règle dans
+/// twins.rs). Elles partagent leurs ingrédients ou leur combustible, et leurs produits, en dernier
+/// recours (voir `share_with_twins` et `share_fuel`).
 pub fn twins_of(w: &World, b: usize) -> Vec<usize> {
     let mut v = [0usize; MAX_TWINS];
     let n = twins_into(w, b, &mut v);
@@ -1234,6 +1215,8 @@ const MAX_TWINS: usize = 20;
 /// Jumelles de `b` rangées dans `v` (sans allocation), par indice croissant ; renvoie leur nombre.
 fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
     let bb = &w.buildings[b];
+    // ce qu'elle fabrique (règle commune avec l'aperçu de pose : voir twins.rs)
+    let Some(key) = crate::twins::product_key(bb) else { return 0 };
     let (bw, bh) = bb.size();
     let mut n = 0;
     for ty in bb.y - 1..=bb.y + bh {
@@ -1249,8 +1232,7 @@ fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
             if c == b || v[..n].contains(&c) || n == MAX_TWINS {
                 continue;
             }
-            let cb = &w.buildings[c];
-            if cb.alive && cb.complete() && cb.upgrade == 0 && cb.owner == bb.owner && twin_pair(bb, cb) {
+            if crate::twins::twin_with(&w.buildings[c], bb.kind, bb.owner, key) {
                 v[n] = c;
                 n += 1;
             }
@@ -1705,6 +1687,16 @@ fn take_output(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
 /// Pousse un objet vers la case (x, y) : tapis ou bâtiment qui l'accepte.
 /// Un tapis de contrôle ne reçoit que par l'arrière : l'objet doit avancer dans sa direction.
 #[inline]
+/// Sorties d'un répartiteur selon son mode, en indices de [gauche, avant, droite] : 0 les trois,
+/// 1 gauche et avant, 2 avant et droite.
+pub fn splitter_outs(split: u8) -> &'static [usize] {
+    match split {
+        1 => &[0, 1],
+        2 => &[1, 2],
+        _ => &[0, 1, 2],
+    }
+}
+
 pub fn router_entry_ok(bb: &Building, travel_dir: u8) -> bool {
     bb.def().class != BClass::Router || bb.dir & 3 == travel_dir & 3
 }
@@ -1816,11 +1808,7 @@ fn tick_router(w: &mut World, b: usize) {
     let item = bb.stash[0] as u8;
     let outs = [(d + 3) % 4, d, (d + 1) % 4]; // gauche, avant, droite
     // répartiteur : ses sorties (les trois, ou un angle et l'avant), servies à tour de rôle
-    let split_outs: &[usize] = match w.buildings[b].split {
-        1 => &[0, 1],
-        2 => &[1, 2],
-        _ => &[0, 1, 2],
-    };
+    let split_outs = splitter_outs(w.buildings[b].split);
     let mut rot = [0usize; 3];
     let order: &[usize] = match kind {
         B_SPLITTER => {
