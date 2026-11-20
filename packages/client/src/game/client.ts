@@ -9,7 +9,7 @@ import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
-import { parseMapInfo, groundHeight, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
+import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { ownerColor, ownerHex } from "./colors.ts";
 import { ui, pushMessage, hasTechUI } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
@@ -275,6 +275,7 @@ export class GameClient {
         this.data = JSON.parse(m.data as string) as GameData;
         ui.data = this.data;
         this.map = parseMapInfo(m.mapInfo as Int32Array, m.heights as Uint8Array);
+        this.maxGround = -1;
         if (!this.scene) {
           this.scene = new GameScene(this.canvasEl!);
           await this.scene.init(new URLSearchParams(location.search).has("webgl"));
@@ -1325,7 +1326,8 @@ export class GameClient {
     const side = { x: 0, y: 0 };
     const right = new THREE.Vector3().setFromMatrixColumn(sc.camera.matrixWorld, 0);
     for (const u of sc.entities.screen) {
-      if (!u.visible) continue;
+      // une unité qu'on ne voit pas ne se clique pas : hors du dessin de cette image, ou cachée par le relief
+      if (!u.visible || !u.drawn) continue;
       if (!anyOwner && u.owner !== ui.me) continue;
       const km = sc.entities.unitMeshes[u.kind];
       const h = Math.max(0.4, km?.height ?? 0.8);
@@ -1339,13 +1341,38 @@ export class GameClient {
       const vy = top.y - foot.y;
       const t = Math.max(0, Math.min(1, ((x - foot.x) * vx + (y - foot.y) * vy) / (vx * vx + vy * vy || 1)));
       const d = Math.hypot(x - (foot.x + vx * t), y - (foot.y + vy * t));
-      if (d <= w + 5 && d < bd) {
+      if (d <= w + 5 && d < bd && !this.hiddenByTerrain(u.x, u.y + h / 2, u.z)) {
         bd = d;
         best = u;
       }
     }
     return best;
   }
+
+  /** Le relief s'interpose-t-il entre la caméra et ce point ? (échantillons le long du segment, jusqu'au plus haut sommet) */
+  private hiddenByTerrain(x: number, y: number, z: number): boolean {
+    const sc = this.scene;
+    const m = this.map;
+    if (!sc || !m) return false;
+    if (this.maxGround < 0) {
+      let top = 0;
+      for (let i = 0; i < m.heights.length; i++) if (m.heights[i] > top) top = m.heights[i];
+      this.maxGround = top * HSCALE;
+    }
+    const c = sc.camera.position;
+    const len = Math.hypot(c.x - x, c.y - y, c.z - z);
+    if (len < 1) return false;
+    // la première case autour de l'unité ne compte pas (pente sous ses pieds)
+    for (let s = 1; s < len; s += 0.5) {
+      const t = s / len;
+      const py = y + (c.y - y) * t;
+      if (py > this.maxGround) break;
+      if (groundHeight(m, x + (c.x - x) * t, z + (c.z - z) * t) > py + 0.2) return true;
+    }
+    return false;
+  }
+  /** plus haut point du relief (monde), calculé au premier besoin */
+  private maxGround = -1;
 
   private clickSelect(x: number, y: number, add: boolean, _ctrl: boolean): void {
     const u = this.ownedUnitAt(x, y, true);
