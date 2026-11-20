@@ -14,7 +14,7 @@ rapports de force qui orientent la production et la recherche, objectifs choisis
 pelotons qui se regroupent, jugent le combat et se replient (`army.ts`), chasseurs d'interception, frappes
 aériennes sur l'économie, appels à l'aide et cible commune entre IA alliées.
 
-Sauvegardes : en partie, panneau Statistiques (Tab) → Sauvegarder (n'importe quel joueur) ; sauvegarde automatique
+Sauvegardes : en partie, panneau Statistiques (O) → Sauvegarder (n'importe quel joueur) ; sauvegarde automatique
 toutes les 5 minutes de jeu, à l'abandon et à l'arrêt du serveur (5 dernières gardées). Dans le salon, l'hôte charge
 une sauvegarde (bouton Sauvegardes) : composition, équipes et carte sont figées, chaque joueur retrouve sa place
 (même pseudo) ou prend une place libre, et la partie ne reprend qu'avec autant de joueurs que dans la sauvegarde.

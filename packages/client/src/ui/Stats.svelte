@@ -4,6 +4,7 @@
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
   import Charts from "./Charts.svelte";
+  import { keyOf } from "../game/keys.svelte.ts";
   import { playerColor as color, visiblePlayers, shownSamples, seesAll } from "./stats.ts";
   // historique pour calculer des débits par minute
   let hist: { t: number; p: number[]; c: number[] }[] = [];
@@ -30,7 +31,7 @@
 </script>
 
 <div class="modal panel">
-  <button class="close ghost icon-btn" onclick={() => (ui.showStats = false)} title="Fermer (Tab)"><Icon name="close" /></button>
+  <button class="close ghost icon-btn" onclick={() => (ui.showStats = false)} title="Fermer{keyOf('stats') ? ` (${keyOf('stats')})` : ''}"><Icon name="close" /></button>
   <div class="modal-head">
     <Icon name="stats" size={26} />
     <div>
