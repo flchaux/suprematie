@@ -119,6 +119,8 @@ class KindMesh {
 /** Bâtiments qui reçoivent des objets (et ont donc des trappes) ; ce sont aussi ceux qui reçoivent par transfert direct. */
 const RECEIVERS = RECEIVER_CLASSES;
 const RECIPE_NONE = 255;
+/** code de l'ordre de récolte du commandant (Order::Harvest), dans le mot aux des unités */
+const ORDER_HARVEST = 16;
 /** trappe ouverte logée dans la trappe du modèle : échelles du cadre lumineux (0,64 x 0,44 -> 0,46 x 0,28) et de l'ouverture (0,5 x 0,3 -> 0,38 x 0,2) */
 const FITTED_GLOW = new THREE.Vector3(0.46 / 0.64, 0.28 / 0.44, 0.1);
 const FITTED_HOLE = new THREE.Vector3(0.38 / 0.5, 0.2 / 0.3, 0.1);
@@ -722,7 +724,14 @@ export class Entities {
         const aux = buf[o + 8];
         const tx = (aux & 0xfff) + 0.5;
         const tz = ((aux >> 12) & 0xfff) + 0.5;
-        if (Math.random() < 0.5) this.addBeam(new THREE.Vector3(x, y + 0.6, z), new THREE.Vector3(tx + (Math.random() - 0.5), groundHeight(this.map, tx, tz) + 0.5, tz + (Math.random() - 0.5)), 0x7df9ff, 0.12);
+        if (aux >>> 24 === ORDER_HARVEST) {
+          // récolte du commandant : rayon d'extraction orangé vers le gisement, fonderie dorsale allumée
+          if (Math.random() < 0.35) this.addBeam(new THREE.Vector3(x, y + 0.5, z), new THREE.Vector3(tx + (Math.random() - 0.5) * 1.4, groundHeight(this.map, tx, tz) + 0.1, tz + (Math.random() - 0.5) * 1.4), 0xff8a2a, 0.14);
+          // bouche du four (modèle : 0, 1,32, -0,78) et cheminées du sac dorsal (2,7, -0,66), vers l'arrière
+          const fwx = Math.cos(facing) * km.scale;
+          const fwz = Math.sin(facing) * km.scale;
+          fx.smelting(x - fwx * 0.78, y + 1.32 * km.scale, z - fwz * 0.78, x - fwx * 0.66, y + 2.7 * km.scale, z - fwz * 0.66, tx, tz, dt);
+        } else if (Math.random() < 0.5) this.addBeam(new THREE.Vector3(x, y + 0.6, z), new THREE.Vector3(tx + (Math.random() - 0.5), groundHeight(this.map, tx, tz) + 0.5, tz + (Math.random() - 0.5)), 0x7df9ff, 0.12);
       }
     }
     // ----- bâtiments -----

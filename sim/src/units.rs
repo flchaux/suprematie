@@ -10,6 +10,40 @@ use crate::world::*;
 /// Distance (sous-unités) à laquelle le commandant récupère les objets d'un tapis.
 const COLLECT_RANGE: i32 = 3 * TILE;
 
+/// Récolte du commandant (ordre Harvest) : distance au centre de la case du gisement (sous-unités).
+pub const HARVEST_RANGE: i32 = 3 * TILE;
+/// Durée d'un cycle de récolte, en multiple de la durée de la recette de fonderie : extraire puis
+/// fondre un minerai prend 2 fois le temps de fonte d'une fonderie de base (plaque de fer ou de cuivre :
+/// 80 ticks, soit 0,25 par seconde ; plaquette de silicium : 120 ticks). Une chaîne extracteur +
+/// fonderie de base sort 0,5 plaque par seconde, et jusqu'à 1,15 améliorée.
+pub const HARVEST_SLOWDOWN: u32 = 2;
+/// État de la récolte, gardé dans `UnitCold::timer` tant que l'ordre Harvest est en tête de file.
+pub const HV_GOING: u16 = 0;
+pub const HV_WORKING: u16 = 1;
+/// canon du commandant occupé par un ennemi à portée : la fonderie s'arrête
+pub const HV_COMBAT: u16 = 2;
+/// réserve pleine pour le produit fondu
+pub const HV_FULL: u16 = 3;
+
+/// Recette de fonderie utilisable par la récolte du commandant du joueur `owner` sur la case (x, y) :
+/// gisement fondable, et recette débloquée (la plaquette de silicium demande l'électronique).
+pub fn harvest_recipe(w: &World, owner: u8, x: i32, y: i32) -> Option<usize> {
+    if !w.map.inside(x, y) {
+        return None;
+    }
+    let r = smelt_recipe(w.map.deposit[w.map.idx(x, y)])?;
+    if w.players[owner as usize].has_tech(RECIPES[r].tech) {
+        Some(r)
+    } else {
+        None
+    }
+}
+
+/// Ticks d'un cycle de récolte (multiplicateur de ressources 100 %).
+pub fn harvest_cycle(r: usize) -> u32 {
+    RECIPES[r].time as u32 * HARVEST_SLOWDOWN
+}
+
 #[inline]
 pub fn move_class(layer: Layer) -> Option<u8> {
     match layer {
@@ -723,6 +757,44 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             if it != 0 {
                 w.players[owner as usize].stock[it as usize] += 1;
                 w.units.cold[s].flags |= UF_WORKING;
+            }
+            NONE
+        }
+        Order::Harvest { x, y } => {
+            // commandant : extraire le minerai du gisement et le fondre dans sa fonderie intégrée
+            let Some(r) = (if kind == U_COMMANDER { harvest_recipe(w, owner, x, y) } else { None }) else {
+                pop_order(w, s);
+                return NONE;
+            };
+            let (tx, ty) = (x * TILE + TILE / 2, y * TILE + TILE / 2);
+            if dist(w.units.x[s], w.units.y[s], tx, ty) > HARVEST_RANGE {
+                w.units.cold[s].timer = HV_GOING;
+                steer(w, s, tx, ty, tx, ty, HARVEST_RANGE - TILE);
+                return NONE;
+            }
+            clear_goal(w, s);
+            // combat : tant que son canon a une cible, la récolte attend (l'ordre reste)
+            if has_target_in_range(w, s) {
+                w.units.cold[s].timer = HV_COMBAT;
+                return NONE;
+            }
+            let (out, n) = RECIPES[r].output;
+            let o = owner as usize;
+            if w.stock_room(o, out) == 0 {
+                w.units.cold[s].timer = HV_FULL;
+                return NONE;
+            }
+            let mult = w.players[o].res_mult.max(1) as u32;
+            let need = harvest_cycle(r) * 100;
+            let c = &mut w.units.cold[s];
+            c.timer = HV_WORKING;
+            c.flags |= UF_WORKING;
+            c.work += mult;
+            if c.work >= need {
+                c.work -= need;
+                let p = &mut w.players[o];
+                p.stock[out as usize] += n as i32;
+                p.produced[out as usize] += n as u32;
             }
             NONE
         }

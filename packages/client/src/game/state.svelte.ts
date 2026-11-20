@@ -5,6 +5,10 @@ import { DEFAULT_GFX, type GfxSettings } from "../render/gfx.ts";
 export interface SelUnitGroup { kind: number; count: number; ids: number[]; /** vétérance la plus haute du groupe */ lvl?: number }
 export interface Message { id: number; text: string; kind: "info" | "alert" | "chat" | "good"; time: number }
 
+/** Récolte du commandant en cours (sim : render::harvest_info) : ressource brute, produit fondu, case du
+ * gisement, état (0 en route, 1 récolte, 2 combat, 3 réserve pleine), avancement du cycle (‰), durée d'un cycle (ticks). */
+export interface HarvestInfo { raw: number; out: number; x: number; y: number; state: number; progress: number; cycle: number }
+
 export const ui = $state({
   screen: "connect" as "connect" | "lobby" | "loading" | "game",
   name: "",
@@ -46,7 +50,7 @@ export const ui = $state({
   /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
   selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
-  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean },
+  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null },
   buildingInfo: null as null | Record<string, unknown>,
   canBuild: false,
   mode: "" as string,

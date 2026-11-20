@@ -108,6 +108,15 @@ export const UNIT_MODELS: Record<string, Model> = {
       // bassin et taille
       { shape: "extrude", profile: [[-0.48, 1.16], [0.48, 1.16], [0.54, 1.38], [0.42, 1.56], [-0.42, 1.56], [-0.54, 1.38]], depth: 0.72, bevel: 0.04, color: "dark" },
       { shape: "lathe", sides: 10, profile: [[0, 1.48], [0.34, 1.48], [0.36, 1.56], [0.3, 1.64], [0, 1.64]], color: "steel" },
+      // fonderie intégrée (récolte des gisements), au bas du dos sous le sac dorsal : caisson sombre
+      // chanfreiné, bouche de four ambre à grille, trémie à minerai sur le flanc, conduits de cuivre vers
+      // les cheminées du sac (la bouche est le point d'émission des flammèches en jeu : 0, 1,32, -0,78)
+      { shape: "bevel", size: [0.62, 0.42, 0.36], pos: [0, 1.36, -0.56], color: "dark", bevel: 0.04 },
+      { shape: "box", size: [0.66, 0.05, 0.4], pos: [0, 1.58, -0.56], color: "faction", fine: true },
+      { shape: "box", size: [0.34, 0.14, 0.03], pos: [0, 1.32, -0.75], color: "amber" },
+      ...[-0.06, 0.06].map((x): Part => ({ shape: "box", size: [0.025, 0.16, 0.03], pos: [x, 1.32, -0.765], color: "black", fine: true })),
+      { shape: "cone", sides: 6, radius: 0.15, height: 0.2, pos: [0.4, 1.52, -0.56], rot: [180, 0, 0], color: "metal", fine: true },
+      { shape: "tube", radius: 0.028, sides: 5, path: [[0.22, 1.6, -0.7], [0.3, 1.8, -0.82]], color: "copper", mirror: true, fine: true },
       // torse à pans (pivot)
       { shape: "extrude", profile: [[-0.6, -0.46], [0.6, -0.46], [0.66, 0.08], [0.52, 0.44], [-0.52, 0.44], [-0.66, 0.08]], depth: 1.0, bevel: 0.05, pos: [0, 1.92, 0], color: "faction", pivot: "torse" },
       { shape: "extrude", profile: [[0.4, 1.62], [0.6, 1.66], [0.62, 2.12], [0.42, 2.3]], depth: 0.96, bevel: 0.03, rot: [0, -90, 0], color: "light", parent: "torse" },

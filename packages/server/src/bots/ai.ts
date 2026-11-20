@@ -13,7 +13,7 @@
 import type { Bot, BotContext } from "./types.ts";
 import { serialize, deserialize } from "node:v8";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
-import { build, move, target, O, factoryQueue, rally, setRecipe, research, hasTech, isFauna, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
+import { build, move, target, harvest, O, factoryQueue, rally, setRecipe, research, hasTech, isFauna, smeltRecipe, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
 import { Ids, indexView, TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { Planner, CELLS, type Module, type Placement, type Slot, type CellSlot } from "./layout.ts";
 import { PERSONAS, AIR_PLAN, TECH_PLAN, ARMY_PLAN, MAIN_AIR_PLAN, type Persona } from "./personas.ts";
@@ -38,6 +38,9 @@ interface Project {
   doneCount: number;
   cell?: CellSlot;
 }
+
+/** code de l'ordre de récolte du commandant (Order::Harvest) dans BotUnit.order */
+const ORDER_HARVEST = 16;
 
 interface SpotState {
   kind: number;
@@ -698,7 +701,8 @@ export class SkirmishAI implements Bot {
         this.reclaiming.delete(u.id);
       }
       if (u.nOrders > 0 && u.id !== cmdId) continue;
-      if (u.nOrders > 0 && u.order !== 1 && u.order !== 2) continue;
+      // commandant : un déplacement ou une récolte (ordre sans fin) n'empêche pas de lui confier un chantier
+      if (u.nOrders > 0 && u.order !== 1 && u.order !== 2 && u.order !== ORDER_HARVEST) continue;
       // aider un grand projet
       const help = this.projects.find((q) => q.builders.length < 3 && this.remaining(q) >= 8 && (!q.remote || u.id !== cmdId));
       if (help) {
@@ -1539,8 +1543,36 @@ export class SkirmishAI implements Bot {
       this.reclaiming.set(u.id, best.ref);
       return;
     }
+    // commandant sans travail : récolter un gisement libre près de la base (fonderie intégrée)
+    if (u.id === this.me.commander && u.nOrders === 0 && this.harvestIdle(u, out)) return;
     // rester près de la base
     if (u.nOrders === 0 && dist2(u.x, u.y, bx, by) > (40 * TILE) ** 2) out.push(move([u], bx, by));
+  }
+
+  /**
+   * Commandant inoccupé : récolte le gisement libre (ni extracteur, ni projet) le plus proche, à moins de
+   * 30 cases de la base, dont le produit fondu manque le plus au stock. Faux s'il n'y en a pas.
+   */
+  harvestIdle(u: BotUnit, out: Cmd[]): boolean {
+    const [bx, by] = this.baseCenter();
+    let best: SpotState | null = null;
+    let bs = Infinity;
+    for (const s of this.spots) {
+      if (s.st !== 0 || this.projects.some((p) => p.spot === s)) continue;
+      const r = smeltRecipe(this.ctx.data, s.kind);
+      if (r < 0 || !this.has(this.ctx.data.recipes[r].tech)) continue;
+      if (dist2(s.x * TILE, s.y * TILE, bx, by) > (30 * TILE) ** 2) continue;
+      if (this.ctx.sim.tileInfo(s.x, s.y) > 0) continue;
+      // le produit le plus rare d'abord, puis le plus proche
+      const score = this.stock(this.ctx.data.recipes[r].output[0]) * 4 * TILE + Math.sqrt(dist2(s.x * TILE, s.y * TILE, u.x, u.y));
+      if (score < bs) {
+        bs = score;
+        best = s;
+      }
+    }
+    if (!best) return false;
+    out.push(harvest([u.id], best.x, best.y));
+    return true;
   }
 
   // ---------- Économie : recettes et régulation ----------

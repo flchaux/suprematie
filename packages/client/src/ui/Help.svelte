@@ -46,6 +46,7 @@
           <li>Les <b>assembleurs</b> ont besoin d'une recette (panneau de sélection). Les fonderies choisissent seules selon ce qu'elles reçoivent.</li>
           <li>Les <b>usines</b> reçoivent les composants des unités par des bras. Les <b>laboratoires</b> consomment les lots de recherche.</li>
           <li>Les épaves se recyclent en plaques de fer et en acier.</li>
+          <li><b>Récolte du commandant</b> : sa fonderie intégrée lui permet de récolter un gisement libre de fer, de cuivre ou de silicium (clic droit dessus, ou touche M puis clic). Il extrait le minerai et le fond lui-même : une plaque toutes les 4 s (plaquette de silicium : 6 s, après l'électronique), versée directement au stock. C'est deux fois moins qu'un extracteur et une fonderie de base : un dépannage, pas une usine. Un ennemi à portée de son canon met la récolte en pause ; un nouvel ordre l'arrête.</li>
         </ul>
         <h3>Furtivité et radar</h3>
         <ul>
