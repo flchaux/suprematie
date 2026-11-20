@@ -34,6 +34,8 @@ export const O = {
   ROTATE: 24,
   /** annuler les constructions prévues (fantômes, ordres non commencés) qui couvrent une case : [x, y] */
   CANCEL_PLAN: 25,
+  /** commandant : récolter un gisement et fondre le minerai (fonderie intégrée) : [drapeaux, x, y (cases), n, unités…] */
+  HARVEST: 26,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -179,6 +181,10 @@ export function rally(ref: number, x: number, y: number): Cmd {
 }
 export function point(type: number, ids: number[], x: number, y: number, queue = false): Cmd {
   return [type, queue ? 1 : 0, x | 0, y | 0, ids.length, ...ids.map((v) => v | 0)];
+}
+/** commandant : récolter le gisement de la case (x, y) et fondre le minerai (fonderie intégrée) */
+export function harvest(ids: number[], x: number, y: number, queue = false): Cmd {
+  return point(O.HARVEST, ids, x, y, queue);
 }
 export function deploy(ids: number[]): Cmd {
   return [O.DEPLOY, ids.length, ...ids.map((x) => x | 0)];

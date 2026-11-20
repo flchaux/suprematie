@@ -1,5 +1,5 @@
 // Générateur d'ordres aléatoires (mais reproductibles) pour les tests.
-import { O, pack, move, build, target, factoryQueue, research, point } from "../packages/shared/src/orders.ts";
+import { O, pack, move, build, target, factoryQueue, research, point, harvest } from "../packages/shared/src/orders.ts";
 import { parseBotDump } from "../packages/shared/src/render.ts";
 
 export function randomOrders(seed, sim) {
@@ -11,6 +11,17 @@ export function randomOrders(seed, sim) {
     return s % n;
   };
   const size = 512;
+  // gisements de la carte (map_info : w, h, eau, n départs, départs…, n gisements, puis kind, x, y)
+  let spots = null;
+  const spotList = () => {
+    if (spots) return spots;
+    const m = sim.mapInfo();
+    let o = 4 + m[3] * 2;
+    const n = m[o++];
+    spots = [];
+    for (let i = 0; i < n; i++, o += 3) spots.push({ kind: m[o], x: m[o + 1], y: m[o + 2] });
+    return spots;
+  };
   return (t) => {
     const out = [];
     if (t % 7 !== 0) return out;
@@ -37,6 +48,10 @@ export function randomOrders(seed, sim) {
         if (enemy) pack(p, target(O.ATTACK, [u.id], enemy.id), out);
       } else if (r < 9 && view.wrecks.length) {
         pack(p, target(O.RECLAIM, [u.id], view.wrecks[rnd(view.wrecks.length)].ref), out);
+      } else if (rnd(3) === 0) {
+        // récolte (seul un commandant l'accepte, sur un gisement fondable) : le gisement le plus proche
+        const sp = spotList().reduce((a, b) => (Math.abs(b.x - tx) + Math.abs(b.y - ty) < Math.abs(a.x - tx) + Math.abs(a.y - ty) ? b : a), spotList()[0]);
+        if (sp) pack(p, harvest([u.id], sp.x + rnd(2), sp.y + rnd(2)), out);
       } else {
         pack(p, point(O.PATROL, [u.id], tx * 256, ty * 256), out);
       }

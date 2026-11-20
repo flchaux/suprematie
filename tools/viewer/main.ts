@@ -108,7 +108,7 @@ if (set !== "decor") list.forEach((d, i) => {
   const s = target / Math.max(size.x, size.z, 0.01);
   const x = (i % cols) * cell;
   const z = Math.floor(i / cols) * cell;
-  const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.6, 0)), new THREE.Vector3(s, s, s));
+  const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.6 + (Number(params.get("rot") ?? 0) * Math.PI) / 180, 0)), new THREE.Vector3(s, s, s));
   // la faune (mordeurs, nid) a sa propre couleur, brune
   const fauna = d.key.startsWith("beast_") || d.key === "nest";
   const color = new THREE.Color(set === "items" ? itemColor(d.key) : fauna ? NATURE_COLOR : PLAYER_COLORS[i % 8]);

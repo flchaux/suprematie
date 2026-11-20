@@ -250,7 +250,8 @@ fn main_pred(w: &World, b: usize) -> Option<usize> {
 
 /// Forme d'un tapis, déduite des tapis voisins (même règle que la continuité des lignes) :
 /// 0 droit, 1 virage alimenté par le côté (dir + 1) % 4, 2 virage alimenté par le côté (dir + 3) % 4.
-/// Un virage : aucun tapis derrière ne pointe vers celui-ci, et un seul tapis latéral y débouche.
+/// Un virage : aucun tapis derrière ne pointe vers celui-ci, et un seul tapis latéral y débouche. Une
+/// sortie de répartiteur tournée vers le tapis compte comme un tapis qui y débouche.
 pub fn belt_shape(w: &World, b: usize) -> u8 {
     let bb = &w.buildings[b];
     let d = bb.dir as usize;
@@ -261,19 +262,18 @@ pub fn belt_shape(w: &World, b: usize) -> u8 {
             return 0;
         }
     }
-    // arrivée par un ascenseur : droit
-    if elevator_pred(w, b).is_some() {
+    // arrivée par un ascenseur ou par une sortie de répartiteur derrière : droit
+    if elevator_pred(w, b).is_some() || splitter_feeds(w, b, (d + 2) % 4) {
         return 0;
     }
     let mut shape = 0;
     let mut count = 0;
     for (k, sd) in [(1u8, (d + 1) % 4), (2u8, (d + 3) % 4)] {
         let (sx, sy) = DIRS[sd];
-        if let Some((pb, pd)) = belt_at(w, bb.x + sx, bb.y + sy, f) {
-            if (pd as usize + 2) % 4 == sd && next_belt(w, pb) == Some(b) {
-                shape = k;
-                count += 1;
-            }
+        let side_belt = belt_at(w, bb.x + sx, bb.y + sy, f).is_some_and(|(pb, pd)| (pd as usize + 2) % 4 == sd && next_belt(w, pb) == Some(b));
+        if side_belt || splitter_feeds(w, b, sd) {
+            shape = k;
+            count += 1;
         }
     }
     if count == 1 {
@@ -283,6 +283,28 @@ pub fn belt_shape(w: &World, b: usize) -> u8 {
         return building_fed_shape(w, b);
     }
     0
+}
+
+/// Le répartiteur terminé posé au sol à côté du tapis `b`, du côté `side`, a-t-il une sortie tournée
+/// vers ce tapis ? Il compte alors comme un tapis qui y débouche (virages, jonctions, dépôt des bâtiments).
+pub fn splitter_feeds(w: &World, b: usize, side: usize) -> bool {
+    let bb = &w.buildings[b];
+    let (sx, sy) = DIRS[side];
+    let (x, y) = (bb.x + sx, bb.y + sy);
+    if bb.floor != 0 || !w.map.inside(x, y) {
+        return false;
+    }
+    let o = w.map.occ[w.map.idx(x, y)];
+    if o == 0 {
+        return false;
+    }
+    let s = &w.buildings[(o - 1) as usize];
+    if s.kind != B_SPLITTER || !s.complete() {
+        return false;
+    }
+    let d = s.dir as usize & 3;
+    let outs = [(d + 3) % 4, d, (d + 1) % 4];
+    crate::buildings::splitter_outs(s.split).iter().any(|&k| outs[k] == (side + 2) % 4)
 }
 
 /// Bâtiment au sol en (x, y) qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt amélioré).
@@ -338,8 +360,10 @@ pub fn takes_from_face(w: &World, t: usize, face: u8) -> bool {
         2 => (tb.dir + 3) & 3,
         _ => return false,
     };
-    // le côté qui alimente le virage regarde le bâtiment
-    sd == (face + 2) & 3 && main_pred(w, t).is_none()
+    // le côté qui alimente le virage regarde le bâtiment ; un tapis déjà alimenté par un répartiteur ne
+    // le prend pas (il est droit ou tourné vers le répartiteur, voir belt_shape)
+    let d = tb.dir as usize;
+    sd == (face + 2) & 3 && main_pred(w, t).is_none() && ![(d + 1) % 4, (d + 2) % 4, (d + 3) % 4].into_iter().any(|s| splitter_feeds(w, t, s))
 }
 
 /// Reconstruit les lignes autour des cases modifiées en conservant les objets.

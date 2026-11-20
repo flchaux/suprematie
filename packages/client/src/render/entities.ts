@@ -13,6 +13,7 @@ import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
 import { ITEM_MODELS } from "../../../../assets/models/items.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
 import { Effects } from "./effects.ts";
+import { sideFeeds, splitterOuts } from "../game/belts.ts";
 import { sprite } from "../ui/sprites.ts";
 
 const TILE = 256;
@@ -118,6 +119,8 @@ class KindMesh {
 /** Bâtiments qui reçoivent des objets (et ont donc des trappes) ; ce sont aussi ceux qui reçoivent par transfert direct. */
 const RECEIVERS = RECEIVER_CLASSES;
 const RECIPE_NONE = 255;
+/** code de l'ordre de récolte du commandant (Order::Harvest), dans le mot aux des unités */
+const ORDER_HARVEST = 16;
 /** trappe ouverte logée dans la trappe du modèle : échelles du cadre lumineux (0,64 x 0,44 -> 0,46 x 0,28) et de l'ouverture (0,5 x 0,3 -> 0,38 x 0,2) */
 const FITTED_GLOW = new THREE.Vector3(0.46 / 0.64, 0.28 / 0.44, 0.1);
 const FITTED_HOLE = new THREE.Vector3(0.38 / 0.5, 0.2 / 0.3, 0.1);
@@ -301,7 +304,7 @@ export class Entities {
   private hatchFor: Frame | null = null;
   /** bâtiments sans trappe dans leur modèle (aucune paroi) : tables vides, par largeur */
   private noHatches: Float32Array[] = [];
-  /** conduites entre machines jumelles (ingrédients partagés) : gaine et liseré lumineux */
+  /** conduites entre machines jumelles (ingrédients et produits partagés) : gaine et liseré lumineux */
   twinPipe: THREE.InstancedMesh;
   twinGlow: THREE.InstancedMesh;
   /** icônes de production sur les toits : un maillage instancié par icône, et les pastilles de fond */
@@ -721,7 +724,14 @@ export class Entities {
         const aux = buf[o + 8];
         const tx = (aux & 0xfff) + 0.5;
         const tz = ((aux >> 12) & 0xfff) + 0.5;
-        if (Math.random() < 0.5) this.addBeam(new THREE.Vector3(x, y + 0.6, z), new THREE.Vector3(tx + (Math.random() - 0.5), groundHeight(this.map, tx, tz) + 0.5, tz + (Math.random() - 0.5)), 0x7df9ff, 0.12);
+        if (aux >>> 24 === ORDER_HARVEST) {
+          // récolte du commandant : rayon d'extraction orangé vers le gisement, fonderie dorsale allumée
+          if (Math.random() < 0.35) this.addBeam(new THREE.Vector3(x, y + 0.5, z), new THREE.Vector3(tx + (Math.random() - 0.5) * 1.4, groundHeight(this.map, tx, tz) + 0.1, tz + (Math.random() - 0.5) * 1.4), 0xff8a2a, 0.14);
+          // bouche du four (modèle : 0, 1,32, -0,78) et cheminées du sac dorsal (2,7, -0,66), vers l'arrière
+          const fwx = Math.cos(facing) * km.scale;
+          const fwz = Math.sin(facing) * km.scale;
+          fx.smelting(x - fwx * 0.78, y + 1.32 * km.scale, z - fwz * 0.78, x - fwx * 0.66, y + 2.7 * km.scale, z - fwz * 0.66, tx, tz, dt);
+        } else if (Math.random() < 0.5) this.addBeam(new THREE.Vector3(x, y + 0.6, z), new THREE.Vector3(tx + (Math.random() - 0.5), groundHeight(this.map, tx, tz) + 0.5, tz + (Math.random() - 0.5)), 0x7df9ff, 0.12);
       }
     }
     // ----- bâtiments -----
@@ -742,11 +752,15 @@ export class Entities {
     const walls = new Map<number, number>();
     // tapis du sol terminés : case -> direction (goulottes des extracteurs)
     const groundBelts = new Map<number, number>();
+    // répartiteurs terminés : case -> sorties (masque de directions), comptés comme des tapis pour les jonctions
+    const splitterOutsAt = new Map<number, number>();
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-      const cls = this.data.buildings[buf[o + 1] & 0xff]?.cls;
+      const bd = this.data.buildings[buf[o + 1] & 0xff];
+      const cls = bd?.cls;
       if (cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
       else if (cls === BClass.Belt && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0) groundBelts.set(buf[o + 2] >>> 0, (buf[o + 1] >> 16) & 3);
+      else if (bd?.key === "splitter" && buf[o + 4] >= 65536) splitterOutsAt.set(buf[o + 2] >>> 0, splitterOuts((buf[o + 1] >> 16) & 3, (buf[o + 5] >>> 24) & 3));
     }
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
@@ -779,7 +793,7 @@ export class Entities {
       // extracteur, dépôt ou générateur amélioré : modèle de son niveau
       const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power || def.key === "splitter" || def.key === "furnace" ? (buf[o + 5] >>> 24) & 3 : 0;
       // tapis droit au sol rejoint par le côté : variante au rebord ouvert (jonction en T continue)
-      const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts) : undefined;
+      const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts, splitterOutsAt) : undefined;
       // rail en virage : forme 1 + c (simulation, d'après les rails voisins) reliant les côtés c et c + 1 ;
       // le modèle relie l'arrière (côté dir + 2) et la gauche (côté dir + 1) : dir = c + 3
       const railShape = def.cls === BClass.Rail ? buf[o + 5] & 7 : 0;
@@ -1418,7 +1432,7 @@ export class Entities {
             if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
             else if (inside(ox + r * DX[p], oz + r * DZ[p])) state = 2;
           }
-          // transfert direct avec un bâtiment collé ; machine jumelle (3) : ingrédients partagés
+          // transfert direct avec un bâtiment collé ; machine jumelle (3) : ingrédients et produits partagés
           if (state === 0) {
             const nb = cells.get(oz * W + ox);
             if (nb !== undefined && nb !== o && twins(o, nb)) state = 3;
@@ -1532,25 +1546,21 @@ export class Entities {
 
   /**
    * Variante d'un tapis droit en (x, z), tourné vers `dir`, rejoint par le côté : un tapis au sol voisin,
-   * perpendiculaire, qui pointe vers lui (`belts` : case x | z << 16 -> direction). Indéfini sinon.
+   * perpendiculaire, qui pointe vers lui, ou une sortie de répartiteur (`belts` : case x | z << 16 ->
+   * direction ; `splitters` : case -> sorties). Indéfini sinon.
    */
-  private beltJunction(kind: number, x: number, z: number, dir: number, belts: Map<number, number>): KindMesh | undefined {
+  private beltJunction(kind: number, x: number, z: number, dir: number, belts: Map<number, number>, splitters: Map<number, number>): KindMesh | undefined {
     const set = this.beltJunctions.get(kind);
     if (!set) return undefined;
-    const DX = [1, 0, -1, 0];
-    const DZ = [0, 1, 0, -1];
-    // repère du modèle : tourné de yaw = π/2 - dir·π/2 (voir le placement des bâtiments) ; -x à gauche
-    const yaw = Math.PI / 2 - (dir * Math.PI) / 2;
-    let neg = false;
-    let pos = false;
-    for (const s of [(dir + 1) & 3, (dir + 3) & 3]) {
-      const nx = x + DX[s];
-      const nz = z + DZ[s];
-      if (nx < 0 || nz < 0 || belts.get(nx | (nz << 16)) !== ((s + 2) & 3)) continue;
-      const mx = Math.round(DX[s] * Math.cos(yaw) - DZ[s] * Math.sin(yaw));
-      if (mx < 0) neg = true;
-      else pos = true;
-    }
+    const inside = (nx: number, nz: number) => nx >= 0 && nz >= 0;
+    const m = sideFeeds(x, z, dir, {
+      belt: (nx, nz) => (inside(nx, nz) ? belts.get(nx | (nz << 16)) : undefined),
+      splitter: (nx, nz) => (inside(nx, nz) ? (splitters.get(nx | (nz << 16)) ?? 0) : 0),
+    });
+    // repère du modèle (tourné de π/2 - dir·π/2, voir le placement des bâtiments) : le côté dir + 1 est
+    // à gauche (-x), le côté dir + 3 à droite (+x)
+    const neg = (m & 1) !== 0;
+    const pos = (m & 2) !== 0;
     return neg && pos ? set[2] : neg ? set[0] : pos ? set[1] : undefined;
   }
 

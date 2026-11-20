@@ -241,7 +241,7 @@
         <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
       {/if}
       {#if info.twins}
-        <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose s'équilibrent : ce que l'une reçoit sert aussi à l'autre"><span class="kicker">Jumelée</span> ingrédients partagés avec {info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
+        <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose se dépannent : ingrédients et produits passent de l'une à l'autre quand ses bras et tapis ne suffisent pas"><span class="kicker">Jumelée</span> {bdef.cls === BClass.Crafter ? "ingrédients et produits" : "ingrédients"} partagés avec {info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
       {/if}
       {#if bdef.key === "furnace" && d.furnaceLevels}
         {@const fl = d.furnaceLevels}
@@ -537,6 +537,26 @@
       {#if tr}<span class="dim small">{tr}</span>{/if}
       {#if ui.unitInfo.cloaked}<span class="good small">Camouflé : invisible pour l'ennemi</span>{:else if d.units[ui.selUnits[0].kind].key === "commando"}<span class="bad small">Repérable : il vient de tirer</span>{/if}
       {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
+      {#if ui.unitInfo.harvest}
+        <!-- récolte du commandant : gisement -> fonderie intégrée -> stock -->
+        {@const h = ui.unitInfo.harvest}
+        <div class="harvest">
+          <div class="flow">
+            <Item id={h.raw} size={22} /><span class="arrow">›››</span><Icon name="harvest" size={16} /><span class="arrow">›››</span><Item id={h.out} size={22} />
+            <span class="small">{d.items[h.out]?.name} · <span class="num">{(h.cycle / 20).toFixed(0)} s</span> par unité</span>
+          </div>
+          {#if h.state === 1}
+            <div class="status good"><span class="led"></span>Récolte et fonte en cours · gisement {h.x}, {h.y}</div>
+            <div class="upbar"><span style:width={h.progress / 10 + "%"}></span></div>
+          {:else if h.state === 0}
+            <div class="status build"><span class="led"></span>En route vers le gisement ({h.x}, {h.y})</div>
+          {:else if h.state === 2}
+            <div class="status warn"><span class="led"></span>Interrompue : le commandant combat</div>
+          {:else}
+            <div class="status warn"><span class="led"></span>En attente : réserve pleine de {d.items[h.out]?.name.toLowerCase()}</div>
+          {/if}
+        </div>
+      {/if}
     {/if}
     <div class="groups">
       {#each ui.selUnits as g}
@@ -558,6 +578,7 @@
         {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
         {#if deployable}<button class="cmd" onclick={() => client.deploySelected()} title="Déployer"><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
+        {#if has("commander")}<button class="cmd" onclick={() => client.setMode("harvest")} title="Récolter un gisement : le commandant extrait le minerai et le fond dans sa fonderie intégrée (aussi : clic droit sur un gisement libre)"><Icon name="harvest" size={17} /><span class="key">{keyOf("harvest")}</span></button>{/if}
         {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
         {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
       </div>
@@ -593,6 +614,7 @@
       <div class="status {depUser.owner === ui.me ? 'good' : 'warn'}"><span class="led"></span>Exploité par {depUser.owner === ui.me ? "vous" : (ui.names[depUser.owner] ?? "un autre joueur")} ({d.buildings[depUser.kind]?.name})</div>
     {:else}
       <div class="status idle"><span class="led"></span>Libre : posez un extracteur dessus pour l'exploiter</div>
+      {#if client.harvestRecipe(dep.kind) >= 0}<span class="dim small">Ou récoltez-le avec votre commandant (clic droit dessus), plus lentement : il fond le minerai lui-même.</span>{/if}
     {/if}
   </div>
 {/if}
@@ -636,6 +658,7 @@
   .sgrid.nest { margin: 6px 0 4px; }
   .vet2 { font-size: 9px; color: #ffd060; }
   .share input[type="range"] { width: 100%; }
+  .harvest { display: flex; flex-direction: column; gap: 5px; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
   .arrow { color: var(--accent); letter-spacing: -2px; }
   .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; max-height: 236px; overflow-y: auto; padding-right: 2px; }

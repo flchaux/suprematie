@@ -485,6 +485,26 @@ export class Effects {
     }
   }
 
+  /**
+   * Récolte du commandant : lueur et flammèches à la bouche de sa fonderie intégrée (x, y, z), fumée
+   * des cheminées (cx, cy, cz), éclats de minerai arrachés au gisement (gx, gz).
+   */
+  smelting(x: number, y: number, z: number, cx: number, cy: number, cz: number, gx: number, gz: number, dt: number): void {
+    if (!this.inView(x, z, 2)) return;
+    const q = this.quality;
+    if (Math.random() < 14 * q * dt) {
+      this.fire.spawn({ x: x + rnd(-0.06, 0.06), y, z: z + rnd(-0.06, 0.06), vy: rnd(0.4, 1), life: rnd(0.2, 0.4), s0: 0.2, s1: 0.05, c0: [3, 1.5, 0.35], c1: [1.6, 0.35, 0.05] });
+    }
+    if (Math.random() < 3 * q * dt) {
+      const g = rnd(0.12, 0.2);
+      this.smoke.spawn({ x: cx, y: cy, z: cz, vx: rnd(-0.1, 0.1) + 0.15, vy: rnd(0.8, 1.3), vz: rnd(-0.1, 0.1), life: rnd(1.4, 2.2), s0: 0.12, s1: 0.6, c0: [g, g, g], c1: [g * 2.4, g * 2.4, g * 2.4], a: 0.5, drag: 0.3 });
+    }
+    if (Math.random() < 5 * q * dt) {
+      const h = groundHeight(this.map, gx, gz) + 0.15;
+      this.fire.spawn({ x: gx + rnd(-0.6, 0.6), y: h, z: gz + rnd(-0.6, 0.6), vx: rnd(-2, 2), vy: rnd(2, 4), vz: rnd(-2, 2), life: rnd(0.25, 0.4), s0: 0.12, s1: 0.05, c0: [2.6, 1.3, 0.4], grav: -14 });
+    }
+  }
+
   /** Téléportation / saut : anneau bleu et éclat. */
   warp(x: number, z: number): void {
     if (!this.inView(x, z)) return;

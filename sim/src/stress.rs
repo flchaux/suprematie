@@ -385,6 +385,61 @@ pub fn logistics_demo() -> World {
         put(&mut w, 0, B_BELT1, x, ey, 0);
         put(&mut w, 0, B_BELT1, x, ey + 1, 0);
     }
+    // répartiteur alimenté par un extracteur : la file tourne vers le sud pour entrer par son arrière ; ses
+    // sorties gauche et droite partent vers le sud en virage (il compte comme un tapis pour leur forme),
+    // l'avant tout droit ; trois files jusqu'à deux dépôts
+    let (ex, ey) = (x0 + 58, y0 + 56);
+    for dy in 0..2 {
+        for dx in 0..2 {
+            let i = w.map.idx(ex + dx, ey + dy);
+            w.map.deposit[i] = IRON_ORE;
+        }
+    }
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey });
+    put(&mut w, 0, B_EXTRACTOR, ex, ey, 0);
+    put(&mut w, 0, B_BELT1, ex + 2, ey + 1, 0);
+    put(&mut w, 0, B_BELT1, ex + 3, ey + 1, 0);
+    put(&mut w, 0, B_BELT1, ex + 4, ey + 1, 1);
+    put(&mut w, 0, B_SPLITTER, ex + 4, ey + 2, 1);
+    for x in ex + 3..ex + 6 {
+        for y in ey + if x == ex + 4 { 3 } else { 2 }..ey + 6 {
+            put(&mut w, 0, B_BELT1, x, y, 1);
+        }
+    }
+    put(&mut w, 0, B_DEPOT, ex + 3, ey + 6, 0);
+    put(&mut w, 0, B_DEPOT, ex + 5, ey + 6, 0);
+    // machines jumelles : deux paires d'assembleurs d'engrenages collés, nourries par un seul tapis
+    // (dépôt amélioré qui rend des plaques) qui entre dans la première de chaque paire.
+    // - à gauche, chacune a son tapis de sortie vers un dépôt : chacune sort sur le sien ;
+    // - à droite, seule la seconde a un tapis de sortie : la première sort par sa voisine.
+    let gear = RECIPES.iter().position(|r| r.key == "gear").unwrap_or(0) as u8;
+    let (tx, ty) = (x0 + 66, y0 + 54);
+    for (px, both) in [(tx, true), (tx + 10, false)] {
+        let d = put(&mut w, 0, B_DEPOT, px, ty - 6, 0);
+        if d != usize::MAX {
+            w.buildings[d].level = 1;
+            w.buildings[d].filters = vec![IRON_PLATE];
+            w.players[0].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
+        }
+        for y in ty - 4..ty {
+            put(&mut w, 0, B_BELT1, px, y, 1);
+        }
+        for m in [put(&mut w, 0, B_ASSEMBLER1, px, ty, 0), put(&mut w, 0, B_ASSEMBLER1, px + 2, ty, 0)] {
+            if m != usize::MAX {
+                w.buildings[m].recipe = gear;
+                w.buildings[m].repeat = true;
+            }
+        }
+        for (bx, dx) in [(px, px), (px + 3, px + 2)] {
+            if bx == px && !both {
+                continue;
+            }
+            for y in ty + 2..ty + 7 {
+                put(&mut w, 0, B_BELT1, bx, y, 1);
+            }
+            put(&mut w, 0, B_DEPOT, dx, ty + 7, 0);
+        }
+    }
     for _ in 0..20 {
         w.step(&[]);
     }

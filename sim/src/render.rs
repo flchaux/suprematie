@@ -74,6 +74,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
+                Order::Harvest { x, y } => (x * TILE + TILE / 2, y * TILE + TILE / 2),
             };
             ((tx / TILE) & 0xfff) | (((ty / TILE) & 0xfff) << 12) | ((o.code() as i32) << 24)
         }
@@ -512,7 +513,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let Some(s) = w.unit(id) else { return "null".into() };
     let c = &w.units.cold[s];
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -526,7 +527,28 @@ pub fn info_unit(w: &World, id: u32) -> String {
         c.lvl,
         w.max_hp(s),
         crate::combat::cloaked(w, s),
-        crate::combat::radar_stealth(w, s)
+        crate::combat::radar_stealth(w, s),
+        harvest_info(w, s)
+    )
+}
+
+/// Récolte du commandant (ordre Harvest en tête de file) : {raw, out, x, y, state, progress (‰), cycle (ticks)}
+/// ou null. `state` : 0 en route, 1 récolte, 2 combat, 3 réserve pleine (units::HV_*).
+fn harvest_info(w: &World, s: usize) -> String {
+    let c = &w.units.cold[s];
+    let Some(&Order::Harvest { x, y }) = c.orders.first() else { return "null".into() };
+    let Some(r) = crate::units::harvest_recipe(w, w.units.owner[s], x, y) else { return "null".into() };
+    let need = crate::units::harvest_cycle(r) * 100;
+    let mult = w.players[w.units.owner[s] as usize].res_mult.max(1) as u32;
+    format!(
+        "{{\"raw\":{},\"out\":{},\"x\":{},\"y\":{},\"state\":{},\"progress\":{},\"cycle\":{}}}",
+        RECIPES[r].inputs[0].0,
+        RECIPES[r].output.0,
+        x,
+        y,
+        c.timer,
+        c.work as u64 * 1000 / need.max(1) as u64,
+        need / mult
     )
 }
 
@@ -555,6 +577,7 @@ fn order_point(w: &World, o: &Order) -> Option<(i32, i32)> {
         Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
+        Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),
     }
 }
 

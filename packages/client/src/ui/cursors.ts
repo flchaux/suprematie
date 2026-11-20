@@ -12,6 +12,7 @@ export type CursorKind =
   | "assist"
   | "repair"
   | "reclaim"
+  | "harvest"
   | "load"
   | "unload"
   | "rally"
@@ -56,6 +57,7 @@ const SVG: Record<Exclude<CursorKind, "grab">, [string, number, number]> = {
   assist: [arrow("#5dff8f", badge("#5dff8f", `<path d="M23 18.5l4 1.6v2.6c0 2.5-1.7 4.3-4 5.3-2.3-1-4-2.8-4-5.3v-2.6z" fill="${OUT}"/>`)), 3, 2],
   repair: [arrow("#5dff8f", badge("#5dff8f", `<path d="M20 26.5l4.2-4.2M24.5 19.2a2.6 2.6 0 1 0 2.3 2.3l-1.5.4-.9-.9.4-1.5z" fill="none" stroke="${OUT}" stroke-width="1.8" stroke-linecap="round"/>`)), 3, 2],
   reclaim: [arrow("#ffd23e", badge("#ffd23e", `<path d="M23 18.8l3.4 5.8h-6.8z" fill="none" stroke="${OUT}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="23" cy="22.8" r="1" fill="${OUT}"/>`)), 3, 2],
+  harvest: [arrow("#ff9a3c", badge("#ff9a3c", `<path d="M23 18.2c1.9 2 3.2 3.6 3.2 5.4a3.2 3.2 0 0 1-6.4 0c0-1.2.6-2.1 1.4-2.9.1 1 .6 1.6 1.2 1.8-.3-1.6.1-3 .6-4.3z" fill="${OUT}"/>`)), 3, 2],
   load: [arrow("#5dff8f", badge("#5dff8f", `<path d="M23 27v-7M20 22.5l3-3 3 3" fill="none" stroke="${OUT}" stroke-width="1.8" stroke-linecap="round"/>`)), 3, 2],
   unload: [arrow("#5dff8f", badge("#5dff8f", `<path d="M23 19v7M20 23.5l3 3 3-3" fill="none" stroke="${OUT}" stroke-width="1.8" stroke-linecap="round"/>`)), 3, 2],
   rally: [arrow("#5dff8f", badge("#5dff8f", `<path d="M21 27.5v-9M21 18.8h5.5l-1.5 2 1.5 2H21" fill="${OUT}" stroke="${OUT}" stroke-width="1.4" stroke-linejoin="round"/>`)), 3, 2],
@@ -79,6 +81,7 @@ const FALLBACK: Record<CursorKind, string> = {
   assist: "pointer",
   repair: "pointer",
   reclaim: "pointer",
+  harvest: "pointer",
   load: "pointer",
   unload: "pointer",
   rally: "pointer",

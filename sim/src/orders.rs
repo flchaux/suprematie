@@ -52,6 +52,8 @@ pub const O_ROTATE: i32 = 24;
 /// annuler les constructions prévues (non commencées) qui couvrent la case [x, y] : bâtiments à
 /// reconstruire (fantômes) et ordres de construction de nos unités dont le chantier n'est pas posé
 pub const O_CANCEL_PLAN: i32 = 25;
+/// commandant : récolter un gisement et fondre le minerai (fonderie intégrée) : [drapeaux, x, y (cases), n, unités…]
+pub const O_HARVEST: i32 = 26;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -439,6 +441,18 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if let Some(s) = own_unit(w, p, id) {
                     if ok && w.units.kind[s] == crate::data::U_COMMANDER {
                         give(w, s, q, Order::Collect { target });
+                    }
+                }
+            }
+        }
+        O_HARVEST => {
+            let q = c.next() & 1 != 0;
+            let (x, y) = (c.next(), c.next());
+            let ok = crate::units::harvest_recipe(w, p, x, y).is_some();
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && w.units.kind[s] == crate::data::U_COMMANDER {
+                        give(w, s, q, Order::Harvest { x, y });
                     }
                 }
             }

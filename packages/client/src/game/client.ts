@@ -4,14 +4,14 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { ownerColor, ownerHex } from "./colors.ts";
-import { ui, pushMessage, hasTechUI } from "./state.svelte.ts";
+import { ui, pushMessage, hasTechUI, type HarvestInfo } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
@@ -20,6 +20,7 @@ import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
 import { isMachine, machineRow } from "./machineRow.ts";
+import * as Belts from "./belts.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -1083,6 +1084,9 @@ export class GameClient {
       case "assist":
         if (this.selected.size) this.setMode("assist");
         break;
+      case "harvest":
+        if (this.commandersOf(this.selectedUnits()).length) this.setMode("harvest");
+        break;
       case "deploy":
         this.deploySelected();
         break;
@@ -1424,7 +1428,7 @@ export class GameClient {
             return;
           }
           // gisement (2 x 2 cases) sous le curseur : fiche du gisement
-          const s = this.map?.spots.find((p) => tx >= p.x && tx < p.x + 2 && tz >= p.y && tz < p.y + 2);
+          const s = this.spotAt(tx, tz);
           ui.selDeposit = s ? { kind: s.kind, x: s.x, y: s.y } : null;
           if (s) sfx.click();
         }
@@ -1576,7 +1580,7 @@ export class GameClient {
       return;
     }
     const id = g.ids[0];
-    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean } | null>("unit", [id]).then((r) => {
+    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null } | null>("unit", [id]).then((r) => {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });
@@ -1626,6 +1630,10 @@ export class GameClient {
           return "patrol";
         case "reclaim":
           return "reclaim";
+        case "harvest": {
+          const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
+          return s && this.harvestRecipe(s.kind) >= 0 ? "harvest" : "invalid";
+        }
         case "unload":
           return "unload";
         case "assist":
@@ -1652,6 +1660,10 @@ export class GameClient {
       if (def.cls === BClass.Gate) return "move";
       if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
       if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => this.data!.units[u.kind].key === "commander")) return "load";
+    }
+    if (!tb && units.some((u) => this.data!.units[u.kind].key === "commander")) {
+      const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
+      if (s && this.harvestRecipe(s.kind) >= 0) return "harvest";
     }
     if (engs) {
       const f = this.frame;
@@ -1735,6 +1747,8 @@ export class GameClient {
         return;
       }
     }
+    // commandant sur un gisement libre (sans extracteur) : récolte avec sa fonderie intégrée
+    if (!tb && this.harvestAt(units, g.x, g.z, queue, false)) return;
     // épave
     if (engs.length && this.frame) {
       const f = this.frame;
@@ -1750,6 +1764,63 @@ export class GameClient {
     this.cmd(Ord.move(units, gx, gy, queue, false));
     this.scene?.addMarker(g.x, g.z, 0x7dff9a);
     sfx.confirm();
+  }
+
+  /** Gisement (2 x 2 cases) qui couvre la case (tx, tz), s'il y en a un. */
+  private spotAt(tx: number, tz: number): { kind: number; x: number; y: number } | null {
+    return this.map?.spots.find((p) => tx >= p.x && tx < p.x + 2 && tz >= p.y && tz < p.y + 2) ?? null;
+  }
+
+  /**
+   * Recette de fonderie utilisée par la récolte du commandant sur un gisement de la ressource `raw`,
+   * ou -1 (hydrocarbure, cristal, ou recette pas encore débloquée : la plaquette de silicium demande
+   * l'électronique). Même règle que la simulation (units::harvest_recipe).
+   */
+  harvestRecipe(raw: number): number {
+    if (!this.data) return -1;
+    const r = smeltRecipe(this.data, raw);
+    if (r < 0) return -1;
+    const me = this.frame?.players[ui.me];
+    return !me || hasTech(me, this.data.recipes[r].tech) ? r : -1;
+  }
+
+  /** Commandants parmi les unités. */
+  private commandersOf(units: { id: number; kind: number }[]): number[] {
+    return units.filter((u) => this.data!.units[u.kind].key === "commander").map((u) => u.id);
+  }
+
+  /**
+   * Ordre de récolte au point (x, z) de la carte pour les commandants de `units` (les autres unités s'y
+   * rendent). Faux si rien n'est récoltable là ; `explain` dit alors pourquoi.
+   */
+  private harvestAt(units: { id: number; kind: number; x: number; y: number }[], x: number, z: number, queue: boolean, explain: boolean): boolean {
+    const tx = Math.floor(x);
+    const tz = Math.floor(z);
+    const spot = this.spotAt(tx, tz);
+    const cmdrs = this.commandersOf(units);
+    const fail = (msg: string): boolean => {
+      if (explain) {
+        pushMessage(msg, "alert");
+        sfx.error();
+      }
+      return false;
+    };
+    if (!cmdrs.length) return fail("Récolte : sélectionnez votre commandant");
+    if (!spot) return fail("Récolte : cliquez sur un gisement de minerai de fer, de cuivre ou de silicium");
+    const items = this.data!.items;
+    const r = this.harvestRecipe(spot.kind);
+    if (r < 0) {
+      const sr = smeltRecipe(this.data!, spot.kind);
+      return fail(sr < 0 ? `Récolte : la fonderie du commandant ne sait pas fondre ${items[spot.kind]?.name.toLowerCase() ?? "ce gisement"}` : `Récolte : la recette « ${items[this.data!.recipes[sr].output[0]]?.name} » n'est pas encore recherchée`);
+    }
+    this.cmd(Ord.harvest(cmdrs, tx, tz, queue));
+    const rest = units.filter((u) => !cmdrs.includes(u.id));
+    if (rest.length) this.cmd(Ord.move(rest, Math.round(x * TILE), Math.round(z * TILE), queue, false));
+    this.scene?.addMarker(x, z, 0xff9a3c);
+    const rec = this.data!.recipes[r];
+    pushMessage(`Commandant : récolte du ${items[spot.kind]?.name.toLowerCase()}, fondu en ${items[rec.output[0]]?.name.toLowerCase()} (versé au stock)`, "info");
+    sfx.confirm();
+    return true;
   }
 
   /** Recyclage : la simulation identifie l'épave la plus proche du point. */
@@ -1799,6 +1870,10 @@ export class GameClient {
         if (tu) this.cmd(Ord.target(O.ASSIST, ids, tu.id, queue));
         else if (tb) this.cmd(Ord.target(O.ASSIST, this.engineers(), tb.ref, queue));
         break;
+      case "harvest":
+        if (!this.harvestAt(units, g.x, g.z, queue, true)) return;
+        if (!queue) this.cancelMode();
+        return;
       case "teleport":
       case "jump": {
         const src = units.find((u) => (mode === "teleport" ? this.data!.units[u.kind].key === "commander" : this.data!.units[u.kind].key === "hyper_cruiser"));
@@ -1937,42 +2012,38 @@ export class GameClient {
     }
     return m;
   }
-  /**
-   * Direction automatique d'un tapis posé seul : il prolonge le tapis qui débouche sur sa case,
-   * sinon il alimente un tapis voisin (qui ne pointe pas vers lui) ; sinon la dernière direction choisie.
-   */
-  private autoBeltDir(x: number, y: number, belts: Map<number, { dir: number; owner: number }>): number {
-    const W = this.map!.w;
-    const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-    for (let d = 0; d < 4; d++) {
-      // tapis à côté dont l'avant est notre case
-      const b = belts.get((y - D[d][1]) * W + (x - D[d][0]));
-      if (b && b.owner === ui.me && b.dir === d) return d;
+  /** Répartiteurs terminés : case -> direction, sorties (masque de directions) et propriétaire. */
+  private splitterTiles(): Map<number, { dir: number; outs: number; owner: number }> {
+    const m = new Map<number, { dir: number; outs: number; owner: number }>();
+    const f = this.frame;
+    if (!f || !this.data || !this.map) return m;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+      if (this.data.buildings[f.buf[o + 1] & 0xff]?.key !== "splitter" || f.buf[o + 4] < 65536) continue;
+      const dir = (f.buf[o + 1] >> 16) & 3;
+      const x = f.buf[o + 2] & 0xffff;
+      const y = (f.buf[o + 2] >>> 16) & 0xffff;
+      m.set(y * this.map.w + x, { dir, outs: Belts.splitterOuts(dir, (f.buf[o + 5] >>> 24) & 3), owner: (f.buf[o + 1] >> 8) & 0xff });
     }
-    for (let d = 0; d < 4; d++) {
-      const b = belts.get((y + D[d][1]) * W + (x + D[d][0]));
-      if (b && b.owner === ui.me && b.dir !== (d + 2) % 4) return d;
-    }
-    return ui.buildDir;
+    return m;
   }
-  /** Forme d'un tapis (règle de la simulation, belts::belt_shape) : 0 droit, 1 et 2 virages. */
-  private beltShape(x: number, y: number, dir: number, belts: Map<number, { dir: number; owner: number }>): number {
+  /** Voisins « tapis » (tapis et répartiteurs ; seulement les nôtres si `mine`) pour belts.ts. */
+  private beltNeighbours(belts: Map<number, { dir: number; owner: number }>, splitters: Map<number, { dir: number; outs: number; owner: number }>, mine: boolean): Belts.BeltNeighbours {
     const W = this.map!.w;
-    const D = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-    const back = belts.get((y + D[(dir + 2) % 4][1]) * W + (x + D[(dir + 2) % 4][0]));
-    if (back && back.dir === dir) return 0;
-    let shape = 0;
-    let n = 0;
-    for (const [k, sd] of [[1, (dir + 1) % 4], [2, (dir + 3) % 4]]) {
-      const b = belts.get((y + D[sd][1]) * W + (x + D[sd][0]));
-      if (b && (b.dir + 2) % 4 === sd) {
-        shape = k;
-        n++;
-      }
-    }
-    return n === 1 ? shape : 0;
+    const H = this.map!.h;
+    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+    return {
+      belt: (x, y) => {
+        const b = inside(x, y) ? belts.get(y * W + x) : undefined;
+        return b && (!mine || b.owner === ui.me) ? b.dir : undefined;
+      },
+      // un tapis (posé ou en cours de pose) sur la case l'emporte
+      splitter: (x, y) => {
+        if (!inside(x, y) || belts.has(y * W + x)) return 0;
+        const s = splitters.get(y * W + x);
+        return s && (!mine || s.owner === ui.me) ? s.outs : 0;
+      },
+    };
   }
-
   private ghostSeq = 0;
   private async updateGhost(): Promise<void> {
     if (ui.mode !== "build" || ui.buildKind < 0 || !this.scene || !this.data) return;
@@ -1985,7 +2056,16 @@ export class GameClient {
     const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine;
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
-    const cells = this.mouse.down && this.ghostStart && lineable ? (machine ? machineRow(this.ghostStart, cur, def, ui.buildDir) : this.lineCells(this.ghostStart, cur)) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
+    const splitters = isBelt ? this.splitterTiles() : new Map<number, { dir: number; outs: number; owner: number }>();
+    // direction automatique d'un tapis posé seul : il prolonge ce qui débouche sur sa case, ou alimente un voisin
+    const autoDir = (x: number, y: number) => {
+      const s = (sx: number, sy: number) => {
+        const e = this.map && sx >= 0 && sy >= 0 ? splitters.get(sy * this.map.w + sx) : undefined;
+        return e && e.owner === ui.me ? e.dir : undefined;
+      };
+      return Belts.autoBeltDir(x, y, this.beltNeighbours(belts, splitters, true), s, ui.buildDir);
+    };
+    const cells = this.mouse.down && this.ghostStart && lineable ? (machine ? machineRow(this.ghostStart, cur, def, ui.buildDir) : this.lineCells(this.ghostStart, cur)) : [{ ...cur, dir: isBelt && !this.beltForced ? autoDir(cur.x, cur.y) : ui.buildDir }];
     /** un de nos tapis au sol sur la case, perpendiculaire à la direction `dir` */
     const across = (c: { x: number; y: number; dir: number }): boolean => {
       const e = this.map ? belts.get(c.y * this.map.w + c.x) : undefined;
@@ -2041,7 +2121,8 @@ export class GameClient {
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
-      this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: this.beltShape(c.x, c.y, c.dir, belts) })));
+      const n = this.beltNeighbours(belts, splitters, false);
+      this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: Belts.beltShape(c.x, c.y, c.dir, n) })));
     } else if (this.data?.buildings[ui.buildKind]?.key === "splitter") {
       this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: ui.buildSplit })));
     } else this.scene.setGhost(ui.buildKind, this.ghostCells);

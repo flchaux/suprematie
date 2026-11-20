@@ -120,6 +120,16 @@ pub const RECIPES: [RecipeDef; 21] = [
 ];
 pub const RECIPE_NONE: u8 = 255;
 
+/// Recette de fonderie qui fond la ressource brute `raw` (minerai de fer, de cuivre, silicium) : la
+/// seule recette de fonderie dont l'unique ingrédient est cette ressource. Sert à la récolte du
+/// commandant (fonderie intégrée). Hydrocarbure et cristal n'en ont pas (raffinerie).
+pub fn smelt_recipe(raw: u8) -> Option<usize> {
+    if raw == 0 || raw > CRYSTAL {
+        return None;
+    }
+    RECIPES.iter().position(|r| r.crafter == Crafter::Furnace && r.inputs.len() == 1 && r.inputs[0].0 == raw)
+}
+
 /// Réserve du joueur : plafond de chaque objet = base + capacité de ses dépôts terminés (par niveau).
 pub const STOCK_BASE: i32 = 400;
 pub const DEPOT_CAP: [i32; 2] = [600, 2000];
