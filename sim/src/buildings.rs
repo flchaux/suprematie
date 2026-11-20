@@ -418,6 +418,8 @@ pub fn complete_building(w: &mut World, b: usize) {
         let lv = (w.buildings[b].level as usize).min(DEPOT_CAP.len() - 1);
         w.players[owner as usize].stock_cap += DEPOT_CAP[lv];
     }
+    // fabricant sans recette collé à une machine identique : il prend sa recette (machines jumelles)
+    crate::twins::adopt_twin_recipe(w, b);
     w.buildings_version = w.buildings_version.wrapping_add(1);
     w.ev(EV_BUILT, owner as i32, kind as i32, x, y);
 }
@@ -1187,17 +1189,6 @@ pub fn factory_trim(w: &mut World, b: usize) {
 /// (à l'arrêt, à chacun de leurs passages).
 const TWIN_PERIOD: u32 = 10;
 
-/// Fabriquent-elles la même chose ? Même recette (fabricants), même unité en tête de file (usines) ;
-/// les laboratoires travaillent tous à la recherche du joueur.
-fn same_product(a: &Building, c: &Building) -> bool {
-    match a.def().class {
-        BClass::Crafter => a.recipe != RECIPE_NONE && a.recipe == c.recipe,
-        BClass::Factory => matches!((a.queue.first(), c.queue.first()), (Some(x), Some(y)) if x.0 == y.0),
-        BClass::Lab => true,
-        _ => false,
-    }
-}
-
 /// Machines jumelles de `b`, par indice croissant : bâtiments terminés du même type et du même joueur,
 /// collés à une de ses faces, qui fabriquent la même chose. Elles partagent leurs ingrédients.
 pub fn twins_of(w: &World, b: usize) -> Vec<usize> {
@@ -1212,6 +1203,8 @@ const MAX_TWINS: usize = 20;
 /// Jumelles de `b` rangées dans `v` (sans allocation), par indice croissant ; renvoie leur nombre.
 fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
     let bb = &w.buildings[b];
+    // ce qu'elle fabrique (règle commune avec l'aperçu de pose : voir twins.rs)
+    let Some(key) = crate::twins::product_key(bb) else { return 0 };
     let (bw, bh) = bb.size();
     let mut n = 0;
     for ty in bb.y - 1..=bb.y + bh {
@@ -1227,8 +1220,7 @@ fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
             if c == b || v[..n].contains(&c) || n == MAX_TWINS {
                 continue;
             }
-            let cb = &w.buildings[c];
-            if cb.alive && cb.complete() && cb.upgrade == 0 && cb.kind == bb.kind && cb.owner == bb.owner && same_product(bb, cb) {
+            if crate::twins::twin_with(&w.buildings[c], bb.kind, bb.owner, key) {
                 v[n] = c;
                 n += 1;
             }

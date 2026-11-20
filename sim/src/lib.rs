@@ -17,6 +17,7 @@ pub mod render;
 pub mod rng;
 pub mod save;
 pub mod ser;
+pub mod twins;
 pub mod units;
 pub mod world;
 
@@ -195,6 +196,24 @@ pub extern "C" fn can_place(owner: i32, kind: i32, x: i32, y: i32, dir: i32) -> 
     with_world(|w| buildings::can_place(w, owner as u8, kind as u16, x, y, dir as u8) as i32, 0)
 }
 
+/// Aperçu de pose des machines jumelles. Tampon d'entrée (i32) : [joueur, type, puis (x, y, dir)…] ;
+/// renvoie, par emplacement, les cases de bord collées à une future jumelle (voir twins::twin_preview).
+#[no_mangle]
+pub extern "C" fn twin_preview(n_words: u32) -> *const u8 {
+    let a = read_i32s(n_words);
+    let v = with_world(
+        |w| {
+            if a.len() < 2 || a[0] < 0 || a[1] < 0 {
+                return Vec::new();
+            }
+            let cells: Vec<(i32, i32, u8)> = a[2..].chunks_exact(3).map(|c| (c[0], c[1], c[2] as u8)).collect();
+            twins::twin_preview(w, a[0] as u8, a[1] as u16, &cells)
+        },
+        Vec::new(),
+    );
+    set_out_i32(&v)
+}
+
 /// Bâtiment sur une case : kind+1 | propriétaire<<8 | direction<<16 | (complet)<<20, ou 0.
 #[no_mangle]
 pub extern "C" fn tile_info(x: i32, y: i32) -> i32 {
@@ -331,4 +350,6 @@ mod logistics_tests;
 mod features_tests;
 #[cfg(test)]
 mod nature_tests;
+#[cfg(test)]
+mod twin_preview_tests;
 pub mod stress;

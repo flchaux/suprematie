@@ -19,6 +19,7 @@ import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
+import { isMachine, machineRow } from "./machineRow.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -64,7 +65,8 @@ export class GameClient {
   reqId = 0;
   pending = new Map<number, (r: unknown) => void>();
   lastTick = 0;
-  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number }[] = [];
+  /** `twins` : cases de bord collées à une future machine jumelle (liseré vert, voir sim twins::twin_preview) */
+  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[] = [];
   ghostStart: { x: number; y: number } | null = null;
   lastUiUpdate = 0;
   lastMinimap = 0;
@@ -1978,10 +1980,12 @@ export class GameClient {
     if (!g) return;
     const def = this.data.buildings[ui.buildKind];
     const cur = this.snapBuild(g);
-    const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon;
+    // machines qui peuvent se jumeler : une rangée se pose en glissant
+    const machine = isMachine(def.cls);
+    const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine;
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
-    const cells = this.mouse.down && this.ghostStart && lineable ? this.lineCells(this.ghostStart, cur) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
+    const cells = this.mouse.down && this.ghostStart && lineable ? (machine ? machineRow(this.ghostStart, cur, def, ui.buildDir) : this.lineCells(this.ghostStart, cur)) : [{ ...cur, dir: isBelt && !this.beltForced ? this.autoBeltDir(cur.x, cur.y, belts) : ui.buildDir }];
     /** un de nos tapis au sol sur la case, perpendiculaire à la direction `dir` */
     const across = (c: { x: number; y: number; dir: number }): boolean => {
       const e = this.map ? belts.get(c.y * this.map.w + c.x) : undefined;
@@ -2024,9 +2028,16 @@ export class GameClient {
       }
       okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i], i) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
     }
+    // jumelages qui se formeront : règle de la simulation, avec la recette que prendra chaque machine
+    let twins: number[] = [];
+    if (machine) {
+      const args = [ui.me, ui.buildKind];
+      for (const c of cells) args.push(c.x, c.y, c.dir | rf);
+      twins = (await this.query<number[] | null>("twinPreview", args)) ?? [];
+    }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.scene.ghostLift = 0;
-    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0 }));
+    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0, twins: twins[i] ?? 0 }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
