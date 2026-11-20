@@ -30,6 +30,8 @@ export interface SaveMeta {
   water: boolean;
   seed: number;
   fauna?: Fauna;
+  /** brouillard de guerre ; absent (sauvegardes d'avant le réglage) : activé */
+  fog?: boolean;
   players: { name: string; bot: boolean; team: number; personality?: string; aix?: number; level?: string }[];
 }
 
@@ -40,6 +42,8 @@ export interface LobbyState {
   seed: number;
   /** faune : nids de bêtes qui attaquent les joueurs qui s'étendent trop près */
   fauna: Fauna;
+  /** brouillard de guerre (activé par défaut) ; désactivé, chacun voit toute la carte en permanence */
+  fog: boolean;
   running: boolean;
   tick: number;
   /** sauvegarde chargée dans le salon : la composition et les paramètres en viennent (non modifiables) */
@@ -83,7 +87,7 @@ export interface StatSample {
 
 export type ClientMsg =
   | { t: "hello"; name: string; token: string; key: string }
-  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; fauna?: Fauna; personality?: string; aix?: number; level?: string; id?: string }
+  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; fauna?: Fauna; fog?: boolean; personality?: string; aix?: number; level?: string; id?: string }
   | { t: "save" }
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
@@ -123,5 +127,13 @@ export function simParams(lobby: LobbyState): number[] {
   }
   // faune : dernier paramètre (0 aucune … 3 agressive)
   p.push(Math.max(0, FAUNA_LEVELS.indexOf(lobby.fauna ?? "none")));
+  // brouillard de guerre : après la faune (1 activé, 0 désactivé ; absent : activé)
+  p.push(lobby.fog === false ? 0 : 1);
   return p;
+}
+
+/** Brouillard de guerre d'une partie, lu dans ses paramètres d'init (absent : activé), comme la simulation. */
+export function fogFromParams(params: number[]): boolean {
+  const np = params[3] ?? 0;
+  return (params[5 + np * 4] ?? 1) !== 0;
 }

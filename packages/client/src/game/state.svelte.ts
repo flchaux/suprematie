@@ -86,6 +86,8 @@ export const ui = $state({
   replay: false,
   replaySpeed: 1,
   spectator: false,
+  /** brouillard de guerre de la partie en cours (réglage du salon, lu dans les paramètres de la simulation) */
+  fog: true,
   ping: 0,
   /** vitesse de jeu (multiplicateur, partie solo seulement) */
   speed: 1,

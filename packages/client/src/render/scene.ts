@@ -576,12 +576,13 @@ export class GameScene {
     this.stats.shadowSize = half * 2;
   }
 
-  render(frame: Frame | null, alpha: number, me: number, myTeam: number, selected: Set<number>, dt: number, spectator: boolean): void {
+  render(frame: Frame | null, alpha: number, me: number, myTeam: number, selected: Set<number>, dt: number, spectator: boolean, fog = true): void {
     const t0 = performance.now();
     this.time += dt;
     this.updateCamera();
     this.updateShadow();
-    fogEnabled.value = spectator ? 0 : 1;
+    // pas de brouillard pour un spectateur, ni dans une partie lancée sans brouillard de guerre
+    fogEnabled.value = spectator || !fog ? 0 : 1;
     this.terrain?.tick(dt, this.time);
     const view = this.viewRect();
     if (frame && this.entities) {

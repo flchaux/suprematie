@@ -77,10 +77,10 @@ fn wall_between(w: &World, team: u8, x0: i32, y0: i32, x1: i32, y1: i32) -> Opti
     None
 }
 
-/// Équipe sans grille de vision (la faune) : elle voit tout.
+/// Équipe qui voit tout : sans grille de vision (la faune), ou partie sans brouillard de guerre.
 #[inline]
 fn omniscient(w: &World, team: u8) -> bool {
-    team as usize >= w.vis.len()
+    !w.fog || team as usize >= w.vis.len()
 }
 
 #[inline]
@@ -104,6 +104,8 @@ fn visible(w: &World, team: u8, x: i32, y: i32, sub: bool) -> bool {
 /// 32 bulle de brouillage de cette équipe.
 pub const VIS_NEAR: u8 = 16;
 pub const VIS_JAM: u8 = 32;
+/// Case d'une partie sans brouillard : vue, radar, détection, explorée et détection rapprochée.
+pub const VIS_ALL: u8 = 1 | 2 | 4 | 8 | VIS_NEAR;
 
 #[inline]
 fn vis_at(w: &World, team: usize, x: i32, y: i32) -> u8 {
@@ -1075,6 +1077,15 @@ fn check_victory(w: &mut World) {
 
 /// Vision, radar et détection par équipe, sur une grille de 4x4 cases.
 pub fn update_visibility(w: &mut World) {
+    if !w.fog {
+        // sans brouillard : toute la carte est vue, une fois pour toutes
+        for v in w.vis.iter_mut() {
+            if v.iter().any(|&c| c != VIS_ALL) {
+                v.fill(VIS_ALL);
+            }
+        }
+        return;
+    }
     let vw = w.vis_w;
     for v in w.vis.iter_mut() {
         for c in v.iter_mut() {

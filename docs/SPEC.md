@@ -67,6 +67,14 @@ Des nids de bêtes hostiles occupent la carte, comme les nids de Factorio. L'hô
 - Expansion : toutes les 7 à 12 min (4 à 7 en agressive, 10 à 15 en paisible), un nid de plus de 5 min envoie 4 bêtes fonder un nid à 12-28 cases, à plus de 32 cases de tout bâtiment de joueur. Le nombre de nids est plafonné (trois fois celui du départ), comme celui des bêtes (768 sur 10 km, 1 536 sur 20 km).
 - Un nid détruit ne laisse ni épave ni fantôme ; les bêtes non plus.
 
+### Brouillard de guerre
+
+Chaque équipe voit autour de ses unités et de ses bâtiments ; le reste de la carte est inexploré ou assombri, et les bâtiments ennemis déjà aperçus y restent en fantômes. L'hôte peut désactiver le brouillard dans le salon (activé par défaut).
+
+- Sans brouillard, tous les joueurs voient toute la carte en permanence : terrain, unités et bâtiments ennemis, sans zone inexplorée ni fantôme. Tout est ciblable sans repérage, même les unités furtives (commando camouflé, bombardier furtif, unités brouillées) et les sous-marins.
+- C'est le dernier paramètre d'init de la simulation, après la faune : 1 activé, 0 désactivé, absent activé (les sauvegardes d'avant ce réglage gardent leur brouillard). La simulation le relit dans ses paramètres, donc il suit les sauvegardes et les replays ; la méta de sauvegarde le garde aussi (`fog`) pour le salon.
+- Côté simulation (`World::fog`), chaque équipe est alors omnisciente comme la faune, et sa grille de vision est pleine (vue, radar, détection, explorée). Côté client, le rendu du brouillard et le voile de la minimap sont coupés comme pour un spectateur.
+
 ## Technologie
 
 La recherche fonctionne comme dans Factorio : des laboratoires consomment des lots de recherche fabriqués dans l'usine, et chaque recherche débloque des bâtiments, des unités, des recettes ou des améliorations. Chaque joueur fait ses propres recherches, avec le même arbre pour tous puisqu'il n'y a qu'une faction.

@@ -2031,3 +2031,63 @@ fn showcase_demo_places_every_land_building_and_unit() {
     let units = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0).count();
     assert!(units >= UNITS.len(), "{units} unités");
 }
+
+/// Partie sans brouillard de guerre (paramètre après la faune) : toute la carte est vue par chaque
+/// équipe, les unités furtives sont visibles et ciblées ; le réglage survit à la sauvegarde.
+#[test]
+fn no_fog_of_war_reveals_everything() {
+    let base = |fog: Option<i32>| {
+        let mut p = vec![4242, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0];
+        if let Some(f) = fog {
+            p.push(f);
+        }
+        p
+    };
+    // paramètre absent (anciennes sauvegardes) ou à 1 : brouillard
+    for fog in [None, Some(1)] {
+        let w = World::new(&base(fog));
+        assert!(w.fog);
+        let far = w.vis[1].iter().filter(|&&c| c & 1 == 0).count();
+        assert!(far > w.vis[1].len() / 2, "l'essentiel de la carte est caché");
+    }
+    let mut w = World::new(&base(Some(0)));
+    assert!(!w.fog);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    flatten(&mut w, 80, 80, 150, 150);
+    // un char ennemi à l'autre bout de la carte, sans aucune unité de l'équipe 1 à proximité
+    let id = w.spawn_unit(U_GUARDIAN, 0, 20 * TILE, 490 * TILE);
+    let far = w.unit(id).unwrap();
+    // un commando camouflé à 16 cases d'un char ennemi
+    let c = w.spawn_unit(U_COMMANDO, 0, 100 * TILE, 110 * TILE);
+    w.spawn_unit(U_GUARDIAN, 1, 116 * TILE, 110 * TILE);
+    w.update_vis_all();
+    for v in &w.vis {
+        assert!(v.iter().all(|&c| c == crate::combat::VIS_ALL), "toute la carte vue et explorée");
+    }
+    assert!(crate::combat::unit_seen(&w, 1, far), "char lointain vu");
+    let cs = w.unit(c).unwrap();
+    assert!(crate::combat::cloaked(&w, cs));
+    assert!(crate::combat::unit_seen(&w, 1, cs), "commando camouflé vu");
+    // le rendu de l'adversaire montre le commando, et sa grille de vision est pleine
+    let buf = crate::render::render(&w, 0, 0, 512, 512, 2, 1, true);
+    let o = crate::render::HEADER + w.players.len() * crate::render::PLAYER_WORDS;
+    assert!((0..buf[3] as usize).any(|i| buf[o + i * crate::render::UNIT_WORDS] as u32 == c), "commando affiché");
+    assert_eq!(buf[11], 1);
+    let full = (crate::combat::VIS_ALL as u32) * 0x0101_0101;
+    let words = (w.vis_w * w.vis_w / 4) as usize;
+    assert!(buf[buf.len() - words..].iter().all(|&x| x as u32 == full), "grille de vision pleine");
+    // le char tire sur le commando sans l'avoir repéré
+    let hp0 = w.units.hp[cs];
+    for _ in 0..100 {
+        w.step(&[]);
+    }
+    assert!(w.unit(c).map(|s| w.units.hp[s] < hp0).unwrap_or(true), "commando pris pour cible");
+    // sauvegarde : le réglage vient des paramètres et la grille reste pleine
+    let r = crate::save::restore(&crate::save::snapshot(&w)).unwrap();
+    assert!(!r.fog);
+    assert!(r.vis.iter().all(|v| v.iter().all(|&c| c == crate::combat::VIS_ALL)));
+    assert_eq!(r.hash(), w.hash());
+}

@@ -44,6 +44,7 @@
     water: '<path d="M12 3c3.5 4.5 6 7.7 6 11a6 6 0 0 1-12 0c0-3.3 2.5-6.5 6-11z"/>',
     seed: '<path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="8"/>',
     fauna: '<circle cx="6.5" cy="10" r="1.7"/><circle cx="10" cy="6" r="1.7"/><circle cx="14.5" cy="6" r="1.7"/><circle cx="18" cy="10" r="1.7"/><path d="M8 18c0-3.2 1.9-6 4.2-6s4.3 2.8 4.3 6c0 1.6-1.4 2.2-2.6 1.6-1.1-.5-2.2-.5-3.3 0C9.4 20.2 8 19.6 8 18z"/>',
+    fog: '<path d="M3 8h9M15 8h6M5 12h14M3 16h5M11 16h10M7 20h9"/>',
     save: '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/>',
     upload: '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/>',
     replay: '<path d="M4 4v6h6"/><path d="M5 14a8 8 0 1 0 2-8.4L4 10"/>',
