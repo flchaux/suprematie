@@ -516,10 +516,20 @@ pub fn needs_power(bb: &Building) -> bool {
 }
 
 /// Générateur : un dépôt collé l'alimente depuis la réserve du joueur (1 unité de combustible par
-/// seconde au plus, quand le réservoir a la place) ; il dort le reste du temps.
+/// seconde au plus, quand le réservoir a la place), puis il partage son combustible avec les générateurs
+/// collés (`share_fuel`) ; il dort le reste du temps.
 fn tick_generator(w: &mut World, b: usize) {
-    let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner as usize);
     w.buildings[b].wake = w.tick + DEPOT_FEED_PERIOD;
+    feed_generator_from_depot(w, b);
+    let mut twins = [0usize; MAX_TWINS];
+    let n = twins_into(w, b, &mut twins);
+    if n > 0 {
+        share_fuel(w, b, &twins[..n]);
+    }
+}
+
+fn feed_generator_from_depot(w: &mut World, b: usize) {
+    let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner as usize);
     if touching_depots(w, b) == 0 {
         return;
     }
@@ -1198,9 +1208,20 @@ fn same_product(a: &Building, c: &Building) -> bool {
     }
 }
 
-/// Machines jumelles de `b`, par indice croissant : bâtiments terminés du même type et du même joueur,
-/// collés à une de ses faces, qui fabriquent la même chose. Elles partagent leurs ingrédients et leurs
-/// produits, en dernier recours (voir `share_with_twins`).
+/// `a` et `c` sont-ils jumeaux (en plus d'être collés et au même joueur) ? Même type et même produit ;
+/// pour les générateurs, tous ceux qui brûlent les mêmes combustibles (le générateur principal, les
+/// générateurs et les centrales brûlent l'hydrocarbure et le carburant ; les réacteurs, les cellules).
+fn twin_pair(a: &Building, c: &Building) -> bool {
+    if a.def().class == BClass::Power {
+        return c.def().class == BClass::Power && (a.kind == B_CRYSTAL_REACTOR) == (c.kind == B_CRYSTAL_REACTOR);
+    }
+    c.kind == a.kind && same_product(a, c)
+}
+
+/// Machines jumelles de `b`, par indice croissant : bâtiments terminés du même joueur, collés à une de
+/// ses faces, qui fabriquent la même chose (ou générateurs aux mêmes combustibles, voir `twin_pair`).
+/// Elles partagent leurs ingrédients (leur combustible) et leurs produits, en dernier recours (voir
+/// `share_with_twins`).
 pub fn twins_of(w: &World, b: usize) -> Vec<usize> {
     let mut v = [0usize; MAX_TWINS];
     let n = twins_into(w, b, &mut v);
@@ -1229,7 +1250,7 @@ fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
                 continue;
             }
             let cb = &w.buildings[c];
-            if cb.alive && cb.complete() && cb.upgrade == 0 && cb.kind == bb.kind && cb.owner == bb.owner && same_product(bb, cb) {
+            if cb.alive && cb.complete() && cb.upgrade == 0 && cb.owner == bb.owner && twin_pair(bb, cb) {
                 v[n] = c;
                 n += 1;
             }
@@ -1256,6 +1277,42 @@ fn share_with_twins(w: &mut World, b: usize) -> bool {
     w.buildings[b].def().class == BClass::Crafter && share_outputs(w, b, &twins[..n])
 }
 
+/**
+ * Combustible partagé entre générateurs jumeaux, par unités de réservoir (un hydrocarbure, un quart de
+ * cellule d'énergie), comme les ingrédients : une unité passe du mieux pourvu à l'autre quand l'écart
+ * atteint 2 unités (le transfert réduit l'écart : pas d'aller-retour ; rien ne se perd, l'énergie est
+ * déplacée).
+ * - Un générateur sans fournisseur propre (`own_feed`) s'équilibre avec ses voisins : un seul tapis
+ *   suffit pour un groupe de générateurs collés.
+ * - Un générateur qui a ses bras, ses tapis, un extracteur, une raffinerie ou un dépôt collés se sert
+ *   d'abord chez eux : il ne prend chez ses voisins que s'il lui reste moins de 2 unités.
+ */
+fn share_fuel(w: &mut World, b: usize, twins: &[usize]) {
+    let unit = fuel_tank(w.buildings[b].kind) / FUEL_TANK_UNITS;
+    let mut b_feed: Option<bool> = None;
+    for &c in twins {
+        let (mine, theirs) = (w.buildings[b].fuel, w.buildings[c].fuel);
+        let (from, to, have) = if mine >= theirs + 2 * unit {
+            (b, c, theirs)
+        } else if theirs >= mine + 2 * unit {
+            (c, b, mine)
+        } else {
+            continue;
+        };
+        let fed = if to == b { *b_feed.get_or_insert_with(|| own_feed(w, b)) } else { own_feed(w, c) };
+        if (fed && have >= 2 * unit) || have + unit > fuel_tank(w.buildings[to].kind) {
+            continue;
+        }
+        w.buildings[from].fuel -= unit;
+        w.buildings[to].fuel += unit;
+        refueled(&mut w.buildings[to]);
+        if have <= 0 {
+            // de nouveau alimenté : sa zone revient
+            w.power_dirty = true;
+        }
+    }
+}
+
 /// Plafond des produits en attente d'un fabricant : au-delà, il ne lance plus de fabrication.
 #[inline]
 fn crafter_out_cap(on: u16) -> u16 {
@@ -1263,19 +1320,21 @@ fn crafter_out_cap(on: u16) -> u16 {
 }
 
 /// Le bâtiment `bb` se sert-il de l'objet `it` (ingrédient de sa recette, lot de recherche, composant
-/// de l'unité en tête de sa file) ?
+/// de l'unité en tête de sa file, combustible d'un générateur) ?
 fn uses_item(bb: &Building, it: u8) -> bool {
     match bb.def().class {
         BClass::Crafter => bb.recipe != RECIPE_NONE && RECIPES[bb.recipe as usize].inputs.iter().any(|x| x.0 == it),
         BClass::Lab => (PACK1..PACK1 + 6).contains(&it),
         BClass::Factory => bb.queue.first().is_some_and(|q| udef(q.0).cost.iter().any(|c| c.0 == it)),
+        BClass::Power => fuel_energy(bb.kind, it) > 0,
         _ => false,
     }
 }
 
 /// Le bâtiment `b` a-t-il ses propres fournisseurs : un bras qui dépose dans son emprise, un tapis qui y
 /// finit, un voisin collé qui lui donne directement des objets dont il se sert (extracteur, fabricant),
-/// un dépôt collé pour une usine ? Une jumelle ne compte pas (elle ne lui donne pas ses produits).
+/// un dépôt collé pour une usine ou un générateur ? Une jumelle ne compte pas (elle ne lui donne pas ses
+/// produits).
 pub(crate) fn own_feed(w: &World, b: usize) -> bool {
     let bb = &w.buildings[b];
     let (bw, bh) = bb.size();
@@ -1305,7 +1364,7 @@ pub(crate) fn own_feed(w: &World, b: usize) -> bool {
                     let l = &w.belts.lines[cb.line as usize];
                     l.out_floor == 0 && l.out_pos >= 0 && l.tiles.last() == Some(&(c as u32)) && inside(l.out_pos % w.map.w, l.out_pos / w.map.w)
                 }
-                BClass::Depot => face && cb.owner == bb.owner && bb.def().class == BClass::Factory,
+                BClass::Depot => face && cb.owner == bb.owner && matches!(bb.def().class, BClass::Factory | BClass::Power),
                 BClass::Crafter if face && cb.owner == bb.owner && cb.recipe != RECIPE_NONE => uses_item(bb, RECIPES[cb.recipe as usize].output.0),
                 BClass::Extractor => face && cb.owner == bb.owner && uses_item(bb, cb.recipe),
                 _ => false,

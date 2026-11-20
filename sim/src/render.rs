@@ -461,8 +461,8 @@ pub fn info_building(w: &World, r: u32) -> String {
     };
     // usine : dépôts collés qui l'alimentent depuis la réserve
     let depots = if bb.def().class == crate::data::BClass::Factory { crate::buildings::touching_depots(w, b) } else { 0 };
-    // machines jumelles (collées, même type, même produit) qui partagent leurs ingrédients
-    let twins = if bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Factory | BClass::Lab) { crate::buildings::twins_of(w, b).len() } else { 0 };
+    // machines jumelles (collées, même produit ; générateurs aux mêmes combustibles) qui partagent ingrédients et produits
+    let twins = if bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Factory | BClass::Lab | BClass::Power) { crate::buildings::twins_of(w, b).len() } else { 0 };
     // nid de la faune : horde, plafond, seuil d'attaque, âge, évolution, pression, chance d'attaque (voir nature::nest_info)
     let nest = if bb.def().class == BClass::Nest { js_list(crate::nature::nest_info(w, b).iter()) } else { "null".to_string() };
     format!(

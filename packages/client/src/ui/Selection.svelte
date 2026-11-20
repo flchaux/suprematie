@@ -241,7 +241,7 @@
         <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
       {/if}
       {#if info.twins}
-        <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose se dépannent : ingrédients et produits passent de l'une à l'autre quand ses bras et tapis ne suffisent pas"><span class="kicker">Jumelée</span> {bdef.cls === BClass.Crafter ? "ingrédients et produits" : "ingrédients"} partagés avec {info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
+        <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose se dépannent : ingrédients et produits passent de l'une à l'autre quand ses bras et tapis ne suffisent pas"><span class="kicker">Jumelée</span> {bdef.cls === BClass.Crafter ? "ingrédients et produits partagés" : bdef.cls === BClass.Power ? "combustible partagé" : "ingrédients partagés"} avec {bdef.cls === BClass.Power ? (info.twins === 1 ? "le générateur collé" : `${info.twins} générateurs collés`) : info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
       {/if}
       {#if bdef.key === "furnace" && d.furnaceLevels}
         {@const fl = d.furnaceLevels}

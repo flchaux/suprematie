@@ -417,6 +417,16 @@ pub fn logistics_demo() -> World {
             put(&mut w, 0, B_DEPOT, dx, ty + 7, 0);
         }
     }
+    // générateurs jumeaux : un générateur principal nourri par un dépôt collé (hydrocarbure de la réserve),
+    // collé à un générateur vide sans fournisseur, qui vit du combustible partagé (conduite verte)
+    let gm = put(&mut w, 0, B_MAIN_GENERATOR, tx + 20, ty, 0);
+    let gs = put(&mut w, 0, B_GENERATOR, tx + 23, ty, 0);
+    put(&mut w, 0, B_DEPOT, tx + 20, ty + 3, 0);
+    if gm != usize::MAX && gs != usize::MAX {
+        w.buildings[gm].fuel = 10 * FUEL_HYDROCARBON;
+        w.buildings[gs].fuel = 0;
+        w.players[0].stock[HYDROCARBON as usize] = 400;
+    }
     for _ in 0..20 {
         w.step(&[]);
     }

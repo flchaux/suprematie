@@ -1373,12 +1373,19 @@ export class Entities {
       return insets[mside * def.w + mk];
     };
     /**
-     * Machines jumelles (même règle que twins_of dans la simulation) : même type, même joueur, et même
-     * produit (recette d'un fabricant, unité en tête de file d'une usine ; tous les laboratoires).
+     * Machines jumelles (même règle que twin_pair dans la simulation) : même type, même joueur, et même
+     * produit (recette d'un fabricant, unité en tête de file d'une usine ; tous les laboratoires) ; pour
+     * les générateurs, même joueur et mêmes combustibles (le réacteur à cristal seulement avec un réacteur).
      */
     const twins = (a: number, b: number): boolean => {
-      if ((buf[a + 1] & 0xffff) !== (buf[b + 1] & 0xffff) || buf[a + 7] > 0 || buf[b + 7] > 0) return false;
-      const cls = this.data.buildings[buf[a + 1] & 0xff].cls;
+      if (buf[a + 7] > 0 || buf[b + 7] > 0) return false;
+      const da = this.data.buildings[buf[a + 1] & 0xff];
+      const db = this.data.buildings[buf[b + 1] & 0xff];
+      if (da.cls === BClass.Power) {
+        return db.cls === BClass.Power && ((buf[a + 1] >> 8) & 0xff) === ((buf[b + 1] >> 8) & 0xff) && (da.key === "crystal_reactor") === (db.key === "crystal_reactor");
+      }
+      if ((buf[a + 1] & 0xffff) !== (buf[b + 1] & 0xffff)) return false;
+      const cls = da.cls;
       if (cls === BClass.Lab) return true;
       if (cls === BClass.Crafter) return (buf[a + 5] & 0xff) !== RECIPE_NONE && (buf[a + 5] & 0xff) === (buf[b + 5] & 0xff);
       if (cls === BClass.Factory) return (buf[a + 5] & 0xff) !== 0 && (buf[a + 5] & 0xff) === (buf[b + 5] & 0xff);
@@ -1427,7 +1434,7 @@ export class Entities {
             if (inside(ox + r * DX[d], oz + r * DZ[d])) state = 1;
             else if (inside(ox + r * DX[p], oz + r * DZ[p])) state = 2;
           }
-          // transfert direct avec un bâtiment collé ; machine jumelle (3) : ingrédients et produits partagés
+          // transfert direct avec un bâtiment collé ; machine jumelle (3) : ingrédients, produits ou combustible partagés
           if (state === 0) {
             const nb = cells.get(oz * W + ox);
             if (nb !== undefined && nb !== o && twins(o, nb)) state = 3;

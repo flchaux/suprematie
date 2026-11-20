@@ -4,8 +4,10 @@
 //   machine, et les deux produisent.
 // - Paire de droite : seule la seconde a un tapis de sortie. La première produit quand même (ses
 //   engrenages sortent par sa voisine), et le tapis de la voisine porte la production des deux.
-// Contrôles : fiche (« Jumelée », ingrédients et produits), cadence de chaque machine, engrenages vus sur
-// chaque tapis de sortie (relevés à chaque image du worker), capture de la scène.
+// - Générateurs : un générateur principal nourri par un dépôt collé, collé à un générateur parti à vide
+//   et sans fournisseur : celui-ci vit du combustible partagé et produit.
+// Contrôles : fiche (« Jumelée », ingrédients et produits, combustible), cadence de chaque machine,
+// engrenages vus sur chaque tapis de sortie (relevés à chaque image du worker), captures.
 // Usage : node tools/e2e-twins.mjs http://127.0.0.1:3061 [dossier des captures]
 import { launchBrowser } from "./browser.mjs";
 import { mkdirSync } from "node:fs";
@@ -110,6 +112,44 @@ if (asm.length === 4) {
   const panel = await page.evaluate(() => document.querySelector(".twins")?.textContent ?? "");
   check(/ingrédients et produits partagés/.test(panel), "fiche « Jumelée » : ingrédients et produits", panel.trim());
   await page.screenshot({ path: `${outDir}/jumelles-fiche.png`, timeout: 180000 });
+}
+
+// ---------- générateurs jumeaux : un principal nourri par un dépôt, collé à un générateur parti à vide ----------
+await page.evaluate(() => { window.__game.client.selected = new Set(); });
+const gens = await page.evaluate(async () => {
+  const { client } = window.__game;
+  const f = client.frame;
+  const out = [];
+  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
+    const key = client.data.buildings[f.buf[o + 1] & 0xff]?.key;
+    if (key !== "main_generator" && key !== "generator") continue;
+    const ref = f.buf[o] >>> 0;
+    const info = await client.query("building", [ref]);
+    if (info?.twins) out.push({ ref, key, x: f.buf[o + 2] & 0xffff, y: (f.buf[o + 2] >>> 16) & 0xffff, fuel: info.fuel, tank: info.fuelTank });
+  }
+  return out.sort((a, b) => a.x - b.x);
+});
+check(gens.length === 2 && gens[0].key === "main_generator" && gens[1].key === "generator", "générateur principal et générateur jumeaux", JSON.stringify(gens));
+if (gens.length === 2) {
+  const [gm, gs] = gens;
+  const infos = await page.evaluate(async (refs) => Promise.all(refs.map((r) => window.__game.client.query("building", [r]))), [gm.ref, gs.ref]);
+  const unit = gm.tank / 20;
+  console.log("combustible (unités) : principal", (infos[0].fuel / unit).toFixed(1), "générateur", (infos[1].fuel / unit).toFixed(1), "— puissance fournie (kW) :", infos[0].genOut, infos[1].genOut);
+  check(infos[1].fuel >= unit, "le générateur sans fournisseur vit du combustible du principal", (infos[1].fuel / unit).toFixed(1));
+  check(infos[1].genOut > 0, "il produit", `${infos[1].genOut} kW`);
+  await page.evaluate(([x, z]) => {
+    const sc = window.__game.client.scene;
+    sc.target.set(x, 0, z);
+    sc.distance = 14;
+    sc.updateCamera();
+  }, [gs.x - 0.5, gs.y + 1]);
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: `${outDir}/jumelles-generateurs-scene.png`, timeout: 180000 });
+  await page.evaluate((r) => { window.__game.client.selected = new Set([r]); }, gs.ref);
+  await page.waitForTimeout(2000);
+  const panel = await page.evaluate(() => document.querySelector(".twins")?.textContent ?? "");
+  check(/combustible partagé avec le générateur collé/.test(panel), "fiche « Jumelée » : combustible", panel.trim());
+  await page.screenshot({ path: `${outDir}/jumelles-generateurs-fiche.png`, timeout: 180000 });
 }
 check(errors.length === 0, "aucune erreur", errors.slice(0, 3).join(" | "));
 await browser.close();

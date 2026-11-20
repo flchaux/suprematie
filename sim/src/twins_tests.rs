@@ -256,14 +256,89 @@ fn twin_inputs_prefer_own_belt() {
     assert!(used <= delivered, "B ne doit consommer que les plaques de son tapis : {} pour {} livrées", used, delivered);
 }
 
+// ---------- Générateurs : combustible partagé ----------
+
+/// Unité de réservoir d'un générateur à hydrocarbure (un hydrocarbure).
+const U: i32 = FUEL_HYDROCARBON;
+
+/// Un générateur principal nourri par un tapis d'hydrocarbure, collé à un générateur sans fournisseur :
+/// sous charge, le voisin reste alimenté par le combustible du principal et ne tombe jamais à sec. Un
+/// réacteur à cristal collé (autre combustible) ne partage pas.
 #[test]
-fn tmp_demo_twins() {
-    let mut w = crate::stress::logistics_demo();
-    for _ in 0..2400 { w.step(&[]); }
-    for b in 0..w.buildings.len() {
-        let bb = &w.buildings[b];
-        if bb.alive && bb.kind == B_ASSEMBLER1 {
-            println!("asm {} ({},{}) recipe {} out {} inv {:?} flow {} twins {:?} working {}", b, bb.x, bb.y, bb.recipe, bb.out, &bb.inv[..1], crate::buildings::flow_per_min(bb, w.tick), twins_of(&w, b), bb.working);
-        }
+fn generators_share_fuel_with_neighbours() {
+    let mut w = world();
+    w.infinite_grid = false;
+    let m = put(&mut w, B_MAIN_GENERATOR, 100, 100, 0);
+    let g = put(&mut w, B_GENERATOR, 103, 100, 0);
+    let r = put(&mut w, B_CRYSTAL_REACTOR, 100, 97, 0);
+    assert_eq!(twins_of(&w, m), vec![g]);
+    assert!(twins_of(&w, r).is_empty(), "le réacteur ne brûle pas d'hydrocarbure");
+    // tapis d'hydrocarbure qui entre dans le principal par sa face ouest
+    for x in 92..100 {
+        put(&mut w, B_BELT1, x, 100, 0);
     }
+    let start = w.map.occ[w.map.idx(92, 100)] as usize - 1;
+    assert!(own_feed(&w, m) && !own_feed(&w, g));
+    w.buildings[m].fuel = 10 * U;
+    // charge : dix radars (1 000 kW), plus que ce que le principal seul consommerait sans voisin
+    for k in 0..10 {
+        put(&mut w, B_RADAR, 100 + (k % 5) * 2, 104 + (k / 5) * 2, 0);
+    }
+    crate::buildings::rebuild_power(&mut w);
+    let mut dry_after_start = 0;
+    let mut burned_by_g = false;
+    for t in 0..6000 {
+        crate::belts::put_on_belt(&mut w, start, HYDROCARBON);
+        w.step(&[]);
+        if t > 400 && w.buildings[g].fuel <= 0 {
+            dry_after_start += 1;
+        }
+        burned_by_g |= crate::buildings::gen_output(&w, g) > 0;
+    }
+    println!("principal {} voisin {} (unités)", w.buildings[m].fuel / U, w.buildings[g].fuel / U);
+    assert!(burned_by_g, "le voisin doit produire");
+    assert_eq!(dry_after_start, 0, "le voisin sans fournisseur ne doit jamais tomber à sec");
+    assert!(w.buildings[g].fuel > U);
+    assert_eq!(w.buildings[r].fuel, 0, "le réacteur ne reçoit rien");
+}
+
+/// Priorité au fournisseur propre : un générateur qui a son tapis ne prend rien chez son voisin tant
+/// qu'il lui reste au moins 2 unités, puis juste de quoi remonter à 2. Un générateur sans fournisseur
+/// s'équilibre avec son voisin. Le combustible est déplacé, jamais copié ni perdu.
+#[test]
+fn generator_with_own_belt_takes_fuel_last() {
+    // réseau illimité, sans charge : seul le tapis consomme un peu (quelques kW), les réservoirs ne bougent
+    // que par le partage, par unités entières (30 000) ; `burn` couvre largement la consommation du tapis
+    let mut w = world();
+    let burn = U / 4;
+    let m = put(&mut w, B_MAIN_GENERATOR, 100, 100, 0);
+    let g = put(&mut w, B_GENERATOR, 103, 100, 0);
+    let h = put(&mut w, B_GENERATOR, 100, 103, 0);
+    // tapis (vide) qui entre dans G par sa face est
+    for x in (105..111).rev() {
+        put(&mut w, B_BELT1, x, 100, 2);
+    }
+    assert!(own_feed(&w, g) && !own_feed(&w, m) && !own_feed(&w, h));
+    let fuel = |w: &World| [m, g, h].map(|b| w.buildings[b].fuel);
+    w.buildings[m].fuel = 20 * U;
+    w.buildings[g].fuel = 5 * U;
+    w.buildings[h].fuel = 0;
+    let total: i32 = fuel(&w).iter().sum();
+    for _ in 0..400 {
+        w.step(&[]);
+    }
+    let [fm, fg, fh] = fuel(&w);
+    println!("principal {} G {} H {} (total {} sur {})", fm, fg, fh, fm + fg + fh, total);
+    assert!(fg <= 5 * U && fg > 5 * U - burn, "G a son tapis et assez de combustible : il ne prend rien ({})", fg);
+    assert!(fm - fh < 2 * U && fh - fm < 2 * U, "H, sans fournisseur, s'équilibre avec le principal : {} et {}", fm / U, fh / U);
+    assert!(fm + fg + fh <= total && fm + fg + fh > total - burn, "rien ne se perd ni ne se duplique");
+    // G presque vide (son tapis ne livre rien) : il se sert chez le principal, juste de quoi remonter à 2
+    w.buildings[g].fuel = U / 2;
+    let total: i32 = fuel(&w).iter().sum();
+    for _ in 0..400 {
+        w.step(&[]);
+    }
+    let [fm, fg, fh] = fuel(&w);
+    assert!((2 * U..3 * U).contains(&fg), "G remonte à 2 unités : {}", fg as f64 / U as f64);
+    assert!(fm + fg + fh <= total && fm + fg + fh > total - burn, "rien ne se perd ni ne se duplique");
 }
