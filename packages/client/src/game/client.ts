@@ -1129,7 +1129,7 @@ export class GameClient {
         this.selectAllArmy();
         break;
       case "idleEngineer":
-        this.selectIdleEngineer();
+        this.selectIdleEngineer(shift);
         break;
       case "cancelBuilding":
         this.demolishSelected();
@@ -1246,30 +1246,27 @@ export class GameClient {
     sfx.click();
   }
 
-  /** Ingénieur sans ordre suivant (identifiant croissant, en boucle), hors commandant ; centre la caméra. */
-  selectIdleEngineer(): void {
-    const f = this.frame;
-    if (!f || !this.data || ui.me < 0) return;
-    const idle: { id: number; x: number; y: number }[] = [];
-    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
-      const w = f.buf[o + 1];
-      if (((w >> 8) & 0xff) !== ui.me || !(((w >> 16) & 0xff) & UF.IDLE)) continue;
-      const def = this.data.units[w & 0xff];
-      if (def.buildPower <= 0 || def.key === "commander") continue;
-      idle.push({ id: f.buf[o] >>> 0, x: f.buf[o + 2], y: f.buf[o + 3] });
-    }
+  /**
+   * Constructeur inactif suivant (ingénieurs et commandant sans ordre : ni déplacement, construction,
+   * réparation ni récolte), par identifiant croissant et en boucle ; Maj : le précédent. Centre la caméra.
+   */
+  selectIdleEngineer(back = false): void {
+    if (ui.me < 0) return;
+    const idle = this.ownBuilders().filter((b) => b.idle);
     if (!idle.length) {
-      pushMessage("Aucun ingénieur inactif");
+      pushMessage("Aucun constructeur inactif");
       sfx.error();
       return;
     }
     idle.sort((a, b) => a.id - b.id);
-    const next = idle.find((u) => u.id > this.lastIdleEngineer) ?? idle[0];
+    const last = this.lastIdleEngineer;
+    if (back) idle.reverse();
+    const next = idle.find((u) => (back ? u.id < last : u.id > last)) ?? idle[0];
     this.lastIdleEngineer = next.id;
     this.selected = new Set([next.id]);
     if (this.scene) {
-      this.scene.target.x = next.x / TILE;
-      this.scene.target.z = next.y / TILE;
+      this.scene.target.x = next.x;
+      this.scene.target.z = next.y;
     }
     sfx.click();
     this.updateUi();
@@ -2181,7 +2178,7 @@ export class GameClient {
     if (this.engineers().length) this.setMode("reclaim");
   }
 
-  /** Nos constructeurs (ingénieurs et commandant) : position en cases, libres ou non. */
+  /** Nos constructeurs (ingénieurs et commandant) : position en cases, inactifs (sans ordre) ou non. */
   private ownBuilders(): { id: number; x: number; y: number; idle: boolean }[] {
     const f = this.frame;
     const out: { id: number; x: number; y: number; idle: boolean }[] = [];
