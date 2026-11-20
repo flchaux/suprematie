@@ -192,6 +192,81 @@ fn is_rail(w: &World, i: usize, team: u8) -> bool {
     bb.def().class == BClass::Rail && bb.complete() && w.team_of(bb.owner) == team
 }
 
+/// Rail (terminé ou non) d'une équipe en (x, y).
+fn rail_at(w: &World, x: i32, y: i32, team: u8) -> bool {
+    if !w.map.inside(x, y) {
+        return false;
+    }
+    let o = w.map.occ[w.map.idx(x, y)];
+    if o == 0 {
+        return false;
+    }
+    let bb = &w.buildings[(o - 1) as usize];
+    bb.def().class == BClass::Rail && w.team_of(bb.owner) == team
+}
+
+/// Forme d'un rail, déduite des rails voisins de la même équipe (terminés ou en chantier) : 0 droit
+/// (orienté par sa direction), 1 + c pour un virage qui relie les côtés c et (c + 1) % 4 (directions de
+/// DIRS) quand le rail a exactement deux voisins, sur deux côtés perpendiculaires. Sert au dessin : un
+/// train suit toujours son trajet, et tourne en quart de cercle dans toute case où il change de direction.
+pub fn rail_shape(w: &World, b: usize) -> u8 {
+    let bb = &w.buildings[b];
+    let team = w.team_of(bb.owner);
+    let mut mask = 0u8;
+    for (d, (dx, dy)) in crate::belts::DIRS.iter().enumerate() {
+        if rail_at(w, bb.x + dx, bb.y + dy, team) {
+            mask |= 1 << d;
+        }
+    }
+    match mask {
+        0b0011 => 1,
+        0b0110 => 2,
+        0b1100 => 3,
+        0b1001 => 4,
+        _ => 0,
+    }
+}
+
+/// Position et cap d'un train à l'avancement `pos` le long de son trajet. Chaque case se parcourt d'un bord
+/// à l'autre (entrée, sortie) ; une case où le trajet change de direction se parcourt en quart de cercle de
+/// rayon 1/2 case autour du coin entre l'entrée et la sortie (comme un objet dans un virage de tapis).
+/// L'avancement 0 est au centre de la première case, la fin du trajet au centre de la dernière.
+pub(crate) fn train_pose(w: &World, path: &[u32], pos: i32) -> (i32, i32, Option<u16>) {
+    let n = path.len();
+    let mw = w.map.w;
+    let cell = |i: usize| (path[i] as i32 % mw, path[i] as i32 / mw);
+    let step = |a: usize, b: usize| {
+        let ((ax, ay), (bx, by)) = (cell(a), cell(b));
+        ((bx - ax).signum(), (by - ay).signum())
+    };
+    if n < 2 {
+        return (tile_center(w, path[0]).0, tile_center(w, path[0]).1, None);
+    }
+    let p = (pos + TILE / 2).clamp(TILE / 2, (n as i32 - 1) * TILE + TILE / 2);
+    let k = ((p / TILE) as usize).min(n - 1);
+    let o = p - k as i32 * TILE;
+    // sens d'arrivée dans la case (du précédent vers elle) et sens de sortie (d'elle vers le suivant)
+    let din = if k > 0 { step(k - 1, k) } else { step(0, 1) };
+    let dout = if k + 1 < n { step(k, k + 1) } else { din };
+    let (cx, cy) = tile_center(w, path[k]);
+    if din == dout || din.0 * dout.0 + din.1 * dout.1 != 0 {
+        // tout droit : de l'entrée (centre - din / 2) vers la sortie
+        let (x, y) = (cx - din.0 * TILE / 2 + din.0 * o, cy - din.1 * TILE / 2 + din.1 * o);
+        return (x, y, Some(w.trig.atan2(din.1 as i64, din.0 as i64)));
+    }
+    // virage : côté d'entrée s = -din ; coin K = centre + (s + dout) / 2 ; angle t de 0 (entrée) à 90° (sortie)
+    let s = (-din.0, -din.1);
+    let r = TILE / 2;
+    let (kx, ky) = (cx + (s.0 + dout.0) * r, cy + (s.1 + dout.1) * r);
+    let t = (o.clamp(0, TILE) * 16384 / TILE) as u16;
+    let (c, sn) = (w.trig.cos(t), w.trig.sin(t));
+    let x = kx - (dout.0 * c + s.0 * sn) * r / 16384;
+    let y = ky - (dout.1 * c + s.1 * sn) * r / 16384;
+    // tangente : dout sin t - s cos t
+    let (tx, ty) = (dout.0 * sn - s.0 * c, dout.1 * sn - s.1 * c);
+    (x, y, Some(w.trig.atan2(ty as i64, tx as i64)))
+}
+
 /// Cases de rail qui touchent le bâtiment (quais).
 fn docks(w: &World, b: usize, team: u8) -> Vec<u32> {
     let bb = &w.buildings[b];
@@ -423,7 +498,6 @@ pub fn update_carriers(w: &mut World) {
                 continue;
             }
             let k = (pos / TILE) as usize;
-            let f = pos % TILE;
             let p0 = w.carriers[ci].path[k.min(plen - 1)];
             let p1 = w.carriers[ci].path[(k + 1).min(plen - 1)];
             // voie coupée : on s'arrête sur la case actuelle et on cherche un autre trajet
@@ -439,14 +513,12 @@ pub fn update_carriers(w: &mut World) {
                 }
                 continue;
             }
-            let (x0, y0) = tile_center(w, p0);
-            let (x1, y1) = tile_center(w, p1);
-            let ang = w.trig.atan2((y1 - y0) as i64, (x1 - x0) as i64);
+            let (x, y, ang) = train_pose(w, &w.carriers[ci].path, pos);
             let c = &mut w.carriers[ci];
-            c.x = x0 + (x1 - x0) * f / TILE;
-            c.y = y0 + (y1 - y0) * f / TILE;
-            if x1 != x0 || y1 != y0 {
-                c.angle = ang;
+            c.x = x;
+            c.y = y;
+            if let Some(a) = ang {
+                c.angle = a;
             }
         } else {
             let (fx, fy) = w.carriers[ci].from;

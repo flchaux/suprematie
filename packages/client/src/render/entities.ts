@@ -229,6 +229,8 @@ export class Entities {
   beltCurves = new Map<number, [KindMesh, KindMesh]>();
   /** tapis droits rejoints par le côté (jonction en T) : ouverts à gauche (-x), à droite (+x), des deux côtés */
   beltJunctions = new Map<number, [KindMesh, KindMesh, KindMesh]>();
+  /** rails en virage par type (modèle <clé>_virage, à l'échelle du rail droit) : quart de cercle entre l'arrière et la gauche */
+  railCurves = new Map<number, KindMesh>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
   wallSeg: KindMesh | null = null;
   /** goulottes entre les sorties d'un extracteur et les tapis devant lui */
@@ -342,6 +344,9 @@ export class Entities {
         const jn = ["_jonction_g", "_jonction_d", "_jonction_gd"].map((suf) => BUILDING_MODELS[b.key + suf]);
         if (jn.every((m) => m)) this.beltJunctions.set(this.buildingMeshes.length - 1, jn.map((m) => new KindMesh(this.group, buildModel(m!), scale, TEX_PER_TILE_BUILDING)) as [KindMesh, KindMesh, KindMesh]);
       }
+      // rail : virage (forme 1 à 4 de la simulation), à l'échelle du rail droit
+      const rv = b.cls === BClass.Rail ? BUILDING_MODELS[b.key + "_virage"] : undefined;
+      if (rv) this.railCurves.set(this.buildingMeshes.length - 1, new KindMesh(this.group, () => buildModel(rv), () => km.scale, TEX_PER_TILE_BUILDING));
       // segment de mur : à l'échelle du poteau (construits ensemble, à la demande)
       if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.wall_seg), () => km.scale, TEX_PER_TILE_BUILDING);
       if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
@@ -549,6 +554,7 @@ export class Entities {
     for (const l of this.levelMeshes.values()) all.push(...l);
     for (const l of this.beltCurves.values()) all.push(...l);
     for (const l of this.beltJunctions.values()) all.push(...l);
+    all.push(...this.railCurves.values());
     for (const k of all) k?.setLod(lo);
   }
 
@@ -575,6 +581,7 @@ export class Entities {
       d.begin();
     }
     for (const l of this.beltJunctions.values()) for (const m of l) m.begin();
+    for (const m of this.railCurves.values()) m.begin();
     this.wallSeg?.begin();
     this.chute?.begin();
     for (const m of this.vehicleMeshes) m.begin();
@@ -743,7 +750,7 @@ export class Entities {
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = buf[o + 1] & 0xff;
       const owner = (buf[o + 1] >> 8) & 0xff;
-      const dir = (buf[o + 1] >> 16) & 3;
+      let dir = (buf[o + 1] >> 16) & 3;
       const bflags = (buf[o + 1] >> 20) & 0xff;
       const bx = buf[o + 2] & 0xffff;
       const bz = (buf[o + 2] >>> 16) & 0xffff;
@@ -771,7 +778,12 @@ export class Entities {
       const lvl = def.cls === BClass.Extractor || def.cls === BClass.Depot || def.cls === BClass.Power || def.key === "splitter" || def.key === "furnace" ? (buf[o + 5] >>> 24) & 3 : 0;
       // tapis droit au sol rejoint par le côté : variante au rebord ouvert (jonction en T continue)
       const junction = def.cls === BClass.Belt && !shape && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0 && (buf[o + 5] & 4) === 0 ? this.beltJunction(kind, bx, bz, dir, groundBelts) : undefined;
-      const km = junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
+      // rail en virage : forme 1 + c (simulation, d'après les rails voisins) reliant les côtés c et c + 1 ;
+      // le modèle relie l'arrière (côté dir + 2) et la gauche (côté dir + 1) : dir = c + 3
+      const railShape = def.cls === BClass.Rail ? buf[o + 5] & 7 : 0;
+      const railCurve = railShape >= 1 && railShape <= 4 ? this.railCurves.get(kind) : undefined;
+      if (railCurve) dir = (railShape + 2) & 3;
+      const km = railCurve ?? junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
       km.ensure(km.n + 1);
@@ -1020,6 +1032,7 @@ export class Entities {
       d.end();
     }
     for (const l of this.beltJunctions.values()) for (const m of l) m.end();
+    for (const m of this.railCurves.values()) m.end();
     this.wallSeg?.end();
     this.chute?.end();
     this.levelPips.count = npip;

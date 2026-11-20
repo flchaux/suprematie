@@ -188,6 +188,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             let ramp = crate::belts::ramp_to(w, b).map(|f| 4 | (f as i32) << 3).unwrap_or(0);
             (crate::belts::belt_shape(w, b) as i32 | ramp, 0)
         }
+        // rail : forme (0 droit, 1 + c virage entre les côtés c et c + 1), d'après les rails voisins
+        BClass::Rail => (crate::logistics::rail_shape(w, b) as i32, 0),
         // répartiteur : ses sorties, comme un niveau (modèles splitter_n2 et splitter_n3)
         BClass::Router if bb.kind == B_SPLITTER => ((bb.split as i32) << 24, 0),
         _ => (0, 0),

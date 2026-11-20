@@ -235,7 +235,8 @@ pub fn logistics_demo() -> World {
     let a = put(&mut w, 0, B_STATION, x0, y0, 0);
     put(&mut w, 1, B_GENERATOR, x0 + 70, y0 + 37, 0);
     let b = put(&mut w, 1, B_STATION, x0 + 70, y0 + 40, 0);
-    for x in x0 + 3..x0 + 50 {
+    // la gare (2 x 2) occupe x0 et x0 + 1 : la voie commence juste à côté, en x0 + 2
+    for x in x0 + 2..x0 + 50 {
         put(&mut w, 0, B_RAIL, x, y0 + 1, 0);
     }
     for y in y0 + 1..y0 + 42 {

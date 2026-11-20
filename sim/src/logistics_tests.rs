@@ -213,3 +213,74 @@ fn stations_work_in_an_underpowered_zone() {
     run(&mut w, 3000);
     assert_eq!(w.buildings[b].stash[N + HYDROCARBON as usize], 100, "déchargé malgré la zone sous-alimentée");
 }
+
+/// Voie en L : le rail d'angle est un virage (forme calculée d'après ses deux voisins perpendiculaires), et le
+/// train y suit un quart de cercle de rayon 1/2 case autour du coin intérieur, puis livre à l'autre gare.
+#[test]
+fn train_follows_rail_curve() {
+    use crate::fixed::{dist, TILE};
+    let mut w = allies();
+    flatten(&mut w, 25, 90, 70, 115);
+    let a = station(&mut w, 0, B_STATION, 30, 100);
+    let b = station(&mut w, 0, B_STATION, 61, 109);
+    for x in 32..=60 {
+        put(&mut w, 0, B_RAIL, x, 101);
+    }
+    for y in 102..=110 {
+        put(&mut w, 0, B_RAIL, 60, y);
+    }
+    let rail = |w: &World, x: i32, y: i32| w.map.occ[w.map.idx(x, y)] as usize - 1;
+    // angle (60, 101) : voisins à l'ouest (côté 2) et au sud (côté 1) -> virage entre les côtés 1 et 2
+    assert_eq!(crate::logistics::rail_shape(&w, rail(&w, 60, 101)), 2);
+    assert_eq!(crate::logistics::rail_shape(&w, rail(&w, 50, 101)), 0, "rail droit");
+    assert_eq!(crate::logistics::rail_shape(&w, rail(&w, 60, 105)), 0, "rail droit");
+    assert_eq!(crate::logistics::rail_shape(&w, rail(&w, 32, 101)), 0, "bout de voie : droit");
+    // les quatre orientations : une boucle de 2 x 2 rails n'a que des virages
+    for (x, y) in [(40, 104), (41, 104), (40, 105), (41, 105)] {
+        put(&mut w, 0, B_RAIL, x, y);
+    }
+    for (x, y, shape) in [(40, 104, 1), (41, 104, 2), (41, 105, 3), (40, 105, 4)] {
+        assert_eq!(crate::logistics::rail_shape(&w, rail(&w, x, y)), shape, "virage en ({x}, {y})");
+    }
+    let r = TILE / 2;
+    let (kx, ky) = (60 * TILE, 102 * TILE);
+    // géométrie : tout l'avancement dans la case d'angle reste sur l'arc, cap tangent
+    let path: Vec<u32> = [(58, 101), (59, 101), (60, 101), (60, 102), (60, 103)].iter().map(|&(x, y)| w.map.idx(x, y) as u32).collect();
+    let mut inside = 0;
+    for pos in (0..=4 * TILE).step_by(8) {
+        let (x, y, ang) = crate::logistics::train_pose(&w, &path, pos);
+        if x > 60 * TILE && x < 61 * TILE && y > 101 * TILE && y < 102 * TILE {
+            let d = dist(x, y, kx, ky);
+            assert!((d - r).abs() <= 2, "sur l'arc : {d} à l'avancement {pos}");
+            inside += 1;
+        }
+        let a = ang.expect("cap") as i32;
+        if pos <= 3 * TILE / 2 {
+            assert!(a < 200 || a > 65336, "vers l'est avant le virage : {a}");
+        } else if pos >= 5 * TILE / 2 {
+            assert!((a - 16384).abs() < 200, "vers le sud après le virage : {a}");
+        } else {
+            assert!(a > 0 && a < 16384, "cap intermédiaire dans le virage : {a}");
+        }
+    }
+    assert!(inside >= 25, "le virage est parcouru en arc ({inside} points)");
+    // en jeu : le train passe par le virage et livre
+    run(&mut w, 10);
+    w.buildings[a].stash[IRON_PLATE as usize] = 300;
+    w.players[0].stock[GEAR as usize] = 100;
+    w.players[0].stock[IRON_PLATE as usize] = 100;
+    w.players[0].stock[STEEL as usize] = 100;
+    let rb = w.building_ref(b);
+    crate::logistics::link(&mut w, 0, a, rb);
+    let mut on_arc = 0;
+    for _ in 0..2000 {
+        w.step(&[]);
+        let c = &w.carriers[0];
+        if c.x > 60 * TILE && c.x < 61 * TILE && c.y > 101 * TILE && c.y < 102 * TILE {
+            assert!((dist(c.x, c.y, kx, ky) - r).abs() <= 2, "train hors de l'arc ({}, {})", c.x, c.y);
+            on_arc += 1;
+        }
+    }
+    assert!(on_arc >= 1, "le train est passé dans le virage ({on_arc})");
+    assert_eq!(w.buildings[b].stash[N + IRON_PLATE as usize], 300, "livré après le virage");
+}

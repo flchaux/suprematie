@@ -160,6 +160,9 @@ function bobine(x: number, z: number, rayon: number, h: number, n: number, coiff
 /** Lot A : arrondi au millième des positions calculées. */
 const lotAr = (v: number): number => Math.round(v * 1000) / 1000;
 
+/** Degrés vers radians (traverses rayonnantes du rail en virage). */
+const RAIL_DEG = Math.PI / 180;
+
 /** Lot A : rangée de `n` pièces fines identiques réparties de `a` à `b` (lames de grille, nervures, boulons). */
 function lotARang(n: number, part: Omit<Part, "pos">, a: Vec3, b: Vec3): Part[] {
   const out: Part[] = [];
@@ -2089,6 +2092,17 @@ export const BUILDING_MODELS: Record<string, Model> = {
       ...[-0.33, 0, 0.33].map((z): Part => ({ shape: "box", size: [0.8,0.06,0.15], pos: [0,0.08,z], color: "dark" })),
       { shape: "extrude", profile: [[-0.035,0],[0.035,0],[0.013,0.05],[0.03,0.08],[-0.03,0.08],[-0.013,0.05]], depth: 1.0, pos: [0.22,0.11,0], color: "steel", mirror: true },
       ...[-0.33, 0, 0.33].map((z): Part => ({ shape: "box", size: [0.12,0.02,0.1], pos: [0.22,0.12,z], color: "metal", mirror: true, fine: true })),
+    ],
+  },
+  // rail_virage : rail en virage, quart de cercle de rayon 1/2 case autour du coin (-x, -z) ; relie le milieu
+  // du bord arrière (-z) au milieu du bord gauche (-x). Mêmes ballast, traverses (rayonnantes), profils de
+  // rail (écartement 0,44 : rayons 0,28 et 0,72) et selles que le rail droit, pour une voie continue.
+  rail_virage: {
+    parts: [
+      { shape: "lathe", profile: [[0.05,0],[0.95,0],[0.9,0.05],[0.1,0.05],[0.05,0]], sides: 12, arc: 90, smooth: false, pos: [-0.5,0,-0.5], color: "concrete" },
+      ...[15, 45, 75].map((a): Part => ({ shape: "box", size: [0.8,0.06,0.15], pos: [lotAr(-0.5 + 0.5 * Math.sin(a * RAIL_DEG)), 0.08, lotAr(-0.5 + 0.5 * Math.cos(a * RAIL_DEG))], rot: [0, a - 90, 0], color: "dark" })),
+      ...[0.28, 0.72].map((rr): Part => ({ shape: "lathe", profile: [[rr - 0.035,0],[rr + 0.035,0],[rr + 0.013,0.05],[rr + 0.03,0.08],[rr - 0.03,0.08],[rr - 0.013,0.05],[rr - 0.035,0]].map(([x, y]): [number, number] => [lotAr(x), y]), sides: 12, arc: 90, smooth: false, pos: [-0.5,0.11,-0.5], color: "steel" })),
+      ...[15, 45, 75].flatMap((a) => [0.28, 0.72].map((rr): Part => ({ shape: "box", size: [0.12,0.02,0.1], pos: [lotAr(-0.5 + rr * Math.sin(a * RAIL_DEG)), 0.12, lotAr(-0.5 + rr * Math.cos(a * RAIL_DEG))], rot: [0, a - 90, 0], color: "metal", fine: true }))),
     ],
   },
   // station : gare (3 x 3) — quai de béton à bordure de danger, auvent d'équipe profilé sur poteaux d'acier
