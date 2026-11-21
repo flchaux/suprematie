@@ -4,6 +4,7 @@
 // couleur d'équipe sur le dessus (toits, bandeaux), filets cyan (glow) et voyants ambre.
 import type { Model, Part, Vec3 } from "./types.ts";
 import { NEST_MODELS } from "./faune.ts";
+import { GEO_MODELS } from "./geothermie.ts";
 
 /** Socle chanfreiné de w x d cases (dessus à y = 0.25), sans dépasser de l'emprise. 88 triangles. */
 function socle(w: number, d = w): Part[] {
@@ -2277,4 +2278,5 @@ export const BUILDING_MODELS: Record<string, Model> = {
   },
   // faune : nid de mordeurs (voir faune.ts)
   ...NEST_MODELS,
+  ...GEO_MODELS,
 };

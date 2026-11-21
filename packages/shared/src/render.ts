@@ -4,7 +4,7 @@ import { NATURE_TEAM } from "./data.ts";
 export const HEADER = 16;
 export const NUM_ITEMS = 27;
 /** ... + plafond de la réserve (dernier mot) */
-export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 1;
+export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 2;
 export const UNIT_WORDS = 9;
 export const BUILDING_WORDS = 8;
 export const ITEM_WORDS = 3;
@@ -16,7 +16,7 @@ export const CARRIER_WORDS = 5;
 
 export const EV = {
   BEAM: 2, EXPLOSION: 3, UNIT_DIED: 4, BUILDING_DIED: 5, BUILT: 6, RESEARCH: 7, NUKE: 8, ELIMINATED: 9,
-  UNIT_CREATED: 10, SHIELD_HIT: 11, TELEPORT: 12, FIRE: 13, INTERCEPT: 14, ORBITAL: 15, GAME_OVER: 16, PROMOTED: 17, GIFT: 18, ATTACKED: 19, FACTORY_STARVED: 20, FUEL_LOW: 41, FUEL_DRY: 42,
+  UNIT_CREATED: 10, SHIELD_HIT: 11, TELEPORT: 12, FIRE: 13, INTERCEPT: 14, ORBITAL: 15, GAME_OVER: 16, PROMOTED: 17, GIFT: 18, ATTACKED: 19, FACTORY_STARVED: 20, FUEL_LOW: 41, FUEL_DRY: 42, SHARDS: 43,
 } as const;
 
 export const UF = { FIRING: 1, WORKING: 2, CHARGING: 4, STUNNED: 8, DEPLOYED: 16, SHIELD: 32, IDLE: 64, CARGO: 128 } as const;
@@ -30,6 +30,8 @@ export interface PlayerView {
   teamStock: Int32Array;
   /** plafond de la réserve, par objet (base + dépôts) */
   stockCap: number;
+  /** fragments d'énergie en réserve (surcadençage) */
+  shards: number;
 }
 
 export interface Frame {
@@ -80,6 +82,7 @@ export function parseFrame(buf: Int32Array): Frame {
       consumed: buf.subarray(o + 13 + 2 * NUM_ITEMS, o + 13 + 3 * NUM_ITEMS),
       teamStock: buf.subarray(o + 13 + 3 * NUM_ITEMS, o + 13 + 4 * NUM_ITEMS),
       stockCap: buf[o + 13 + 4 * NUM_ITEMS],
+      shards: buf[o + 14 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }
@@ -135,6 +138,7 @@ export function parseBotDump(buf: Int32Array): BotView {
       consumed: buf.subarray(o + 13 + 2 * NUM_ITEMS, o + 13 + 3 * NUM_ITEMS),
       teamStock: buf.subarray(o + 13 + 3 * NUM_ITEMS, o + 13 + 4 * NUM_ITEMS),
       stockCap: buf[o + 13 + 4 * NUM_ITEMS],
+      shards: buf[o + 14 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }

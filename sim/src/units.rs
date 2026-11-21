@@ -353,10 +353,14 @@ fn deconstruct(w: &mut World, s: usize, b: usize) -> bool {
     bb.build = p2;
     w.units.cold[s].flags |= UF_WORKING;
     if p2 == 0 {
+        // fragments d'énergie installés : rendus au joueur
+        let shards = bb.shards as u32;
+        bb.shards = 0;
         // rendre aussi le contenu
         let inv = bb.inv;
         let out = bb.out;
         let _ = (inv, out);
+        w.players[owner].shards += shards;
         buildings::remove_building(w, b, false);
         return false;
     }
@@ -785,7 +789,8 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 w.units.cold[s].timer = HV_FULL;
                 return NONE;
             }
-            let mult = w.players[o].res_mult.max(1) as u32;
+            // pureté du gisement récolté
+            let mult = w.players[o].res_mult.max(1) as u32 * w.map.purity_under(x, y, 1, 1) / 100;
             let need = harvest_cycle(r) * 100;
             let c = &mut w.units.cold[s];
             c.timer = HV_WORKING;

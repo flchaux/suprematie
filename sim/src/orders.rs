@@ -45,6 +45,8 @@ pub const O_SET_LOT: i32 = 44;
 pub const O_SET_SPLIT: i32 = 45;
 /// vider une gare ou un héliport : [réf.] ; « à envoyer » et « reçus » retournent au stock du joueur
 pub const O_EMPTY_STASH: i32 = 46;
+/// cadence d'une machine : [réf., cadence %] (10 à 250, par pas de 10 ; au-dessus de 100 %, des fragments)
+pub const O_SET_CLOCK: i32 = 47;
 /// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
@@ -474,6 +476,13 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     w.buildings[b].share = v;
                     w.buildings[b].wake = 0;
                 }
+            }
+        }
+        O_SET_CLOCK => {
+            let r = c.next();
+            let v = c.next().clamp(0, 1000) as u32;
+            if let Some(b) = own_building(w, p, r) {
+                buildings::set_clock(w, b, v);
             }
         }
         O_SET_SPLIT => {

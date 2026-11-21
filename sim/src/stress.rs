@@ -332,7 +332,7 @@ pub fn logistics_demo() -> World {
                 w.map.deposit[i] = COPPER_ORE;
             }
         }
-        w.map.spots.push(crate::map::Spot { kind: COPPER_ORE, x, y });
+        w.map.spots.push(crate::map::Spot { kind: COPPER_ORE, x, y, purity: 0 });
         let e = put(&mut w, 0, B_EXTRACTOR, x, y, 1);
         if e != usize::MAX {
             w.buildings[e].level = k as u8 + 1;
@@ -379,7 +379,7 @@ pub fn logistics_demo() -> World {
             w.map.deposit[i] = IRON_ORE;
         }
     }
-    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey });
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey, purity: 0 });
     put(&mut w, 0, B_EXTRACTOR, ex, ey, 0);
     for x in ex + 2..ex + 7 {
         put(&mut w, 0, B_BELT1, x, ey, 0);
@@ -395,7 +395,7 @@ pub fn logistics_demo() -> World {
             w.map.deposit[i] = IRON_ORE;
         }
     }
-    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey });
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: ex, y: ey, purity: 0 });
     put(&mut w, 0, B_EXTRACTOR, ex, ey, 0);
     put(&mut w, 0, B_BELT1, ex + 2, ey + 1, 0);
     put(&mut w, 0, B_BELT1, ex + 3, ey + 1, 0);
@@ -550,7 +550,7 @@ pub fn showcase_demo() -> World {
                     w.map.deposit[i] = IRON_ORE;
                 }
             }
-            w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x, y });
+            w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x, y, purity: 0 });
         }
         if let Some(b) = place_building(&mut w, 0, k as u16, x, y, 0) {
             complete_building(&mut w, b);

@@ -14,6 +14,8 @@
   import { NATURE_COLOR } from "@supreme/shared";
   import { factoryUnitKinds } from "../game/catalog.ts";
   import { keyOf } from "../game/keys.svelte.ts";
+  /** geyser : « gisement » de vapeur, pour la centrale géothermique (voir sim/src/data.rs) */
+  const GEYSER = 250;
 
   const d = $derived(ui.data);
   const sb = $derived(ui.selBuilding);
@@ -135,6 +137,8 @@
     const secs = r.time / 20 / (Math.max(1, bdef?.speed ?? 100) / 100);
     return { secs, energy: (bdef?.powerUse ?? 0) * secs, perMin: (60 / secs) * r.output[1] };
   };
+  /** cadence possible : de 10 à 250 %, avec assez de fragments (ceux de la machine et ceux en réserve) */
+  const clockOk = (c: number, installed: number) => c >= 10 && c <= 250 && Math.max(0, Math.ceil((c - 100) / 50)) <= installed + ui.shards;
   const fmtE = (kj: number) => (kj >= 1000 ? `${(kj / 1000).toFixed(1)} MJ` : `${Math.round(kj)} kJ`);
   const STATE = ["à quai", "en route vers la destination", "à quai à destination", "en retour"];
   const isStation = $derived(!!bdef && (bdef.cls === BClass.Station || bdef.cls === BClass.CargoPad));
@@ -222,9 +226,29 @@
       {#if rate}
         <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
       {/if}
-      {#if bdef.cls === BClass.Power && info.build >= 65536}
+      {#if info.clockable && info.build >= 65536}
+        {@const ck = info.clock ?? 100}
+        {@const inst = info.shards ?? 0}
+        <div class="row small clock" title="Cadence de la machine : plus vite, mais la consommation électrique croît plus vite encore (×2,5 à 200 %). Au-dessus de 100 %, il faut un fragment d'énergie par tranche de 50 % ; on en gagne en détruisant des nids de la faune.">
+          <span class="kicker">Cadence</span>
+          <button class="icon-btn" disabled={!mine || !clockOk(ck - 10, inst)} aria-label="Ralentir" onclick={() => client.setClock(ck - 10)}>−</button>
+          <b class="num">{ck} %</b>
+          <button class="icon-btn" disabled={!mine || !clockOk(ck + 10, inst)} aria-label="Accélérer" onclick={() => client.setClock(ck + 10)}>+</button>
+          <span class="dim">· énergie ×<span class="num">{((info.clockPower ?? 1000) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span>
+          <span class="dim nowrap">· fragments <span class="num">{inst}</span> installé{inst > 1 ? "s" : ""}, <span class="num">{ui.shards}</span> en réserve</span>
+        </div>
+      {/if}
+      {#if info.purity}
+        <div class="row small"><span class="kicker">Pureté</span> <b class="purity p{info.purity}">{info.purity >= 200 ? "Pur" : info.purity <= 50 ? "Impur" : "Normal"}</b><span class="dim num">· rendement ×{(info.purity / 100).toLocaleString("fr-FR")}</span></div>
+      {/if}
+      {#if bdef.key === "geothermal" && info.build >= 65536}
+        {@const out = info.genOut ?? 0}
+        {@const base = Math.round((bdef.powerProd * (info.purity || 100) * (info.clock ?? 100)) / 10000)}
+        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> kW <span class="dim">· de <span class="num">{Math.round(base / 2)}</span> à <span class="num">{Math.round(base * 1.5)}</span> kW selon le geyser</span></div>
+        <span class="dim small">Sans combustible : la vapeur du geyser monte et retombe en une minute, la production suit (moyenne <span class="num">{base}</span> kW).</span>
+      {:else if bdef.cls === BClass.Power && info.build >= 65536}
         {@const gl = d.generatorLevels && bdef.key === "generator" ? d.generatorLevels : null}
-        {@const kw = info.upgrade > 0 ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd}
+        {@const kw = Math.round(((info.upgrade > 0 ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd) * (info.clock ?? 100)) / 100)}
         {@const fu = d.fuel}
         {@const cell = bdef.key === "crystal_reactor"}
         {@const unit = fu ? (cell ? fu.cell : fu.hydrocarbon) : 0}
@@ -624,17 +648,18 @@
   <!-- gisement : ce qu'il contient, s'il est exploité -->
   <div class="panel sel">
     <div class="head" style:--pc="#3ef0ff">
-      <div class="thumb"><Item id={dep.kind} size={44} /></div>
+      <div class="thumb">{#if dep.kind === GEYSER}<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><ellipse cx="22" cy="36" rx="14" ry="4" fill="#5d5046" /><path d="M16 34c-4-8 4-10 0-18m6 18c-3-9 5-12 1-24m6 24c-4-8 4-10 0-18" stroke="#e8f0f4" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.85" /></svg>{:else}<Item id={dep.kind} size={44} />{/if}</div>
       <div class="ht">
-        <div class="kicker">Gisement</div>
-        <b class="title">{d.items[dep.kind]?.name ?? "?"}</b>
+        <div class="kicker">{dep.kind === GEYSER ? "Source de vapeur" : "Gisement"}</div>
+        <b class="title">{dep.kind === GEYSER ? "Geyser" : (d.items[dep.kind]?.name ?? "?")}</b>
         <span class="dim small">Inépuisable · case {dep.x}, {dep.y}</span>
       </div>
     </div>
+    <div class="row"><span class="kicker">Pureté</span> <b class="purity p{dep.purity}">{dep.purity >= 200 ? "Pur" : dep.purity <= 50 ? "Impur" : "Normal"}</b><span class="dim small num">· rendement ×{(dep.purity / 100).toLocaleString("fr-FR")}</span></div>
     {#if depUser}
       <div class="status {depUser.owner === ui.me ? 'good' : 'warn'}"><span class="led"></span>Exploité par {depUser.owner === ui.me ? "vous" : (ui.names[depUser.owner] ?? "un autre joueur")} ({d.buildings[depUser.kind]?.name})</div>
     {:else}
-      <div class="status idle"><span class="led"></span>Libre : posez un extracteur dessus pour l'exploiter</div>
+      <div class="status idle"><span class="led"></span>Libre : posez {dep.kind === GEYSER ? "une centrale géothermique" : "un extracteur"} dessus pour l'exploiter</div>
       {#if client.harvestRecipe(dep.kind) >= 0}<span class="dim small">Ou récoltez-le avec votre commandant (clic droit dessus), plus lentement : il fond le minerai lui-même.</span>{/if}
     {/if}
   </div>
@@ -736,4 +761,7 @@
   .fuelbar.empty { outline: 1px solid var(--bad, #ff5a4f); }
   .nowrap { white-space: nowrap; }
   .turn .icon-btn.split { padding: 2px 6px; }
+  .purity.p50 { color: #e08a5a; }
+  .purity.p100 { color: var(--text, #d8e2ea); }
+  .purity.p200 { color: #7fe08a; }
 </style>

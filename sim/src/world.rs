@@ -47,8 +47,10 @@ pub struct Player {
     pub losses: u32,
     /// plafond de la réserve, par objet (STOCK_BASE + dépôts terminés)
     pub stock_cap: i32,
+    /// fragments d'énergie en réserve (gagnés en détruisant des nids ; ils permettent le surcadençage)
+    pub shards: u32,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap, shards });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -287,6 +289,11 @@ pub struct Building {
     pub turn: u8,
     /// répartiteur : sorties (0 : gauche, avant et droite ; 1 : gauche et avant ; 2 : droite et avant)
     pub split: u8,
+    /// pureté du gisement sous le bâtiment (% ; 0 : normale), relevée à la pose
+    pub purity: u8,
+    /// cadence (% : 10 à 250 ; 0 : 100 %) et fragments d'énergie installés (un par tranche de 50 % au-dessus de 100 %)
+    pub clock: u8,
+    pub shards: u8,
     /// gare, héliport : objets par voyage des véhicules qui en partent (0 : automatique, ils partent
     /// dès qu'ils ont quelque chose ; sinon ils chargent au plus ce nombre et l'attendent avant de partir)
     pub lot: u16,
@@ -315,7 +322,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split, clock, shards, purity
 });
 
 impl Building {
@@ -447,6 +454,8 @@ pub const EV_FACTORY_STARVED: i32 = 20;
 pub const EV_FUEL_LOW: i32 = 41;
 /// générateur à sec : sa zone s'éteint [joueur, x, y, type]
 pub const EV_FUEL_DRY: i32 = 42;
+/// nid détruit : le joueur a gagné des fragments d'énergie (a : joueur, e : nombre)
+pub const EV_SHARDS: i32 = 43;
 
 /// Débit des bâtiments : une minute découpée en tranches de 10 s.
 pub const FLOW_SLICE: u32 = 200;
@@ -547,6 +556,7 @@ impl World {
                 kills: 0,
                 losses: 0,
                 stock_cap: STOCK_BASE,
+                shards: 0,
             });
         }
         // faune : un joueur caché de plus, après les vrais joueurs

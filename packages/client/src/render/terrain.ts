@@ -15,7 +15,8 @@ export interface MapData {
   waterLevel: number;
   heights: Uint8Array;
   starts: [number, number][];
-  spots: { kind: number; x: number; y: number }[];
+  /** purity : rendement en % (50 impur, 100 normal, 200 pur) */
+  spots: { kind: number; x: number; y: number; purity: number }[];
 }
 
 export function parseMapInfo(info: Int32Array, heights: Uint8Array): MapData {
@@ -23,7 +24,9 @@ export function parseMapInfo(info: Int32Array, heights: Uint8Array): MapData {
   let o = 4;
   for (let i = 0; i < info[3]; i++, o += 2) m.starts.push([info[o], info[o + 1]]);
   const ns = info[o++];
-  for (let i = 0; i < ns; i++, o += 3) m.spots.push({ kind: info[o], x: info[o + 1], y: info[o + 2] });
+  for (let i = 0; i < ns; i++, o += 3) m.spots.push({ kind: info[o], x: info[o + 1], y: info[o + 2], purity: 100 });
+  // pureté de chaque gisement, à la suite (simulations récentes)
+  if (o + ns <= info.length) for (let i = 0; i < ns; i++) m.spots[i].purity = info[o++] || 100;
   return m;
 }
 
@@ -47,7 +50,8 @@ export function surfaceHeight(m: MapData, x: number, z: number): number {
   return Math.max(groundHeight(m, x, z), m.waterLevel * HSCALE);
 }
 
-export const DEPOSIT_COLORS: Record<number, number> = { 1: 0x6f8ba8, 2: 0xd0763a, 3: 0xe4dcc0, 4: 0x241c2c, 5: 0x66e8ff };
+/** couleur des gisements ; 250 : geyser (croûte minérale) */
+export const DEPOSIT_COLORS: Record<number, number> = { 1: 0x6f8ba8, 2: 0xd0763a, 3: 0xe4dcc0, 4: 0x241c2c, 5: 0x66e8ff, 250: 0xb9a98e };
 
 const C_SEABED = new THREE.Color(0.36, 0.35, 0.27);
 const C_SAND = new THREE.Color(0.7, 0.64, 0.46);

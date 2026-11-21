@@ -34,7 +34,7 @@ fn spot(w: &mut World, kind: u8, x: i32, y: i32) {
             w.map.deposit[i] = kind;
         }
     }
-    w.map.spots.push(crate::map::Spot { kind, x, y });
+    w.map.spots.push(crate::map::Spot { kind, x, y, purity: 0 });
 }
 
 fn put(w: &mut World, kind: u16, x: i32, y: i32, dir: u8) -> usize {

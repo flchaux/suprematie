@@ -175,6 +175,7 @@ pub fn nature_player() -> Player {
         kills: 0,
         losses: 0,
         stock_cap: 0,
+        shards: 0,
     }
 }
 
@@ -587,9 +588,16 @@ pub fn update(w: &mut World) {
     }
 }
 
-/// Nid détruit : sa horde rejoint le nid le plus proche (40 cases), ou reste sur place, sans maître.
+/// Nid détruit : le joueur qui l'a frappé en dernier gagne des fragments d'énergie (1 à 3 selon
+/// l'évolution) ; sa horde rejoint le nid le plus proche (40 cases), ou reste sur place, sans maître.
 fn remove_nest(w: &mut World, i: usize) {
     let n = w.nature.nests.remove(i);
+    let foe = n.foe as usize;
+    if n.struck != 0 && foe < w.players.len() && w.players[foe].team != NATURE_TEAM && w.players[foe].alive {
+        let k = 1 + evolution(w.tick, w.nature.level) / 400;
+        w.players[foe].shards += k;
+        w.ev(EV_SHARDS, foe as i32, 0, 0, k as i32);
+    }
     let horde: Vec<u32> = n.horde.into_iter().filter(|&id| beast(w, id).is_some()).collect();
     let Some(&first) = horde.first() else { return };
     let Some(s) = w.unit(first) else { return };

@@ -534,6 +534,13 @@ export class GameClient {
             this.alertPos = { x: c / TILE, z: d / TILE };
           }
           break;
+        case EV.SHARDS:
+          // nid détruit : fragments d'énergie gagnés
+          if (a === ui.me) {
+            pushMessage(`Nid détruit : ${e} fragment${e > 1 ? "s" : ""} d'énergie récupéré${e > 1 ? "s" : ""} (surcadençage des machines, dans leur fiche)`, "info");
+            sfx.confirm();
+          }
+          break;
         case EV.FACTORY_STARVED:
           // usine à l'arrêt faute de composants (au plus une annonce toutes les 30 s)
           if (a === ui.me && performance.now() - this.lastStarveAlert > 30000) {
@@ -642,6 +649,7 @@ export class GameClient {
       ui.stock = Array.from(me.stock);
       ui.teamStock = Array.from(me.teamStock);
       ui.stockCap = me.stockCap;
+      ui.shards = me.shards ?? 0;
       ui.produced = Array.from(me.produced);
       ui.consumed = Array.from(me.consumed);
       ui.powerProd = me.powerProd;
@@ -1429,7 +1437,7 @@ export class GameClient {
           }
           // gisement (2 x 2 cases) sous le curseur : fiche du gisement
           const s = this.spotAt(tx, tz);
-          ui.selDeposit = s ? { kind: s.kind, x: s.x, y: s.y } : null;
+          ui.selDeposit = s ? { kind: s.kind, x: s.x, y: s.y, purity: s.purity } : null;
           if (s) sfx.click();
         }
       }
@@ -2226,6 +2234,13 @@ export class GameClient {
   /** Sorties du répartiteur sélectionné (0 : les trois, 1 : gauche et avant, 2 : droite et avant). */
   setSplit(mode: number): void {
     if (ui.selBuilding) this.cmd(Ord.setSplit(ui.selBuilding.ref, mode));
+  }
+  /** Cadence de la machine sélectionnée (10 à 250 %, par pas de 10 ; au-dessus de 100 %, des fragments d'énergie). */
+  setClock(clock: number): void {
+    if (ui.selBuilding) {
+      this.cmd(Ord.setClock(ui.selBuilding.ref, clock));
+      sfx.click();
+    }
   }
   /** Rotation du bras sélectionné, en quarts de tour (1 : prend à droite, 2 : derrière, 3 : à gauche). */
   /** Objets par voyage des véhicules qui partent de la gare sélectionnée (0 : automatique). */

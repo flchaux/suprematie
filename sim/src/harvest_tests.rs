@@ -36,7 +36,7 @@ fn spot(w: &mut World, kind: u8, x: i32, y: i32) {
             w.map.deposit[i] = kind;
         }
     }
-    w.map.spots.push(crate::map::Spot { kind, x, y });
+    w.map.spots.push(crate::map::Spot { kind, x, y, purity: 0 });
 }
 
 /// Monde de test : zone plate, gisements de fer (100,100), cuivre (110,100), silicium (100,110),

@@ -12,8 +12,37 @@ pub struct Spot {
     pub kind: u8,
     pub x: i32,
     pub y: i32,
+    /// pureté (% du rendement normal : 50, 100, 200) ; 0 : normale (gisement posé à la main)
+    pub purity: u8,
 }
-crate::ser_struct!(Spot { kind, x, y });
+crate::ser_struct!(Spot { kind, x, y, purity });
+
+/// Pureté d'un gisement, en % du rendement normal : impur, normal, pur.
+pub const PURITY_IMPURE: u8 = 50;
+pub const PURITY_NORMAL: u8 = 100;
+pub const PURITY_PURE: u8 = 200;
+
+/// Pureté des gisements répartis sur la carte, selon la distance `d` (cases) au départ le plus proche
+/// et un tirage fixé par la position : plutôt impurs près des bases, purs en zone disputée. Les gisements
+/// de départ et le cristal restent normaux.
+pub fn spot_purity(seed: u32, map_w: i32, x: i32, y: i32, d: i32) -> u8 {
+    let r = hash3(x, y, seed ^ 0x5075_7269) % 100;
+    // (impurs, normaux) en % ; le reste est pur
+    let (imp, norm) = if d < map_w * 18 / 100 {
+        (50, 45)
+    } else if d >= map_w * 25 / 100 {
+        (10, 60)
+    } else {
+        (25, 60)
+    };
+    if r < imp {
+        PURITY_IMPURE
+    } else if r < imp + norm {
+        PURITY_NORMAL
+    } else {
+        PURITY_PURE
+    }
+}
 
 /// Hauteur unique de la terre : la carte est plate (les tapis et les bâtiments sont tous de niveau).
 pub const FLAT_LAND: u8 = 150;
@@ -40,6 +69,14 @@ pub struct Map {
 pub const FLOORS: u8 = 3;
 
 impl Map {
+    /// Rendement (en %) du gisement qui touche le rectangle (x, y, bw, bh) : sa pureté ; 100 s'il n'y en
+    /// a pas (ou gisement posé à la main, sans pureté). Parcourt les gisements : à la pose, pas à chaque tick.
+    pub fn purity_under(&self, x: i32, y: i32, bw: i32, bh: i32) -> u32 {
+        self.spots
+            .iter()
+            .find(|s| s.x < x + bw && s.x + 2 > x && s.y < y + bh && s.y + 2 > y)
+            .map_or(PURITY_NORMAL as u32, |s| if s.purity == 0 { PURITY_NORMAL as u32 } else { s.purity as u32 })
+    }
     /// Occupant (indice + 1, ou 0) de la case `i` au niveau `floor` (0 : sol).
     #[inline]
     pub fn occ_floor(&self, i: usize, floor: u8) -> u32 {
@@ -172,7 +209,7 @@ impl Map {
                     deposit[((y + dy) * w + x + dx) as usize] = kind;
                 }
             }
-            spots.push(Spot { kind, x, y });
+            spots.push(Spot { kind, x, y, purity: 0 });
             true
         };
         // Gisements autour de chaque départ
@@ -191,6 +228,7 @@ impl Map {
                 }
             }
         }
+        let base_spots = spots.len();
         // Gisements répartis sur la carte
         let extra = (w * h / 2600) as u32;
         let mut placed = 0;
@@ -229,6 +267,23 @@ impl Map {
                 }
             }
         }
+        // Geysers : en zone disputée, près des points de cristal et loin des départs
+        let geyser_pts: Vec<(i32, i32)> = cpts.iter().map(|&(cx, cy)| (cx + rng.range(-30, 30), cy + rng.range(-30, 30))).collect();
+        let extra_geysers = (w * h / 65536) as usize;
+        let mut gpts = geyser_pts;
+        for _ in 0..extra_geysers {
+            gpts.push((rng.range(12, w - 14), rng.range(12, h - 14)));
+        }
+        for &(gx, gy) in &gpts {
+            for _try in 0..40 {
+                let x = gx + rng.range(-12, 12);
+                let y = gy + rng.range(-12, 12);
+                let far = starts.iter().all(|&(sx, sy)| (sx - x).abs() + (sy - y).abs() > w * 18 / 100);
+                if far && place(&mut spots, &mut height, &mut deposit, GEYSER, x, y) {
+                    break;
+                }
+            }
+        }
         // Carte plate : toute la terre à la même hauteur, l'eau à deux profondeurs (haut-fond près des
         // côtes, eau profonde au large). Les écarts restent sous le seuil des falaises : pas de falaise,
         // les aéroglisseurs passent de la terre à l'eau, les tapis et les bâtiments sont tous de niveau.
@@ -244,6 +299,15 @@ impl Map {
             };
         }
         let water_level = final_level;
+        // pureté : normale pour les gisements de départ et le cristal, tirée pour les autres
+        for (k, sp) in spots.iter_mut().enumerate() {
+            sp.purity = if k < base_spots || sp.kind == CRYSTAL {
+                PURITY_NORMAL
+            } else {
+                let d = starts.iter().map(|&(sx, sy)| crate::fixed::isqrt((((sx - sp.x) as i64).pow(2) + ((sy - sp.y) as i64).pow(2)) as u64) as i32).min().unwrap_or(i32::MAX);
+                spot_purity(seed, w, sp.x, sp.y, d)
+            };
+        }
         let mut m = Map { w, h, water_level, height, deposit, cliff: vec![0; n], spots, starts, occ: vec![0; n], occ_up: vec![0; n * (FLOORS as usize - 1)], pass: vec![0; n] };
         m.compute_cliffs();
         for y in 0..h {

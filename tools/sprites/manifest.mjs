@@ -63,6 +63,7 @@ export const BUILDINGS = {
   generator: "a power generator with a turbine and glowing cyan coils",
   pylon: "a slim electrical power pylon tower with glowing insulators",
   hydro_plant: "a hydrocarbon power plant with cooling stacks and pipes",
+  geothermal: "a geothermal power plant built over a steaming geyser, with a flared steam stack, turbine hall and heat exchangers",
   land_factory: "a large land vehicle factory with a big sliding door and a gantry crane",
   air_factory: "an aircraft factory with a launch pad and a control tower",
   naval_factory: "a floating naval shipyard dock with cranes",

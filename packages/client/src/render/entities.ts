@@ -606,6 +606,18 @@ export class Entities {
     // nouveau tick : les projectiles apparus depuis le dernier affichage font un éclair de départ
     const tickDelta = this.lastFxTick < 0 ? 0 : Math.max(0, Math.min(40, f.tick - this.lastFxTick));
     this.lastFxTick = f.tick;
+    // ----- geysers : panache de vapeur qui monte et retombe en une minute -----
+    if (!strategic) {
+      const tsec = now / 1000;
+      for (const s of this.map.spots) {
+        if (s.kind !== 250) continue;
+        const gx = s.x + 1;
+        const gz = s.y + 1;
+        if (gx < vx0 - 4 || gx > vx1 + 4 || gz < vz0 - 4 || gz > vz1 + 4) continue;
+        const k = 0.5 + 0.5 * Math.sin((tsec * 2 * Math.PI) / 60 + s.x * 0.7);
+        fx.steam(gx, groundHeight(this.map, gx, gz) + 0.3, gz, k, dt);
+      }
+    }
     // ----- unités -----
     let o = f.unitOff;
     for (let i = 0; i < f.nUnits; i++, o += UNIT_WORDS) {

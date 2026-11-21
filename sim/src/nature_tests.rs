@@ -400,3 +400,16 @@ fn beasts_charge_their_prey() {
     w.units.cold[s].orders.push(Order::Attack { target: m });
     assert!(charge_speed(&w, s, base) > unit_speed(U_MOTO));
 }
+
+#[test]
+fn destroyed_nest_gives_power_shards() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    run(&mut w, 40);
+    assert_eq!(w.players[0].shards, 0);
+    let b = w.building(w.nature.nests[0].b).unwrap();
+    // le joueur 0 abat le nid
+    crate::combat::damage_building(&mut w, b, 100_000, 0);
+    run(&mut w, 40);
+    assert!(w.nature.nests.is_empty());
+    assert!(w.players[0].shards >= 1, "pas de fragment");
+}

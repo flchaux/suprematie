@@ -7,7 +7,7 @@ use crate::world::*;
 
 pub const HEADER: usize = 16;
 /// ... + plafond de la réserve (dernier mot)
-pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 1;
+pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 2;
 pub const CARRIER_WORDS: usize = 5;
 pub const UNIT_WORDS: usize = 9;
 pub const BUILDING_WORDS: usize = 8;
@@ -39,6 +39,7 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
             None => out.extend(std::iter::repeat_n(0, NUM_ITEMS)),
         }
         out.push(p.stock_cap);
+        out.push(p.shards as i32);
     }
 }
 
@@ -137,7 +138,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             BClass::Extractor if bb.out >= 5 => flags |= 64,
             BClass::Lab if !bb.working && w.players.get(bb.owner as usize).is_some_and(|p| p.research != 0) => flags |= 32,
             BClass::Factory if !bb.working && !bb.queue.is_empty() => flags |= 32,
-            BClass::Power if bb.fuel <= 0 => flags |= 32,
+            BClass::Power if bb.fuel <= 0 && bb.kind != B_GEOTHERMAL => flags |= 32,
             _ => {}
         }
         if crate::buildings::needs_power(bb) && net_ok && w.nets.get(bb.net as usize).is_some_and(|n| n.sat < 900) {
@@ -177,7 +178,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
         // générateur : niveau (bits 24-25), production actuelle (kW)
-        BClass::Power => ((bb.level as i32) << 24, crate::buildings::power_prod_of(bb)),
+        BClass::Power => ((bb.level as i32) << 24, crate::buildings::gen_prod(w, bb)),
         BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress / 1024) as i32),
         // dépôt : trois premiers objets filtrés (bits 0-23), niveau (bits 24-25) ; quatrième filtre dans aux2
         BClass::Depot => {
@@ -454,7 +455,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         let per = |s: u64| (1200 * 10 * s * mult / (30 * crate::buildings::RECIPE_SCALE as u64)) as i32;
         // niveau d'amélioration : même multiplicateur que tick_extractor
         let lvl = crate::data::EXTRACTOR_LEVELS[(bb.level as usize).min(crate::data::EXTRACTOR_LEVELS.len() - 1)].speed as u64;
-        let per = |s: u64| per(s) * lvl as i32 / 100;
+        let purity = crate::buildings::purity_of(bb) as i32;
+        let per = |s: u64| per(s) * lvl as i32 / 100 * purity / 100;
         (per(sat.clamp(0, 1024) as u64), per(1024))
     } else {
         (0, 0)
@@ -479,8 +481,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         None => "null".to_string(),
     };
     format!(
-        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{}}}",
-        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split
+        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{}}}",
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }
     )
 }
 
@@ -513,9 +515,9 @@ pub fn power_zones(w: &World, player: i32) -> String {
         }
         let (bw, bh) = bb.size();
         let gen = def.class == BClass::Power;
-        let fuel = if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::fuel_tank(bb.kind).max(1) as i64) as i32 } else { -1 };
+        let fuel = if bb.kind == B_GEOTHERMAL { 1000 } else if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::fuel_tank(bb.kind).max(1) as i64) as i32 } else { -1 };
         // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
-        let net = if gen && bb.fuel <= 0 { 0 } else { bb.net };
+        let net = if gen && bb.fuel <= 0 && bb.kind != B_GEOTHERMAL { 0 } else { bb.net };
         let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };
         poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, def.supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind));
     }
@@ -575,6 +577,10 @@ pub fn map_info(w: &World) -> Vec<i32> {
     out.push(m.spots.len() as i32);
     for s in &m.spots {
         out.extend_from_slice(&[s.kind as i32, s.x, s.y]);
+    }
+    // pureté de chaque gisement (% du rendement normal), dans le même ordre
+    for s in &m.spots {
+        out.push(if s.purity == 0 { 100 } else { s.purity as i32 });
     }
     out
 }

@@ -9,6 +9,8 @@ pub const COPPER_ORE: u8 = 2;
 pub const SILICON: u8 = 3;
 pub const HYDROCARBON: u8 = 4;
 pub const CRYSTAL: u8 = 5;
+/// Geyser : « gisement » de vapeur (pas un objet), où seule une centrale géothermique se pose.
+pub const GEYSER: u8 = 250;
 pub const IRON_PLATE: u8 = 6;
 pub const COPPER_PLATE: u8 = 7;
 pub const STEEL: u8 = 8;
@@ -550,8 +552,10 @@ pub const START_FUEL_UNITS: i32 = 20;
 pub const B_MAIN_GENERATOR: u16 = 46;
 /// Nid de la faune (voir nature.rs).
 pub const B_NEST: u16 = 47;
+/// Centrale géothermique : sur un geyser, sans combustible, production qui ondule.
+pub const B_GEOTHERMAL: u16 = 48;
 
-pub const BUILDINGS: [BuildingDef; 48] = [
+pub const BUILDINGS: [BuildingDef; 49] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -605,6 +609,8 @@ pub const BUILDINGS: [BuildingDef; 48] = [
     BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 0, class: BClass::Power, supply: 18, connect: 30, ..BD },
     // nid de la faune : posé par la carte ou par une expansion, jamais par un joueur (voir can_place)
     BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, weapon: 58, vision: 0, ..BD },
+    // centrale géothermique : posée sur un geyser, elle produit sans combustible (voir geo_output)
+    BuildingDef { key: "geothermal", name: "Centrale géothermique", size: (3, 3), hp: 2500, power_prod: 1600, cost: &[(STEEL, 15), (GEAR, 10), (CIRCUIT, 8)], build: 12, tech: 5, class: BClass::Power, supply: 10, connect: 22, deposit: GEYSER, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.

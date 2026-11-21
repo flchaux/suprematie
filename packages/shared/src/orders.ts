@@ -28,6 +28,8 @@ export const O = {
   SET_SPLIT: 45,
   /** vider une gare ou un héliport : [réf.] ; « à envoyer » et « reçus » retournent au stock du joueur */
   EMPTY_STASH: 46,
+  /** cadence d'une machine : [réf., cadence %] (10 à 250 par pas de 10 ; au-dessus de 100 %, des fragments d'énergie) */
+  SET_CLOCK: 47,
   /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
@@ -207,6 +209,9 @@ export function setSplit(ref: number, mode: number): Cmd {
 }
 export function setLot(ref: number, n: number): Cmd {
   return [O.SET_LOT, ref | 0, Math.max(0, Math.round(n))];
+}
+export function setClock(ref: number, clock: number): Cmd {
+  return [O.SET_CLOCK, ref | 0, Math.max(10, Math.min(250, Math.round(clock / 10) * 10))];
 }
 export function emptyStash(ref: number): Cmd {
   return [O.EMPTY_STASH, ref | 0];

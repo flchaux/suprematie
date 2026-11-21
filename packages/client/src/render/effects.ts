@@ -476,6 +476,15 @@ export class Effects {
     }
   }
 
+  /** Vapeur d'un geyser : panache blanc qui monte, d'intensité k (0 à 1). */
+  steam(x: number, y: number, z: number, k: number, dt: number): void {
+    if (!this.inView(x, z, 3)) return;
+    if (Math.random() < (2 + 10 * k) * this.quality * dt) {
+      const g = rnd(0.78, 0.95);
+      this.smoke.spawn({ x: x + rnd(-0.25, 0.25), y, z: z + rnd(-0.25, 0.25), vx: rnd(-0.15, 0.15) + 0.2, vy: rnd(1.6, 2.8) * (0.6 + k), vz: rnd(-0.15, 0.15), life: rnd(1.6, 2.6), s0: 0.25, s1: 1.2 + k, c0: [g, g, g], c1: [g, g, g], a: 0.35 + 0.3 * k, drag: 0.4 });
+    }
+  }
+
   /** Étincelles d'impact (rayon, bouclier). */
   sparks(x: number, y: number, z: number, color: [number, number, number], n = 5): void {
     if (!this.inView(x, z, 2)) return;

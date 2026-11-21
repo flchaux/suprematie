@@ -529,7 +529,7 @@ fn extractor_upgrade_speeds_up_extraction() {
                 w.map.deposit[i] = IRON_ORE;
             }
         }
-        w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: *x, y: 100 });
+        w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: *x, y: 100, purity: 0 });
         ext.push(put(&mut w, 0, B_EXTRACTOR, *x, 100, 1));
         put(&mut w, 0, B_DEPOT, *x, 102, 0);
     }
@@ -819,7 +819,7 @@ fn extractor_uses_both_front_outputs() {
             w.map.deposit[i] = IRON_ORE;
         }
     }
-    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 100, y: 100 });
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 100, y: 100, purity: 0 });
     // sortie vers le sud (dir 1) : deux tapis en cul-de-sac sous l'extracteur, l'un sous chaque colonne
     put(&mut w, 0, B_EXTRACTOR, 100, 100, 1);
     let left = put(&mut w, 0, B_BELT1, 100, 102, 1);
@@ -1401,7 +1401,7 @@ fn flow_averages_the_last_minute() {
 fn belt_along_a_face_becomes_a_building_fed_curve() {
     let mut w = world(&[0]);
     flatten(&mut w, 85, 85, 125, 125);
-    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 94, y: 100 });
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 94, y: 100, purity: 0 });
     for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
         let i = w.map.idx(94 + dx, 100 + dy);
         w.map.deposit[i] = IRON_ORE;
@@ -1672,7 +1672,7 @@ fn hydrocarbon_extractor_needs_no_power_and_zones_merge() {
         let i = w.map.idx(96 + dx, 100 + dy);
         w.map.deposit[i] = HYDROCARBON;
     }
-    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: 96, y: 100 });
+    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: 96, y: 100, purity: 0 });
     // aucun générateur alimenté : l'extracteur tourne quand même ; tourné vers l'ouest, il donne au générateur
     let g = put(&mut w, 0, B_GENERATOR, 94, 100, 0);
     w.buildings[g].fuel = 0;
@@ -1793,7 +1793,7 @@ fn fuel_carrying_belts_and_arms_run_without_power_and_alerts_fire_once() {
         let i = w.map.idx(90 + dx, 100 + dy);
         w.map.deposit[i] = HYDROCARBON;
     }
-    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: 90, y: 100 });
+    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: 90, y: 100, purity: 0 });
     put(&mut w, 0, B_EXTRACTOR, 90, 100, 0);
     for x in 92..98 {
         put(&mut w, 0, B_BELT1, x, 100, 0);

@@ -16,9 +16,9 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient les 52 unités (dont 3 bêtes de la faune), 48 bâtiments (dont le nid) et 48 recherches", () => {
+  it("contient les 52 unités (dont 3 bêtes de la faune), 49 bâtiments (dont le nid et la centrale géothermique) et 48 recherches", () => {
     expect(data.units.length).toBe(52);
-    expect(data.buildings.length).toBe(48);
+    expect(data.buildings.length).toBe(49);
     expect(data.techs.length).toBe(48);
     expect(data.units[0].key).toBe("commander");
     // la faune : aucune usine ne produit ses bêtes, et son nid n'est pas une construction de joueur

@@ -238,6 +238,8 @@ pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, di
         }
         let def = w.buildings[b].def();
         let complete = w.buildings[b].complete();
+        // fragments d'énergie installés : rendus au joueur
+        w.players[p].shards += w.buildings[b].shards as u32;
         for (k, &(it, n)) in def.cost.iter().enumerate() {
             w.players[p].stock[it as usize] += if complete { n as i32 } else { w.buildings[b].paid[k] as i32 };
         }
@@ -297,7 +299,7 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
         }
     }
     if def.deposit != 0 {
-        let ok = w.map.spots.iter().any(|s| (def.deposit == 255 || s.kind == def.deposit) && s.x >= x && s.y >= y && s.x + 2 <= x + bw && s.y + 2 <= y + bh);
+        let ok = w.map.spots.iter().any(|s| ((def.deposit == 255 && s.kind != GEYSER) || s.kind == def.deposit) && s.x >= x && s.y >= y && s.x + 2 <= x + bw && s.y + 2 <= y + bh);
         if !ok {
             return false;
         }
@@ -353,6 +355,8 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         rally: (fx * TILE + TILE / 2 + DIRS[(dir & 3) as usize].0 * TILE * 3, fy * TILE + TILE / 2 + DIRS[(dir & 3) as usize].1 * TILE * 3),
         enabled: true,
         stash: if crate::logistics::carrier_kind(def.class).is_some() { vec![0; 2 * NUM_ITEMS] } else { Vec::new() },
+        // pureté du gisement (extracteur, centrale géothermique)
+        purity: if def.deposit != 0 { w.map.purity_under(x, y, bw, bh) as u8 } else { 0 },
         ..Building::default()
     };
     for ty in y..y + bh {
@@ -477,7 +481,7 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
 /// Énergie que donne cet objet au générateur `kind` (0 : il ne le brûle pas). Le réacteur à cristal brûle
 /// des cellules d'énergie, les autres de l'hydrocarbure ou du carburant.
 pub fn fuel_energy(kind: u16, item: u8) -> i32 {
-    if bdef(kind).class != BClass::Power {
+    if bdef(kind).class != BClass::Power || kind == B_GEOTHERMAL {
         return 0;
     }
     match (kind == B_CRYSTAL_REACTOR, item) {
@@ -553,10 +557,10 @@ fn feed_generator_from_depot(w: &mut World, b: usize) {
 pub fn gen_output(w: &World, b: usize) -> i32 {
     let bb = &w.buildings[b];
     let Some(n) = w.nets.get(bb.net as usize) else { return 0 };
-    if bb.net == 0 || bb.fuel <= 0 || n.prod <= 0 {
+    if bb.net == 0 || (bb.fuel <= 0 && bb.kind != B_GEOTHERMAL) || n.prod <= 0 {
         return 0;
     }
-    (power_prod_of(bb) as i64 * (n.demand.min(n.prod)) as i64 / n.prod as i64) as i32
+    (gen_prod(w, bb) as i64 * (n.demand.min(n.prod)) as i64 / n.prod as i64) as i32
 }
 
 pub fn rebuild_power(w: &mut World) {
@@ -571,7 +575,7 @@ pub fn rebuild_power(w: &mut World) {
             .filter(|&i| {
                 let b = &w.buildings[i];
                 // un générateur sans combustible ne forme plus de zone et ne relie plus ses voisins
-                b.alive && b.owner == owner && b.complete() && b.def().supply > 0 && !(b.def().class == BClass::Power && b.fuel <= 0)
+                b.alive && b.owner == owner && b.complete() && b.def().supply > 0 && !(b.def().class == BClass::Power && b.fuel <= 0 && b.kind != B_GEOTHERMAL)
             })
             .collect();
         // union-find
@@ -654,7 +658,7 @@ pub fn rebuild_power(w: &mut World) {
             let net = if best != usize::MAX { pole_net[best] } else { fallback };
             if b.complete() && def.power_prod > 0 && net != 0 && net != fallback {
                 // les générateurs de la zone : leur production dépend de leur combustible (power_tick)
-                let cap = power_prod_of(b);
+                let cap = gen_prod(w, b);
                 let n = &mut w.nets[net as usize];
                 n.gens.push(bi as u32);
                 n.cap += cap;
@@ -696,8 +700,8 @@ pub fn power_tick(w: &mut World) {
         let mut cap = 0i64;
         for &g in &gens {
             let bb = &w.buildings[g as usize];
-            if bb.alive && bb.fuel > 0 {
-                cap += power_prod_of(bb) as i64;
+            if bb.alive && (bb.fuel > 0 || bb.kind == B_GEOTHERMAL) {
+                cap += gen_prod(w, bb) as i64;
             }
         }
         let demand = w.nets[ni].demand_next as i64;
@@ -705,7 +709,8 @@ pub fn power_tick(w: &mut World) {
             let used = demand.min(cap);
             for &g in &gens {
                 let bb = &mut w.buildings[g as usize];
-                if bb.alive && bb.fuel > 0 {
+                // la géothermie ne brûle rien
+                if bb.alive && bb.fuel > 0 && bb.kind != B_GEOTHERMAL {
                     let burn = (power_prod_of(bb) as i64 * used / cap).max(1) as i32;
                     bb.fuel = (bb.fuel - burn).max(0);
                     let (owner, kind) = (bb.owner as i32, bb.kind as i32);
@@ -1901,6 +1906,30 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
 }
 
 /// Production électrique d'un bâtiment terminé (kW) : niveau d'un générateur amélioré, rien pendant une amélioration.
+/// Production d'un générateur en ce moment (kW) : sa puissance nominale, ou, pour une centrale
+/// géothermique, celle de son geyser.
+pub fn gen_prod(w: &World, bb: &Building) -> i32 {
+    let p = if bb.kind == B_GEOTHERMAL { geo_output(w, bb) } else { power_prod_of(bb) };
+    // cadence : un générateur surcadencé produit (et brûle) d'autant plus
+    (p as i64 * clock_of(bb) as i64 / 100) as i32
+}
+
+/// Période (ticks) de l'ondulation d'un geyser : une minute.
+pub const GEO_PERIOD: u32 = 1200;
+
+/// Centrale géothermique : puissance nominale × pureté du geyser, qui ondule de 50 % à 150 % sur une
+/// minute (moyenne 100 %), chaque geyser avec son propre décalage.
+pub fn geo_output(w: &World, bb: &Building) -> i32 {
+    if !bb.complete() || bb.upgrade > 0 {
+        return 0;
+    }
+    let base = bb.def().power_prod as i64 * purity_of(bb) as i64 / 100;
+    let t = (w.tick + crate::rng::hash3(bb.x, bb.y, 0x6e0) % GEO_PERIOD) % GEO_PERIOD;
+    let half = GEO_PERIOD / 2;
+    let tri = if t < half { t } else { GEO_PERIOD - t } as i64;
+    (base * (500 + tri * 1000 / half as i64) / 1000) as i32
+}
+
 pub fn power_prod_of(bb: &Building) -> i32 {
     if bb.upgrade > 0 {
         0
@@ -2103,12 +2132,15 @@ fn tick_extractor(w: &mut World, b: usize) {
     }
     let lvl = &EXTRACTOR_LEVELS[(w.buildings[b].level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
     // sur un gisement d'hydrocarbure, l'extracteur fonctionne sans électricité
-    let s = if w.buildings[b].recipe == HYDROCARBON { 1024 } else { use_power(w, b, bdef(B_EXTRACTOR).power_use * lvl.power / 100) };
+    let need = (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(&w.buildings[b]) as i64 / 1000) as i32;
+    let s = if w.buildings[b].recipe == HYDROCARBON { 1024 } else { use_power(w, b, need) };
     let mult = w.players[owner].res_mult as u32;
+    // pureté du gisement : 50 % (impur), 100 % ou 200 % (pur)
+    let purity = purity_of(&w.buildings[b]);
     let bb = &mut w.buildings[b];
     bb.working = s > 0;
     // niveau d'amélioration : vitesse en % du niveau 0
-    bb.progress += s as u32 * mult * lvl.speed / 100;
+    bb.progress += s as u32 * mult * lvl.speed / 100 * purity / 100 * clock_of(bb) / 100;
     if bb.progress >= 30 * RECIPE_SCALE {
         bb.progress -= 30 * RECIPE_SCALE;
         bb.out += 1;
@@ -2209,12 +2241,80 @@ fn furnace_level(bb: &Building) -> Option<&'static ExtractorLevel> {
 
 /// Vitesse d'un fabricant (% de la vitesse de référence des recettes), niveau de la fonderie compris.
 pub fn crafter_speed(bb: &Building) -> u32 {
-    bb.def().speed as u32 * furnace_level(bb).map_or(100, |l| l.speed) / 100
+    bb.def().speed as u32 * furnace_level(bb).map_or(100, |l| l.speed) / 100 * clock_of(bb) / 100
+}
+
+// ---------- Cadence (surcadençage, sous-cadençage) ----------
+
+/// Pureté (%) du gisement sous un extracteur ou une centrale géothermique, relevée à la pose.
+#[inline]
+pub fn purity_of(bb: &Building) -> u32 {
+    if bb.purity == 0 {
+        100
+    } else {
+        bb.purity as u32
+    }
+}
+
+/// Cadence plafonnée : 250 % (100 % + trois fragments de 50 %).
+pub const CLOCK_MAX: u32 = 250;
+pub const CLOCK_MIN: u32 = 10;
+/// Consommation électrique (‰) selon la cadence, par pas de 10 % : (cadence)^1,32, comme une machine
+/// réelle dont la puissance croît plus vite que la vitesse (×0,4 à 50 %, ×2,5 à 200 %, ×3,36 à 250 %).
+const CLOCK_POWER: [u32; 26] = [0, 48, 119, 204, 298, 400, 509, 624, 745, 870, 1000, 1134, 1273, 1415, 1560, 1709, 1861, 2017, 2175, 2336, 2500, 2667, 2836, 3007, 3181, 3358];
+
+/// Les machines dont on règle la cadence : extracteurs, machines de production, générateurs.
+pub fn clockable(bb: &Building) -> bool {
+    matches!(bb.def().class, BClass::Extractor | BClass::Crafter | BClass::Power) && bb.kind != B_MAIN_GENERATOR
+}
+#[inline]
+pub fn clock_of(bb: &Building) -> u32 {
+    if bb.clock == 0 {
+        100
+    } else {
+        bb.clock as u32
+    }
+}
+/// Multiplicateur (‰) de la consommation électrique à la cadence de `bb`.
+#[inline]
+pub fn clock_power(bb: &Building) -> u32 {
+    CLOCK_POWER[(clock_of(bb) / 10).min(25) as usize]
+}
+/// Fragments nécessaires pour une cadence : un par tranche de 50 % au-dessus de 100 %.
+pub fn shards_for(clock: u32) -> u32 {
+    clock.saturating_sub(100).div_ceil(50)
+}
+
+/// Règle la cadence de `b` (arrondie à 10 %) : installe les fragments qui manquent, pris dans la
+/// réserve du joueur, et rend ceux qui ne servent plus. Faux si la machine ne se règle pas ou si les
+/// fragments manquent.
+pub fn set_clock(w: &mut World, b: usize, clock: u32) -> bool {
+    if !clockable(&w.buildings[b]) {
+        return false;
+    }
+    let clock = (clock.clamp(CLOCK_MIN, CLOCK_MAX) + 5) / 10 * 10;
+    let need = shards_for(clock);
+    let have = w.buildings[b].shards as u32;
+    let p = w.buildings[b].owner as usize;
+    if need > have {
+        if w.players[p].shards < need - have {
+            return false;
+        }
+        w.players[p].shards -= need - have;
+    } else {
+        w.players[p].shards += have - need;
+    }
+    let bb = &mut w.buildings[b];
+    bb.shards = need as u8;
+    bb.clock = if clock == 100 { 0 } else { clock as u8 };
+    bb.wake = 0;
+    w.power_dirty |= bb.def().class == BClass::Power;
+    true
 }
 
 /// Consommation d'un fabricant (kW), niveau de la fonderie compris.
 pub fn crafter_power(bb: &Building) -> i32 {
-    bb.def().power_use * furnace_level(bb).map_or(100, |l| l.power) / 100
+    (bb.def().power_use as i64 * furnace_level(bb).map_or(100, |l| l.power) as i64 / 100 * clock_power(bb) as i64 / 1000) as i32
 }
 
 fn tick_crafter_work(w: &mut World, b: usize) {

@@ -26,6 +26,8 @@ export const ui = $state({
   teamStock: [] as number[],
   /** plafond de la réserve, par objet (dépôts) */
   stockCap: 0,
+  /** fragments d'énergie en réserve (surcadençage) */
+  shards: 0,
   produced: [] as number[],
   consumed: [] as number[],
   powerProd: 0,
@@ -46,7 +48,7 @@ export const ui = $state({
   /** unités sélectionnées appartenant à un autre joueur : fiche de statistiques, sans ordres */
   selForeign: -1,
   /** gisement sélectionné (clic sur un gisement libre ou exploité) */
-  selDeposit: null as null | { kind: number; x: number; y: number },
+  selDeposit: null as null | { kind: number; x: number; y: number; purity: number },
   /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
   selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
