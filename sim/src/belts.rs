@@ -642,6 +642,47 @@ pub fn take_from_belt(w: &mut World, b: usize, want: &dyn Fn(u8) -> bool) -> u8 
     l.take_in(a, a + TILE, want)
 }
 
+/// Contenu d'une case de tapis et de sa file, pour la fiche de l'interface (lecture seule).
+#[derive(Debug, PartialEq, Eq)]
+pub struct BeltContents {
+    /// objets sur cette case, de l'avant vers l'arrière
+    pub tile: Vec<u8>,
+    /// objets de toute la file : (objet, nombre), par objet croissant
+    pub line: Vec<(u8, u32)>,
+    /// nombre de cases de la file
+    pub tiles: u32,
+    /// objets tassés à la sortie de la file, qui n'avancent plus (sortie bouchée)
+    pub jam: u32,
+    /// la file a du courant
+    pub powered: bool,
+}
+
+/// Places d'une case de tapis (écart minimal entre deux objets).
+pub const TILE_SLOTS: u32 = (TILE / ITEM_GAP) as u32;
+
+/// Ce qui circule sur la case de tapis `b` et sur sa file. None si `b` n'est pas un tapis relié à une file.
+pub fn belt_contents(w: &World, b: usize) -> Option<BeltContents> {
+    let bb = w.buildings.get(b)?;
+    if !bb.alive || bb.line == NONE {
+        return None;
+    }
+    let l = w.belts.lines.get(bb.line as usize)?;
+    let n = l.tiles.len() as i32;
+    let a = (n - 1 - bb.line_idx as i32) * TILE;
+    let mut counts = [0u32; 256];
+    let mut tile = Vec::new();
+    let mut pos = 0;
+    for &(it, g) in &l.items {
+        pos += g;
+        counts[it as usize] += 1;
+        if pos >= a && pos < a + TILE {
+            tile.push(it);
+        }
+    }
+    let line = counts.iter().enumerate().filter(|(_, &c)| c > 0).map(|(i, &c)| (i as u8, c)).collect();
+    Some(BeltContents { tile, line, tiles: n as u32, jam: (l.moving as usize).min(l.items.len()) as u32, powered: l.powered })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
