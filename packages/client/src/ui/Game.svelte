@@ -138,7 +138,7 @@
       <div class="floorbadge panel"><span class="kicker">Sorties</span> <SplitIcon mode={ui.buildSplit} size={22} /> <b>{["gauche, avant et droite", "gauche et avant", "droite et avant"][ui.buildSplit]}</b> <span class="dim">· molette pour changer</span></div>
     {/if}
     {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt}
-      <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette pour monter ou descendre ; les ascenseurs se posent seuls</span></div>
+      <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette : monter ou descendre la suite de la file (la partie tracée garde son niveau) ; les ascenseurs se posent seuls</span></div>
     {/if}
     {#if plans.show}<Plans />{/if}
     {#if ui.gameOver}<EndReport />{/if}
