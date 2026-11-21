@@ -142,6 +142,11 @@ export const sfx = {
       noise(0.07, 650, g * 1.3, 0.5, "lowpass");
       tone(160, 70, 0.08, g * 0.5, "square");
     }
+    else if (proj === 13) {
+      // crachat acide d'un nid : gargouillis humide
+      noise(0.18, 900, g * 1.1, 0.4, "lowpass");
+      tone(260, 120, 0.16, g * 0.4, "sine");
+    }
     else if (proj === 11) {
       // canon de rail : claquement sec puis sifflement descendant
       noise(0.08, 3200, g * 1.6, 0.9, "highpass");
