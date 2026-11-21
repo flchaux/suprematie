@@ -409,6 +409,7 @@ Le jeu cible Chrome uniquement. Le rendu utilise Three.js avec son moteur WebGPU
 - L'affichage tourne à 60 images par seconde et interpole les positions entre les deux derniers ticks reçus du Worker.
 - Le Worker envoie le tampon de rendu à chaque tick en transfert sans copie (ArrayBuffer transférable). Le thread principal ne fait aucun calcul de simulation.
 - L'interface est en HTML et CSS avec Svelte, par-dessus le canvas : barre de construction, minicarte, infobulles, statistiques de production. Les valeurs affichées sont rafraîchies quelques fois par seconde, pas à chaque image.
+- Sons : synthétisés en WebAudio, sans fichier (`audio/sound.ts`). Chaque famille de projectiles a sa recette en couches (claquement, corps saturé, traîne) avec une hauteur qui varie de ±6 % et qui baisse pour les grosses armes (`weaponSize`, d'après dégâts et rayon d'effet). Les sons de combat passent par une voix spatialisée (gauche-droite selon la position à l'écran, passe-bas et réverbération qui grandissent avec la distance), puis par un bus compressé avec une réverbération de petite salle générée. Au plus 28 voix de combat (40 pour les sons tout proches). Niveaux des recettes équilibrés par rendu hors ligne (`renderOffline`, exposé en `window.__sfx` sur les pages de démonstration).
 
 ## Modèles 3D
 

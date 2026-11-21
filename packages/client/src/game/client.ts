@@ -13,7 +13,7 @@ import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from
 import { ownerColor, ownerHex } from "./colors.ts";
 import { ui, pushMessage, hasTechUI, type HarvestInfo } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
-import { sfx, setVolume } from "../audio/sound.ts";
+import { sfx, setVolume, weaponSize, renderOffline } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
@@ -270,6 +270,8 @@ export class GameClient {
     // ?demo=vitrine : un exemplaire de chaque bâtiment et de chaque unité, pour juger les modèles en jeu
     // ?demo=formation : une armée mêlée du joueur 0, à qui l'on donne des ordres (déplacements en formation)
     const scene = new URLSearchParams(location.search).get("demo") ?? "";
+    // vitrine : rendu hors ligne des sons de combat, pour les vérifier sans les écouter
+    (window as unknown as { __sfx?: unknown }).__sfx = { renderOffline, weaponSize };
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;
     this.demoOrders = scene === "formation";
@@ -481,6 +483,13 @@ export class GameClient {
       const d = Math.hypot(x - cam.x, z - cam.z);
       return Math.max(0, 1 - d / (sc.distance * 1.2 + 20));
     };
+    // placement gauche-droite d'un son : position à l'écran (hors écran : au bord)
+    const el = this.canvasEl;
+    const pp = { x: 0, y: 0 };
+    const pan = (x: number, z: number) => {
+      if (!el || !this.map || !sc.project(x, groundHeight(this.map, x, z), z, pp)) return 0;
+      return Math.max(-1, Math.min(1, (pp.x / Math.max(1, el.clientWidth)) * 2 - 1));
+    };
     const myTeam = f.players[ui.me]?.team ?? -1;
     // les effets ne trahissent pas ce qui se passe sous le brouillard de guerre
     const vis = f.vis;
@@ -500,7 +509,7 @@ export class GameClient {
           const z = c / TILE;
           if (seen(x, z) || e === 3) {
             sc.entities?.addExplosion(x, z, d / TILE, e);
-            sfx.explosion(e + d / 2048, near(x, z));
+            sfx.explosion(e + d / 2048, near(x, z), pan(x, z));
           }
           break;
         }
@@ -511,12 +520,12 @@ export class GameClient {
           if (!seen(x0, z0) && !seen(x1, z1)) break;
           sc.entities?.addBeam(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1), 0xff4040, 0.12);
           fx?.sparks(x1, y1, z1, [4, 0.8, 0.6], 4);
-          sfx.laser(near(x0, z0));
+          sfx.laser(near(x0, z0), pan(x0, z0));
           break;
         }
         case EV.FIRE: {
           const w = this.data!.weapons[a];
-          sfx.fire(w?.proj ?? 0, near(c / TILE, d / TILE));
+          sfx.fire(w?.proj ?? 0, near(c / TILE, d / TILE), pan(c / TILE, d / TILE), w ? weaponSize(w.dmg, w.aoe) : 1);
           // morsure (proj 12) : pas de projectile, un éclat au point mordu
           if (w?.proj === 12 && seen(c / TILE, d / TILE)) {
             const x = c / TILE;
