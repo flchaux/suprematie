@@ -177,7 +177,8 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
             }
         }
     }
-    let speed = unit_speed(kind);
+    // une bête qui charge sa proie court plus vite
+    let speed = crate::nature::charge_speed(w, s, unit_speed(kind));
     let f = w.units.facing[s];
     let nf = turn_towards(f, heading, turn_rate(kind));
     w.units.facing[s] = nf;
