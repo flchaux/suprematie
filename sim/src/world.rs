@@ -75,9 +75,14 @@ impl Player {
 }
 
 // ---------- Ordres des unités ----------
+/// `Order::Move::eta` : durée pas encore commencée (le reste du champ est un nombre de ticks)
+pub const ETA_PENDING: u32 = 1 << 31;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
-    Move { x: i32, y: i32, gx: i32, gy: i32, attack: bool },
+    /// déplacement vers (x, y) ; (gx, gy) : but du groupe (champ de flux partagé). `eta` : allure d'un
+    /// déplacement en formation (0 : pleine vitesse) ; tick d'arrivée prévu du groupe, ou, avec le bit
+    /// `ETA_PENDING`, durée prévue comptée à partir du début de l'ordre (voir units::formation_pace)
+    Move { x: i32, y: i32, gx: i32, gy: i32, attack: bool, eta: u32 },
     Patrol { x: i32, y: i32, ox: i32, oy: i32 },
     Attack { target: u32 },
     AttackGround { x: i32, y: i32 },
@@ -126,11 +131,12 @@ impl Ser for Order {
     fn ser(&self, w: &mut crate::ser::W) {
         w.u8(self.code());
         match *self {
-            Order::Move { x, y, gx, gy, .. } => {
+            Order::Move { x, y, gx, gy, eta, .. } => {
                 x.ser(w);
                 y.ser(w);
                 gx.ser(w);
                 gy.ser(w);
+                eta.ser(w);
             }
             Order::Patrol { x, y, ox, oy } => {
                 x.ser(w);
@@ -159,7 +165,7 @@ impl Ser for Order {
         let i = |r: &mut crate::ser::R| i32::de(r);
         let u = |r: &mut crate::ser::R| u32::de(r);
         match c {
-            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2 },
+            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2, eta: u(r) },
             3 => Order::Patrol { x: i(r), y: i(r), ox: i(r), oy: i(r) },
             4 => Order::Attack { target: u(r) },
             5 => Order::AttackGround { x: i(r), y: i(r) },
@@ -621,7 +627,8 @@ impl World {
     pub fn place_start_buildings(&mut self) {
         for p in 0..self.map.starts.len() {
             let (sx, sy) = self.map.starts[p];
-            for &(dx, dy) in &[(3, -1), (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
+            // première place : celle que la carte prévoit (anneau de gisements, voir map::MAIN_GEN_SPOT)
+            for &(dx, dy) in &[crate::map::MAIN_GEN_SPOT, (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
                 if let Some(b) = crate::buildings::place_building(self, p as u8, B_MAIN_GENERATOR, sx + dx, sy + dy, 0) {
                     crate::buildings::complete_building(self, b);
                     self.buildings[b].fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
@@ -906,6 +913,8 @@ impl World {
                 h.add(b.build as u64 | (b.kind as u64) << 32);
                 h.add(b.progress as u64 | (b.out as u64) << 32);
                 h.add(b.hand as u64 | (b.timer as u64) << 8);
+                // niveau et amélioration en cours (zone du générateur principal, vitesses, production)
+                h.add(b.level as u64 | (b.upgrade as u64) << 8);
             }
         }
         h.add(self.ghosts.len() as u64);

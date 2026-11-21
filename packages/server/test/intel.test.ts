@@ -59,7 +59,7 @@ describe("cartes de menace", () => {
         unit(3, u.glider, 1, 300, 300),
         unit(4, u.mobile_aa, 1, 302, 300),
       ],
-      buildings: [{ ref: 9, kind: b.land_factory, owner: 1, dir: 0, x: 310, y: 300, hp: 4000, build: BUILD_FULL, working: false, stalled: false, unpowered: false, ammo: 0, charged: false, queue: 0, recipe: 0 }],
+      buildings: [{ ref: 9, kind: b.land_factory, owner: 1, dir: 0, x: 310, y: 300, hp: 4000, build: BUILD_FULL, working: false, stalled: false, unpowered: false, ammo: 0, charged: false, queue: 0, recipe: 0, level: 0, upgrading: false }],
       wrecks: [],
       winner: -1,
     };

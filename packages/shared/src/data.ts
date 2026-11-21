@@ -29,6 +29,8 @@ export interface GameData {
   /** améliorations des assembleurs sur place : [type actuel, type visé, durée (s)] ; coût et recherche du type visé */
   /** niveaux du générateur : production (kW), coût, recherche et durée (s) de passage à ce niveau */
   generatorLevels?: { prod: number; cost: [number, number][]; tech: number; time: number }[];
+  /** niveaux du générateur principal : rayon de zone et portée de liaison (cases), coût, recherche et durée (s) ; il reste en service pendant le chantier */
+  mainGeneratorLevels?: { supply: number; connect: number; cost: [number, number][]; tech: number; time: number }[];
   assemblerUpgrades?: [number, number, number][];
   /** véhicules de transport : 0 train, 1 drone de fret (speed : sous-unités par tick) */
   carriers: { capacity: number; speed: number; buffer: number; cost: [number, number][] }[];

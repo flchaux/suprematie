@@ -412,7 +412,8 @@ pub fn bot_dump(w: &World) -> Vec<i32> {
             bb.hp,
             bb.build as i32,
             bb.working as i32 | (bb.stalled as i32) << 1 | ((bb.net == 0) as i32) << 2 | (bb.ammo as i32) << 8 | ((bb.charge >= 60 * 20 * 1024) as i32) << 3,
-            qlen | (bb.recipe as i32) << 16,
+            // file (bits 0-15), recette (16-23), niveau (24-27), amélioration en cours (28)
+            qlen.min(0xffff) | (bb.recipe as i32) << 16 | (bb.level as i32 & 15) << 24 | ((bb.upgrade > 0) as i32) << 28,
         ]);
         nb += 1;
     }
@@ -490,7 +491,8 @@ pub fn info_building(w: &World, r: u32) -> String {
 /// `nets` : [id, joueur, production, demande, puissance installée, satisfaction, combustible total,
 /// autonomie en s (-1 : rien ne brûle)] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
 /// réseau (0 : aucun), genre (0 relais, 1 générateur), combustible en millièmes du réservoir (-1 : relais),
-/// joueur, référence, type de bâtiment]. Un générateur à sec garde sa portée mais n'a pas de réseau.
+/// joueur, référence, type de bâtiment, portée de liaison]. Portée et liaison suivent le niveau (générateur
+/// principal amélioré). Un générateur à sec garde sa portée mais n'a pas de réseau.
 pub fn power_zones(w: &World, player: i32) -> String {
     let team = if player >= 0 && (player as usize) < w.players.len() { Some(w.players[player as usize].team) } else { None };
     let mine = |o: u8| team.is_none_or(|t| w.team_of(o) == t);
@@ -510,7 +512,8 @@ pub fn power_zones(w: &World, player: i32) -> String {
             continue;
         }
         let def = bb.def();
-        if def.supply == 0 {
+        let supply = crate::buildings::supply_of(bb);
+        if supply == 0 {
             continue;
         }
         let (bw, bh) = bb.size();
@@ -519,7 +522,8 @@ pub fn power_zones(w: &World, player: i32) -> String {
         // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
         let net = if gen && bb.fuel <= 0 && bb.kind != B_GEOTHERMAL { 0 } else { bb.net };
         let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };
-        poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, def.supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind));
+        // rayon et portée de liaison selon le niveau (générateur principal amélioré)
+        poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind, crate::buildings::connect_of(bb)));
     }
     format!("{{\"nets\":[{}],\"poles\":[{}]}}", nets.join(","), poles.join(","))
 }

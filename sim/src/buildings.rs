@@ -563,13 +563,38 @@ pub fn gen_output(w: &World, b: usize) -> i32 {
     (gen_prod(w, bb) as i64 * (n.demand.min(n.prod)) as i64 / n.prod as i64) as i32
 }
 
+/// Rayon de la zone électrique d'un bâtiment (cases autour de son emprise ; 0 : pas un poteau). Le
+/// générateur principal amélioré a une zone plus grande (MAIN_GENERATOR_LEVELS).
+pub fn supply_of(bb: &Building) -> i32 {
+    if bb.kind == B_MAIN_GENERATOR {
+        MAIN_GENERATOR_LEVELS[(bb.level as usize).min(MAIN_GENERATOR_LEVELS.len() - 1)].supply
+    } else {
+        bb.def().supply
+    }
+}
+
+/// Portée de liaison entre zones (cases, de centre à centre ; la plus petite des deux compte).
+pub fn connect_of(bb: &Building) -> i32 {
+    if bb.kind == B_MAIN_GENERATOR {
+        MAIN_GENERATOR_LEVELS[(bb.level as usize).min(MAIN_GENERATOR_LEVELS.len() - 1)].connect
+    } else {
+        bb.def().connect
+    }
+}
+
+/// Plus grand rayon de zone possible, niveaux compris (rayon de recherche des poteaux).
+pub fn max_supply() -> i32 {
+    let lv = MAIN_GENERATOR_LEVELS.iter().map(|l| l.supply).max().unwrap_or(0);
+    BUILDINGS.iter().map(|d| d.supply).max().unwrap_or(0).max(lv)
+}
+
 pub fn rebuild_power(w: &mut World) {
     w.power_dirty = false;
     let np = w.players.len();
     w.nets.clear();
     w.nets.push(Net::default());
     let mut pole_net: Vec<u16> = vec![0; w.buildings.len()];
-    let max_supply = BUILDINGS.iter().map(|d| d.supply).max().unwrap_or(0);
+    let max_supply = max_supply();
     for owner in 0..np as u8 {
         let poles: Vec<usize> = (0..w.buildings.len())
             .filter(|&i| {
@@ -595,10 +620,10 @@ pub fn rebuild_power(w: &mut World) {
         }
         for i in 0..poles.len() {
             let (ax, ay) = w.buildings[poles[i]].center();
-            let ca = w.buildings[poles[i]].def().connect;
+            let ca = connect_of(&w.buildings[poles[i]]);
             for j in (i + 1)..poles.len() {
                 let (bx, by) = w.buildings[poles[j]].center();
-                let r = ca.min(w.buildings[poles[j]].def().connect) * TILE;
+                let r = ca.min(connect_of(&w.buildings[poles[j]])) * TILE;
                 if crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64) {
                     let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
                     if ra != rb {
@@ -650,7 +675,7 @@ pub fn rebuild_power(w: &mut World) {
                 }
                 let pb = &w.buildings[p];
                 let (pw, ph) = pb.size();
-                let sp = pb.def().supply;
+                let sp = supply_of(pb);
                 if bx < pb.x + pw + sp && bx + bw > pb.x - sp && by < pb.y + ph + sp && by + bh > pb.y - sp {
                     best = p;
                 }
@@ -1746,8 +1771,13 @@ pub fn update_buildings(w: &mut World) {
             continue;
         }
         if bb.upgrade > 0 {
-            // amélioration en cours : le bâtiment ne travaille pas (sa production en cours attend)
+            // amélioration en cours : le bâtiment ne travaille pas (sa production en cours attend) ; le
+            // générateur principal, resté en service, garde l'apport de son dépôt collé (sans partage)
+            let main = bb.kind == B_MAIN_GENERATOR;
             tick_upgrade(w, b);
+            if main && w.buildings[b].upgrade > 0 && w.tick.is_multiple_of(DEPOT_FEED_PERIOD) {
+                feed_generator_from_depot(w, b);
+            }
             continue;
         }
         match bb.def().class {
@@ -1861,6 +1891,7 @@ pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
         BClass::Extractor => EXTRACTOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Depot if bb.level == 0 => Some((DEPOT_UPGRADE_COST, DEPOT_UPGRADE_TECH, DEPOT_UPGRADE_TIME as u32 * 20)),
         BClass::Power if bb.kind == B_GENERATOR => GENERATOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
+        BClass::Power if bb.kind == B_MAIN_GENERATOR => MAIN_GENERATOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Crafter if bb.kind == B_FURNACE => FURNACE_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Crafter => ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind).map(|u| (bdef(u.1).cost, bdef(u.1).tech, u.2 as u32 * 20)),
         _ => None,
@@ -1905,7 +1936,6 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
     true
 }
 
-/// Production électrique d'un bâtiment terminé (kW) : niveau d'un générateur amélioré, rien pendant une amélioration.
 /// Production d'un générateur en ce moment (kW) : sa puissance nominale, ou, pour une centrale
 /// géothermique, celle de son geyser.
 pub fn gen_prod(w: &World, bb: &Building) -> i32 {
@@ -1930,8 +1960,10 @@ pub fn geo_output(w: &World, bb: &Building) -> i32 {
     (base * (500 + tri * 1000 / half as i64) / 1000) as i32
 }
 
+/// Production électrique d'un bâtiment terminé (kW) : niveau d'un générateur amélioré, rien pendant une
+/// amélioration, sauf pour le générateur principal qui reste en service pendant son chantier.
 pub fn power_prod_of(bb: &Building) -> i32 {
-    if bb.upgrade > 0 {
+    if bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR {
         0
     } else if bb.kind == B_GENERATOR {
         GENERATOR_LEVELS[(bb.level as usize).min(GENERATOR_LEVELS.len() - 1)].prod
@@ -2472,7 +2504,7 @@ fn tick_factory(w: &mut World, b: usize) {
         let id = w.spawn_unit(kind, owner as u8, sx, sy);
         let s = slot_of(id);
         w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
-        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false });
+        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
         let bb = &mut w.buildings[b];
         if let Some(q) = bb.queue.first_mut() {
             q.1 = q.1.saturating_sub(1);

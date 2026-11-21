@@ -1,6 +1,6 @@
 // Worker de simulation : applique les ordres de chaque tick, avance la simulation, calcule le hash
 // et transmet le tampon de rendu au thread principal sans copie. Le thread principal ne simule rien.
-import { Sim, HASH_EVERY } from "@supreme/shared";
+import { Sim, HASH_EVERY, ORDER_DELAY, pack } from "@supreme/shared";
 
 type In =
   | { type: "init"; wasmUrl: string; params: number[] }
@@ -9,7 +9,8 @@ type In =
   | { type: "view"; x0: number; y0: number; x1: number; y1: number; detail: number; player: number }
   | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "twinPreview" | "wreckAt" | "orders" | "planned" | "researchQueue" | "powerZones"; a: number[] }
   | { type: "replay"; speed: number }
-  | { type: "pause"; paused: boolean };
+  | { type: "pause"; paused: boolean }
+  | { type: "demoCmd"; cmd: number[] };
 
 let sim: Sim | null = null;
 let wasmBytes: ArrayBuffer | null = null;
@@ -96,6 +97,15 @@ onmessage = async (e: MessageEvent<In>) => {
     case "view":
       view = m;
       break;
+    case "demoCmd": {
+      // démo à ordres locaux (?demo=formation) : l'ordre du joueur 0 s'exécute dans ORDER_DELAY ticks
+      if (!sim || !replayOrders) return;
+      const at = sim.tick() + ORDER_DELAY;
+      const list = replayOrders.get(at) ?? [];
+      pack(0, m.cmd, list);
+      replayOrders.set(at, list);
+      break;
+    }
     case "query": {
       if (!sim) return;
       let result: unknown = null;
@@ -138,6 +148,7 @@ addEventListener("message", async (e: MessageEvent) => {
   else if (m.scene === "armes") sim.weaponsDemo();
   else if (m.scene === "projectiles") sim.projectilesDemo();
   else if (m.scene === "vitrine") sim.showcaseDemo();
+  else if (m.scene === "formation") sim.formationDemo();
   else if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;

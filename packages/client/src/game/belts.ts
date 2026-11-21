@@ -69,3 +69,74 @@ export function autoBeltDir(x: number, y: number, n: BeltNeighbours, splitterDir
   }
   return fallback;
 }
+
+// ---------- tracé d'une file (tapis, rails, murs) ----------
+
+/** Case d'une file en cours de tracé. */
+export interface LineCell {
+  x: number;
+  y: number;
+  dir: number;
+}
+
+/**
+ * Axe du premier tronçon d'une file en L, d'après le geste du joueur : celui le long duquel le curseur a
+ * quitté la case de départ (`prev` : axe déjà choisi, gardé tant que le curseur ne revient pas sur la case
+ * de départ). Un saut en diagonale (curseur rapide) prend l'axe du plus grand écart. null : sur le départ.
+ */
+export function lockAxis(start: { x: number; y: number }, cur: { x: number; y: number }, prev: "h" | "v" | null): "h" | "v" | null {
+  const dx = cur.x - start.x;
+  const dy = cur.y - start.y;
+  if (!dx && !dy) return null;
+  if (prev) return prev;
+  if (!dy) return "h";
+  if (!dx) return "v";
+  return Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+}
+
+/**
+ * File faite d'une partie figée (tracée avant un changement de niveau) et du tronçon en cours, qui part de
+ * la dernière case figée (`seg[0]`, la même case). Cette case prend la direction du départ du tronçon
+ * (elle devient un virage s'il tourne) ; sans tronçon, elle garde la sienne.
+ */
+export function joinSegment(frozen: LineCell[], seg: LineCell[]): LineCell[] {
+  if (!frozen.length) return seg.map((c) => ({ ...c }));
+  const out = frozen.map((c) => ({ ...c }));
+  if (seg.length > 1) {
+    out[out.length - 1].dir = seg[0].dir;
+    for (let i = 1; i < seg.length; i++) out.push({ ...seg[i] });
+  }
+  return out;
+}
+
+/**
+ * Niveau de chaque case d'une file de tapis et pose possible.
+ * - Les `nf` premières cases sont figées à `frozenFloors`.
+ * - Les suivantes partent du niveau `base` (molette) et montent d'elles-mêmes au-dessus d'un obstacle
+ *   (premier niveau libre au-dessus), puis redescendent.
+ * - Un ascenseur relie deux cases alignées : à un changement de niveau dans un angle, la case basse du
+ *   tronçon en cours monte ; si c'est une case figée, c'est la case du tronçon qui garde son niveau.
+ * `at[f][i]` : case i posable au niveau f ; `crossing[i]` : case i en travers d'un de nos tapis au sol
+ * (on passe au-dessus plutôt que de le tourner).
+ */
+export function lineFloors(cells: LineCell[], nf: number, frozenFloors: number[], base: number, at: boolean[][], crossing: boolean[]): { floors: number[]; ok: boolean[] } {
+  const avail = (f: number, i: number) => f >= 0 && f <= 2 && !!at[f]?.[i] && !(f === 0 && crossing[i]);
+  const climb = cells.length > 1;
+  const floors = cells.map((_, i) => {
+    if (i < nf) return frozenFloors[i];
+    if (!climb) return base;
+    for (let f = base; f <= 2; f++) if (avail(f, i)) return f;
+    return base;
+  });
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = Math.max(1, nf); i < cells.length; i++) {
+      if (floors[i] === floors[i - 1] || cells[i].dir === cells[i - 1].dir) continue;
+      const lo = floors[i] > floors[i - 1] ? i - 1 : i;
+      const hi = lo === i ? i - 1 : i;
+      if (lo >= nf) {
+        if (avail(floors[hi], lo)) floors[lo] = floors[hi];
+      } else if (hi >= nf && avail(floors[lo], hi)) floors[hi] = floors[lo];
+    }
+  }
+  return { floors, ok: cells.map((_, i) => avail(floors[i], i)) };
+}

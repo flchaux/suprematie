@@ -66,22 +66,31 @@ export function isWreckRef(r: number): boolean {
   return ((r >>> 0) & REF_WRECK) !== 0 && !isBuildingRef(r);
 }
 
-/** Déplacement groupé : chaque unité garde sa place relative autour du but. */
-export function move(units: { id: number; x: number; y: number }[], gx: number, gy: number, queue = false, attack = false, formation = true): Cmd {
-  const out: Cmd = [O.MOVE, (queue ? 1 : 0) | (attack ? 2 : 0), gx | 0, gy | 0, units.length];
+/** Resserrement d'un groupe très étalé : facteur appliqué aux écarts au centre (1 : inchangé). */
+function squeeze(units: { x: number; y: number }[], cx: number, cy: number): number {
+  let spread = 0;
+  for (const u of units) spread = Math.max(spread, Math.hypot(u.x - cx, u.y - cy));
+  const maxSpread = TILE * (3 + Math.sqrt(units.length) * 1.2);
+  return spread > 0 ? Math.min(1, maxSpread / spread) : 0;
+}
+
+function centroid(units: { x: number; y: number }[]): { cx: number; cy: number } {
   let cx = 0;
   let cy = 0;
   for (const u of units) {
     cx += u.x;
     cy += u.y;
   }
-  cx /= Math.max(1, units.length);
-  cy /= Math.max(1, units.length);
+  const n = Math.max(1, units.length);
+  return { cx: cx / n, cy: cy / n };
+}
+
+/** Déplacement groupé : chaque unité garde sa place relative autour du but. */
+export function move(units: { id: number; x: number; y: number }[], gx: number, gy: number, queue = false, attack = false, formation = true): Cmd {
+  const out: Cmd = [O.MOVE, (queue ? 1 : 0) | (attack ? 2 : 0), gx | 0, gy | 0, units.length];
+  const { cx, cy } = centroid(units);
   // rayon de formation : resserrer si le groupe est très étalé
-  let spread = 0;
-  for (const u of units) spread = Math.max(spread, Math.hypot(u.x - cx, u.y - cy));
-  const maxSpread = TILE * (3 + Math.sqrt(units.length) * 1.2);
-  const k = formation && spread > 0 ? Math.min(1, maxSpread / spread) : 0;
+  const k = formation ? squeeze(units, cx, cy) : 0;
   for (const u of units) {
     const tx = units.length === 1 ? gx : gx + (u.x - cx) * k;
     const ty = units.length === 1 ? gy : gy + (u.y - cy) * k;
@@ -89,53 +98,51 @@ export function move(units: { id: number; x: number; y: number }[], gx: number, 
   }
   return out;
 }
-/** Unité à placer en formation : position (sous-unités), rayon (sous-unités), rang (0 : première ligne). */
+/** Unité à placer en formation : position (sous-unités) et orientation (angle 16 bits de la simulation). */
 export interface FormationUnit {
   id: number;
   x: number;
   y: number;
-  radius: number;
-  rank: number;
+  facing: number;
 }
 
 /**
- * Places d'une formation orientée (comme le clic droit glissé de Supreme Commander) : lignes
- * perpendiculaires à la direction `angle` (radians, atan2(dy, dx) dans le repère de la simulation),
- * centrées sur (gx, gy). Les unités de rang faible (courte portée) vont devant, celles de rang élevé
- * derrière ; dans une ligne, chaque unité prend la place du même côté qu'elle (pas de croisements).
- * L'écart entre les unités d'une ligne et entre deux lignes suit la taille des plus grosses unités.
+ * Cap actuel d'un groupe (radians, atan2(dy, dx)) : moyenne des orientations des unités si elles
+ * regardent à peu près du même côté, sinon direction du centre du groupe vers le but.
+ */
+export function groupHeading(units: FormationUnit[], gx: number, gy: number): number {
+  let sx = 0;
+  let sy = 0;
+  for (const u of units) {
+    const a = ((u.facing & 0xffff) / 65536) * 2 * Math.PI;
+    sx += Math.cos(a);
+    sy += Math.sin(a);
+  }
+  if (Math.hypot(sx, sy) >= units.length * 0.5) return Math.atan2(sy, sx);
+  const { cx, cy } = centroid(units);
+  return Math.atan2(gy - cy, gx - cx);
+}
+
+/**
+ * Places d'une formation orientée (comme le clic droit glissé de Supreme Commander) : le groupe garde
+ * sa disposition actuelle (écarts au centre, resserrés s'il est très étalé), tournée pour que son avant
+ * (son cap actuel, voir `groupHeading`) regarde vers `angle` (radians, atan2(dy, dx) dans le repère de
+ * la simulation), et centrée sur (gx, gy).
  */
 export function formationSlots(units: FormationUnit[], gx: number, gy: number, angle: number): { id: number; x: number; y: number }[] {
   const n = units.length;
   if (n === 0) return [];
-  if (n === 1) return [{ id: units[0].id, x: gx, y: gy }];
-  const fx = Math.cos(angle);
-  const fy = Math.sin(angle);
-  // vecteur latéral (perpendiculaire à l'avant)
-  const rx = -fy;
-  const ry = fx;
-  const sorted = [...units].sort((a, b) => a.rank - b.rank || b.radius - a.radius || a.id - b.id);
-  const cols = Math.min(n, Math.max(2, Math.ceil(Math.sqrt(n * 2.5))));
-  const rows: FormationUnit[][] = [];
-  for (let i = 0; i < n; i += cols) rows.push(sorted.slice(i, i + cols));
-  const gap = (row: FormationUnit[]) => Math.max(TILE * 1.4, Math.max(...row.map((u) => u.radius)) * 2 + TILE * 0.5);
-  // profondeur de chaque ligne (la première devant), puis centrage sur le point visé
-  const depth: number[] = [0];
-  for (let r = 1; r < rows.length; r++) depth.push(depth[r - 1] - (gap(rows[r - 1]) + gap(rows[r])) / 2);
-  const mid = (depth[0] + depth[depth.length - 1]) / 2;
-  const out: { id: number; x: number; y: number }[] = [];
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r];
-    const s = gap(row);
-    const d = depth[r] - mid;
-    // ordre latéral des unités (position actuelle) = ordre des places
-    const byLat = [...row].sort((a, b) => a.x * rx + a.y * ry - (b.x * rx + b.y * ry) || a.id - b.id);
-    for (let j = 0; j < byLat.length; j++) {
-      const l = (j - (byLat.length - 1) / 2) * s;
-      out.push({ id: byLat[j].id, x: Math.round(gx + fx * d + rx * l), y: Math.round(gy + fy * d + ry * l) });
-    }
-  }
-  return out;
+  if (n === 1) return [{ id: units[0].id, x: Math.round(gx), y: Math.round(gy) }];
+  const { cx, cy } = centroid(units);
+  const k = squeeze(units, cx, cy);
+  const rot = angle - groupHeading(units, gx, gy);
+  const c = Math.cos(rot);
+  const s = Math.sin(rot);
+  return units.map((u) => {
+    const ox = (u.x - cx) * k;
+    const oy = (u.y - cy) * k;
+    return { id: u.id, x: Math.round(gx + ox * c - oy * s), y: Math.round(gy + ox * s + oy * c) };
+  });
 }
 
 /** Angle de la simulation (16 bits, un tour = 65536) d'un angle en radians. */
@@ -145,7 +152,8 @@ export function simAngle(rad: number): number {
 
 /**
  * Déplacement en formation orientée : chaque unité rejoint sa place puis se tourne vers `angle`
- * (radians, atan2(dy, dx)). Drapeau 4 de l'ordre MOVE : l'orientation suit le but du groupe.
+ * (radians, atan2(dy, dx)). Drapeau 4 de l'ordre MOVE : l'orientation suit le but du groupe ; la
+ * simulation fait avancer le groupe à la vitesse de la plus lente pour qu'il arrive ensemble.
  */
 export function moveFormation(units: FormationUnit[], gx: number, gy: number, angle: number, queue = false, attack = false): Cmd {
   const slots = formationSlots(units, gx, gy, angle);
