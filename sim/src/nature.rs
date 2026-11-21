@@ -98,8 +98,29 @@ pub struct Nest {
     /// dernier coup reçu par le nid lui-même, et prochaine ponte d'urgence permise (ticks)
     pub struck: u32,
     pub burst: u32,
+    /// espèce : 0 mordeurs (nid), 1 réplicateurs (ruche)
+    pub species: u8,
 }
-crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try, foe, counter, struck, burst });
+crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try, foe, counter, struck, burst, species });
+
+/// Espèces de la faune.
+pub const SPECIES_BEASTS: u8 = 0;
+pub const SPECIES_REPLICATORS: u8 = 1;
+
+/// Ruine des Anciens : garde un EPPZ jusqu'à ce qu'un joueur le capture en y stationnant seul.
+#[derive(Clone, Default)]
+pub struct Ruin {
+    /// bâtiment (référence)
+    pub b: u32,
+    /// joueur qui capture (255 : personne) et avancement (ticks)
+    pub holder: u8,
+    pub progress: u16,
+}
+crate::ser_struct!(Ruin { b, holder, progress });
+
+/// Capture d'un EPPZ : 10 s seul à moins de RUIN_R cases de la ruine.
+pub const RUIN_CAPTURE: u16 = 200;
+const RUIN_R: i32 = 4;
 
 pub const RAID_GATHER: u8 = 0;
 pub const RAID_ASSAULT: u8 = 1;
@@ -140,8 +161,21 @@ pub struct Nature {
     /// plafond du nombre de nids et du nombre de bêtes
     pub max_nests: u32,
     pub max_beasts: u32,
+    /// ruines des Anciens (EPPZ)
+    pub ruins: Vec<Ruin>,
+    /// bâtiments abattus par un réplicateur : un réplicateur naît sur place (x, y, réplicateur auteur)
+    pub breed: Vec<Breed>,
 }
-crate::ser_struct!(Nature { level, owner, nests, raids, next_expand, max_nests, max_beasts });
+
+/// Réplicateur à faire naître (bâtiment dévoré) : position et réplicateur auteur.
+#[derive(Clone, Default)]
+pub struct Breed {
+    pub x: i32,
+    pub y: i32,
+    pub author: u32,
+}
+crate::ser_struct!(Breed { x, y, author });
+crate::ser_struct!(Nature { level, owner, nests, raids, next_expand, max_nests, max_beasts, ruins, breed });
 
 impl Nature {
     pub fn new(level: u8, owner: u8, map_w: i32) -> Nature {
@@ -176,6 +210,7 @@ pub fn nature_player() -> Player {
         losses: 0,
         stock_cap: 0,
         shards: 0,
+        eppz: 0,
     }
 }
 
@@ -426,14 +461,57 @@ fn player_building_near(w: &World, cx: i32, cy: i32, r_tiles: i32) -> bool {
 
 /// Pose un nid (case en haut à gauche) et l'inscrit ; renvoie son indice dans `nature.nests`.
 pub(crate) fn found_nest(w: &mut World, x: i32, y: i32) -> Option<usize> {
+    found_colony(w, x, y, SPECIES_BEASTS)
+}
+
+/// Fonde un nid (mordeurs) ou une ruche (réplicateurs) en (x, y).
+pub(crate) fn found_colony(w: &mut World, x: i32, y: i32, species: u8) -> Option<usize> {
     let owner = w.nature.owner;
-    let b = buildings::place_building(w, owner, B_NEST, x, y, 0)?;
+    let kind = if species == SPECIES_REPLICATORS { B_HIVE } else { B_NEST };
+    let b = buildings::place_building(w, owner, kind, x, y, 0)?;
     buildings::complete_building(w, b);
     let r = w.building_ref(b);
     let spawn = w.rng.range(1, spawn_interval(w.nature.level) as i32) as u32;
     let tick = w.tick;
-    w.nature.nests.push(Nest { b: r, born: tick, spawn, next_try: tick + ATTACK_CHECK, ..Nest::default() });
+    w.nature.nests.push(Nest { b: r, born: tick, spawn, next_try: tick + ATTACK_CHECK, species, ..Nest::default() });
     Some(w.nature.nests.len() - 1)
+}
+
+/// Bête que fait naître la colonie `i` : un réplicateur dans une ruche, sinon selon l'évolution.
+fn colony_kind(w: &mut World, i: usize) -> u16 {
+    if w.nature.nests[i].species == SPECIES_REPLICATORS {
+        U_REPLICATOR
+    } else {
+        beast_kind(w)
+    }
+}
+
+/// Dégâts reçus par un réplicateur (ou sa ruche) ou infligés par un disrupteur : seul le disrupteur
+/// blesse les réplicateurs ; contre le reste, il ne fait qu'un cinquième de ses dégâts.
+pub fn replicator_damage(w: &World, replicator: bool, dmg: i32) -> i32 {
+    if dmg <= 0 {
+        return dmg;
+    }
+    let disruptor = w.unit(w.shooter).is_some_and(|s| w.units.kind[s] == U_DISRUPTOR);
+    match (replicator, disruptor) {
+        (true, false) => 0,
+        (false, true) => (dmg / 5).max(1),
+        _ => dmg,
+    }
+}
+
+/// Un bâtiment de joueur vient d'être abattu en (x, y) : si c'est l'œuvre d'un réplicateur, un autre
+/// réplicateur naîtra sur place (les réplicateurs se multiplient en dévorant le métal).
+pub fn building_killed(w: &mut World, x: i32, y: i32) {
+    if !w.nature.active() {
+        return;
+    }
+    if let Some(s) = w.unit(w.shooter) {
+        if w.units.kind[s] == U_REPLICATOR && w.nature.breed.len() < 64 {
+            let id = w.shooter;
+            w.nature.breed.push(Breed { x, y, author: id });
+        }
+    }
 }
 
 /// Fait naître une bête au bord du nid `i`.
@@ -503,6 +581,140 @@ pub fn place_initial_nests(w: &mut World) {
     let n = w.nature.nests.len() as u32;
     w.nature.max_nests = (n * 3).clamp(8, (w.map.w / 8) as u32);
     w.nature.next_expand = expand_interval(w);
+    place_hives_and_ruins(w, &colonies);
+}
+
+/// Ruches de réplicateurs (une, deux en faune agressive) au centre de la carte ou entre deux départs,
+/// loin des nids ; ruines des Anciens (une pour deux joueurs, au moins une) près des colonies de mordeurs,
+/// qui les gardent.
+fn place_hives_and_ruins(w: &mut World, colonies: &[(i32, i32)]) {
+    let np = w.map.starts.len();
+    let mut cands = vec![(w.map.w / 2, w.map.h / 2)];
+    let starts = w.map.starts.clone();
+    for i in 0..starts.len() {
+        let (ax, ay) = starts[i];
+        let (bx, by) = starts[(i + 1) % starts.len()];
+        cands.push(((ax + bx + w.map.w / 2) / 3, (ay + by + w.map.h / 2) / 3));
+    }
+    let hives = if w.nature.level == FAUNA_AGGRESSIVE { 2 } else { 1 };
+    let mut placed = 0;
+    for &(px, py) in &cands {
+        if placed >= hives {
+            break;
+        }
+        for _try in 0..40 {
+            let tx = px + w.rng.range(-12, 12);
+            let ty = py + w.rng.range(-12, 12);
+            if !far_from_starts(w, tx, ty) || near_nest(w, tx * TILE, ty * TILE, 16) {
+                continue;
+            }
+            if let Some(i) = found_colony(w, tx - 1, ty - 1, SPECIES_REPLICATORS) {
+                for _ in 0..START_HORDE {
+                    spawn_beast(w, i, U_REPLICATOR);
+                }
+                placed += 1;
+                break;
+            }
+        }
+    }
+    let ruins = (np / 2).max(1);
+    let owner = w.nature.owner;
+    for &(px, py) in colonies.iter().take(ruins) {
+        for _try in 0..40 {
+            let a = w.rng.below(65536) as u16;
+            let r = w.rng.range(4, 9);
+            let tx = px + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
+            let ty = py + (w.trig.sin(a) as i64 * r as i64 / 16384) as i32;
+            if !far_from_starts(w, tx, ty) {
+                continue;
+            }
+            if let Some(b) = buildings::place_building(w, owner, B_RUIN, tx - 1, ty - 1, 0) {
+                buildings::complete_building(w, b);
+                w.buildings[b].working = true;
+                let rf = w.building_ref(b);
+                w.nature.ruins.push(Ruin { b: rf, holder: 255, progress: 0 });
+                break;
+            }
+        }
+    }
+}
+
+/// Fiche d'une ruine des Anciens : [EPPZ encore là (0/1), joueur qui capture (-1 : personne), avancement ‰] ;
+/// « null » pour un autre bâtiment.
+pub fn ruin_info(w: &World, b: usize) -> String {
+    let r = w.building_ref(b);
+    match w.nature.ruins.iter().find(|x| x.b == r) {
+        Some(x) => format!("[{},{},{}]", w.buildings[b].working as i32, if x.holder == 255 { -1 } else { x.holder as i32 }, x.progress as u32 * 1000 / RUIN_CAPTURE as u32),
+        None => "null".to_string(),
+    }
+}
+
+/// Ruines : un seul joueur (ses unités terrestres) à moins de RUIN_R cases pendant 10 s capture l'EPPZ.
+fn update_ruins(w: &mut World) {
+    let rr = ((RUIN_R * TILE) as i64).pow(2);
+    for k in 0..w.nature.ruins.len() {
+        let Some(b) = w.building(w.nature.ruins[k].b) else { continue };
+        if !w.buildings[b].working {
+            continue;
+        }
+        let (cx, cy) = w.buildings[b].center();
+        let mut who: Option<u8> = None;
+        let mut contested = false;
+        let mut found: Vec<usize> = Vec::new();
+        w.grid.fine.query(cx, cy, RUIN_R * TILE, |o| found.push(o));
+        found.sort_unstable();
+        for o in found {
+            if !w.units.alive[o] || w.units.cold[o].carried_by != NONE || dist2(cx, cy, w.units.x[o], w.units.y[o]) > rr {
+                continue;
+            }
+            let p = w.units.owner[o];
+            if w.team_of(p) == NATURE_TEAM || !matches!(udef(w.units.kind[o]).layer, Layer::Land | Layer::Hover) {
+                continue;
+            }
+            match who {
+                None => who = Some(p),
+                Some(q) if w.team_of(q) != w.team_of(p) => contested = true,
+                _ => {}
+            }
+        }
+        let r = &mut w.nature.ruins[k];
+        match who {
+            Some(p) if !contested => {
+                if r.holder != p {
+                    r.holder = p;
+                    r.progress = 0;
+                }
+                r.progress += NEST_PERIOD as u16;
+                if r.progress >= RUIN_CAPTURE {
+                    w.buildings[b].working = false;
+                    w.players[p as usize].eppz += 1;
+                    w.ev(EV_EPPZ, p as i32, cx, cy, 0);
+                }
+            }
+            Some(_) => {}
+            None => {
+                r.holder = 255;
+                r.progress = 0;
+            }
+        }
+    }
+}
+
+/// Réplicateurs nés d'un bâtiment dévoré : ils rejoignent l'attaque de leur auteur, sinon la ruche la plus proche.
+fn breed(w: &mut World) {
+    let list = std::mem::take(&mut w.nature.breed);
+    for Breed { x, y, author } in list {
+        if w.players[w.nature.owner as usize].unit_count >= w.nature.max_beasts {
+            break;
+        }
+        let (fx, fy) = buildings::free_spot_near(w, x, y, P_LAND);
+        let id = w.spawn_unit(U_REPLICATOR, w.nature.owner, fx, fy);
+        if let Some(k) = w.nature.raids.iter().position(|r| r.units.contains(&author)) {
+            w.nature.raids[k].units.push(id);
+        } else if let Some(j) = w.nature.nests.iter().enumerate().filter(|(_, n)| n.species == SPECIES_REPLICATORS).filter_map(|(j, n)| nest_center(w, n).map(|(cx, cy)| (dist2(cx, cy, fx, fy), j))).min().map(|(_, j)| j) {
+            w.nature.nests[j].horde.push(id);
+        }
+    }
 }
 
 // ---------- Alerte ----------
@@ -565,6 +777,12 @@ pub fn charge_speed(w: &World, s: usize, speed: i32) -> i32 {
 pub fn update(w: &mut World) {
     if !w.nature.active() {
         return;
+    }
+    if !w.nature.breed.is_empty() {
+        breed(w);
+    }
+    if w.tick.is_multiple_of(NEST_PERIOD) && !w.nature.ruins.is_empty() {
+        update_ruins(w);
     }
     let mut i = 0;
     while i < w.nature.nests.len() {
@@ -643,8 +861,12 @@ fn update_nest(w: &mut World, i: usize) -> bool {
     if n.spawn == 0 {
         n.spawn = spawn_interval(level);
         let room = w.players[w.nature.owner as usize].unit_count < w.nature.max_beasts;
+        // une ruche pond deux fois moins vite qu'un nid
+        if w.nature.nests[i].species == SPECIES_REPLICATORS {
+            w.nature.nests[i].spawn *= 2;
+        }
         if w.nature.nests[i].horde.len() < max && room {
-            let kind = beast_kind(w);
+            let kind = colony_kind(w, i);
             spawn_beast(w, i, kind);
         }
     }
@@ -658,7 +880,7 @@ fn update_nest(w: &mut World, i: usize) -> bool {
             if w.nature.nests[i].horde.len() >= max + max / 2 || !room {
                 break;
             }
-            let kind = beast_kind(w);
+            let kind = colony_kind(w, i);
             spawn_beast(w, i, kind);
         }
     }
@@ -983,8 +1205,9 @@ fn update_raid(w: &mut World, k: usize) -> bool {
             }
             let (x, y) = (r.tx / TILE - 1, r.ty / TILE - 1);
             let ok = w.nature.nests.len() < w.nature.max_nests as usize && !player_building_near(w, r.tx, r.ty, EXPANSION_CLEAR_R / 2);
-            if ok && buildings::can_place(w, w.nature.owner, B_NEST, x, y, 0) {
-                if let Some(j) = found_nest(w, x, y) {
+            let species = if units.first().and_then(|&id| beast(w, id)).is_some_and(|s| w.units.kind[s] == U_REPLICATOR) { SPECIES_REPLICATORS } else { SPECIES_BEASTS };
+            if ok && buildings::can_place(w, w.nature.owner, if species == SPECIES_REPLICATORS { B_HIVE } else { B_NEST }, x, y, 0) {
+                if let Some(j) = found_colony(w, x, y, species) {
                     w.nature.nests[j].horde = units;
                     return false;
                 }
@@ -1041,8 +1264,12 @@ pub fn hash_into(w: &World, h: &mut crate::ser::Hasher) {
         h.add(nest.b as u64 | (nest.horde.len() as u64) << 32 | (nest.spawn as u64) << 40);
         h.add(nest.next_try as u64 | (nest.alarm as u64) << 32);
         h.add(nest.counter as u64 | (nest.burst as u64) << 32);
-        h.add(nest.struck as u64 | (nest.foe as u64) << 32);
+        h.add(nest.struck as u64 | (nest.foe as u64) << 32 | (nest.species as u64) << 40);
     }
+    for r in &n.ruins {
+        h.add(r.b as u64 | (r.holder as u64) << 32 | (r.progress as u64) << 40);
+    }
+    h.add(n.breed.len() as u64);
     for r in &n.raids {
         h.add(r.units.len() as u64 | (r.state as u64) << 16 | (r.since as u64) << 24);
         h.add_i32(r.tx);

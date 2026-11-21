@@ -535,6 +535,8 @@ pub fn showcase_demo() -> World {
     w.infinite_grid = true;
     for pl in w.players.iter_mut() {
         pl.researched = u64::MAX;
+        // de quoi poser le socle à EPPZ
+        pl.eppz = 1;
     }
     const COLS: i32 = 8;
     const STEP: i32 = 7;
@@ -544,13 +546,15 @@ pub fn showcase_demo() -> World {
     for (k, def) in BUILDINGS.iter().enumerate() {
         let (x, y) = (x0 + (k as i32 % COLS) * STEP, y0 + (k as i32 / COLS) * STEP);
         if def.deposit != 0 {
+            // gisement de fer, ou geyser pour la centrale géothermique
+            let kind = if def.deposit == 255 { IRON_ORE } else { def.deposit };
             for dy in 0..def.size.1 as i32 {
                 for dx in 0..def.size.0 as i32 {
                     let i = w.map.idx(x + dx, y + dy);
-                    w.map.deposit[i] = IRON_ORE;
+                    w.map.deposit[i] = kind;
                 }
             }
-            w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x, y, purity: 0 });
+            w.map.spots.push(crate::map::Spot { kind, x, y, purity: 0 });
         }
         if let Some(b) = place_building(&mut w, 0, k as u16, x, y, 0) {
             complete_building(&mut w, b);
@@ -588,6 +592,77 @@ pub fn formation_demo() -> World {
                 w.units.facing[s] = 0;
             }
         }
+    }
+    w
+}
+
+/// Démonstration des anneaux, de la porte et des droïdes (?demo=anciens) : deux portes reliées que des
+/// unités traversent en boucle, deux plateformes d'anneaux qui échangent leurs unités toutes les 20 s,
+/// des droïdes roulants qui chargent puis se déploient face à des robots adverses immobiles, un
+/// générateur de bouclier mobile, des disrupteurs face à des réplicateurs, un socle à EPPZ.
+pub fn anciens_demo() -> World {
+    let mut w = World::new(&[17, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+        pl.eppz = 1;
+    }
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx - 30).clamp(4, w.map.w - 154), (sy - 36).clamp(4, w.map.h - 104));
+    flat(&mut w, x0, y0, x0 + 150, y0 + 100);
+    let key = |k: &str| UNITS.iter().position(|u| u.key == k).unwrap() as u16;
+    // portes : A regarde vers l'est, B vers l'ouest ; reliées et ouvertes
+    let a = place_building(&mut w, 0, B_GATE, x0 + 20, y0 + 16, 0).unwrap();
+    let b = place_building(&mut w, 0, B_GATE, x0 + 50, y0 + 16, 2).unwrap();
+    complete_building(&mut w, a);
+    complete_building(&mut w, b);
+    let (ra, rb) = (w.building_ref(a), w.building_ref(b));
+    w.buildings[a].link = rb;
+    w.buildings[b].link = ra;
+    let (acx, acy) = w.buildings[a].center();
+    for k in 0..6 {
+        let kind = key(["line_robot", "moto", "light_tank"][k % 3]);
+        let (ux, uy) = (acx + (6 + k as i32 * 2) * TILE, acy + ((k as i32 % 3) - 1) * TILE);
+        let id = w.spawn_unit(kind, 0, ux, uy);
+        if let Some(s) = w.unit(id) {
+            w.units.cold[s].orders.push(Order::Patrol { x: acx, y: acy, ox: ux, oy: uy });
+        }
+    }
+    // anneaux : deux plateformes à 25 cases, relance automatique
+    let r1 = place_building(&mut w, 0, B_TRANSFER, x0 + 20, y0 + 45, 0).unwrap();
+    let r2 = place_building(&mut w, 0, B_TRANSFER, x0 + 45, y0 + 45, 0).unwrap();
+    complete_building(&mut w, r1);
+    complete_building(&mut w, r2);
+    let rr2 = w.building_ref(r2);
+    w.buildings[r1].repeat = true;
+    w.buildings[r1].target = rr2;
+    w.buildings[r1].cooldown = 60;
+    let (c1x, c1y) = w.buildings[r1].center();
+    for k in 0..4 {
+        w.spawn_unit(key("line_robot"), 0, c1x + [-1, 1, 0, 0][k] * TILE / 2 * 3, c1y + [0, 0, -1, 1][k] * TILE / 2 * 3);
+    }
+    // droïdes roulants face à des robots adverses immobiles ; bouclier mobile
+    for k in 0..4 {
+        let id = w.spawn_unit(U_ROLL_DROID, 0, (x0 + 75) * TILE, (y0 + 30 + k * 3) * TILE);
+        if let Some(s) = w.unit(id) {
+            w.units.cold[s].orders.push(Order::Move { x: (x0 + 92) * TILE, y: (y0 + 34) * TILE, gx: (x0 + 92) * TILE, gy: (y0 + 34) * TILE, attack: true, eta: 0 });
+        }
+    }
+    for k in 0..5 {
+        let id = w.spawn_unit(key("line_robot"), 1, (x0 + 108) * TILE, (y0 + 28 + k * 3) * TILE);
+        if let Some(s) = w.unit(id) {
+            w.units.cold[s].stun = 60000;
+        }
+    }
+    w.spawn_unit(key("mobile_shield"), 0, (x0 + 80) * TILE, (y0 + 52) * TILE);
+    // disrupteurs face à des réplicateurs (au joueur 1, pour l'image)
+    for k in 0..3 {
+        w.spawn_unit(U_DISRUPTOR, 0, (x0 + 75) * TILE, (y0 + 70 + k * 3) * TILE);
+        w.spawn_unit(U_REPLICATOR, 1, (x0 + 95) * TILE, (y0 + 70 + k * 3) * TILE);
+    }
+    // socle à EPPZ
+    if let Some(s) = place_building(&mut w, 0, B_EPPZ_SOCKET, x0 + 20, y0 + 70, 0) {
+        complete_building(&mut w, s);
     }
     w
 }

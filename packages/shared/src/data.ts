@@ -39,7 +39,7 @@ export interface GameData {
 export const BClass = {
   Extractor: 0, Belt: 1, Inserter: 2, Crafter: 3, Lab: 4, Depot: 5, Power: 6, Pylon: 7, Factory: 8, Radar: 9, Wall: 10,
   Turret: 11, Shield: 12, Transfer: 13, Gate: 14, Silo: 15, AntiMissile: 16, Beacon: 17, Orbital: 18,
-  Warehouse: 19, Rail: 20, Station: 21, CargoPad: 22, Router: 23, Portal: 24, Roboport: 25, Nest: 26,
+  Warehouse: 19, Rail: 20, Station: 21, CargoPad: 22, Router: 23, Portal: 24, Roboport: 25, Nest: 26, Ruin: 27,
 } as const;
 /** Équipe de la faune (joueur caché, toujours le dernier de la liste des joueurs ; voir sim/src/nature.rs). */
 export const NATURE_TEAM = 8;

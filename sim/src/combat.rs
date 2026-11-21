@@ -181,7 +181,8 @@ fn unit_target_ok(w: &World, team: u8, wi: usize, t: usize, x: i32, y: i32) -> b
 
 fn building_target_ok(w: &World, team: u8, wi: usize, b: usize, x: i32, y: i32) -> bool {
     let bb = &w.buildings[b];
-    if !bb.alive || bb.hp <= 0 || w.team_of(bb.owner) == team {
+    // une ruine des Anciens ne se vise pas (indestructible)
+    if !bb.alive || bb.hp <= 0 || w.team_of(bb.owner) == team || bb.kind == B_RUIN {
         return false;
     }
     let wd = &WEAPONS[wi];
@@ -412,7 +413,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
 /// Unité qui ne tire que déployée (elle se déploie seule à l'arrêt quand elle a une cible).
 #[inline]
 pub fn needs_deploy(kind: u16) -> bool {
-    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET)
+    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID)
 }
 
 /// Blindage : Gardien touché de face (dans un cône de ±60° autour de sa direction) : -45 % ;
@@ -537,7 +538,9 @@ pub fn collect_shields(w: &mut World) {
             continue;
         }
         let d = udef(w.units.kind[s]);
-        if d.shield_r > 0 && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
+        // droïde roulant : bouclier seulement une fois déployé
+        let up = w.units.kind[s] != U_ROLL_DROID || w.units.cold[s].deployed;
+        if d.shield_r > 0 && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
             let id = w.unit_id(s);
             w.shields.push((w.units.x[s], w.units.y[s], d.shield_r * TILE, w.team_of(w.units.owner[s]), id));
         }
@@ -613,8 +616,11 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
             }
         }
     }
+    let raw = dmg;
+    // réplicateurs : seul le disrupteur les blesse (et il blesse peu le reste)
+    let dmg = crate::nature::replicator_damage(w, w.units.kind[s] == U_REPLICATOR, dmg);
     w.units.hp[s] -= dmg;
-    if dmg > 0 {
+    if raw > 0 {
         let (o, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
         w.note_attacked(o, attacker, x, y, w.units.kind[s] == U_COMMANDER);
         if w.team_of(o) == crate::nature::NATURE_TEAM && w.team_of(attacker) != crate::nature::NATURE_TEAM {
@@ -634,11 +640,13 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
 }
 
 pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
-    if !w.buildings[b].alive || w.buildings[b].hp <= 0 {
+    if !w.buildings[b].alive || w.buildings[b].hp <= 0 || w.buildings[b].kind == B_RUIN {
         return;
     }
-    let mut dmg = dmg;
-    if dmg > 0 {
+    let raw = dmg;
+    // ruche des réplicateurs : seul le disrupteur la blesse ; un coup sans effet l'alerte quand même
+    let mut dmg = crate::nature::replicator_damage(w, w.buildings[b].kind == B_HIVE, dmg);
+    if raw > 0 {
         let (cx, cy) = w.buildings[b].center();
         let o = w.buildings[b].owner;
         w.note_attacked(o, attacker, cx, cy, false);
@@ -655,6 +663,11 @@ pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
     bb.hp -= dmg;
     if bb.hp <= 0 {
         w.dead_buildings.push(b as u32);
+        // dévoré par un réplicateur : un autre naît sur place
+        if w.team_of(w.buildings[b].owner) != crate::nature::NATURE_TEAM {
+            let (cx, cy) = w.buildings[b].center();
+            crate::nature::building_killed(w, cx, cy);
+        }
     }
 }
 

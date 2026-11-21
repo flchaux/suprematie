@@ -190,6 +190,7 @@ export class GameScene {
     setTexturesEnabled(g.textures !== false);
     this.renderer.shadowMap.enabled = g.shadows;
     if (this.entities) this.entities.effects.quality = g.effects;
+    this.entities?.setShieldFx(g.shieldFx !== false);
     this.terrain?.setDetail(g.ground !== false);
     if (this.decor) this.decor.enabled = g.decor !== false;
     // changer les ombres impose de recompiler les matériaux
@@ -223,6 +224,7 @@ export class GameScene {
     this.entities.warmUp();
     this.entities.camera = this.camera;
     this.entities.effects.quality = this.gfx.effects;
+    this.entities.setShieldFx(this.gfx.shieldFx !== false);
     this.scene.add(this.entities.group);
     this.camera.far = map.w * 4;
   }

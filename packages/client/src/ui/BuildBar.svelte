@@ -37,7 +37,8 @@
       {@const i = idx[key]}
       {@const b = ui.data?.buildings[i]}
       {#if b}
-        {@const ok = hasTechUI(b.tech)}
+        <!-- socle à EPPZ : il faut un EPPZ capturé en réserve -->
+        {@const ok = hasTechUI(b.tech) && (key !== "eppz_socket" || ui.eppz > 0)}
         {@const src = sprite("buildings", key)}
         <div class="tip">
           <button class="card" class:on={ui.buildKind === i && ui.mode === "build"} class:locked={!ok} disabled={!ok} onclick={() => client.startBuild(i)}>

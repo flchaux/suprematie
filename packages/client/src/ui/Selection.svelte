@@ -170,6 +170,8 @@
   const owner = $derived(sb ? hexOf(sb.owner) : "");
   /** nid de la faune : [bêtes au nid, plafond, seuil d'attaque, âge (s), évolution ‰, pression, chance ‰] */
   const nest = $derived(info?.nest as number[] | null | undefined);
+  /** ruine des Anciens : [EPPZ présent, joueur qui capture (-1), avancement ‰] */
+  const ruin = $derived(info?.ruin as number[] | null | undefined);
   /** tapis : objets sur la case (de l'avant vers l'arrière) et sur toute la file (objet, nombre) */
   const belt = $derived(info?.belt as { tile: number[]; line: [number, number][]; tiles: number; cap: number; jam: number; powered: boolean } | null | undefined);
   // choix de recette : la grille ne s'ouvre que par « Changer de recette » (ou si aucune n'est choisie) ;
@@ -210,6 +212,14 @@
         <span class="dim">Risque d'attaque</span><span class="num">{chance ? `${(chance / 10).toFixed(1)} % / 10 s` : "nul"}</span>
       </div>
       <div class="status {home >= need && chance ? 'warn' : 'build'}"><span class="led"></span>{home >= need ? (chance ? "Horde prête : elle peut attaquer à tout moment" : "Horde prête, mais aucun bâtiment ne l'inquiète") : `La horde grossit : ${need - home} bête${need - home > 1 ? "s" : ""} avant de pouvoir attaquer`}</div>
+    {/if}
+    {#if ruin && ruin.length}
+      {@const [has, holder, prog] = ruin}
+      {#if has}
+        <div class="status {holder === ui.me ? 'good' : holder >= 0 ? 'warn' : 'idle'}"><span class="led"></span>{holder < 0 ? "EPPZ en place : approchez seul des unités terrestres (4 cases) pendant 10 s pour le capturer" : `Capture par ${holder === ui.me ? "vous" : (ui.names[holder] ?? "un adversaire")} : ${Math.floor(prog / 10)} %`}</div>
+      {:else}
+        <div class="status idle"><span class="led"></span>L'EPPZ a été emporté</div>
+      {/if}
     {/if}
     {#if mine && info}
       {#if info.build < 65536}
@@ -253,6 +263,10 @@
         {@const base = Math.round((bdef.powerProd * (info.purity || 100) * (info.clock ?? 100)) / 10000)}
         <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> kW <span class="dim">· de <span class="num">{Math.round(base / 2)}</span> à <span class="num">{Math.round(base * 1.5)}</span> kW selon le geyser</span></div>
         <span class="dim small">Sans combustible : la vapeur du geyser monte et retombe en une minute, la production suit (moyenne <span class="num">{base}</span> kW).</span>
+      {:else if bdef.key === "eppz_socket" && info.build >= 65536}
+        {@const out = info.genOut ?? 0}
+        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{Math.round((bdef.powerProd * (info.clock ?? 100)) / 100)}</span> kW</div>
+        <span class="dim small">EPPZ installé : aucune combustion, la production ne s'épuise pas.</span>
       {:else if bdef.cls === BClass.Power && info.build >= 65536}
         {@const gl = d.generatorLevels && bdef.key === "generator" ? d.generatorLevels : null}
         {@const main = bdef.key === "main_generator"}

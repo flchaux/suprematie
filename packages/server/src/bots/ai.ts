@@ -1871,6 +1871,13 @@ export class SkirmishAI implements Bot {
       w.bomber = (w.bomber ?? 0) * 2;
       if (r < 0.3) w.interceptor = 0.3;
     }
+    // réplicateurs (faune) en vue : seuls les disrupteurs en viennent à bout
+    const repl = this.ctx.data.units.findIndex((u) => u.key === "replicator");
+    if (repl >= 0) {
+      let n = 0;
+      for (const u of this.view.units) if (u.kind === repl) n++;
+      if (n > 0) w.disruptor = (w.disruptor ?? 0) + Math.min(6, 1 + n * 0.5);
+    }
     // adversaire plus fort au sol : plus d'artillerie et de lance-missiles (portée)
     if (this.landRatio > 1.3) {
       w.artillery = (w.artillery ?? 0) + 1;

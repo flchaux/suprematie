@@ -10,5 +10,7 @@ export interface GfxSettings {
   ground: boolean;
   /** petites décorations du sol (herbes, rochers, arbres…) */
   decor: boolean;
+  /** boucliers détaillés (alvéoles, bord lumineux, ondulation) ; sinon simple bulle */
+  shieldFx: boolean;
 }
-export const DEFAULT_GFX: GfxSettings = { shadows: true, bloom: true, effects: 1, textures: true, ground: true, decor: true };
+export const DEFAULT_GFX: GfxSettings = { shadows: true, bloom: true, effects: 1, textures: true, ground: true, decor: true, shieldFx: true };

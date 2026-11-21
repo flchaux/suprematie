@@ -7,7 +7,7 @@ use crate::world::*;
 
 pub const HEADER: usize = 16;
 /// ... + plafond de la réserve (dernier mot)
-pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 2;
+pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 3;
 pub const CARRIER_WORDS: usize = 5;
 pub const UNIT_WORDS: usize = 9;
 pub const BUILDING_WORDS: usize = 8;
@@ -40,6 +40,7 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
         }
         out.push(p.stock_cap);
         out.push(p.shards as i32);
+        out.push(p.eppz as i32);
     }
 }
 
@@ -138,7 +139,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             BClass::Extractor if bb.out >= 5 => flags |= 64,
             BClass::Lab if !bb.working && w.players.get(bb.owner as usize).is_some_and(|p| p.research != 0) => flags |= 32,
             BClass::Factory if !bb.working && !bb.queue.is_empty() => flags |= 32,
-            BClass::Power if bb.fuel <= 0 && bb.kind != B_GEOTHERMAL => flags |= 32,
+            BClass::Power if bb.fuel <= 0 && !crate::buildings::fuelless(bb.kind) => flags |= 32,
             _ => {}
         }
         if crate::buildings::needs_power(bb) && net_ok && w.nets.get(bb.net as usize).is_some_and(|n| n.sat < 900) {
@@ -177,6 +178,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Orbital => ((bb.charge as u64 * 1000 / (60 * 20 * 1024)) as i32, 0),
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
+        // anneaux de transport : montée (ticks restants), recharge
+        BClass::Transfer => (bb.charge as i32, bb.cooldown as i32),
         // générateur : niveau (bits 24-25), production actuelle (kW)
         BClass::Power => ((bb.level as i32) << 24, crate::buildings::gen_prod(w, bb)),
         BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress / 1024) as i32),
@@ -482,8 +485,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         None => "null".to_string(),
     };
     format!(
-        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{}}}",
-        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }
+        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{},\"ruin\":{}}}",
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b)
     )
 }
 
@@ -518,9 +521,9 @@ pub fn power_zones(w: &World, player: i32) -> String {
         }
         let (bw, bh) = bb.size();
         let gen = def.class == BClass::Power;
-        let fuel = if bb.kind == B_GEOTHERMAL { 1000 } else if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::fuel_tank(bb.kind).max(1) as i64) as i32 } else { -1 };
+        let fuel = if crate::buildings::fuelless(bb.kind) { 1000 } else if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::fuel_tank(bb.kind).max(1) as i64) as i32 } else { -1 };
         // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
-        let net = if gen && bb.fuel <= 0 && bb.kind != B_GEOTHERMAL { 0 } else { bb.net };
+        let net = if gen && bb.fuel <= 0 && !crate::buildings::fuelless(bb.kind) { 0 } else { bb.net };
         let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };
         // rayon et portée de liaison selon le niveau (générateur principal amélioré)
         poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind, crate::buildings::connect_of(bb)));

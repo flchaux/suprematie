@@ -818,3 +818,60 @@ fn update_robot(w: &mut World, ci: usize) {
         }
     }
 }
+
+// ---------- Anneaux de transport ----------
+
+/// Portée des anneaux (cases) : moyenne ; au-delà, il faut une porte de transit.
+pub const RINGS_RANGE: u32 = 60;
+/// Montée des anneaux avant l'échange (ticks).
+pub const RINGS_TIME: u32 = 30;
+/// Rayon (sous-unités) de ce que les anneaux emportent.
+const RINGS_R: i32 = 2 * TILE + TILE / 2;
+
+/// Fin de la montée des anneaux de `b` : ses unités terrestres et celles de la plateforme reliée (au
+/// plus 12 de chaque côté, au propriétaire) échangent leur place, en gardant leur position relative.
+pub fn rings_exchange(w: &mut World, b: usize) {
+    let Some(t) = w.building(w.buildings[b].link) else {
+        w.buildings[b].link = NONE;
+        return;
+    };
+    w.buildings[b].link = NONE;
+    w.buildings[b].cooldown = 400;
+    let p = w.buildings[b].owner;
+    let (ax, ay) = w.buildings[b].center();
+    let (bx, by) = w.buildings[t].center();
+    let pick = |w: &World, cx: i32, cy: i32| -> Vec<usize> {
+        let mut out = Vec::new();
+        for s in 0..w.units.alive.len() {
+            if out.len() >= 12 {
+                break;
+            }
+            if !w.units.alive[s] || w.units.owner[s] != p || w.units.cold[s].carried_by != NONE {
+                continue;
+            }
+            let d = udef(w.units.kind[s]);
+            if !matches!(d.layer, Layer::Land | Layer::Hover) || d.tier == 6 {
+                continue;
+            }
+            if crate::fixed::dist2(w.units.x[s], w.units.y[s], cx, cy) <= (RINGS_R as i64).pow(2) {
+                out.push(s);
+            }
+        }
+        out
+    };
+    let here = pick(w, ax, ay);
+    let there = pick(w, bx, by);
+    for (list, (fx, fy), (tx, ty)) in [(here, (ax, ay), (bx, by)), (there, (bx, by), (ax, ay))] {
+        for s in list {
+            let (ox, oy) = (w.units.x[s] - fx, w.units.y[s] - fy);
+            let m = crate::units::pass_mask(udef(w.units.kind[s]).layer);
+            let (nx, ny) = crate::buildings::free_spot_near(w, tx + ox, ty + oy, m);
+            w.ev(EV_TELEPORT, w.units.x[s], w.units.y[s], nx, ny);
+            w.units.x[s] = nx;
+            w.units.y[s] = ny;
+            w.units.px[s] = nx;
+            w.units.py[s] = ny;
+            crate::units::clear_orders(w, s);
+        }
+    }
+}

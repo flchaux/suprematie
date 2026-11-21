@@ -4,7 +4,7 @@
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES } from "@supreme/shared";
-import { texture as tslTexture, uv, vec2, instancedBufferAttribute, normalView } from "three/tsl";
+import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, fallbackModel, hatchFace, HATCH_Y, PLAYER_COLORS, withHatches } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
@@ -30,7 +30,7 @@ type Built = ReturnType<typeof buildModel>;
  */
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number }[] = [];
   cap = 0;
   n = 0;
   private builtV: Built | null;
@@ -96,7 +96,10 @@ class KindMesh {
       const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
       // anneau d'un corps qui ondule (« ondule1 », « ondule2 »… de la tête vers la queue), 0 sinon
       const wave = Number(/^ondule(\d+)/.exec(p.name)?.[1] ?? 0);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave };
+      // droïde roulant : 1 « boule » (roulé), 2 « deplie… » (déployé), 3 « deplie_tourelle » (déployé, vise) ;
+      // 4 « eppz… » : l'EPPZ d'une ruine, visible tant qu'elle le garde (bâtiment en service)
+      const mode = /^boule/.test(p.name) ? 1 : /^deplie_tourelle/.test(p.name) ? 3 : /^deplie/.test(p.name) ? 2 : /^eppz/.test(p.name) ? 4 : 0;
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave, mode };
     });
     this.cap = cap;
   }
@@ -281,6 +284,24 @@ export class Entities {
   frameN = 0;
   lastFxTick = -1;
   shields: THREE.InstancedMesh;
+  /** porte de transit : horizon des événements (disque ondulant) et gerbe d'ouverture */
+  private vortex!: THREE.InstancedMesh;
+  private kawoosh!: THREE.InstancedMesh;
+  /** anneaux de transport : anneaux qui montent, colonne de lumière */
+  private ringStack!: THREE.InstancedMesh;
+  private ringBeam!: THREE.InstancedMesh;
+  /** portes ouvertes vues à l'image précédente (centre au sol, pour reconnaître une unité qui y entre) */
+  private openGates: { x: number; z: number }[] = [];
+  gateAt(x: number, z: number): boolean {
+    return this.openGates.some((g) => Math.abs(g.x - x) < 2.2 && Math.abs(g.z - z) < 2.2);
+  }
+  /** bulle simple (réglage graphique « boucliers détaillés » coupé) et bulle détaillée */
+  private shieldPlain: THREE.Material;
+  private shieldFancy: THREE.Material;
+  /** Boucliers détaillés (alvéoles, bord lumineux, ondulation) ou simple bulle translucide. */
+  setShieldFx(on: boolean): void {
+    this.shields.material = on ? this.shieldFancy : this.shieldPlain;
+  }
   wrecks: THREE.InstancedMesh;
   /** épaves dessinées avec le modèle détruit (noir, en partie arraché), une par modèle */
   private wreckMeshes = new Map<number, { mesh: THREE.InstancedMesh; scale: number; height: number }>();
@@ -296,7 +317,9 @@ export class Entities {
   /** Positions monde interpolées des unités affichées (pour la sélection à la souris). */
   screen: UnitScreen[] = [];
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
-  anim = new Map<number, { phase: number; torso: number; seen: number }>();
+  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number }>();
+  /** unités qui viennent de disparaître (porte, anneaux, téléportation) : elles s'effacent sur place */
+  private ghosts: { kind: number; col: THREE.Color; x: number; y: number; z: number; facing: number; t0: number; fwd: number }[] = [];
   animFrame = 0;
   /** trappes ouvertes des bâtiments qui reçoivent des objets (entrée cyan, sortie ambre) ; les fermées sont dans leur modèle */
   hatchFrame: THREE.InstancedMesh;
@@ -439,7 +462,18 @@ export class Entities {
     this.diag.renderOrder = 9;
     this.diag.count = 0;
     this.group.add(this.diag);
-    this.shields = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), basic({ transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }), 400);
+    this.vortex = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 48), vortexMaterial(), 64);
+    this.kawoosh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 24, 12), basic({ color: 0x9fdcff, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }), 64);
+    this.ringStack = new THREE.InstancedMesh(new THREE.TorusGeometry(1, 0.11, 8, 40).rotateX(Math.PI / 2), new THREE.MeshStandardNodeMaterial({ color: 0xe0c070, metalness: 0.35, roughness: 0.35, emissive: 0x8a6418 }), 400);
+    this.ringBeam = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 24, 1, true), basic({ color: 0xcfefff, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }), 64);
+    for (const m of [this.vortex, this.kawoosh, this.ringStack, this.ringBeam]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
+    this.shieldPlain = basic({ transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.shieldFancy = shieldMaterial();
+    this.shields = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 48, 24), this.shieldFancy, 400);
     this.shields.count = 0;
     this.shields.frustumCulled = false;
     this.shields.setColorAt(0, new THREE.Color());
@@ -661,7 +695,19 @@ export class Entities {
       // marche : la phase avance avec la distance parcourue, l'amplitude suit la vitesse
       let st = this.anim.get(id);
       if (!st) this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+      // saut de plus de 3 cases d'une image à l'autre (porte, anneaux, téléportation) : l'unité s'efface
+      // là où elle était et émerge là où elle arrive
+      if (st.lx !== undefined && st.seen === this.animFrame - 1 && Math.hypot(x - st.lx, z - (st.lz ?? z)) > 3) {
+        st.warp = now;
+        if (this.ghosts.length < 200) this.ghosts.push({ kind, col: col.clone(), x: st.lx, y, z: st.lz ?? z, facing: (buf[o + 6] & 0xffff) * ANG, t0: now, fwd: this.gateAt(st.lx, st.lz ?? z) ? 1 : 0 });
+      }
+      st.lx = x;
+      st.lz = z;
       st.seen = this.animFrame;
+      // droïde roulant : passage progressif de la boule au déploiement (0 : roulé, 1 : déployé)
+      const depT = flags & UF.DEPLOYED ? 1 : 0;
+      st.dep = (st.dep ?? depT) + Math.max(-dt * 4, Math.min(dt * 4, depT - (st.dep ?? depT)));
+      const emerge = st.warp !== undefined ? Math.min(1, (now - st.warp) / 350) : 1;
       const per = Math.hypot(buf[o + 2] - buf[o + 4], buf[o + 3] - buf[o + 5]) / TILE; // cases par tick
       const vmax = Math.max(0.1, def.speed / 10); // cases par seconde
       const walk = Math.min(1, (per * 20) / vmax);
@@ -669,10 +715,10 @@ export class Entities {
       st.phase += ((per * 20 * dt) / stride) * Math.PI;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
-      const sc = km.scale;
+      const sc = km.scale * (0.05 + 0.95 * emerge);
       tmpM.compose(tmpV.set(x, y + bob, z), tmpQ, tmpS.set(sc, sc, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
-      setTeamColor(km.body!, km.n, col);
+      setTeamColor(km.body!, km.n, emerge < 1 ? tmpC.copy(col).lerp(new THREE.Color(0xa8e8ff), 1 - emerge) : col);
       // haut du corps : il tourne vers sa cible à vitesse limitée (au plus 6 radians par seconde)
       const aim = flags & UF.IDLE && !(flags & UF.FIRING) && turret === 0 ? 0 : facing - turret;
       let dA = Math.atan2(Math.sin(aim - st.torso), Math.cos(aim - st.torso));
@@ -691,8 +737,16 @@ export class Entities {
         } else if (p.leg !== 0) {
           // jambes opposées (gauche / droite, avant / arrière) : balancement autour de la hanche
           tmpM2.multiply(new THREE.Matrix4().makeRotationX(Math.sin(st.phase + (p.leg > 1 ? Math.PI : 0)) * 0.55 * walk));
+        } else if (p.mode === 1) {
+          // boule du droïde : elle roule (un tour par circonférence parcourue)
+          tmpM2.multiply(new THREE.Matrix4().makeRotationX(st.phase * 0.9));
+        } else if (p.mode === 2) {
+          // pattes du droïde : elles se déplient depuis le centre
         } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
-        tmpM2.scale(tmpS.set(sc, sc, sc));
+        // droïde : la boule rentre quand il se déploie, les pièces déployées sortent
+        const dep = st.dep ?? 0;
+        const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
+        tmpM2.scale(tmpS.set(sc * vis, sc * vis, sc * vis));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
         base.multiply(tmpM2);
@@ -746,7 +800,36 @@ export class Entities {
         } else if (Math.random() < 0.5) this.addBeam(new THREE.Vector3(x, y + 0.6, z), new THREE.Vector3(tx + (Math.random() - 0.5), groundHeight(this.map, tx, tz) + 0.5, tz + (Math.random() - 0.5)), 0x7df9ff, 0.12);
       }
     }
+    // ----- fantômes : unités qui viennent de passer une porte ou des anneaux ; elles s'effacent sur place
+    // (dans une porte : en avançant dans l'horizon) -----
+    this.ghosts = this.ghosts.filter((g) => now - g.t0 < 350);
+    for (const g of this.ghosts) {
+      const t = (now - g.t0) / 350;
+      const km = this.unitMeshes[g.kind];
+      km.ensure(km.n + 1);
+      const sc = km.scale * (1 - t * 0.95);
+      const adv = g.fwd * t * 0.9;
+      tmpQ.setFromAxisAngle(UP, Math.PI / 2 - g.facing);
+      tmpM.compose(tmpV.set(g.x + Math.cos(g.facing) * adv, g.y, g.z + Math.sin(g.facing) * adv), tmpQ, tmpS.set(sc, sc, sc));
+      km.body!.mesh.setMatrixAt(km.n, tmpM);
+      const c = tmpC.copy(g.col).lerp(new THREE.Color(0xa8e8ff), t);
+      setTeamColor(km.body!, km.n, c);
+      for (const p of km.pivots) {
+        tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z).scale(tmpS.set(sc, sc, sc));
+        const base = tmpM.clone();
+        base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
+        base.multiply(tmpM2);
+        p.tm.mesh.setMatrixAt(km.n, base);
+        setTeamColor(p.tm, km.n, c);
+      }
+      km.n++;
+    }
     // ----- bâtiments -----
+    let nvortex = 0;
+    let nkawoosh = 0;
+    let nring = 0;
+    let nbeam = 0;
+    const gates: { x: number; z: number }[] = [];
     let npip = 0;
     let nsup = 0;
     let nlift = 0;
@@ -836,6 +919,50 @@ export class Entities {
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
+      // porte de transit (aux2 : charge d'ouverture, 0 à 100) : gerbe à l'ouverture, puis horizon ondulant
+      if (def.cls === BClass.Gate && build >= 1) {
+        const charge = buf[o + 6];
+        if (charge >= 60) {
+          // anneau : centre (0 ; 2,1 ; 0) du modèle, rayon intérieur 1,26 ; l'horizon est dans le plan de l'anneau
+          const r = 1.26 * sc;
+          const cy = y + 2.1 * sy;
+          tmpV2.set(0, 0, 1).applyQuaternion(tmpQ);
+          if (nvortex < 64) {
+            const k = Math.min(1, (charge - 60) / 15);
+            tmpM2.compose(tmpV.set(cx, cy, cz), tmpQ, tmpS.set(r * k, r * k, 1));
+            this.vortex.setMatrixAt(nvortex++, tmpM2);
+          }
+          if (charge < 90 && nkawoosh < 64) {
+            // gerbe : une poche d'énergie jaillit vers l'avant puis se rétracte
+            const k = Math.sin(((charge - 60) / 30) * Math.PI);
+            const len = Math.max(0.05, k * 2.6 * sc);
+            tmpM2.compose(tmpV.set(cx + tmpV2.x * len, cy, cz + tmpV2.z * len), tmpQ, tmpS.set(r * 0.8, r * 0.8, len));
+            this.kawoosh.setMatrixAt(nkawoosh++, tmpM2);
+          }
+          if (charge >= 100) gates.push({ x: cx, z: cz });
+        }
+      }
+      // anneaux de transport (aux : montée, ticks restants ; aux2 : recharge) : cinq anneaux montent,
+      // éclair de lumière à l'échange, puis ils redescendent dans la plateforme
+      if (def.cls === BClass.Transfer && build >= 1) {
+        const charge = buf[o + 5];
+        const cool = buf[o + 6];
+        const up = charge > 0 ? 1 - charge / 30 : cool > 380 ? (cool - 380) / 20 : 0;
+        if (up > 0) {
+          const rr = 1.2 * sc;
+          for (let k = 0; k < 5 && nring < 400; k++) {
+            const h = (0.35 + k * 0.42) * Math.max(0, Math.min(1, up * 1.6 - k * 0.12));
+            tmpM2.compose(tmpV.set(cx, y + 0.3 + h, cz), tmpQ.identity(), tmpS.set(rr, 1.4, rr));
+            this.ringStack.setMatrixAt(nring++, tmpM2);
+          }
+          const flash = (charge > 0 && charge <= 5) || cool > 390 ? 1 : 0;
+          if (flash && nbeam < 64) {
+            tmpM2.compose(tmpV.set(cx, y + 1.5, cz), tmpQ.identity(), tmpS.set(rr * 0.95, 3, rr * 0.95));
+            this.ringBeam.setMatrixAt(nbeam++, tmpM2);
+          }
+        }
+        tmpQ.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
+      }
       // tapis surélevé : pilier sous la case ; rampe : cage d'ascenseur (deux montants, traverse, filets)
       if (def.cls === BClass.Belt && (floor > 0 || ramp >= 0)) {
         if (ramp < 0) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
@@ -894,9 +1021,12 @@ export class Entities {
           const sweep = ((buf[o + 6] & 3 || 2) * Math.PI) / 2;
           rot = phase === 1 ? (-sweep * timer) / 6 : phase === 2 ? 0 : phase === 3 ? -sweep * (1 - timer / 6) : -sweep;
         } else if (bflags & BF.WORKING && upg === 0) rot = performance.now() / 300;
-        tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc), p.origin.z);
+        // EPPZ d'une ruine : il flotte en tournant tant qu'il n'est pas pris, puis disparaît
+        const gone = p.mode === 4 && !(bflags & BF.WORKING) ? 0.001 : 1;
+        const bobY = p.mode === 4 ? Math.sin(performance.now() / 500) * 0.06 : 0;
+        tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc) + bobY, p.origin.z);
         tmpM2.multiply(new THREE.Matrix4().makeRotationY(rot));
-        tmpM2.scale(tmpS.set(sc, sy, sc));
+        tmpM2.scale(tmpS.set(sc * gone, sy * gone, sc * gone));
         const base = new THREE.Matrix4().compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(1, 1, 1));
         base.multiply(tmpM2);
         p.tm.mesh.setMatrixAt(km.n, base);
@@ -1262,6 +1392,12 @@ export class Entities {
     this.wrecks.count = nw;
     this.wrecks.instanceMatrix.needsUpdate = true;
     for (const w of this.wreckMeshes.values()) w.mesh.instanceMatrix.needsUpdate = true;
+    // ----- porte, anneaux -----
+    this.openGates = gates;
+    for (const [m, n] of [[this.vortex, nvortex], [this.kawoosh, nkawoosh], [this.ringStack, nring], [this.ringBeam, nbeam]] as const) {
+      m.count = n;
+      m.instanceMatrix.needsUpdate = true;
+    }
     // ----- boucliers -----
     let ns = 0;
     o = f.shieldOff;
@@ -1963,6 +2099,68 @@ function diagAtlas(): THREE.Texture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+/**
+ * Horizon des événements d'une porte : disque bleu d'eau lumineuse, ondes concentriques qui partent du
+ * centre, bord plus clair, reflets qui tournent lentement.
+ */
+function vortexMaterial(): THREE.Material {
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  const p = uv().sub(vec2(0.5, 0.5));
+  const d = p.length().mul(2);
+  const ripple = d.mul(22).sub(time.mul(3.2)).sin().mul(0.5).add(0.5);
+  const swirl = p.x.mul(9).add(time.mul(0.8)).sin().mul(p.y.mul(9).sub(time.mul(0.6)).cos()).mul(0.5).add(0.5);
+  const edge = d.pow(6);
+  const glow = ripple.mul(0.35).add(swirl.mul(0.25)).add(edge.mul(0.9)).add(0.3);
+  m.colorNode = vec3(0.35, 0.7, 1.4).mul(glow).add(vec3(0.6, 0.85, 1).mul(edge));
+  m.opacityNode = float(0.85).mul(float(1).sub(d.pow(14)));
+  return m;
+}
+
+/** Motif d'alvéoles hexagonales (traits blancs sur fond transparent), répété sur la bulle des boucliers. */
+function hexTexture(): THREE.CanvasTexture {
+  const w = 128;
+  const h = Math.round(w * Math.sqrt(3));
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d")!;
+  g.strokeStyle = "rgba(255,255,255,1)";
+  g.lineWidth = 3;
+  const r = w / 3;
+  const hex = (cx: number, cy: number) => {
+    g.beginPath();
+    for (let k = 0; k <= 6; k++) {
+      const a = (Math.PI / 3) * k;
+      const x = cx + r * Math.cos(a);
+      const y = cy + r * Math.sin(a);
+      if (k === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+  };
+  // pavage qui se raccorde sur les bords (deux colonnes décalées)
+  const dy = (r * Math.sqrt(3)) / 2;
+  for (const [cx, cy] of [[0, 0], [w, 0], [0, h], [w, h], [w / 2, h / 2], [r * 1.5 - w / 2 + w / 2, dy], [0, h / 2], [w, h / 2], [w / 2, 0], [w / 2, h]]) hex(cx, cy);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/**
+ * Bulle de bouclier détaillée : bord lumineux (plus le regard est rasant, plus elle brille), alvéoles
+ * hexagonales qui glissent lentement, vague lumineuse qui parcourt la bulle. Couleur : celle de l'instance.
+ */
+function shieldMaterial(): THREE.Material {
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const hex = tslTexture(hexTexture(), uv().mul(vec2(16, 8)).add(vec2(time.mul(0.015), 0))).a;
+  const rim = float(1).sub(normalView.z.abs()).pow(2.4);
+  const wave = uv().y.mul(26).sub(time.mul(1.6)).sin().mul(0.5).add(0.5);
+  const a = rim.mul(0.75).add(hex.mul(0.22).mul(wave.mul(0.6).add(0.4))).add(0.025);
+  m.colorNode = vec3(1).mul(rim.mul(1.4).add(1));
+  m.opacityNode = a.clamp(0, 1);
+  return m;
 }
 
 const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030, 11: 0xc8ecff, 13: 0x9adf3a };

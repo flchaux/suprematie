@@ -10,6 +10,7 @@ import { roach } from "./experimentales/roach.ts";
 import { spider } from "./experimentales/spider.ts";
 import { star_cruiser } from "./experimentales/star_cruiser.ts";
 import { BEAST_MODELS } from "./faune.ts";
+import { ANCIENT_UNIT_MODELS } from "./anciens.ts";
 
 /**
  * Place une pièce le long d'un axe incliné (canon, rampe) : `base` = origine de l'axe, `elev` = angle
@@ -1807,4 +1808,5 @@ export const UNIT_MODELS: Record<string, Model> = {
   hyper_cruiser,
   // faune : le mordeur en trois stades (voir faune.ts)
   ...BEAST_MODELS,
+  ...ANCIENT_UNIT_MODELS,
 };

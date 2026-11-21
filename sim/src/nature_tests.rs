@@ -73,10 +73,12 @@ fn initial_nests_only_in_disputed_zones() {
         let nests = w.nature.nests.len();
         assert!(nests >= 2, "{np} joueurs : {nests} nids");
         let min = (60 * TILE) as i64;
+        assert!(w.nature.nests.iter().any(|n| n.species == SPECIES_REPLICATORS), "pas de ruche de réplicateurs");
+        assert!(!w.nature.ruins.is_empty(), "pas de ruine des Anciens");
         for n in &w.nature.nests {
             let b = w.building(n.b).expect("nid vivant");
             let bb = &w.buildings[b];
-            assert_eq!(bb.kind, B_NEST);
+            assert_eq!(bb.kind, if n.species == SPECIES_REPLICATORS { B_HIVE } else { B_NEST });
             assert_eq!(bb.owner as usize, np);
             assert_eq!(n.horde.len(), 3);
             let (cx, cy) = bb.center();

@@ -274,7 +274,8 @@ export class GameClient {
     (window as unknown as { __sfx?: unknown }).__sfx = { renderOffline, weaponSize };
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;
-    this.demoOrders = scene === "formation";
+    // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
+    this.demoOrders = scene === "formation" || scene === "anciens";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -553,6 +554,13 @@ export class GameClient {
             this.alertPos = { x: c / TILE, z: d / TILE };
           }
           break;
+        case EV.EPPZ:
+          // EPPZ capturé dans une ruine des Anciens
+          if (a === ui.me) {
+            pushMessage("EPPZ capturé ! Posez un socle à EPPZ (Énergie) : 25 000 kW sans combustible", "good");
+            sfx.research();
+          } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a capturé un EPPZ`, "alert");
+          break;
         case EV.SHARDS:
           // nid détruit : fragments d'énergie gagnés
           if (a === ui.me) {
@@ -669,6 +677,7 @@ export class GameClient {
       ui.teamStock = Array.from(me.teamStock);
       ui.stockCap = me.stockCap;
       ui.shards = me.shards ?? 0;
+      ui.eppz = me.eppz ?? 0;
       ui.produced = Array.from(me.produced);
       ui.consumed = Array.from(me.consumed);
       ui.powerProd = me.powerProd;

@@ -53,4 +53,7 @@ export const UNIT_DESCS: Record<string, string> = {
   beast_s: "Petit mordeur de la faune sauvage : rapide et fragile, il mord au corps-à-corps ce qui est au sol (unités, bâtiments, murs qui lui barrent la route). Les nids en font naître en début de partie ; il attaque en horde avec les autres bêtes de son nid. Toutes les bêtes chargent (40 % plus vite) l'unité qu'elles poursuivent quand elle est à moins de 12 cases.",
   beast_m: "Mordeur adulte : plus massif et mieux cuirassé que le petit. Les nids en font naître de plus en plus souvent à mesure que la faune évolue avec le temps de jeu.",
   beast_l: "Grand mordeur : énorme bête cuirassée aux mandibules qui broient les murs et les tourelles. N'apparaît que lorsque la faune a bien évolué, au bout d'une demi-heure de jeu environ.",
+  roll_droid: "Droïde roulant : il roule en boule, très vite (plus vite qu'une moto), sans pouvoir tirer. À l'arrêt devant une cible, il se déplie en moins d'une seconde en tourelle à deux blasters, protégée par un bouclier personnel. Il se replie dès qu'on le fait bouger.",
+  replicator: "Réplicateur : faune mécanique faite de blocs. Insensible à toutes les armes, sauf celle du disrupteur. Il dévore les bâtiments, et chaque bâtiment qu'il abat fait naître un autre réplicateur.",
+  disruptor: "Disrupteur : fantassin-robot au fusil à bobines, la seule arme qui défait les réplicateurs et leurs ruches. Contre tout le reste, il ne fait qu'un cinquième de ses dégâts.",
 };

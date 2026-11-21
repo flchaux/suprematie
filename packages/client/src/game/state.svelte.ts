@@ -28,6 +28,8 @@ export const ui = $state({
   stockCap: 0,
   /** fragments d'énergie en réserve (surcadençage) */
   shards: 0,
+  /** EPPZ en réserve (ruines des Anciens) */
+  eppz: 0,
   produced: [] as number[],
   consumed: [] as number[],
   powerProd: 0,

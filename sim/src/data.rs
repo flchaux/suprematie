@@ -264,7 +264,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 59] = [
+pub const WEAPONS: [WeaponDef; 62] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -326,6 +326,11 @@ pub const WEAPONS: [WeaponDef; 59] = [
     w!(140, 2, 24, Bite, 0, 0, M_LAND),                                 // 57 grand mordeur
     // crachat du nid : contre ce qui vole ou flotte, que les morsures n'atteignent pas
     w!(55, 26, 25, Spit, 18, 96, M_AIR | M_NAVAL),                      // 58 nid de mordeurs
+    w!(30, 16, 12, Blaster, 45, 0, M_SURF, salvo: 2),                   // 59 droïde roulant (déployé)
+    // réplicateurs : mâchoires de blocs, contre ce qui est au sol (bâtiments surtout)
+    w!(26, 1, 14, Bite, 0, 0, M_LAND, prefer_buildings: true),          // 60 réplicateur
+    // disrupteur : seule arme qui défait les réplicateurs (dégâts divisés par 5 contre le reste)
+    w!(90, 16, 20, Ion, 30, 64, M_SURF),                                // 61 disrupteur
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -443,6 +448,8 @@ pub enum BClass {
     Roboport,
     /// Nid de la faune (voir nature.rs) : fait naître des bêtes ; jamais posé par un joueur.
     Nest,
+    /// Ruine des Anciens : garde un EPPZ, qu'un joueur capture en y stationnant (voir nature.rs).
+    Ruin,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -574,8 +581,14 @@ pub const B_MAIN_GENERATOR: u16 = 46;
 pub const B_NEST: u16 = 47;
 /// Centrale géothermique : sur un geyser, sans combustible, production qui ondule.
 pub const B_GEOTHERMAL: u16 = 48;
+/// Ruche des réplicateurs (un nid de la faune, voir nature.rs).
+pub const B_HIVE: u16 = 49;
+/// Ruine des Anciens, qui garde un EPPZ.
+pub const B_RUIN: u16 = 50;
+/// Socle à EPPZ : énorme production d'énergie, sans combustible, pour qui a capturé un EPPZ.
+pub const B_EPPZ_SOCKET: u16 = 51;
 
-pub const BUILDINGS: [BuildingDef; 49] = [
+pub const BUILDINGS: [BuildingDef; 52] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -603,7 +616,7 @@ pub const BUILDINGS: [BuildingDef; 49] = [
     BuildingDef { key: "heavy_turret", name: "Tourelle lourde", size: (2, 2), hp: 5000, cost: &[(STEEL, 20), (AMMO, 10), (CIRCUIT, 5)], build: 10, tech: 14, class: BClass::Turret, weapon: 35, vision: 30, ..BD },
     BuildingDef { key: "fixed_artillery", name: "Artillerie fixe", size: (2, 2), hp: 4000, power_use: 100, cost: &[(STEEL, 40), (AMMO, 20), (PROCESSOR, 10)], build: 20, tech: 23, class: BClass::Turret, weapon: 36, vision: 20, ..BD },
     BuildingDef { key: "shield_gen", name: "Générateur de bouclier", size: (2, 2), hp: 1500, power_use: 400, cost: &[(STEEL, 15), (PROCESSOR, 8)], build: 10, tech: 15, class: BClass::Shield, shield_r: 14, shield_hp: 8000, ..BD },
-    BuildingDef { key: "transfer", name: "Plateforme de transfert", size: (2, 2), hp: 2000, power_use: 300, cost: &[(STEEL, 20), (PROCESSOR, 10)], build: 15, tech: 19, class: BClass::Transfer, passable: true, ..BD },
+    BuildingDef { key: "transfer", name: "Anneaux de transport", size: (2, 2), hp: 2000, power_use: 300, cost: &[(STEEL, 20), (PROCESSOR, 10)], build: 15, tech: 19, class: BClass::Transfer, passable: true, ..BD },
     BuildingDef { key: "gate", name: "Porte de transit", size: (3, 3), hp: 6000, power_use: 200, cost: &[(STEEL, 40), (PROCESSOR, 20), (REFINED_CRYSTAL, 20)], build: 30, tech: 27, class: BClass::Gate, passable: true, ..BD },
     BuildingDef { key: "area_shield", name: "Bouclier de zone", size: (2, 2), hp: 4000, power_use: 2000, cost: &[(COMPOSITE, 40), (PROCESSOR, 30), (REFINED_CRYSTAL, 20)], build: 40, tech: 28, class: BClass::Shield, shield_r: 30, shield_hp: 30000, ..BD },
     BuildingDef { key: "crystal_reactor", name: "Réacteur à cristal", size: (3, 3), hp: 5000, power_prod: 12000, cost: &[(COMPOSITE, 30), (PROCESSOR, 20), (REFINED_CRYSTAL, 30)], build: 40, tech: 30, class: BClass::Power, supply: 14, connect: 30, ..BD },
@@ -631,6 +644,12 @@ pub const BUILDINGS: [BuildingDef; 49] = [
     BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, weapon: 58, vision: 0, ..BD },
     // centrale géothermique : posée sur un geyser, elle produit sans combustible (voir geo_output)
     BuildingDef { key: "geothermal", name: "Centrale géothermique", size: (3, 3), hp: 2500, power_prod: 1600, cost: &[(STEEL, 15), (GEAR, 10), (CIRCUIT, 8)], build: 12, tech: 5, class: BClass::Power, supply: 10, connect: 22, deposit: GEYSER, ..BD },
+    // réplicateurs : ruche (un nid de la faune, insensible comme ses réplicateurs)
+    BuildingDef { key: "replicator_hive", name: "Ruche de réplicateurs", size: (3, 3), hp: 4000, class: BClass::Nest, vision: 0, ..BD },
+    // ruine des Anciens : posée par la carte (faune active), indestructible ; son EPPZ se capture
+    BuildingDef { key: "ancient_ruin", name: "Ruine des Anciens", size: (3, 3), hp: 1_000_000, class: BClass::Ruin, vision: 0, ..BD },
+    // socle à EPPZ : demande un EPPZ capturé (Player::eppz), produit sans combustible
+    BuildingDef { key: "eppz_socket", name: "Socle à EPPZ", size: (2, 2), hp: 3000, power_prod: 25000, cost: &[(STEEL, 20), (CIRCUIT, 10)], build: 15, class: BClass::Power, supply: 14, connect: 30, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -750,12 +769,15 @@ pub const U_RAILGUN_SHIP: u16 = 48;
 pub const U_BEAST_S: u16 = 49;
 pub const U_BEAST_M: u16 = 50;
 pub const U_BEAST_L: u16 = 51;
+pub const U_ROLL_DROID: u16 = 52;
+pub const U_REPLICATOR: u16 = 53;
+pub const U_DISRUPTOR: u16 = 54;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 52] = [
+pub const UNITS: [UnitDef; 55] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, tier: 3, altitude: 170, ..UD },
@@ -810,6 +832,11 @@ pub const UNITS: [UnitDef; 52] = [
     UnitDef { key: "beast_s", name: "Petit mordeur", hp: 120, speed: 46, radius: 90, weapons: &[55], vision: 16, factory: FactoryKind::None, tier: 1, ..UD },
     UnitDef { key: "beast_m", name: "Mordeur", hp: 450, speed: 40, radius: 150, weapons: &[56], vision: 18, factory: FactoryKind::None, tier: 2, ..UD },
     UnitDef { key: "beast_l", name: "Grand mordeur", hp: 1600, speed: 34, radius: 230, weapons: &[57], vision: 20, factory: FactoryKind::None, tier: 3, ..UD },
+    // droïde roulant : roule en boule (sans tirer), se déploie à l'arrêt en tourelle à bouclier
+    UnitDef { key: "roll_droid", name: "Droïde roulant", hp: 650, speed: 72, radius: 110, weapons: &[59], cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 1)], build: 9, tech: 12, shield_r: 2, shield_hp: 900, tier: 3, ..UD },
+    // réplicateur : faune mécanique, insensible à toute arme sauf celle du disrupteur (voir combat.rs)
+    UnitDef { key: "replicator", name: "Réplicateur", hp: 300, speed: 44, radius: 100, weapons: &[60], vision: 16, factory: FactoryKind::None, tier: 2, ..UD },
+    UnitDef { key: "disruptor", name: "Disrupteur", hp: 450, speed: 32, radius: 120, weapons: &[61], cost: &[(IRON_PLATE, 8), (GEAR, 2), (CIRCUIT, 3)], build: 6, tech: 2, tier: 1, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

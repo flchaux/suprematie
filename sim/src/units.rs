@@ -392,11 +392,13 @@ fn deconstruct(w: &mut World, s: usize, b: usize) -> bool {
         // fragments d'énergie installés : rendus au joueur
         let shards = bb.shards as u32;
         bb.shards = 0;
+        let eppz = (bb.kind == B_EPPZ_SOCKET) as u32;
         // rendre aussi le contenu
         let inv = bb.inv;
         let out = bb.out;
         let _ = (inv, out);
         w.players[owner].shards += shards;
+        w.players[owner].eppz += eppz;
         buildings::remove_building(w, b, false);
         return false;
     }
@@ -566,7 +568,11 @@ pub fn update_units(w: &mut World) {
                 w.units.x[s] = x + ddx;
                 w.units.y[s] = y + ddy;
             }
-            gate_check(w, s);
+            if w.units.cold[s].warp > 0 {
+                w.units.cold[s].warp -= 1;
+            } else {
+                gate_check(w, s);
+            }
         }
     }
 }
@@ -1027,18 +1033,24 @@ fn gate_check(w: &mut World, s: usize) {
     if !w.buildings[t].working {
         return;
     }
+    // l'unité ressort de l'horizon de la porte d'arrivée, puis s'en écarte de quelques cases vers l'avant
     let (tx, ty) = w.buildings[t].center();
+    let (fdx, fdy) = crate::belts::DIRS[(w.buildings[t].dir & 3) as usize];
     let m = pass_mask(udef(w.units.kind[s]).layer);
-    let (fx, fy) = buildings::free_spot_near(w, tx, ty + 4 * TILE, m);
-    w.ev(EV_TELEPORT, x, y, fx, fy);
-    w.units.x[s] = fx;
-    w.units.y[s] = fy;
-    w.units.px[s] = fx;
-    w.units.py[s] = fy;
-    // l'ordre de déplacement vers la porte est terminé
+    let (ox, oy) = (tx + fdx * TILE / 2, ty + fdy * TILE / 2);
+    let (gx, gy) = buildings::free_spot_near(w, tx + fdx * 5 * TILE, ty + fdy * 5 * TILE, m);
+    w.ev(EV_TELEPORT, x, y, ox, oy);
+    w.units.x[s] = ox;
+    w.units.y[s] = oy;
+    w.units.px[s] = ox;
+    w.units.py[s] = oy;
+    w.units.facing[s] = w.trig.atan2(fdy as i64, fdx as i64);
+    w.units.cold[s].warp = 40;
+    // l'ordre de déplacement vers la porte est terminé ; l'unité s'éloigne de l'horizon
     if let Some(Order::Move { .. }) = w.units.cold[s].orders.first() {
         pop_order(w, s);
     }
+    w.units.cold[s].orders.insert(0, Order::Move { x: gx, y: gy, gx, gy, attack: false, eta: 0 });
 }
 
 /// Porte-avions : chaque seconde, les appareils alliés à moins de 8 cases regagnent 1 % de leurs points de vie.
@@ -1102,12 +1114,14 @@ fn special(w: &mut World, s: usize) {
             let c = &mut w.units.cold[s];
             c.reveal = c.reveal.saturating_sub(1);
         }
-        U_HEAVY_ARTY | U_DEPLOY_TURRET => {
+        U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID => {
+            // droïde roulant : il se déplie en moins d'une seconde
+            let delay = if kind == U_ROLL_DROID { 16 } else { 60 };
             let c = &mut w.units.cold[s];
             let wants = c.wtarget[0] != NONE || matches!(c.orders.first(), Some(Order::AttackGround { .. }) | Some(Order::Attack { .. }));
             if wants && !c.deployed && w.units.px[s] == w.units.x[s] && w.units.py[s] == w.units.y[s] {
                 c.timer += 1;
-                if c.timer >= 60 {
+                if c.timer >= delay {
                     c.deployed = true;
                     c.timer = 0;
                 }

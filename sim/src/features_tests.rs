@@ -2079,7 +2079,8 @@ fn showcase_demo_places_every_land_building_and_unit() {
         w.step(&[]);
     }
     // tous les bâtiments terrestres (ceux qui demandent de l'eau manquent) et toutes les unités du joueur 0
-    let land = BUILDINGS.iter().filter(|d| !d.water).count();
+    // ceux de la faune (nid, ruche, ruine) ne se posent pas par un joueur
+    let land = BUILDINGS.iter().filter(|d| !d.water && !matches!(d.class, BClass::Nest | BClass::Ruin)).count();
     let placed = w.buildings.iter().filter(|b| b.alive && b.owner == 0).count();
     assert!(placed >= land - 2, "{placed} bâtiments posés sur {land}");
     let units = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0).count();

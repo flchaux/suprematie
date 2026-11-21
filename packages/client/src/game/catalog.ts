@@ -7,7 +7,7 @@ export const BUILD_CATS: [string, string, string[]][] = [
   ["Production", "production", ["extractor", "furnace", "assembler1", "assembler2", "assembler3", "refinery", "chemical", "lab", "depot"]],
   ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "long_inserter", "splitter", "sorter", "overflow", "collector"]],
   ["Transport", "unload", ["warehouse", "rail", "station", "cargo_pad", "roboport", "gift_portal"]],
-  ["Énergie", "energy", ["main_generator", "generator", "pylon", "hydro_plant", "crystal_reactor", "geothermal"]],
+  ["Énergie", "energy", ["main_generator", "generator", "pylon", "hydro_plant", "crystal_reactor", "geothermal", "eppz_socket"]],
   ["Usines", "factory", ["land_factory", "air_factory", "naval_factory", "gantry"]],
   ["Défense", "defense", ["radar", "wall", "light_turret", "aa_turret", "heavy_turret", "fixed_artillery", "shield_gen", "antimissile"]],
   ["Spécial", "special", ["transfer", "gate", "area_shield", "missile_silo", "beacon", "orbital"]],

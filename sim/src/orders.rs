@@ -583,6 +583,9 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     for (k, &(it, _)) in def.cost.iter().enumerate() {
                         w.players[p as usize].stock[it as usize] += paid[k] as i32;
                     }
+                    if w.buildings[b].kind == B_EPPZ_SOCKET {
+                        w.players[p as usize].eppz += 1;
+                    }
                     buildings::remove_building(w, b, false);
                 }
             }
@@ -646,43 +649,23 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
             w.ev(EV_ORBITAL, p as i32, x, y, 40);
         }
         BClass::Transfer => {
+            // anneaux de transport : portée moyenne (RINGS_RANGE cases) ; les anneaux montent sur les deux
+            // plateformes, puis ce qui est dessus s'échange (voir logistics::rings_exchange)
             let Some(t) = w.building(target) else { return };
             let ok = w.buildings[t].owner == p && w.buildings[t].def().class == BClass::Transfer && w.buildings[t].complete() && t != b;
-            if !ok || w.buildings[b].cooldown > 0 || !w.buildings[b].working {
+            if !ok || w.buildings[b].cooldown > 0 || !w.buildings[b].working || w.buildings[b].charge > 0 || w.buildings[t].charge > 0 {
                 return;
             }
             let (cx, cy) = w.buildings[b].center();
             let (tx, ty) = w.buildings[t].center();
-            if dist2(cx, cy, tx, ty) > (120 * TILE as i64).pow(2) {
+            if dist2(cx, cy, tx, ty) > (crate::logistics::RINGS_RANGE as i64 * TILE as i64).pow(2) {
                 return;
             }
-            let mut moved = 0;
-            for s in 0..w.units.alive.len() {
-                if moved >= 12 {
-                    break;
-                }
-                if !w.units.alive[s] || w.units.owner[s] != p || w.units.cold[s].carried_by != NONE {
-                    continue;
-                }
-                let l = udef(w.units.kind[s]).layer;
-                if !matches!(l, Layer::Land | Layer::Hover) || udef(w.units.kind[s]).tier == 6 {
-                    continue;
-                }
-                if dist2(w.units.x[s], w.units.y[s], cx, cy) <= (4 * TILE as i64).pow(2) {
-                    let ox = w.units.x[s] - cx;
-                    let oy = w.units.y[s] - cy;
-                    let m = crate::units::pass_mask(l);
-                    let (fx, fy) = buildings::free_spot_near(w, tx + ox, ty + oy, m);
-                    w.ev(EV_TELEPORT, w.units.x[s], w.units.y[s], fx, fy);
-                    w.units.x[s] = fx;
-                    w.units.y[s] = fy;
-                    w.units.px[s] = fx;
-                    w.units.py[s] = fy;
-                    clear_orders(w, s);
-                    moved += 1;
-                }
-            }
-            w.buildings[b].cooldown = 400;
+            let rt = w.building_ref(t);
+            w.buildings[b].charge = crate::logistics::RINGS_TIME;
+            w.buildings[b].link = rt;
+            w.buildings[t].charge = crate::logistics::RINGS_TIME;
+            w.buildings[t].link = NONE;
         }
         BClass::Gate => {
             let Some(t) = w.building(target) else { return };

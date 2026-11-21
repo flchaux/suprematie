@@ -49,8 +49,10 @@ pub struct Player {
     pub stock_cap: i32,
     /// fragments d'énergie en réserve (gagnés en détruisant des nids ; ils permettent le surcadençage)
     pub shards: u32,
+    /// EPPZ en réserve (capturés dans les ruines des Anciens, posés dans un socle)
+    pub eppz: u32,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap, shards });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap, shards, eppz });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -231,8 +233,10 @@ pub struct UnitCold {
     pub last_hit: u32,
     /// commando furtif : ticks pendant lesquels il reste visible après avoir tiré (0 : camouflé)
     pub reveal: u16,
+    /// sortie d'une porte de transit : ticks pendant lesquels l'unité ne peut pas y rentrer à nouveau
+    pub warp: u16,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal, warp });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -462,6 +466,8 @@ pub const EV_FUEL_LOW: i32 = 41;
 pub const EV_FUEL_DRY: i32 = 42;
 /// nid détruit : le joueur a gagné des fragments d'énergie (a : joueur, e : nombre)
 pub const EV_SHARDS: i32 = 43;
+/// EPPZ capturé dans une ruine des Anciens (a : joueur, b, c : position)
+pub const EV_EPPZ: i32 = 44;
 
 /// Débit des bâtiments : une minute découpée en tranches de 10 s.
 pub const FLOW_SLICE: u32 = 200;
@@ -563,6 +569,7 @@ impl World {
                 losses: 0,
                 stock_cap: STOCK_BASE,
                 shards: 0,
+                eppz: 0,
             });
         }
         // faune : un joueur caché de plus, après les vrais joueurs

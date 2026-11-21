@@ -16,9 +16,9 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient les 52 unités (dont 3 bêtes de la faune), 49 bâtiments (dont le nid et la centrale géothermique) et 48 recherches", () => {
-    expect(data.units.length).toBe(52);
-    expect(data.buildings.length).toBe(49);
+  it("contient les 55 unités (dont 3 bêtes et le réplicateur de la faune), 52 bâtiments (dont le nid, la ruche, la ruine et le socle à EPPZ) et 48 recherches", () => {
+    expect(data.units.length).toBe(55);
+    expect(data.buildings.length).toBe(52);
     expect(data.techs.length).toBe(48);
     expect(data.units[0].key).toBe("commander");
     // la faune : aucune usine ne produit ses bêtes, et son nid n'est pas une construction de joueur

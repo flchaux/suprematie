@@ -86,6 +86,9 @@ export const BUILDINGS = {
   main_generator: "a large industrial power station block with a turbine hall, an hydrocarbon fuel tank with an amber gauge, two smokestacks and a tall transmitter mast with glowing rings",
   collector: "a short conveyor belt segment straddled by a small boxy gantry hood on four legs, a glowing amber suction mouth over the belt, a small hopper on top",
   nest: "an alien creature nest: an organic mound of earth and brown chitin with dark burrow holes, curved bone ribs and clusters of glowing amber eggs",
+  replicator_hive: "a crashed alien ship hull made of grey metal blocks with glowing blue seams, loose metal cubes scattered around",
+  ancient_ruin: "ancient alien stone ruins with broken pale columns, a carved arch with glowing glyphs and a pedestal holding a floating amber energy crystal",
+  eppz_socket: "a power socket cradle with three claws holding a glowing amber hexagonal energy crystal, glowing rings",
   gift_portal: "a glowing gateway arch on a platform where allied troops walk through to join another commander",
   roboport: "a logistics robot hub: a square tower with a landing pad on top, beacon lights and small flying robots",
   gate: "a large circular transit portal gate with a swirling energy field",
@@ -150,6 +153,9 @@ export const UNITS = {
   beast_s: "a small six-legged alien beetle creature with a segmented brown chitin carapace, bone spines on its back, hooked mandibles and glowing amber eyes",
   beast_m: "a six-legged alien beetle beast with a segmented brown chitin carapace, rows of bone spines, big hooked mandibles, a red maw and glowing amber eyes",
   beast_l: "a huge six-legged armored alien beetle beast with thick brown chitin shoulder plates, curved bone horns, crushing mandibles and glowing amber eyes",
+  roll_droid: "a bronze combat droid deployed on three arched legs with twin blasters, next to its rolled-up wheel form",
+  replicator: "a small spider-like robot made of grey metal blocks with a glowing blue core and six blocky legs",
+  disruptor: "a stocky robot soldier carrying a long rifle with glowing blue coils",
 };
 
 /** Illustrations (pas d'arrière-plan transparent). */

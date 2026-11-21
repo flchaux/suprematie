@@ -262,8 +262,12 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
     if !w.players[owner as usize].has_tech(def.tech) {
         return false;
     }
-    // un nid n'appartient qu'à la faune, et la faune ne pose que des nids
-    if (def.class == BClass::Nest) != (w.team_of(owner) == crate::nature::NATURE_TEAM) {
+    // un nid (ou une ruine des Anciens) n'appartient qu'à la faune, et la faune ne pose que ceux-là
+    if matches!(def.class, BClass::Nest | BClass::Ruin) != (w.team_of(owner) == crate::nature::NATURE_TEAM) {
+        return false;
+    }
+    // socle à EPPZ : il faut un EPPZ capturé
+    if kind == B_EPPZ_SOCKET && w.players[owner as usize].eppz == 0 {
         return false;
     }
     let (bw, bh) = dims(kind, dir);
@@ -310,6 +314,10 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
 pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
     if !can_place(w, owner, kind, x, y, dir) {
         return None;
+    }
+    // le socle reçoit un EPPZ du joueur (rendu si le chantier est annulé ou le socle démonté)
+    if kind == B_EPPZ_SOCKET {
+        w.players[owner as usize].eppz -= 1;
     }
     let def = bdef(kind);
     let (bw, bh) = dims(kind, dir);
@@ -481,7 +489,7 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
 /// Énergie que donne cet objet au générateur `kind` (0 : il ne le brûle pas). Le réacteur à cristal brûle
 /// des cellules d'énergie, les autres de l'hydrocarbure ou du carburant.
 pub fn fuel_energy(kind: u16, item: u8) -> i32 {
-    if bdef(kind).class != BClass::Power || kind == B_GEOTHERMAL {
+    if bdef(kind).class != BClass::Power || crate::buildings::fuelless(kind) {
         return 0;
     }
     match (kind == B_CRYSTAL_REACTOR, item) {
@@ -557,7 +565,7 @@ fn feed_generator_from_depot(w: &mut World, b: usize) {
 pub fn gen_output(w: &World, b: usize) -> i32 {
     let bb = &w.buildings[b];
     let Some(n) = w.nets.get(bb.net as usize) else { return 0 };
-    if bb.net == 0 || (bb.fuel <= 0 && bb.kind != B_GEOTHERMAL) || n.prod <= 0 {
+    if bb.net == 0 || (bb.fuel <= 0 && !crate::buildings::fuelless(bb.kind)) || n.prod <= 0 {
         return 0;
     }
     (gen_prod(w, bb) as i64 * (n.demand.min(n.prod)) as i64 / n.prod as i64) as i32
@@ -600,7 +608,7 @@ pub fn rebuild_power(w: &mut World) {
             .filter(|&i| {
                 let b = &w.buildings[i];
                 // un générateur sans combustible ne forme plus de zone et ne relie plus ses voisins
-                b.alive && b.owner == owner && b.complete() && b.def().supply > 0 && !(b.def().class == BClass::Power && b.fuel <= 0 && b.kind != B_GEOTHERMAL)
+                b.alive && b.owner == owner && b.complete() && b.def().supply > 0 && !(b.def().class == BClass::Power && b.fuel <= 0 && !crate::buildings::fuelless(b.kind))
             })
             .collect();
         // union-find
@@ -725,7 +733,7 @@ pub fn power_tick(w: &mut World) {
         let mut cap = 0i64;
         for &g in &gens {
             let bb = &w.buildings[g as usize];
-            if bb.alive && (bb.fuel > 0 || bb.kind == B_GEOTHERMAL) {
+            if bb.alive && (bb.fuel > 0 || crate::buildings::fuelless(bb.kind)) {
                 cap += gen_prod(w, bb) as i64;
             }
         }
@@ -735,7 +743,7 @@ pub fn power_tick(w: &mut World) {
             for &g in &gens {
                 let bb = &mut w.buildings[g as usize];
                 // la géothermie ne brûle rien
-                if bb.alive && bb.fuel > 0 && bb.kind != B_GEOTHERMAL {
+                if bb.alive && bb.fuel > 0 && !crate::buildings::fuelless(bb.kind) {
                     let burn = (power_prod_of(bb) as i64 * used / cap).max(1) as i32;
                     bb.fuel = (bb.fuel - burn).max(0);
                     let (owner, kind) = (bb.owner as i32, bb.kind as i32);
@@ -1825,6 +1833,26 @@ pub fn update_buildings(w: &mut World) {
                 if bb.cooldown > 0 {
                     bb.cooldown -= 1;
                 }
+                // anneaux de transport : la séquence monte, puis l'échange a lieu ; en relance automatique
+                // (démonstration : `repeat`, partenaire dans `target`), une nouvelle séquence part dès la recharge finie
+                if bb.def().class == BClass::Transfer && bb.repeat && bb.charge == 0 && bb.cooldown == 0 && bb.working {
+                    let partner = bb.target;
+                    if let Some(t) = w.building(partner) {
+                        if w.buildings[t].charge == 0 {
+                            w.buildings[t].charge = crate::logistics::RINGS_TIME;
+                            let bb = &mut w.buildings[b];
+                            bb.charge = crate::logistics::RINGS_TIME;
+                            bb.link = partner;
+                        }
+                    }
+                }
+                let bb = &mut w.buildings[b];
+                if bb.charge > 0 {
+                    bb.charge -= 1;
+                    if bb.charge == 0 && bb.link != NONE {
+                        crate::logistics::rings_exchange(w, b);
+                    }
+                }
             }
             _ => {}
         }
@@ -1942,6 +1970,12 @@ pub fn gen_prod(w: &World, bb: &Building) -> i32 {
     let p = if bb.kind == B_GEOTHERMAL { geo_output(w, bb) } else { power_prod_of(bb) };
     // cadence : un générateur surcadencé produit (et brûle) d'autant plus
     (p as i64 * clock_of(bb) as i64 / 100) as i32
+}
+
+/// Générateur sans combustible : centrale géothermique, socle à EPPZ.
+#[inline]
+pub fn fuelless(kind: u16) -> bool {
+    matches!(kind, B_GEOTHERMAL | B_EPPZ_SOCKET)
 }
 
 /// Période (ticks) de l'ondulation d'un geyser : une minute.

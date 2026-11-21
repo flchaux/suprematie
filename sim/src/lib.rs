@@ -327,6 +327,15 @@ pub extern "C" fn showcase_demo() -> u32 {
     h
 }
 
+/// Démo des anneaux, de la porte et des droïdes (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn anciens_demo() -> u32 {
+    let w = stress::anciens_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des déplacements en formation orientée (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn formation_demo() -> u32 {
@@ -369,6 +378,8 @@ mod twins_tests;
 mod harvest_tests;
 #[cfg(test)]
 mod production_tests;
+#[cfg(test)]
+mod anciens_tests;
 #[cfg(test)]
 mod main_gen_tests;
 pub mod stress;
