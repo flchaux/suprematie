@@ -3,8 +3,9 @@ import { chromium } from "playwright";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 
-export async function launchBrowser(extraArgs = []) {
+/** `opts` : options de Playwright, par exemple { headless: false } pour WebGPU (sous xvfb-run). */
+export async function launchBrowser(extraArgs = [], opts = {}) {
   const candidates = [process.env.CHROME_PATH, `${homedir()}/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`].filter(Boolean);
   const executablePath = candidates.find((p) => existsSync(p));
-  return chromium.launch({ executablePath, args: ["--enable-unsafe-webgpu", "--enable-webgl", "--ignore-gpu-blocklist", ...extraArgs] });
+  return chromium.launch({ executablePath, args: ["--enable-unsafe-webgpu", "--enable-webgl", "--ignore-gpu-blocklist", ...extraArgs], ...opts });
 }

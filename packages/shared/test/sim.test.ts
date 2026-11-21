@@ -84,6 +84,29 @@ describe("simulation", () => {
     expect(v2.buildings.some((b) => b.kind === 13 && b.build >= 65536)).toBe(true);
     expect(v2.players[0].stock[6]).toBeLessThan(300);
   });
+  it("la fiche d'un tapis donne son contenu (case et file), null pour un autre bâtiment", async () => {
+    const a = await Sim.load(wasm);
+    a.init(params);
+    const belt = data.buildings.findIndex((b) => b.key === "belt1");
+    const v = parseBotDump(a.botDump());
+    const c = v.units.find((u) => u.id === v.players[0].commander)!;
+    let spot: [number, number] | null = null;
+    for (let d = 3; d < 30 && !spot; d++) if (a.canPlace(0, belt, (c.x >> 8) + d, (c.y >> 8) + 3, 0)) spot = [(c.x >> 8) + d, (c.y >> 8) + 3];
+    expect(spot).not.toBeNull();
+    const o: number[] = [];
+    pack(0, build([c.id], belt, spot![0], spot![1], 0), o);
+    a.step(o);
+    for (let t = 0; t < 300; t++) a.step([]);
+    // les tapis ne sont pas dans la vue des bots : on les cherche par leur case
+    const ref = a.buildingAt(spot![0], spot![1]);
+    const info = a.infoBuilding(ref) as { kind: number; build: number; belt: unknown };
+    expect([info.kind, info.build]).toEqual([belt, 65536]);
+    expect(info.belt).toMatchObject({ tile: [], line: [], tiles: 1, cap: 4, jam: 0 });
+    // le bâtiment de départ n'est pas un tapis : pas de contenu de tapis
+    const other = parseBotDump(a.botDump()).buildings.find((x) => x.owner === 0);
+    expect(other).toBeDefined();
+    expect((a.infoBuilding(other!.ref) as { belt: unknown }).belt).toBeNull();
+  });
   it("aperçu des jumelles : deux laboratoires posés côte à côte sont liserés sur leur côté commun", async () => {
     const a = await Sim.load(wasm);
     a.init(params);

@@ -466,9 +466,22 @@ pub fn info_building(w: &World, r: u32) -> String {
     let twins = if bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Factory | BClass::Lab | BClass::Power) { crate::buildings::twins_of(w, b).len() } else { 0 };
     // nid de la faune : horde, plafond, seuil d'attaque, âge, évolution, pression, chance d'attaque (voir nature::nest_info)
     let nest = if bb.def().class == BClass::Nest { js_list(crate::nature::nest_info(w, b).iter()) } else { "null".to_string() };
+    // tapis : ce qui circule sur cette case et sur toute sa file
+    let belt = match crate::belts::belt_contents(w, b) {
+        Some(c) => format!(
+            "{{\"tile\":{},\"line\":{},\"tiles\":{},\"cap\":{},\"jam\":{},\"powered\":{}}}",
+            js_list(c.tile.iter()),
+            js_list(c.line.iter().map(|(it, n)| format!("[{},{}]", it, n))),
+            c.tiles,
+            c.tiles * crate::belts::TILE_SLOTS,
+            c.jam,
+            c.powered
+        ),
+        None => "null".to_string(),
+    };
     format!(
-        "{{\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{}}}",
-        nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split
+        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{}}}",
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split
     )
 }
 

@@ -291,3 +291,112 @@ fn fauna_orders_are_refused() {
 }
 
 
+
+// ---------- Parades contre les nids rasés sans risque ----------
+
+const U_MOTO: u16 = 5;
+const U_GUNSHIP: u16 = 23;
+
+#[test]
+fn nest_spits_at_aircraft() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    run(&mut w, 40);
+    // une canonnière en vol stationnaire à 10 cases, qui ne tire pas
+    let g = w.spawn_unit(U_GUNSHIP, 0, 210 * TILE, 201 * TILE);
+    let s = w.unit(g).unwrap();
+    w.units.cold[s].stun = 600;
+    run(&mut w, 300);
+    assert!(w.unit(g).is_none_or(|s| w.units.hp[s] < udef(U_GUNSHIP).hp), "le nid ne crache pas sur les avions");
+}
+
+#[test]
+fn horde_is_not_lured_far_from_its_nest() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    run(&mut w, 40);
+    // un robot immobile à 35 cases (derrière une ligne de tourelles, par exemple)
+    let bait = w.spawn_unit(U_LINE_ROBOT, 0, 236 * TILE, 201 * TILE);
+    let bs = w.unit(bait).unwrap();
+    w.units.cold[bs].stun = 2000;
+    // la horde a été provoquée près du nid et poursuit le robot
+    let tick = w.tick;
+    let n = &mut w.nature.nests[0];
+    n.alarm = tick + 2000;
+    n.ax = 205 * TILE;
+    n.ay = 201 * TILE;
+    for id in w.nature.nests[0].horde.clone() {
+        let s = w.unit(id).unwrap();
+        w.units.cold[s].orders.push(Order::Attack { target: bait });
+    }
+    run(&mut w, 600);
+    assert_eq!(w.units.hp[bs], udef(U_LINE_ROBOT).hp, "la horde s'est laissé attirer");
+    let (cx, cy) = w.buildings[w.building(w.nature.nests[0].b).unwrap()].center();
+    for id in w.nature.nests[0].horde.clone() {
+        let s = w.unit(id).unwrap();
+        assert!(dist2(w.units.x[s], w.units.y[s], cx, cy) <= ((24 * TILE) as i64).pow(2), "bête trop loin du nid");
+    }
+}
+
+#[test]
+fn distant_artillery_triggers_a_counter_attack() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    for _ in 0..4 {
+        spawn_beast(&mut w, 0, U_BEAST_S);
+    }
+    run(&mut w, 40);
+    // obus tirés de 45 cases, bien au-delà de la zone défendue (artillerie lourde)
+    let b = w.building(w.nature.nests[0].b).unwrap();
+    let mut raided = false;
+    for _ in 0..20 {
+        w.hit_from = (245 * TILE, 201 * TILE);
+        crate::combat::damage_building(&mut w, b, 300, 0);
+        w.hit_from = (i32::MIN, 0);
+        run(&mut w, 40);
+        if w.nature.raids.iter().any(|r| r.state <= RAID_ASSAULT && dist2(r.tx, r.ty, 245 * TILE, 201 * TILE) <= ((6 * TILE) as i64).pow(2)) {
+            raided = true;
+            break;
+        }
+    }
+    assert!(raided, "pas de contre-attaque vers l'artillerie");
+}
+
+#[test]
+fn struck_nest_spawns_defenders() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    run(&mut w, 40);
+    // pas de naissance ordinaire pendant le test
+    w.nature.nests[0].spawn = 100_000;
+    let before = w.nature.nests[0].horde.len();
+    let b = w.building(w.nature.nests[0].b).unwrap();
+    crate::combat::damage_building(&mut w, b, 100, 0);
+    run(&mut w, 40);
+    assert!(w.nature.nests[0].horde.len() >= before + 2, "pas de ponte d'urgence");
+    // une seule salve par délai
+    let after = w.nature.nests[0].horde.len();
+    crate::combat::damage_building(&mut w, b, 100, 0);
+    run(&mut w, 40);
+    assert_eq!(w.nature.nests[0].horde.len(), after, "pontes d'urgence trop rapprochées");
+}
+
+#[test]
+fn nest_hardens_with_evolution() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    assert_eq!(nest_damage(&w, 1000), 800);
+    w.tick = 72_000; // une heure
+    let late = nest_damage(&w, 1000);
+    assert!(late < 700 && late >= 400, "résistance tardive : {late}");
+    assert_eq!(nest_damage(&w, 1), 1);
+}
+
+#[test]
+fn beasts_charge_their_prey() {
+    let mut w = with_nest(FAUNA_NORMAL as i32);
+    let id = w.nature.nests[0].horde[0];
+    let s = w.unit(id).unwrap();
+    let base = unit_speed(U_BEAST_S);
+    assert_eq!(charge_speed(&w, s, base), base);
+    // une moto toute proche : la bête charge, plus vite que la moto
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    let m = w.spawn_unit(U_MOTO, 0, x + 6 * TILE, y);
+    w.units.cold[s].orders.push(Order::Attack { target: m });
+    assert!(charge_speed(&w, s, base) > unit_speed(U_MOTO));
+}
