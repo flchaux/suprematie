@@ -150,7 +150,8 @@ export class PowerCoverage {
       for (let j = i + 1; j < z.poles.length; j++) {
         const q = z.poles[j];
         if (q[5] !== a[5]) continue;
-        const r = Math.min(connect(a[10]), connect(q[10]));
+        // portée de liaison donnée par la simulation (selon le niveau), sinon celle du type
+        const r = Math.min(a[11] ?? connect(a[10]), q[11] ?? connect(q[10]));
         const dx = cx(a) - cx(q);
         const dz = cz(a) - cz(q);
         if (dx * dx + dz * dz > r * r) continue;

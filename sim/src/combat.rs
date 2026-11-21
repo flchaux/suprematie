@@ -618,7 +618,8 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
         let (o, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
         w.note_attacked(o, attacker, x, y, w.units.kind[s] == U_COMMANDER);
         if w.team_of(o) == crate::nature::NATURE_TEAM && w.team_of(attacker) != crate::nature::NATURE_TEAM {
-            crate::nature::on_hit(w, x, y);
+            let id = w.unit_id(s);
+            crate::nature::on_hit(w, x, y, id, attacker);
         }
     }
     if w.shooter != NONE {
@@ -636,12 +637,18 @@ pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
     if !w.buildings[b].alive || w.buildings[b].hp <= 0 {
         return;
     }
+    let mut dmg = dmg;
     if dmg > 0 {
         let (cx, cy) = w.buildings[b].center();
         let o = w.buildings[b].owner;
         w.note_attacked(o, attacker, cx, cy, false);
         if w.team_of(o) == crate::nature::NATURE_TEAM && w.team_of(attacker) != crate::nature::NATURE_TEAM {
-            crate::nature::on_hit(w, cx, cy);
+            // un nid durcit avec l'évolution
+            if w.buildings[b].kind == B_NEST {
+                dmg = crate::nature::nest_damage(w, dmg);
+            }
+            let r = w.building_ref(b);
+            crate::nature::on_hit(w, cx, cy, r, attacker);
         }
     }
     let bb = &mut w.buildings[b];

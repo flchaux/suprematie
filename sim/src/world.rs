@@ -617,7 +617,8 @@ impl World {
     pub fn place_start_buildings(&mut self) {
         for p in 0..self.map.starts.len() {
             let (sx, sy) = self.map.starts[p];
-            for &(dx, dy) in &[(3, -1), (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
+            // première place : celle que la carte prévoit (anneau de gisements, voir map::MAIN_GEN_SPOT)
+            for &(dx, dy) in &[crate::map::MAIN_GEN_SPOT, (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
                 if let Some(b) = crate::buildings::place_building(self, p as u8, B_MAIN_GENERATOR, sx + dx, sy + dy, 0) {
                     crate::buildings::complete_building(self, b);
                     self.buildings[b].fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
@@ -902,6 +903,8 @@ impl World {
                 h.add(b.build as u64 | (b.kind as u64) << 32);
                 h.add(b.progress as u64 | (b.out as u64) << 32);
                 h.add(b.hand as u64 | (b.timer as u64) << 8);
+                // niveau et amélioration en cours (zone du générateur principal, vitesses, production)
+                h.add(b.level as u64 | (b.upgrade as u64) << 8);
             }
         }
         h.add(self.ghosts.len() as u64);

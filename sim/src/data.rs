@@ -179,6 +179,26 @@ pub const GENERATOR_LEVELS: [GeneratorLevel; 3] = [
     GeneratorLevel { prod: 1000, cost: &[(STEEL, 16), (ENGINE, 3), (CIRCUIT, 6)], tech: T_ELECTRONICS, time: 25 },
 ];
 
+/// Niveaux du générateur principal (amélioration sur place) : rayon de sa zone (`supply`, cases autour
+/// de l'emprise) et portée de liaison (`connect`), coût de passage, recherche et durée (secondes). La
+/// production ne change pas (1 500 kW) et, contrairement aux autres générateurs, il reste en service
+/// pendant le chantier : c'est le cœur de la base. Niveau 1 : zone et liaison +50 % (18 → 27, 30 → 45).
+/// Coût élevé, presque deux fois le générateur principal lui-même (≈ 475 plaques de fer et 60 de
+/// cuivre une fois tout fondu et assemblé) : un investissement de milieu de partie, au même palier
+/// (électronique) que le niveau 3 des générateurs, qui ouvre l'accès aux gisements de l'anneau
+/// (voir map::RING_KINDS) sans relais.
+pub struct MainGeneratorLevel {
+    pub supply: i32,
+    pub connect: i32,
+    pub cost: &'static [(u8, u16)],
+    pub tech: u8,
+    pub time: u16,
+}
+pub const MAIN_GENERATOR_LEVELS: [MainGeneratorLevel; 2] = [
+    MainGeneratorLevel { supply: 18, connect: 30, cost: &[], tech: 0, time: 0 },
+    MainGeneratorLevel { supply: 27, connect: 45, cost: &[(STEEL, 60), (ENGINE, 15), (CIRCUIT, 40)], tech: T_ELECTRONICS, time: 60 },
+];
+
 /// Améliorations des assembleurs sur place : (type actuel, type visé, durée en secondes). Le coût et la
 /// recherche sont ceux du bâtiment visé ; la recette, le stock et la production en cours sont gardés.
 pub const ASSEMBLER_UPGRADES: [(u16, u16, u16); 2] = [(B_ASSEMBLER1, B_ASSEMBLER1 + 1, 20), (B_ASSEMBLER1 + 1, B_ASSEMBLER1 + 2, 30)];
@@ -203,6 +223,8 @@ pub enum Proj {
     Rail = 11,
     /// morsure des bêtes de la faune (corps-à-corps, instantanée, sans trait)
     Bite = 12,
+    /// crachat acide d'un nid de la faune (boule verte en cloche)
+    Spit = 13,
 }
 
 pub const M_LAND: u8 = 1;
@@ -240,7 +262,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 58] = [
+pub const WEAPONS: [WeaponDef; 59] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -300,6 +322,8 @@ pub const WEAPONS: [WeaponDef; 58] = [
     w!(12, 1, 15, Bite, 0, 0, M_LAND),                                  // 55 petit mordeur
     w!(40, 2, 18, Bite, 0, 0, M_LAND),                                  // 56 mordeur
     w!(140, 2, 24, Bite, 0, 0, M_LAND),                                 // 57 grand mordeur
+    // crachat du nid : contre ce qui vole ou flotte, que les morsures n'atteignent pas
+    w!(55, 26, 25, Spit, 18, 96, M_AIR | M_NAVAL),                      // 58 nid de mordeurs
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -331,7 +355,7 @@ pub const TECHS: [TechDef; 48] = [
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur, collecteur de surplus ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
     t!("light_defense", "Défense légère", 1, 10, 5, [], "Tourelle légère, mur, radar"),
-    t!("electronics", "Électronique", 2, 20, 8, [1], "Usine aérienne, avion éclaireur, intercepteur, planeur d'attaque, transport, héliport de fret ; extracteur et générateur niveau 3"),
+    t!("electronics", "Électronique", 2, 20, 8, [1], "Usine aérienne, avion éclaireur, intercepteur, planeur d'attaque, transport, héliport de fret ; extracteur et générateur niveau 3, zone du générateur principal +50 %"),
     t!("hydrocarbons", "Hydrocarbures", 2, 20, 8, [1], "Raffinerie, centrale à hydrocarbure"),
     t!("mobile_artillery", "Artillerie mobile", 2, 20, 8, [2], "Artillerie mobile, DCA mobile, sonde de détection"),
     t!("aa_turret", "Tourelle antiaérienne", 2, 15, 8, [3], "Tourelle antiaérienne"),
@@ -600,7 +624,7 @@ pub const BUILDINGS: [BuildingDef; 48] = [
     // générateur principal : posé au départ (et reconstructible), grande zone ; brûle de l'hydrocarbure
     BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 0, class: BClass::Power, supply: 18, connect: 30, ..BD },
     // nid de la faune : posé par la carte ou par une expansion, jamais par un joueur (voir can_place)
-    BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, vision: 0, ..BD },
+    BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, weapon: 58, vision: 0, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -897,15 +921,17 @@ pub fn data_json() -> String {
     let levels: Vec<String> = EXTRACTOR_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech, l.time)).collect();
     let furn: Vec<String> = FURNACE_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech, l.time)).collect();
     let gens: Vec<String> = GENERATOR_LEVELS.iter().map(|l| format!("{{\"prod\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.prod, cost_js(l.cost), l.tech, l.time)).collect();
+    let mains: Vec<String> = MAIN_GENERATOR_LEVELS.iter().map(|l| format!("{{\"supply\":{},\"connect\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.supply, l.connect, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
         levels.join(","),
         furn.join(","),
         gens.join(","),
+        mains.join(","),
         asm.join(","),
         STOCK_BASE,
         DEPOT_CAP[0],

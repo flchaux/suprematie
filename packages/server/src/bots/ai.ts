@@ -13,7 +13,7 @@
 import type { Bot, BotContext } from "./types.ts";
 import { serialize, deserialize } from "node:v8";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
-import { build, move, target, harvest, O, factoryQueue, rally, setRecipe, research, hasTech, isFauna, smeltRecipe, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
+import { build, move, target, harvest, O, factoryQueue, rally, setRecipe, research, hasTech, isFauna, smeltRecipe, upgrade, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
 import { Ids, indexView, TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { Planner, CELLS, type Module, type Placement, type Slot, type CellSlot } from "./layout.ts";
 import { PERSONAS, AIR_PLAN, TECH_PLAN, ARMY_PLAN, MAIN_AIR_PLAN, type Persona } from "./personas.ts";
@@ -615,6 +615,7 @@ export class SkirmishAI implements Bot {
     if (this.thinkN % 2 === 1) this.factories(out);
     lap("économie/usines");
     if (this.thinkN % 4 === 0) this.researchMgr(out);
+    if (this.thinkN % 20 === 7) this.mainGenUpgrade(out);
     // niveau normal : tactique deux fois moins réactive que le niveau difficile
     if (this.level !== "normal" || this.thinkN % 2 === 0) this.army.think(this, this.ix, this.tick, out);
     this.commander(out);
@@ -1587,6 +1588,27 @@ export class SkirmishAI implements Bot {
     const h = this.stockHist;
     if (h.length < 2) return 0;
     return this.stock(item) - h[0][item];
+  }
+
+  /**
+   * Générateur principal : zone agrandie (+50 %) dès que la recherche est faite et que la réserve couvre
+   * deux fois le coût (l'amélioration ne doit pas affamer les chantiers), hors menace. Une fois amélioré,
+   * le planificateur compte sa grande zone pour placer les bâtiments sans relais.
+   */
+  mainGenUpgrade(out: Cmd[]): void {
+    const levels = this.ctx.data.mainGeneratorLevels;
+    if (!levels) return;
+    for (const b of this.ix.buildingsBy[this.ctx.slot]) {
+      if (b.kind !== this.ids.b.main_generator || b.build < BUILD_FULL || b.upgrading) continue;
+      const lv = levels[Math.min(b.level, levels.length - 1)];
+      this.planner.setPoleRange(b.x, b.y, lv.supply, lv.connect);
+      const next = levels[b.level + 1];
+      if (!next || this.underPressure || !this.has(next.tech)) continue;
+      if (next.cost.every(([item, n]) => this.stock(item) >= 2 * n)) {
+        this.log("amélioration du générateur principal");
+        out.push(upgrade(b.ref));
+      }
+    }
   }
 
   economy(out: Cmd[]): void {

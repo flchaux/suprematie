@@ -59,6 +59,18 @@ const NEST_SPACING: i32 = 7;
 const EXPANSION_CLEAR_R: i32 = 32;
 /// Points de vie rendus à un nid par seconde, hors alerte.
 const NEST_REGEN: i32 = 20;
+/// Rayon (cases) où un coup reçu alerte le nid ; une bête de sa horde touchée l'alerte jusqu'à CALL_R.
+const ALARM_R: i32 = 24;
+const CALL_R: i32 = 40;
+/// Poursuite : la horde ne s'éloigne pas à plus de CHASE_R cases du nid pour défendre (au-delà de
+/// CHASE_R + 4, elle rentre) ; un tireur plus lointain déclenche une contre-attaque.
+const CHASE_R: i32 = 16;
+/// Délai entre deux contre-attaques d'un même nid (ticks).
+const COUNTER_COOLDOWN: u32 = 600;
+/// Ponte d'urgence d'un nid frappé : délai entre deux salves (ticks).
+const BURST_COOLDOWN: u32 = 300;
+/// Charge : une bête qui fonce sur une unité à moins de CHARGE_R cases court 40 % plus vite.
+const CHARGE_R: i32 = 12;
 
 /// Équipes des joueurs (bits 0 à 7 des masques des grilles).
 const PLAYERS_MASK: u16 = 0x00ff;
@@ -79,8 +91,15 @@ pub struct Nest {
     pub ay: i32,
     /// prochaine tentative d'attaque (tick)
     pub next_try: u32,
+    /// joueur qui a frappé en dernier (cible d'une contre-attaque)
+    pub foe: u8,
+    /// prochaine contre-attaque permise (tick)
+    pub counter: u32,
+    /// dernier coup reçu par le nid lui-même, et prochaine ponte d'urgence permise (ticks)
+    pub struck: u32,
+    pub burst: u32,
 }
-crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try });
+crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try, foe, counter, struck, burst });
 
 pub const RAID_GATHER: u8 = 0;
 pub const RAID_ASSAULT: u8 = 1;
@@ -412,7 +431,7 @@ pub(crate) fn found_nest(w: &mut World, x: i32, y: i32) -> Option<usize> {
     let r = w.building_ref(b);
     let spawn = w.rng.range(1, spawn_interval(w.nature.level) as i32) as u32;
     let tick = w.tick;
-    w.nature.nests.push(Nest { b: r, born: tick, spawn, horde: Vec::new(), alarm: 0, ax: 0, ay: 0, next_try: tick + ATTACK_CHECK });
+    w.nature.nests.push(Nest { b: r, born: tick, spawn, next_try: tick + ATTACK_CHECK, ..Nest::default() });
     Some(w.nature.nests.len() - 1)
 }
 
@@ -489,22 +508,55 @@ pub fn place_initial_nests(w: &mut World) {
 
 /// Une bête ou un nid de la faune touché en (x, y) : les nids proches (24 cases) défendent, en fonçant
 /// vers le tireur (w.hit_from) s'il est connu.
-pub fn on_hit(w: &mut World, x: i32, y: i32) {
+pub fn on_hit(w: &mut World, x: i32, y: i32, victim: u32, attacker: u8) {
     if !w.nature.active() {
         return;
     }
     let (ax, ay) = if w.hit_from.0 != i32::MIN { w.hit_from } else { (x, y) };
-    let r = (24 * TILE) as i64;
+    let zone = ((ALARM_R * TILE) as i64).pow(2);
+    let call = ((CALL_R * TILE) as i64).pow(2);
     let until = w.tick + ALARM_TICKS;
+    let tick = w.tick;
     for i in 0..w.nature.nests.len() {
         let Some((cx, cy)) = nest_center(w, &w.nature.nests[i]) else { continue };
-        if dist2(cx, cy, x, y) <= r * r {
-            let n = &mut w.nature.nests[i];
+        let d = dist2(cx, cy, x, y);
+        let n = &mut w.nature.nests[i];
+        // près du nid, ou une bête de sa horde attirée plus loin : le nid riposte
+        if d <= zone || (d <= call && n.horde.contains(&victim)) {
             n.alarm = until;
             n.ax = ax;
             n.ay = ay;
+            n.foe = attacker;
+        }
+        if n.b == victim {
+            n.struck = tick;
         }
     }
+}
+
+/// Dégâts subis par un nid : il durcit avec l'évolution (de 20 % à 60 % de dégâts en moins).
+pub fn nest_damage(w: &World, dmg: i32) -> i32 {
+    if dmg <= 0 {
+        return dmg;
+    }
+    let resist = 200 + evolution(w.tick, w.nature.level) as i64 * 2 / 5;
+    ((dmg as i64 * (1000 - resist) / 1000) as i32).max(1)
+}
+
+/// Vitesse d'une bête : elle charge (40 % plus vite) l'unité qu'elle attaque quand elle est à moins de
+/// CHARGE_R cases, pour rattraper ce qui tire en reculant.
+pub fn charge_speed(w: &World, s: usize, speed: i32) -> i32 {
+    if !matches!(w.units.kind[s], U_BEAST_S | U_BEAST_M | U_BEAST_L) {
+        return speed;
+    }
+    if let Some(Order::Attack { target }) = w.units.cold[s].orders.first() {
+        if let Some(t) = w.unit(*target) {
+            if dist2(w.units.x[s], w.units.y[s], w.units.x[t], w.units.y[t]) <= ((CHARGE_R * TILE) as i64).pow(2) {
+                return speed * 7 / 5;
+            }
+        }
+    }
+    speed
 }
 
 // ---------- Tick ----------
@@ -588,6 +640,20 @@ fn update_nest(w: &mut World, i: usize) -> bool {
             spawn_beast(w, i, kind);
         }
     }
+    // nid frappé : ponte d'urgence, quelques défenseurs d'un coup (au plus une fois et demie le plafond)
+    let n = &w.nature.nests[i];
+    if n.struck != 0 && w.tick.saturating_sub(n.struck) < NEST_PERIOD * 2 && w.tick >= n.burst {
+        w.nature.nests[i].burst = w.tick + BURST_COOLDOWN;
+        let k = 2 + evolution(w.tick, level) as usize / 250;
+        for _ in 0..k {
+            let room = w.players[w.nature.owner as usize].unit_count < w.nature.max_beasts;
+            if w.nature.nests[i].horde.len() >= max + max / 2 || !room {
+                break;
+            }
+            let kind = beast_kind(w);
+            spawn_beast(w, i, kind);
+        }
+    }
     defend(w, i, cx, cy, alarmed);
     // attaque : horde assez grande, et un joueur qui s'est trop développé près du nid
     if level >= FAUNA_NORMAL && w.tick >= w.nature.nests[i].next_try {
@@ -609,14 +675,26 @@ fn defend(w: &mut World, i: usize, cx: i32, cy: i32, alarmed: bool) {
     let horde = w.nature.nests[i].horde.clone();
     if alarmed || intruder != NONE {
         let (ax, ay) = (w.nature.nests[i].ax, w.nature.nests[i].ay);
+        // tireur hors de portée de poursuite (artillerie, tir de loin) : contre-attaque en règle
+        let far = intruder == NONE && dist2(cx, cy, ax, ay) > ((CHASE_R * TILE) as i64).pow(2);
+        if far && counter_attack(w, i, cx, cy) {
+            return;
+        }
+        // on ne se laisse pas attirer loin du nid (vers une ligne de tourelles)
+        let chase = (((CHASE_R + 4) * TILE) as i64).pow(2);
         for &id in &horde {
             let Some(s) = beast(w, id) else { continue };
+            if dist2(w.units.x[s], w.units.y[s], cx, cy) > chase {
+                let (x, y) = jitter(w, cx, cy, 4);
+                command(w, s, move_to(x, y, false));
+                continue;
+            }
             if fight(w, s, AGGRO_R) {
                 continue;
             }
             if intruder != NONE {
                 command(w, s, Order::Attack { target: intruder });
-            } else if !matches!(w.units.cold[s].orders.first(), Some(Order::Move { attack: true, .. })) {
+            } else if !far && !matches!(w.units.cold[s].orders.first(), Some(Order::Move { attack: true, .. })) {
                 let (x, y) = jitter(w, ax, ay, 2);
                 command(w, s, move_to(x, y, true));
             }
@@ -690,6 +768,20 @@ fn pressure(w: &World, cx: i32, cy: i32) -> Vec<(u32, u32, i64)> {
 }
 
 /// Tentative d'attaque d'un nid dont la horde est prête.
+/// Contre-attaque contre un tireur lointain (artillerie, navire, tir à longue portée) : la horde du nid,
+/// et celles des nids voisins prêtes, partent en attaque vers le point de tir. Faux si le nid ne peut pas
+/// (délai, horde trop maigre) : la horde reste alors défendre le nid.
+fn counter_attack(w: &mut World, i: usize, cx: i32, cy: i32) -> bool {
+    let n = &w.nature.nests[i];
+    if w.tick < n.counter || n.horde.len() < 3 {
+        return false;
+    }
+    let (ax, ay, foe) = (n.ax, n.ay, n.foe);
+    w.nature.nests[i].counter = w.tick + COUNTER_COOLDOWN;
+    launch_raid(w, i, cx, cy, ax, ay, foe);
+    true
+}
+
 fn consider_attack(w: &mut World, i: usize, cx: i32, cy: i32) {
     let p = pressure(w, cx, cy);
     let total: u32 = p.iter().map(|x| x.0).sum();
@@ -940,6 +1032,8 @@ pub fn hash_into(w: &World, h: &mut crate::ser::Hasher) {
     for nest in &n.nests {
         h.add(nest.b as u64 | (nest.horde.len() as u64) << 32 | (nest.spawn as u64) << 40);
         h.add(nest.next_try as u64 | (nest.alarm as u64) << 32);
+        h.add(nest.counter as u64 | (nest.burst as u64) << 32);
+        h.add(nest.struck as u64 | (nest.foe as u64) << 32);
     }
     for r in &n.raids {
         h.add(r.units.len() as u64 | (r.state as u64) << 16 | (r.since as u64) << 24);

@@ -816,6 +816,8 @@ export class GameClient {
       const g = this.groundAt(x, y);
       if (g) this.ghostStart = this.snapBuild(g);
       this.lineEndDir = null;
+      this.lineFrozen = [];
+      this.lineAxis = null;
     }
     if (e.button === 0) this.plans.down();
     // clic droit sur le terrain avec des unités : le glisser oriente la formation (sinon : caméra)
@@ -978,10 +980,17 @@ export class GameClient {
       this.updateGhost();
       return;
     }
-    // pose de tapis : la molette choisit le niveau (sol, étage 1, étage 2) au lieu du zoom
+    // pose de tapis : la molette choisit le niveau (sol, étage 1, étage 2) au lieu du zoom. Pendant le
+    // tracé, la partie déjà tracée garde son niveau : seule la suite de la file monte ou descend
     if (ui.mode === "build" && this.isBeltKind() && !e.ctrlKey) {
       const f = Math.max(0, Math.min(2, ui.buildFloor + (e.deltaY < 0 ? 1 : -1)));
       if (f !== ui.buildFloor) {
+        const cells = this.ghostCells;
+        if (this.mouse.down && this.ghostStart && cells.length > 1 && cells.length > this.lineFrozen.length) {
+          this.lineFrozen = cells.map((c) => ({ x: c.x, y: c.y, dir: c.dir, floor: c.floor ?? 0 }));
+          this.lineAxis = null;
+          this.lineEndDir = null;
+        }
         ui.buildFloor = f;
         sfx.click();
         this.updateGhost();
@@ -1324,7 +1333,7 @@ export class GameClient {
   cancelMode(): void {
     ui.mode = "";
     ui.buildKind = -1;
-    this.ghostStart = null;
+    this.resetLine();
     this.scene?.hideGhost();
     this.plans.clear();
     this.updateCursor(true);
@@ -1925,7 +1934,7 @@ export class GameClient {
     if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
     ui.buildKind = kind;
     ui.mode = "build";
-    this.ghostStart = null;
+    this.resetLine();
     this.beltForced = false;
     sfx.click();
     this.updateGhost();
@@ -1955,13 +1964,13 @@ export class GameClient {
     return { x, y };
   }
 
-  private lineCells(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number; dir: number }[] {
+  /** File en L de `a` à `b` : premier tronçon horizontal si `horizFirst` (axe choisi par le geste, Belts.lockAxis). */
+  private lineCells(a: { x: number; y: number }, b: { x: number; y: number }, horizFirst: boolean): { x: number; y: number; dir: number }[] {
     const def = this.data!.buildings[ui.buildKind];
     const step = def.cls === BClass.Pylon ? 7 : def.w;
     const out: { x: number; y: number; dir: number }[] = [];
     const dx = b.x - a.x;
     const dy = b.y - a.y;
-    const horizFirst = Math.abs(dx) >= Math.abs(dy);
     const sx = Math.sign(dx) || 1;
     const sy = Math.sign(dy) || 1;
     const hdir = sx > 0 ? 0 : 2;
@@ -1978,10 +1987,7 @@ export class GameClient {
       for (let j = 0; j <= Math.abs(dy); j += step) out.push({ x: a.x, y: a.y + j * sy, dir: along(dx !== 0 && j === Math.abs(dy) ? hdir : vdir, false) });
       for (let i = step; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: b.y, dir: along(hdir, true) });
     }
-    const cells = out.slice(0, 200);
-    // fin de file tournée avec R pendant le tracé
-    if (isBelt && this.lineEndDir !== null && cells.length > 1) cells[cells.length - 1].dir = this.lineEndDir;
-    return cells;
+    return out.slice(0, 200);
   }
 
   /** Nos tapis, bras et tapis de contrôle terminés parmi la sélection (ordre ROTATE). */
@@ -2000,6 +2006,18 @@ export class GameClient {
 
   /** file de tapis en cours de tracé : direction de la dernière case choisie avec R (null : automatique) */
   lineEndDir: number | null = null;
+  /** file en cours de tracé : partie figée par un changement de niveau (molette), avec le niveau de chaque case */
+  private lineFrozen: { x: number; y: number; dir: number; floor: number }[] = [];
+  /** axe du premier tronçon du tronçon en cours (Belts.lockAxis), null tant que le curseur est sur son départ */
+  private lineAxis: "h" | "v" | null = null;
+  /** Fin du tracé d'une file : la prochaine repart de zéro, au sol. */
+  private resetLine(): void {
+    this.ghostStart = null;
+    this.lineFrozen = [];
+    this.lineAxis = null;
+    this.lineEndDir = null;
+    ui.buildFloor = 0;
+  }
 
   /** pose de tapis : direction forcée par R (sinon déduite des tapis voisins) */
   beltForced = false;
@@ -2079,7 +2097,22 @@ export class GameClient {
       };
       return Belts.autoBeltDir(x, y, this.beltNeighbours(belts, splitters, true), s, ui.buildDir);
     };
-    const cells = this.mouse.down && this.ghostStart && lineable ? (machine ? machineRow(this.ghostStart, cur, def, ui.buildDir) : this.lineCells(this.ghostStart, cur)) : [{ ...cur, dir: isBelt && !this.beltForced ? autoDir(cur.x, cur.y) : ui.buildDir }];
+    // file : partie figée (changements de niveau) puis tronçon en cours, de sa dernière case au curseur ; le
+    // sens de l'angle suit le geste (axe le long duquel le curseur a quitté le départ du tronçon)
+    const drawing = this.mouse.down && this.ghostStart && lineable;
+    const frozen = drawing && isBelt ? this.lineFrozen : [];
+    const nf = frozen.length;
+    let cells: { x: number; y: number; dir: number }[];
+    if (drawing && machine) cells = machineRow(this.ghostStart!, cur, def, ui.buildDir);
+    else if (drawing) {
+      const segStart = nf ? frozen[nf - 1] : this.ghostStart!;
+      this.lineAxis = Belts.lockAxis(segStart, cur, this.lineAxis);
+      const dx = Math.abs(cur.x - segStart.x);
+      const dy = Math.abs(cur.y - segStart.y);
+      cells = Belts.joinSegment(frozen, this.lineCells(segStart, cur, this.lineAxis ? this.lineAxis === "h" : dx >= dy));
+      // fin de file tournée avec R pendant le tracé
+      if (isBelt && this.lineEndDir !== null && cells.length > Math.max(1, nf)) cells[cells.length - 1].dir = this.lineEndDir;
+    } else cells = [{ ...cur, dir: isBelt && !this.beltForced ? autoDir(cur.x, cur.y) : ui.buildDir }];
     /** un de nos tapis au sol sur la case, perpendiculaire à la direction `dir` */
     const across = (c: { x: number; y: number; dir: number }): boolean => {
       const e = this.map ? belts.get(c.y * this.map.w + c.x) : undefined;
@@ -2087,7 +2120,7 @@ export class GameClient {
     };
     // file qui finit en travers d'un de nos tapis : on veut s'y brancher (la file s'arrête juste avant
     // et le nourrit par le côté), pas l'enjamber ni le tourner ; sauf si sa fin a été tournée avec R
-    if (isBelt && ui.buildFloor === 0 && cells.length > 1 && this.lineEndDir === null && across(cells[cells.length - 1])) cells.pop();
+    if (isBelt && ui.buildFloor === 0 && cells.length > Math.max(1, nf) && this.lineEndDir === null && across(cells[cells.length - 1])) cells.pop();
     const seq = ++this.ghostSeq;
     const rf = this.replaceFlag();
     const base = isBelt ? ui.buildFloor : 0;
@@ -2097,30 +2130,20 @@ export class GameClient {
       for (const c of cells) args.push(c.x, c.y, c.dir | rf | ((floor & 3) << 3));
       return (await this.query<boolean[]>("canPlaceMany", args)) ?? [];
     };
-    const ok = await canAt(base);
     let floors = cells.map(() => base);
-    let okAt = ok;
-    if (isBelt && cells.length > 1) {
-      // file de tapis : elle monte d'elle-même au-dessus des obstacles (bâtiment, eau, falaise, autre file
-      // qui la croise) et redescend ensuite ; les ascenseurs se forment aux changements de niveau
-      const up1 = base < 2 ? await canAt(base + 1) : cells.map(() => false);
-      const up2 = base < 1 ? await canAt(base + 2) : cells.map(() => false);
+    let okAt = await canAt(base);
+    if (isBelt) {
+      // file de tapis : la partie figée garde ses niveaux ; le tronçon en cours part du niveau choisi et
+      // monte de lui-même au-dessus des obstacles (bâtiment, eau, falaise, autre file qui la croise) ; les
+      // ascenseurs se forment aux changements de niveau
+      const at: boolean[][] = [];
+      for (let f = 0; f <= 2; f++) at.push(f === base ? okAt : cells.length > 1 && (f > base || frozen.some((c) => c.floor === f)) ? await canAt(f) : cells.map(() => false));
       // un de nos tapis au sol qui croise la file (perpendiculaire) : on passe au-dessus au lieu de le
       // tourner ; sauf la case de départ : partir d'un tapis, c'est le prolonger en faisant un angle
-      const crossing = (c: { x: number; y: number; dir: number }, i: number) => base === 0 && i > 0 && across(c);
-      floors = cells.map((c, i) => (ok[i] && !crossing(c, i) ? base : up1[i] ? base + 1 : up2[i] ? base + 2 : base));
-      // un ascenseur relie deux cases alignées : un changement de niveau dans un angle remonte aussi la case d'avant
-      for (let pass = 0; pass < 3; pass++) {
-        for (let i = 1; i < cells.length; i++) {
-          if (floors[i] !== floors[i - 1] && cells[i].dir !== cells[i - 1].dir) {
-            const lo = floors[i] > floors[i - 1] ? i - 1 : i;
-            const hi = floors[i] > floors[i - 1] ? i : i - 1;
-            const target = floors[hi];
-            if ((target === base + 1 && up1[lo]) || (target === base + 2 && up2[lo])) floors[lo] = target;
-          }
-        }
-      }
-      okAt = cells.map((_, i) => (floors[i] === base ? !!ok[i] && !crossing(cells[i], i) : floors[i] === base + 1 ? !!up1[i] : !!up2[i]));
+      const crossing = cells.map((c, i) => i > 0 && across(c));
+      const r = Belts.lineFloors(cells, Math.min(nf, cells.length), frozen.map((c) => c.floor), base, at, crossing);
+      floors = r.floors;
+      okAt = r.ok;
     }
     // jumelages qui se formeront : règle de la simulation, avec la recette que prendra chaque machine
     // (générateurs : combustible partagé avec les générateurs collés)
@@ -2163,7 +2186,7 @@ export class GameClient {
     const split = this.data?.buildings[ui.buildKind]?.key === "splitter" ? (ui.buildSplit & 3) << 5 : 0;
     cells.forEach((c, i) => this.cmd(Ord.build(engs, ui.buildKind, c.x, c.y, c.dir | rf | (((c.floor ?? 0) & 3) << 3) | split, shift || i > 0)));
     sfx.confirm();
-    this.ghostStart = null;
+    this.resetLine();
     if (!shift) {
       const def = this.data!.buildings[ui.buildKind];
       if (!(def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || def.cls === BClass.Inserter)) this.cancelMode();

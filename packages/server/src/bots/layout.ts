@@ -543,6 +543,14 @@ export class Planner {
     const d = this.ids.data.buildings[kind];
     this.poles.push({ x, y, s: d.w, supply: d.supply, connect: d.connect });
   }
+  /** Zone d'un poteau existant agrandie (générateur principal amélioré). */
+  setPoleRange(x: number, y: number, supply: number, connect: number): void {
+    const p = this.poles.find((q) => q.x === x && q.y === y);
+    if (p) {
+      p.supply = supply;
+      p.connect = connect;
+    }
+  }
   removePole(x: number, y: number): void {
     const i = this.poles.findIndex((p) => p.x === x && p.y === y);
     if (i >= 0) this.poles.splice(i, 1);

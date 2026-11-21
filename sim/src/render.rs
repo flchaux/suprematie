@@ -411,7 +411,8 @@ pub fn bot_dump(w: &World) -> Vec<i32> {
             bb.hp,
             bb.build as i32,
             bb.working as i32 | (bb.stalled as i32) << 1 | ((bb.net == 0) as i32) << 2 | (bb.ammo as i32) << 8 | ((bb.charge >= 60 * 20 * 1024) as i32) << 3,
-            qlen | (bb.recipe as i32) << 16,
+            // file (bits 0-15), recette (16-23), niveau (24-27), amélioration en cours (28)
+            qlen.min(0xffff) | (bb.recipe as i32) << 16 | (bb.level as i32 & 15) << 24 | ((bb.upgrade > 0) as i32) << 28,
         ]);
         nb += 1;
     }
@@ -465,9 +466,22 @@ pub fn info_building(w: &World, r: u32) -> String {
     let twins = if bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Factory | BClass::Lab | BClass::Power) { crate::buildings::twins_of(w, b).len() } else { 0 };
     // nid de la faune : horde, plafond, seuil d'attaque, âge, évolution, pression, chance d'attaque (voir nature::nest_info)
     let nest = if bb.def().class == BClass::Nest { js_list(crate::nature::nest_info(w, b).iter()) } else { "null".to_string() };
+    // tapis : ce qui circule sur cette case et sur toute sa file
+    let belt = match crate::belts::belt_contents(w, b) {
+        Some(c) => format!(
+            "{{\"tile\":{},\"line\":{},\"tiles\":{},\"cap\":{},\"jam\":{},\"powered\":{}}}",
+            js_list(c.tile.iter()),
+            js_list(c.line.iter().map(|(it, n)| format!("[{},{}]", it, n))),
+            c.tiles,
+            c.tiles * crate::belts::TILE_SLOTS,
+            c.jam,
+            c.powered
+        ),
+        None => "null".to_string(),
+    };
     format!(
-        "{{\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{}}}",
-        nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split
+        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{}}}",
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split
     )
 }
 
@@ -475,7 +489,8 @@ pub fn info_building(w: &World, r: u32) -> String {
 /// `nets` : [id, joueur, production, demande, puissance installée, satisfaction, combustible total,
 /// autonomie en s (-1 : rien ne brûle)] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
 /// réseau (0 : aucun), genre (0 relais, 1 générateur), combustible en millièmes du réservoir (-1 : relais),
-/// joueur, référence, type de bâtiment]. Un générateur à sec garde sa portée mais n'a pas de réseau.
+/// joueur, référence, type de bâtiment, portée de liaison]. Portée et liaison suivent le niveau (générateur
+/// principal amélioré). Un générateur à sec garde sa portée mais n'a pas de réseau.
 pub fn power_zones(w: &World, player: i32) -> String {
     let team = if player >= 0 && (player as usize) < w.players.len() { Some(w.players[player as usize].team) } else { None };
     let mine = |o: u8| team.is_none_or(|t| w.team_of(o) == t);
@@ -495,7 +510,8 @@ pub fn power_zones(w: &World, player: i32) -> String {
             continue;
         }
         let def = bb.def();
-        if def.supply == 0 {
+        let supply = crate::buildings::supply_of(bb);
+        if supply == 0 {
             continue;
         }
         let (bw, bh) = bb.size();
@@ -504,7 +520,8 @@ pub fn power_zones(w: &World, player: i32) -> String {
         // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
         let net = if gen && bb.fuel <= 0 { 0 } else { bb.net };
         let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };
-        poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, def.supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind));
+        // rayon et portée de liaison selon le niveau (générateur principal amélioré)
+        poles.push(format!("[{},{},{},{},{},{},{},{},{},{},{},{}]", bb.x, bb.y, bw, bh, supply, net, gen as i32, fuel, bb.owner, w.building_ref(b), bb.kind, crate::buildings::connect_of(bb)));
     }
     format!("{{\"nets\":[{}],\"poles\":[{}]}}", nets.join(","), poles.join(","))
 }
