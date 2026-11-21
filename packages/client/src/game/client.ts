@@ -13,7 +13,7 @@ import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from
 import { ownerColor, ownerHex } from "./colors.ts";
 import { ui, pushMessage, hasTechUI, type HarvestInfo } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
-import { sfx, setVolume, weaponSize, renderOffline } from "../audio/sound.ts";
+import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
@@ -270,8 +270,8 @@ export class GameClient {
     // ?demo=vitrine : un exemplaire de chaque bâtiment et de chaque unité, pour juger les modèles en jeu
     // ?demo=formation : une armée mêlée du joueur 0, à qui l'on donne des ordres (déplacements en formation)
     const scene = new URLSearchParams(location.search).get("demo") ?? "";
-    // vitrine : rendu hors ligne des sons de combat, pour les vérifier sans les écouter
-    (window as unknown as { __sfx?: unknown }).__sfx = { renderOffline, weaponSize };
+    // état de la synthèse des sons, pour les vérifications automatiques
+    (window as unknown as { __sfx?: unknown }).__sfx = sfx;
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;
     this.demoOrders = scene === "formation";
@@ -288,6 +288,8 @@ export class GameClient {
     switch (m.type) {
       case "ready": {
         this.data = JSON.parse(m.data as string) as GameData;
+        // sons de combat : calculés en tâche de fond dès que les armes sont connues
+        sfx.warm(this.data.weapons);
         ui.data = this.data;
         this.map = parseMapInfo(m.mapInfo as Int32Array, m.heights as Uint8Array);
         this.maxGround = -1;
@@ -479,9 +481,12 @@ export class GameClient {
     if (!sc) return;
     const b = f.buf;
     const cam = sc.target;
+    // proximité d'un son (0 à 1) : distance au point regardé, et hauteur de la caméra (de haut, la
+    // bataille s'entend comme de loin : assourdie, avec l'écho du terrain)
+    const high = 1 - 0.5 * Math.min(1, Math.max(0, (sc.distance - 30) / 220));
     const near = (x: number, z: number) => {
       const d = Math.hypot(x - cam.x, z - cam.z);
-      return Math.max(0, 1 - d / (sc.distance * 1.2 + 20));
+      return Math.max(0, 1 - d / (sc.distance * 1.2 + 20)) * high;
     };
     // placement gauche-droite d'un son : position à l'écran (hors écran : au bord)
     const el = this.canvasEl;
@@ -509,7 +514,7 @@ export class GameClient {
           const z = c / TILE;
           if (seen(x, z) || e === 3) {
             sc.entities?.addExplosion(x, z, d / TILE, e);
-            sfx.explosion(e + d / 2048, near(x, z), pan(x, z));
+            sfx.explosion(d / TILE, e, near(x, z), pan(x, z));
           }
           break;
         }
@@ -520,12 +525,12 @@ export class GameClient {
           if (!seen(x0, z0) && !seen(x1, z1)) break;
           sc.entities?.addBeam(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1), 0xff4040, 0.12);
           fx?.sparks(x1, y1, z1, [4, 0.8, 0.6], 4);
-          sfx.laser(near(x0, z0), pan(x0, z0));
+          sfx.strike(Math.max(near(x0, z0), near(x1, z1)), pan(x1, z1));
           break;
         }
         case EV.FIRE: {
           const w = this.data!.weapons[a];
-          sfx.fire(w?.proj ?? 0, near(c / TILE, d / TILE), pan(c / TILE, d / TILE), w ? weaponSize(w.dmg, w.aoe) : 1);
+          if (w) sfx.fire(w, near(c / TILE, d / TILE), pan(c / TILE, d / TILE));
           // morsure (proj 12) : pas de projectile, un éclat au point mordu
           if (w?.proj === 12 && seen(c / TILE, d / TILE)) {
             const x = c / TILE;
