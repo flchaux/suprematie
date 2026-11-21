@@ -229,6 +229,31 @@ impl Map {
                 }
             }
         }
+        // Anneau du générateur principal amélioré : des gisements entre sa zone de départ et sa zone
+        // améliorée, les mêmes à chaque départ. Générateur à graine séparé, placés après tous les
+        // autres : les gisements d'avant (départs, carte, cristal) ne changent pas.
+        let mut ring_rng = Rng::new(seed as u64 ^ 0x0a11_ea05_7a27);
+        let (s0, s1) = (MAIN_GENERATOR_LEVELS[0].supply, MAIN_GENERATOR_LEVELS[MAIN_GENERATOR_LEVELS.len() - 1].supply);
+        for &(sx, sy) in &starts {
+            let (gx, gy) = (sx + MAIN_GEN_SPOT.0, sy + MAIN_GEN_SPOT.1);
+            // l'anneau est de la terre, comme le départ (au même niveau) : la côte recule un peu
+            let target = height[(sy * w + sx) as usize] as i32;
+            flatten(&mut height, w, h, gx + 1, gy + 1, s1 + 5, s1 + 13, target);
+            let rot = ring_rng.below(65536) as i32;
+            let nk = RING_KINDS.len() as i32;
+            for (k, &kind) in RING_KINDS.iter().enumerate() {
+                // un secteur par gisement, pour les répartir tout autour ; puis n'importe où dans l'anneau
+                for t in 0..300 {
+                    let a = if t < 100 { rot + k as i32 * 65536 / nk + ring_rng.range(-65536 / (nk * 3), 65536 / (nk * 3)) } else { ring_rng.below(65536) as i32 };
+                    let r = ring_rng.range(s0 + 3, s1 + 10);
+                    let x = gx + 1 + (trig.cos(a as u16) as i64 * r as i64 / 16384) as i32;
+                    let y = gy + 1 + (trig.sin(a as u16) as i64 * r as i64 / 16384) as i32;
+                    if in_main_ring(gx, gy, x, y) && place(&mut spots, &mut height, &mut deposit, kind, x, y) {
+                        break;
+                    }
+                }
+            }
+        }
         // Carte plate : toute la terre à la même hauteur, l'eau à deux profondeurs (haut-fond près des
         // côtes, eau profonde au large). Les écarts restent sous le seuil des falaises : pas de falaise,
         // les aéroglisseurs passent de la terre à l'eau, les tapis et les bâtiments sont tous de niveau.
@@ -299,6 +324,25 @@ impl Map {
         self.update_pass_with(x, y, false);
     }
 
+}
+
+/// Emprise du générateur principal posé au départ (première place essayée, voir
+/// World::place_start_buildings), relative à la position de départ.
+pub const MAIN_GEN_SPOT: (i32, i32) = (3, -1);
+/// Taille du générateur principal (cases).
+const MAIN_GEN_SIZE: i32 = 3;
+/// Gisements ajoutés autour de chaque départ, dans l'anneau que couvre seulement la zone du générateur
+/// principal amélioré (MAIN_GENERATOR_LEVELS) : de quoi rentabiliser l'amélioration.
+pub const RING_KINDS: [u8; 6] = [IRON_ORE, COPPER_ORE, SILICON, HYDROCARBON, IRON_ORE, COPPER_ORE];
+
+/// Un gisement (2 × 2, coin `x`, `y`) est dans l'anneau du générateur principal d'emprise `gx`, `gy` :
+/// entièrement dans sa zone améliorée, sans toucher sa zone de départ (même règle que
+/// buildings::rebuild_power : l'emprise touche le carré de la zone).
+pub fn in_main_ring(gx: i32, gy: i32, x: i32, y: i32) -> bool {
+    let touches = |s: i32| x < gx + MAIN_GEN_SIZE + s && x + 2 > gx - s && y < gy + MAIN_GEN_SIZE + s && y + 2 > gy - s;
+    let inside = |s: i32| x >= gx - s && x + 2 <= gx + MAIN_GEN_SIZE + s && y >= gy - s && y + 2 <= gy + MAIN_GEN_SIZE + s;
+    let (s0, s1) = (MAIN_GENERATOR_LEVELS[0].supply, MAIN_GENERATOR_LEVELS[MAIN_GENERATOR_LEVELS.len() - 1].supply);
+    !touches(s0) && inside(s1)
 }
 
 fn flatten(height: &mut [u8], w: i32, h: i32, cx: i32, cy: i32, r_in: i32, r_out: i32, target: i32) {

@@ -41,6 +41,13 @@
       if (!n) return null;
       return { label: `Améliorer au niveau ${l + 2}`, cost: n.cost, tech: n.tech, time: n.time, gain: `production ${d.generatorLevels[l].prod} → ${n.prod} kW` };
     }
+    // générateur principal : zone électrique agrandie, il reste en service pendant le chantier
+    if (bdef.key === "main_generator" && d.mainGeneratorLevels) {
+      const l = info.level ?? 0;
+      const n = d.mainGeneratorLevels[l + 1];
+      if (!n) return null;
+      return { label: "Agrandir la zone électrique", cost: n.cost, tech: n.tech, time: n.time, gain: `zone ${d.mainGeneratorLevels[l].supply} → ${n.supply} cases`, running: true };
+    }
     if (bdef.cls === BClass.Extractor) {
       const l = info.level ?? 0;
       const n = (d.extractorLevels ?? [])[l + 1];
@@ -77,7 +84,7 @@
     // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
     if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
-    if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (arrêté pendant le chantier)`, kind: "build" };
+    if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : "arrêté"} pendant le chantier)`, kind: "build" };
     // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
     const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
     if (powered && !info.net) return { text: "Hors zone électrique : rapprochez-le d'un générateur ou d'un relais", kind: "warn" };
@@ -212,7 +219,7 @@
           {:else}
             {@const ok = hasTechUI(upg.tech)}
             <button class="icon-btn" disabled={!ok || upg.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name="plus" size={14} /> {upg.label}</button>
-            <span class="dim small num">{upg.gain} · chantier de {upg.time} s, arrêté pendant ce temps</span>
+            <span class="dim small num">{upg.gain} · chantier de {upg.time} s, {"running" in upg ? "toujours en service" : "arrêté"} pendant ce temps</span>
             {#if ok}<Cost cost={upg.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[upg.tech]?.name}</span>{/if}
           {/if}
         </div>
@@ -222,7 +229,9 @@
       {/if}
       {#if bdef.cls === BClass.Power && info.build >= 65536}
         {@const gl = d.generatorLevels && bdef.key === "generator" ? d.generatorLevels : null}
-        {@const kw = info.upgrade > 0 ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd}
+        {@const main = bdef.key === "main_generator"}
+        {@const ml = main ? d.mainGeneratorLevels : null}
+        {@const kw = info.upgrade > 0 && !main ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd}
         {@const fu = d.fuel}
         {@const cell = bdef.key === "crystal_reactor"}
         {@const unit = fu ? (cell ? fu.cell : fu.hydrocarbon) : 0}
@@ -234,7 +243,11 @@
           {#if unit}<span class="nowrap"><span class="num">{(fuel / unit).toFixed(1)}</span><span class="dim"> / {(tank / unit).toFixed(0)}</span></span>{/if}
           {#if fuel > 0 && out > 0}<span class="dim"> · encore <span class="num">{Math.ceil(fuel / out / 20)}</span> s à cette charge</span>{/if}
         </div>
-        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{kw}</span> kW{#if gl} <span class="dim">· niveau {(info.level ?? 0) + 1}/{gl.length}</span>{/if}{#if info.upgrade > 0} <span class="dim">(arrêté pendant l'amélioration)</span>{/if}</div>
+        <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{kw}</span> kW{#if gl} <span class="dim">· niveau {(info.level ?? 0) + 1}/{gl.length}</span>{/if}{#if info.upgrade > 0 && !main} <span class="dim">(arrêté pendant l'amélioration)</span>{/if}</div>
+        {#if ml}
+          {@const lv = Math.min(info.level ?? 0, ml.length - 1)}
+          <div class="row small"><span class="kicker">Zone</span> <span class="num">{ml[lv].supply}</span> cases autour <span class="dim">· niveau {lv + 1}/{ml.length}</span></div>
+        {/if}
         <span class="dim small">Brûle {cell ? "des cellules d'énergie" : "de l'hydrocarbure, ou du carburant (5 fois plus d'énergie)"}, d'autant plus vite que sa zone consomme.</span>
       {/if}
       {#if flow}

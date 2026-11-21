@@ -356,4 +356,6 @@ mod twin_preview_tests;
 mod twins_tests;
 #[cfg(test)]
 mod harvest_tests;
+#[cfg(test)]
+mod main_gen_tests;
 pub mod stress;

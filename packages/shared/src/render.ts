@@ -117,7 +117,7 @@ export function parseFrame(buf: Int32Array): Frame {
 }
 
 export interface BotUnit { id: number; kind: number; owner: number; x: number; y: number; hp: number; order: number; nOrders: number; carried: boolean; cargo: number }
-export interface BotBuilding { ref: number; kind: number; owner: number; dir: number; x: number; y: number; hp: number; build: number; working: boolean; stalled: boolean; unpowered: boolean; ammo: number; charged: boolean; queue: number; recipe: number }
+export interface BotBuilding { ref: number; kind: number; owner: number; dir: number; x: number; y: number; hp: number; build: number; working: boolean; stalled: boolean; unpowered: boolean; ammo: number; charged: boolean; queue: number; recipe: number; /** niveau d'amélioration */ level: number; /** amélioration en cours */ upgrading: boolean }
 export interface BotWreck { ref: number; x: number; y: number; value: number }
 export interface BotView { tick: number; players: PlayerView[]; units: BotUnit[]; buildings: BotBuilding[]; wrecks: BotWreck[]; winner: number }
 
@@ -148,7 +148,7 @@ export function parseBotDump(buf: Int32Array): BotView {
     buildings.push({
       ref: buf[o] >>> 0, kind: buf[o + 1] & 0xff, owner: (buf[o + 1] >> 8) & 0xff, dir: (buf[o + 1] >> 16) & 3, x: buf[o + 2], y: buf[o + 3],
       hp: buf[o + 4], build: buf[o + 5], working: (f & 1) !== 0, stalled: (f & 2) !== 0, unpowered: (f & 4) !== 0, charged: (f & 8) !== 0, ammo: f >> 8,
-      queue: buf[o + 7] & 0xffff, recipe: (buf[o + 7] >> 16) & 0xff,
+      queue: buf[o + 7] & 0xffff, recipe: (buf[o + 7] >> 16) & 0xff, level: (buf[o + 7] >> 24) & 15, upgrading: ((buf[o + 7] >> 28) & 1) !== 0,
     });
   }
   const wrecks: BotWreck[] = [];

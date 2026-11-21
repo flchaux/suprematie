@@ -635,6 +635,112 @@ function lotADepot(n: 1 | 2): Part[] {
   return p;
 }
 
+/**
+ * Générateur principal (3 × 3) : halle à murs d'équipe où repose une grande turbine tournée, cuve
+ * d'hydrocarbure à jauge ambre, deux cheminées évasées, transformateur, et un mât émetteur haubané (sa grande
+ * zone d'alimentation). Niveau 2 (zone agrandie) : mât rehaussé à cinq anneaux, couronne d'émetteurs
+ * lumineux, plateforme cerclée d'une bande de danger et quatre antennes relais aux coins.
+ */
+function generateurPrincipal(n: 1 | 2): Part[] {
+  return [
+    ...socle(3),
+    ...filets(3),
+    // halle : plancher, murs sombres à chaperon d'équipe, filet
+    { shape: "box", size: [1.3,0.12,2.2], pos: [-0.65,0.31,0.1], color: "concrete" },
+    { shape: "bevel", size: [0.22,0.9,2.2], pos: [-1.19,0.7,0.1], bevel: 0.04, color: "dark" },
+    { shape: "bevel", size: [0.22,0.9,2.2], pos: [-0.11,0.7,0.1], bevel: 0.04, color: "dark" },
+    { shape: "extrude", profile: [[-0.14,0],[0.14,0],[0.14,0.06],[0.02,0.16],[-0.14,0.16]], depth: 2.2, bevel: 0.015, pos: [-1.19,1.15,0.1], color: "faction" },
+    { shape: "extrude", profile: [[-0.14,0],[0.14,0],[0.14,0.16],[-0.02,0.16],[-0.14,0.06]], depth: 2.2, bevel: 0.015, pos: [-0.11,1.15,0.1], color: "faction" },
+    { shape: "box", size: [0.03,0.06,1.8], pos: [-1.31,0.6,0.1], color: "glow" },
+    ...[-0.6, 0.1, 0.8].map((z): Part => ({ shape: "box", size: [0.04,0.8,0.08], pos: [-1.31,0.7,z], color: "light", fine: true })),
+    // turbine : carter tourné, cerclages, prise d'air à hélice
+    { shape: "lathe", sides: 16, pos: [-0.65,1.0,0.1], rot: [90,0,0], color: "light", profile: [[0,-1.0],[0.22,-0.98],[0.36,-0.88],[0.44,-0.74],[0.46,-0.6],[0.46,0.9],[0.5,0.95],[0.5,1.12],[0.46,1.18],[0.42,1.18],[0.42,1.08],[0,1.08]] },
+    ...[-0.3, 0.3].map((z): Part => ({ shape: "cylinder", sides: 16, radius: 0.47, height: 0.08, pos: [-0.65,1.0,z], rot: [90,0,0], color: "dark" })),
+    ...[-0.6, 0.0, 0.6].map((z): Part => ({ shape: "torus", radius: 0.46, tube: 0.02, sides: 16, pos: [-0.65,1.0,z], rot: [90,0,0], color: "steel", fine: true })),
+    { shape: "box", size: [0.04,0.03,1.3], pos: [-0.65,1.465,0.0], color: "glow" },
+    { shape: "cylinder", sides: 16, radius: 0.42, height: 0.02, pos: [-0.65,1.0,1.19], rot: [90,0,0], color: "black" },
+    ...[10, 55, 100, 145].map((a): Part => ({ shape: "box", size: [0.76,0.08,0.015], pos: [-0.65,1.0,1.23], rot: [0,0,a], color: "steel" })),
+    { shape: "cone", sides: 10, radius: 0.1, height: 0.14, pos: [-0.65,1.0,1.27], rot: [90,0,0], color: "steel" },
+    { shape: "box", size: [0.05,0.05,0.03], pos: [-0.65,1.0,1.345], color: "amber" },
+    // cuve d'hydrocarbure à l'arrière droite : bandeau d'équipe, jauge ambre, échelle, rambarde
+    { use: "cuve", pos: [0.85,0.25,-0.8], scale: [0.84,1.15,0.84] },
+    { shape: "cylinder", sides: 16, radius: 0.43, height: 0.14, pos: [0.85,0.95,-0.8], color: "faction" },
+    { shape: "cylinder", sides: 16, radius: 0.45, height: 0.08, bevel: 0.02, pos: [0.85,0.33,-0.8], color: "dark" },
+    { shape: "box", size: [0.06,0.5,0.03], pos: [0.85,0.62,-0.37], color: "amber" },
+    { shape: "box", size: [0.1,0.56,0.02], pos: [0.85,0.62,-0.38], color: "dark" },
+    { use: "echelle", pos: [1.27,0.33,-0.8], rot: [0,90,0], scale: [1,0.95,1] },
+    { shape: "cylinder", sides: 8, radius: 0.1, height: 0.06, pos: [0.85,1.41,-0.8], color: "steel" },
+    // deux cheminées évasées à bague lumineuse
+    { shape: "lathe", sides: 12, pos: [-1.1,0,-1.22], color: "steel", profile: [[0.17,0.25],[0.17,0.36],[0.13,0.42],[0.12,2.23],[0.16,2.3],[0.16,2.42],[0.11,2.42],[0.11,2.3]] },
+    { shape: "cylinder", sides: 12, radius: 0.125, height: 0.06, pos: [-1.1,1.95,-1.22], color: "glow" },
+    { shape: "cylinder", sides: 12, radius: 0.13, height: 0.16, pos: [-1.1,1.3,-1.22], color: "faction" },
+    { shape: "lathe", sides: 12, pos: [-0.72,0,-1.22], color: "steel", profile: [[0.15,0.25],[0.15,0.36],[0.11,0.42],[0.1,1.93],[0.14,2.0],[0.14,2.12],[0.09,2.12],[0.09,2.0]] },
+    { shape: "cylinder", sides: 12, radius: 0.105, height: 0.06, pos: [-0.72,1.7,-1.22], color: "glow" },
+    { shape: "cylinder", sides: 12, radius: 0.11, height: 0.14, pos: [-0.72,1.1,-1.22], color: "faction" },
+    ...[[-1.1,2.38],[-0.72,2.08]].map(([x, y]): Part => ({ shape: "cylinder", sides: 6, radius: 0.1, height: 0.02, pos: [x,y,-1.22], color: "black" })),
+    ...(n === 1 ? mastN1() : mastN2()),
+    // transformateur à l'avant droit, ailettes, écran
+    { shape: "bevel", size: [0.9,0.34,0.36], pos: [0.65,0.42,1.2], bevel: 0.04, color: "light" },
+    { shape: "box", size: [0.8,0.03,0.28], pos: [0.65,0.6,1.2], color: "faction" },
+    ...[0.35, 0.5, 0.65, 0.8, 0.95].map((x): Part => ({ shape: "box", size: [0.03,0.26,0.38], pos: [x,0.42,1.2], color: "metal", fine: true })),
+    { shape: "box", size: [0.3,0.1,0.01], pos: [0.45,0.45,1.385], color: "glow" },
+    // conduite cuve → halle (cuivre, brides, vanne), câble halle → mât
+    { shape: "tube", radius: 0.06, path: [[0.43,0.5,-0.8],[0.15,0.5,-0.8],[0.0,0.5,-0.62]], bend: 0.12, color: "copper" },
+    { shape: "torus", radius: 0.075, tube: 0.018, sides: 10, pos: [0.3,0.5,-0.8], rot: [0,0,90], color: "steel", fine: true },
+    { use: "vanne", pos: [0.2,0.55,-0.8] },
+    { shape: "tube", radius: 0.05, path: [[0.0,0.9,0.4],[0.2,0.75,0.5],[0.4,0.6,0.55]], bend: 0.1, color: "rubber" },
+    { shape: "box", size: [0.1,0.06,0.03], pos: [0.3,0.4,1.49], color: "amber", mirror: true },
+  ];
+}
+
+function mastN1(): Part[] {
+  return [
+    // mât émetteur : embase claire, fût effilé, anneaux lumineux à rayons, haubans, coiffe d'équipe et feu
+    { shape: "bevel", size: [0.7,0.4,0.7], pos: [0.75,0.45,0.55], bevel: 0.06, color: "light" },
+    { shape: "box", size: [0.5,0.06,0.5], pos: [0.75,0.67,0.55], color: "faction" },
+    { shape: "lathe", sides: 10, pos: [0.75,0.65,0.55], color: "steel", profile: [[0.15,0],[0.15,0.1],[0.11,0.16],[0.06,2.15],[0,2.15]] },
+    ...[[1.3,0.34],[1.85,0.26],[2.35,0.18]].map(([y, r]): Part => ({ shape: "torus", radius: r, tube: 0.03, sides: 12, pos: [0.75,y,0.55], color: "glow" })),
+    ...[[1.3,0.34],[1.85,0.26],[2.35,0.18]].flatMap(([y, r]): Part[] => [0, 90].map((a): Part => ({ shape: "box", size: [r * 2,0.02,0.02], pos: [0.75,y,0.55], rot: [0,a + 45,0], color: "steel", fine: true }))),
+    ...[[0.42,0.22],[1.08,0.22],[0.42,0.88],[1.08,0.88]].map(([x, z]): Part => ({ shape: "tube", radius: 0.008, sides: 4, path: [[x,0.66,z],[0.75,2.1,0.55]], color: "dark", fine: true })),
+    { shape: "cone", sides: 8, radius: 0.14, height: 0.3, pos: [0.75,2.95,0.55], color: "faction" },
+    { shape: "sphere", radius: 0.08, pos: [0.75,3.14,0.55], color: "amber" },
+  ];
+}
+
+// mât du niveau 2 : embase élargie à bande de danger, fût plus haut à cinq anneaux lumineux, couronne de
+// quatre bras émetteurs à pointe lumineuse, haubans, coiffe d'équipe et feu ; antennes relais aux coins
+function mastN2(): Part[] {
+  const rings: [number, number][] = [[1.25,0.4],[1.7,0.34],[2.15,0.28],[2.6,0.23],[3.05,0.18]];
+  return [
+    { shape: "bevel", size: [0.76,0.44,0.76], pos: [0.75,0.47,0.55], bevel: 0.06, color: "light" },
+    { shape: "box", size: [0.8,0.05,0.8], pos: [0.75,0.71,0.55], color: "hazard" },
+    { shape: "box", size: [0.56,0.06,0.56], pos: [0.75,0.74,0.55], color: "faction" },
+    { shape: "lathe", sides: 10, pos: [0.75,0.7,0.55], color: "steel", profile: [[0.17,0],[0.17,0.1],[0.13,0.16],[0.06,2.85],[0,2.85]] },
+    ...rings.map(([y, r]): Part => ({ shape: "torus", radius: r, tube: 0.03, sides: 12, pos: [0.75,y,0.55], color: "glow" })),
+    ...rings.flatMap(([y, r]): Part[] => [0, 90].map((a): Part => ({ shape: "box", size: [r * 2,0.02,0.02], pos: [0.75,y,0.55], rot: [0,a + 45,0], color: "steel", fine: true }))),
+    ...[[0.4,0.2],[1.1,0.2],[0.4,0.9],[1.1,0.9]].map(([x, z]): Part => ({ shape: "tube", radius: 0.008, sides: 4, path: [[x,0.74,z],[0.75,2.8,0.55]], color: "dark", fine: true })),
+    // couronne : quatre bras émetteurs, pointes lumineuses
+    { shape: "cylinder", sides: 8, radius: 0.1, height: 0.1, pos: [0.75,3.35,0.55], color: "dark" },
+    ...[0, 90, 180, 270].flatMap((a): Part[] => {
+      const dx = 0.32 * Math.cos((a * Math.PI) / 180);
+      const dz = 0.32 * Math.sin((a * Math.PI) / 180);
+      return [
+        { shape: "box", size: [0.6,0.035,0.035], pos: [0.75,3.35,0.55], rot: [0,a,0], color: "steel" },
+        { shape: "sphere", radius: 0.055, pos: [0.75 + dx,3.35,0.55 + dz], color: "glow" },
+      ];
+    }),
+    { shape: "cone", sides: 8, radius: 0.14, height: 0.32, pos: [0.75,3.56,0.55], color: "faction" },
+    { shape: "sphere", radius: 0.08, pos: [0.75,3.76,0.55], color: "amber" },
+    // antennes relais aux quatre coins : pied d'équipe, tige, feu lumineux
+    ...[[-1.4,-1.4],[1.4,-1.4],[-1.4,1.4],[1.4,1.4]].flatMap(([x, z]): Part[] => [
+      { shape: "cylinder", sides: 6, radius: 0.07, height: 0.12, pos: [x,0.31,z], color: "faction" },
+      { shape: "cylinder", sides: 6, radius: 0.022, height: 0.8, pos: [x,0.77,z], color: "steel", fine: true },
+      { shape: "torus", radius: 0.06, tube: 0.012, sides: 8, pos: [x,0.95,z], color: "glow", fine: true },
+      { shape: "sphere", radius: 0.04, pos: [x,1.19,z], color: "glow" },
+    ]),
+  ];
+}
+
 export const BUILDING_MODELS: Record<string, Model> = {
   // extractor : tour de forage effilée à coiffe d'équipe, foret hélicoïdal tournant au-dessus d'un puits à lèvre de
   // minerai, tête motrice à tambour de cuivre, cuve claire et réservoir à bande de minerai, trémie de sortie
@@ -1122,68 +1228,11 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "tube", radius: 0.045, path: [[-0.3,1.0,-0.2],[-0.3,1.1,-0.4],[-0.36,1.1,-0.5]], bend: 0.08, color: "rubber", fine: true },
     ],
   },
-  // main_generator : générateur de départ (3 × 3) — halle à murs d'équipe où repose une grande turbine tournée,
-  // cuve d'hydrocarbure à jauge ambre, deux cheminées évasées, haut mât émetteur à anneaux lumineux (sa grande
-  // zone d'alimentation) haubané, transformateur ; pièces fines : haubans, rayons, cerclages, échelle, garde-corps
-  main_generator: {
-    parts: [
-      ...socle(3),
-      ...filets(3),
-      // halle : plancher, murs sombres à chaperon d'équipe, filet
-      { shape: "box", size: [1.3,0.12,2.2], pos: [-0.65,0.31,0.1], color: "concrete" },
-      { shape: "bevel", size: [0.22,0.9,2.2], pos: [-1.19,0.7,0.1], bevel: 0.04, color: "dark" },
-      { shape: "bevel", size: [0.22,0.9,2.2], pos: [-0.11,0.7,0.1], bevel: 0.04, color: "dark" },
-      { shape: "extrude", profile: [[-0.14,0],[0.14,0],[0.14,0.06],[0.02,0.16],[-0.14,0.16]], depth: 2.2, bevel: 0.015, pos: [-1.19,1.15,0.1], color: "faction" },
-      { shape: "extrude", profile: [[-0.14,0],[0.14,0],[0.14,0.16],[-0.02,0.16],[-0.14,0.06]], depth: 2.2, bevel: 0.015, pos: [-0.11,1.15,0.1], color: "faction" },
-      { shape: "box", size: [0.03,0.06,1.8], pos: [-1.31,0.6,0.1], color: "glow" },
-      ...[-0.6, 0.1, 0.8].map((z): Part => ({ shape: "box", size: [0.04,0.8,0.08], pos: [-1.31,0.7,z], color: "light", fine: true })),
-      // turbine : carter tourné, cerclages, prise d'air à hélice
-      { shape: "lathe", sides: 16, pos: [-0.65,1.0,0.1], rot: [90,0,0], color: "light", profile: [[0,-1.0],[0.22,-0.98],[0.36,-0.88],[0.44,-0.74],[0.46,-0.6],[0.46,0.9],[0.5,0.95],[0.5,1.12],[0.46,1.18],[0.42,1.18],[0.42,1.08],[0,1.08]] },
-      ...[-0.3, 0.3].map((z): Part => ({ shape: "cylinder", sides: 16, radius: 0.47, height: 0.08, pos: [-0.65,1.0,z], rot: [90,0,0], color: "dark" })),
-      ...[-0.6, 0.0, 0.6].map((z): Part => ({ shape: "torus", radius: 0.46, tube: 0.02, sides: 16, pos: [-0.65,1.0,z], rot: [90,0,0], color: "steel", fine: true })),
-      { shape: "box", size: [0.04,0.03,1.3], pos: [-0.65,1.465,0.0], color: "glow" },
-      { shape: "cylinder", sides: 16, radius: 0.42, height: 0.02, pos: [-0.65,1.0,1.19], rot: [90,0,0], color: "black" },
-      ...[10, 55, 100, 145].map((a): Part => ({ shape: "box", size: [0.76,0.08,0.015], pos: [-0.65,1.0,1.23], rot: [0,0,a], color: "steel" })),
-      { shape: "cone", sides: 10, radius: 0.1, height: 0.14, pos: [-0.65,1.0,1.27], rot: [90,0,0], color: "steel" },
-      { shape: "box", size: [0.05,0.05,0.03], pos: [-0.65,1.0,1.345], color: "amber" },
-      // cuve d'hydrocarbure à l'arrière droite : bandeau d'équipe, jauge ambre, échelle, rambarde
-      { use: "cuve", pos: [0.85,0.25,-0.8], scale: [0.84,1.15,0.84] },
-      { shape: "cylinder", sides: 16, radius: 0.43, height: 0.14, pos: [0.85,0.95,-0.8], color: "faction" },
-      { shape: "cylinder", sides: 16, radius: 0.45, height: 0.08, bevel: 0.02, pos: [0.85,0.33,-0.8], color: "dark" },
-      { shape: "box", size: [0.06,0.5,0.03], pos: [0.85,0.62,-0.37], color: "amber" },
-      { shape: "box", size: [0.1,0.56,0.02], pos: [0.85,0.62,-0.38], color: "dark" },
-      { use: "echelle", pos: [1.27,0.33,-0.8], rot: [0,90,0], scale: [1,0.95,1] },
-      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.06, pos: [0.85,1.41,-0.8], color: "steel" },
-      // deux cheminées évasées à bague lumineuse
-      { shape: "lathe", sides: 12, pos: [-1.1,0,-1.22], color: "steel", profile: [[0.17,0.25],[0.17,0.36],[0.13,0.42],[0.12,2.23],[0.16,2.3],[0.16,2.42],[0.11,2.42],[0.11,2.3]] },
-      { shape: "cylinder", sides: 12, radius: 0.125, height: 0.06, pos: [-1.1,1.95,-1.22], color: "glow" },
-      { shape: "cylinder", sides: 12, radius: 0.13, height: 0.16, pos: [-1.1,1.3,-1.22], color: "faction" },
-      { shape: "lathe", sides: 12, pos: [-0.72,0,-1.22], color: "steel", profile: [[0.15,0.25],[0.15,0.36],[0.11,0.42],[0.1,1.93],[0.14,2.0],[0.14,2.12],[0.09,2.12],[0.09,2.0]] },
-      { shape: "cylinder", sides: 12, radius: 0.105, height: 0.06, pos: [-0.72,1.7,-1.22], color: "glow" },
-      { shape: "cylinder", sides: 12, radius: 0.11, height: 0.14, pos: [-0.72,1.1,-1.22], color: "faction" },
-      ...[[-1.1,2.38],[-0.72,2.08]].map(([x, y]): Part => ({ shape: "cylinder", sides: 6, radius: 0.1, height: 0.02, pos: [x,y,-1.22], color: "black" })),
-      // mât émetteur : embase claire, fût effilé, anneaux lumineux à rayons, haubans, coiffe d'équipe et feu
-      { shape: "bevel", size: [0.7,0.4,0.7], pos: [0.75,0.45,0.55], bevel: 0.06, color: "light" },
-      { shape: "box", size: [0.5,0.06,0.5], pos: [0.75,0.67,0.55], color: "faction" },
-      { shape: "lathe", sides: 10, pos: [0.75,0.65,0.55], color: "steel", profile: [[0.15,0],[0.15,0.1],[0.11,0.16],[0.06,2.15],[0,2.15]] },
-      ...[[1.3,0.34],[1.85,0.26],[2.35,0.18]].map(([y, r]): Part => ({ shape: "torus", radius: r, tube: 0.03, sides: 12, pos: [0.75,y,0.55], color: "glow" })),
-      ...[[1.3,0.34],[1.85,0.26],[2.35,0.18]].flatMap(([y, r]): Part[] => [0, 90].map((a): Part => ({ shape: "box", size: [r * 2,0.02,0.02], pos: [0.75,y,0.55], rot: [0,a + 45,0], color: "steel", fine: true }))),
-      ...[[0.42,0.22],[1.08,0.22],[0.42,0.88],[1.08,0.88]].map(([x, z]): Part => ({ shape: "tube", radius: 0.008, sides: 4, path: [[x,0.66,z],[0.75,2.1,0.55]], color: "dark", fine: true })),
-      { shape: "cone", sides: 8, radius: 0.14, height: 0.3, pos: [0.75,2.95,0.55], color: "faction" },
-      { shape: "sphere", radius: 0.08, pos: [0.75,3.14,0.55], color: "amber" },
-      // transformateur à l'avant droit, ailettes, écran
-      { shape: "bevel", size: [0.9,0.34,0.36], pos: [0.65,0.42,1.2], bevel: 0.04, color: "light" },
-      { shape: "box", size: [0.8,0.03,0.28], pos: [0.65,0.6,1.2], color: "faction" },
-      ...[0.35, 0.5, 0.65, 0.8, 0.95].map((x): Part => ({ shape: "box", size: [0.03,0.26,0.38], pos: [x,0.42,1.2], color: "metal", fine: true })),
-      { shape: "box", size: [0.3,0.1,0.01], pos: [0.45,0.45,1.385], color: "glow" },
-      // conduite cuve → halle (cuivre, brides, vanne), câble halle → mât
-      { shape: "tube", radius: 0.06, path: [[0.43,0.5,-0.8],[0.15,0.5,-0.8],[0.0,0.5,-0.62]], bend: 0.12, color: "copper" },
-      { shape: "torus", radius: 0.075, tube: 0.018, sides: 10, pos: [0.3,0.5,-0.8], rot: [0,0,90], color: "steel", fine: true },
-      { use: "vanne", pos: [0.2,0.55,-0.8] },
-      { shape: "tube", radius: 0.05, path: [[0.0,0.9,0.4],[0.2,0.75,0.5],[0.4,0.6,0.55]], bend: 0.1, color: "rubber" },
-      { shape: "box", size: [0.1,0.06,0.03], pos: [0.3,0.4,1.49], color: "amber", mirror: true },
-    ],
-  },
+  // main_generator : générateur de départ (3 × 3), voir generateurPrincipal
+  main_generator: { parts: generateurPrincipal(1) },
+  // main_generator_n2 : zone électrique agrandie (+50 %) : mât rehaussé à cinq anneaux et couronne
+  // d'émetteurs, plateforme à bande de danger, quatre antennes relais aux coins
+  main_generator_n2: { parts: generateurPrincipal(2) },
   // pylon : pied de béton et embase d'équipe, mât effilé haubané de jambes de force, traverse à isolateurs à
   // disques lumineux, feu ambre (pièces fines : jambes de force, disques, boulons)
   pylon: {
