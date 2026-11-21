@@ -230,7 +230,10 @@ export class Decorations {
     const block = (x0: number, z0: number, x1: number, z1: number) => {
       for (let z = Math.max(0, z0); z <= Math.min(h - 1, z1); z++) for (let x = Math.max(0, x0); x <= Math.min(w - 1, x1); x++) blocked[z * w + x] = 1;
     };
-    for (const s of m.spots) block(s.x - 1, s.y - 1, s.x + 2, s.y + 2);
+    // gisements : clairière ronde (pas un carré), un peu plus large que l'emprise
+    for (const s of m.spots) {
+      for (let z = s.y - 2; z <= s.y + 3; z++) for (let x = s.x - 2; x <= s.x + 3; x++) if (Math.hypot(x + 0.5 - (s.x + 1), z + 0.5 - (s.y + 1)) < 2.05) block(x, z, x, z);
+    }
     for (const [sx, sy] of m.starts) block(sx - 3, sy - 3, sx + 3, sy + 3);
     const hAt = (x: number, z: number) => heights[Math.min(h - 1, Math.max(0, z)) * w + Math.min(w - 1, Math.max(0, x))];
     const lists: number[][] = Array.from({ length: this.cw * this.ch }, () => []);

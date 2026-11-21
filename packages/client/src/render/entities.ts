@@ -302,6 +302,9 @@ export class Entities {
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
   private hatchFor: Frame | null = null;
+  /** gisement (indice dans map.spots) d'après sa case d'origine, et gisements recouverts par un bâtiment à cette image */
+  private spotAt = new Map<number, number>();
+  coveredSpots = new Set<number>();
   /** bâtiments sans trappe dans leur modèle (aucune paroi) : tables vides, par largeur */
   private noHatches: Float32Array[] = [];
   /** conduites entre machines jumelles (ingrédients et produits partagés) : gaine et liseré lumineux */
@@ -320,6 +323,7 @@ export class Entities {
     public data: GameData,
     public map: MapData,
   ) {
+    map.spots.forEach((sp, i) => this.spotAt.set(sp.y * map.w + sp.x, i));
     // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
       const target = Math.max(0.7, (u.radius * 2.3) / TILE);
@@ -747,6 +751,7 @@ export class Entities {
       }
     }
     // ----- bâtiments -----
+    this.coveredSpots.clear();
     let npip = 0;
     let nsup = 0;
     let nlift = 0;
@@ -773,6 +778,17 @@ export class Entities {
       if (cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
       else if (cls === BClass.Belt && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0) groundBelts.set(buf[o + 2] >>> 0, (buf[o + 1] >> 16) & 3);
       else if (bd?.key === "splitter" && buf[o + 4] >= 65536) splitterOutsAt.set(buf[o + 2] >>> 0, splitterOuts((buf[o + 1] >> 16) & 3, (buf[o + 5] >>> 24) & 3));
+      // gisement (2 × 2 cases) recouvert par un bâtiment : ses roches hautes seront cachées
+      if (bd && bd.w > 1 && this.spotAt.size) {
+        const bx = buf[o + 2] & 0xffff;
+        const bz = (buf[o + 2] >>> 16) & 0xffff;
+        for (let dz = 0; dz < bd.h - 1; dz++) {
+          for (let dx = 0; dx < bd.w - 1; dx++) {
+            const si = this.spotAt.get((bz + dz) * this.map.w + bx + dx);
+            if (si !== undefined) this.coveredSpots.add(si);
+          }
+        }
+      }
     }
     o = f.buildingOff;
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
