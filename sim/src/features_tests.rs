@@ -2145,3 +2145,32 @@ fn no_fog_of_war_reveals_everything() {
     assert!(r.vis.iter().all(|v| v.iter().all(|&c| c == crate::combat::VIS_ALL)));
     assert_eq!(r.hash(), w.hash());
 }
+
+#[test]
+fn belt_contents_per_tile_and_line() {
+    // file de 4 tapis vers l'est qui ne débouche nulle part : les objets se tassent au bout
+    let mut w = world(&[0]);
+    flatten(&mut w, 90, 90, 115, 115);
+    let tiles: Vec<usize> = (100..104).map(|x| put(&mut w, 0, B_BELT1, x, 100, 0)).collect();
+    run(&mut w, 10); // le courant de la file est revu tous les 10 ticks
+    let empty = crate::belts::belt_contents(&w, tiles[0]).expect("tapis relié à une file");
+    assert_eq!(empty, crate::belts::BeltContents { tile: vec![], line: vec![], tiles: 4, jam: 0, powered: true });
+    for it in [IRON_PLATE, IRON_PLATE, COPPER_PLATE, IRON_PLATE, COPPER_PLATE] {
+        while !crate::belts::put_on_belt(&mut w, tiles[0], it) {
+            w.step(&[]);
+        }
+    }
+    run(&mut w, 400);
+    let last = crate::belts::belt_contents(&w, tiles[3]).unwrap();
+    assert_eq!(last.tile, vec![IRON_PLATE, IRON_PLATE, COPPER_PLATE, IRON_PLATE], "case de sortie pleine, de l'avant vers l'arrière");
+    assert_eq!(last.line, vec![(IRON_PLATE, 3), (COPPER_PLATE, 2)], "toute la file, par objet");
+    assert_eq!(last.jam, 5, "file bouchée : tout est tassé");
+    assert_eq!(crate::belts::belt_contents(&w, tiles[2]).unwrap().tile, vec![COPPER_PLATE]);
+    assert!(crate::belts::belt_contents(&w, tiles[0]).unwrap().tile.is_empty());
+    // la fiche du bâtiment l'expose ; un bâtiment qui n'est pas un tapis n'a pas de contenu de tapis
+    let info = crate::render::info_building(&w, w.building_ref(tiles[3]));
+    assert!(info.starts_with(r#"{"belt":{"tile":[6,6,7,6],"line":[[6,3],[7,2]],"tiles":4,"cap":16,"jam":5,"powered":true},"#), "{info}");
+    let depot = put(&mut w, 0, B_DEPOT, 100, 105, 0);
+    assert!(crate::belts::belt_contents(&w, depot).is_none());
+    assert!(crate::render::info_building(&w, w.building_ref(depot)).starts_with(r#"{"belt":null,"#));
+}

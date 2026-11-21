@@ -203,6 +203,8 @@ pub enum Proj {
     Rail = 11,
     /// morsure des bêtes de la faune (corps-à-corps, instantanée, sans trait)
     Bite = 12,
+    /// crachat acide d'un nid de la faune (boule verte en cloche)
+    Spit = 13,
 }
 
 pub const M_LAND: u8 = 1;
@@ -240,7 +242,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 58] = [
+pub const WEAPONS: [WeaponDef; 59] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -300,6 +302,8 @@ pub const WEAPONS: [WeaponDef; 58] = [
     w!(12, 1, 15, Bite, 0, 0, M_LAND),                                  // 55 petit mordeur
     w!(40, 2, 18, Bite, 0, 0, M_LAND),                                  // 56 mordeur
     w!(140, 2, 24, Bite, 0, 0, M_LAND),                                 // 57 grand mordeur
+    // crachat du nid : contre ce qui vole ou flotte, que les morsures n'atteignent pas
+    w!(55, 26, 25, Spit, 18, 96, M_AIR | M_NAVAL),                      // 58 nid de mordeurs
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -600,7 +604,7 @@ pub const BUILDINGS: [BuildingDef; 48] = [
     // générateur principal : posé au départ (et reconstructible), grande zone ; brûle de l'hydrocarbure
     BuildingDef { key: "main_generator", name: "Générateur principal", size: (3, 3), hp: 3000, power_prod: 1500, cost: &[(STEEL, 40), (GEAR, 20), (CIRCUIT, 20)], build: 30, tech: 0, class: BClass::Power, supply: 18, connect: 30, ..BD },
     // nid de la faune : posé par la carte ou par une expansion, jamais par un joueur (voir can_place)
-    BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, vision: 0, ..BD },
+    BuildingDef { key: "nest", name: "Nid de mordeurs", size: (3, 3), hp: 3000, class: BClass::Nest, weapon: 58, vision: 0, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.

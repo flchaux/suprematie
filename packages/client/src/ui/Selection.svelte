@@ -159,6 +159,8 @@
   const owner = $derived(sb ? hexOf(sb.owner) : "");
   /** nid de la faune : [bêtes au nid, plafond, seuil d'attaque, âge (s), évolution ‰, pression, chance ‰] */
   const nest = $derived(info?.nest as number[] | null | undefined);
+  /** tapis : objets sur la case (de l'avant vers l'arrière) et sur toute la file (objet, nombre) */
+  const belt = $derived(info?.belt as { tile: number[]; line: [number, number][]; tiles: number; cap: number; jam: number; powered: boolean } | null | undefined);
   // choix de recette : la grille ne s'ouvre que par « Changer de recette » (ou si aucune n'est choisie) ;
   // elle se referme quand on sélectionne un autre bâtiment
   let picking = $state(false);
@@ -242,6 +244,25 @@
       {/if}
       {#if info.twins}
         <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose se dépannent : ingrédients et produits passent de l'une à l'autre quand ses bras et tapis ne suffisent pas"><span class="kicker">Jumelée</span> {bdef.cls === BClass.Crafter ? "ingrédients et produits partagés" : bdef.cls === BClass.Power ? "combustible partagé" : "ingrédients partagés"} avec {bdef.cls === BClass.Power ? (info.twins === 1 ? "le générateur collé" : `${info.twins} générateurs collés`) : info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
+      {/if}
+      {#if belt}
+        {@const slots = belt.tiles ? belt.cap / belt.tiles : 4}
+        {@const onLine = belt.line.reduce((s, [, n]) => s + n, 0)}
+        <div class="belt">
+          <div class="row small"><span class="kicker">Sur cette case</span>
+            <span class="lane" title="Objets sur cette case, dans le sens de la marche">
+              {#each Array(Math.max(0, slots - belt.tile.length)) as _}<span class="bslot"></span>{/each}
+              {#each [...belt.tile].reverse() as it}<span class="bslot full"><Item id={it} size={18} /></span>{/each}
+              <span class="arrow">▸</span>
+            </span>
+            <span class="num dim">{belt.tile.length}/{slots}</span>
+          </div>
+          <div class="row small wrap"><span class="kicker">Sur la file</span>
+            {#each belt.line as [it, n]}<span class="tip"><Item id={it} {n} size={16} /><span class="tt">{d.items[it]?.name} : {n}</span></span>{:else}<span class="dim">vide</span>{/each}
+            <span class="dim num">· {onLine}/{belt.cap} sur {belt.tiles} case{belt.tiles > 1 ? "s" : ""}</span>
+          </div>
+          {#if belt.jam >= slots}<div class="status warn"><span class="led"></span>Sortie bouchée : {belt.jam} objets à l'arrêt en bout de file</div>{/if}
+        </div>
       {/if}
       {#if bdef.key === "furnace" && d.furnaceLevels}
         {@const fl = d.furnaceLevels}
@@ -707,6 +728,11 @@
   .turn .icon-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(62, 240, 255, 0.12); }
   .fuelbar { display: inline-block; width: 70px; height: 6px; background: rgba(255, 255, 255, 0.08); margin: 0 4px; vertical-align: middle; }
   .fuelbar > span { display: block; height: 100%; background: var(--amber); }
+  .belt { display: flex; flex-direction: column; gap: 4px; }
+  .lane { display: inline-flex; gap: 2px; align-items: center; padding: 2px 4px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
+  .bslot { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border: 1px dashed rgba(255, 255, 255, 0.12); }
+  .bslot.full { border-style: solid; border-color: rgba(62, 240, 255, 0.25); }
+  .lane .arrow { margin-left: 2px; }
   .fuelbar.empty { outline: 1px solid var(--bad, #ff5a4f); }
   .nowrap { white-space: nowrap; }
   .turn .icon-btn.split { padding: 2px 6px; }

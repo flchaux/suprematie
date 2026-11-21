@@ -1953,7 +1953,7 @@ function diagAtlas(): THREE.Texture {
   return t;
 }
 
-const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030, 11: 0xc8ecff };
+const PROJ_COLORS: Record<number, number> = { 0: 0xffd27a, 1: 0xffb050, 2: 0xff7050, 3: 0x404040, 4: 0x9fd0ff, 5: 0x7fffff, 6: 0x7dfcff, 7: 0x9db7ff, 8: 0xff5050, 9: 0xff2a2a, 10: 0xff9030, 11: 0xc8ecff, 13: 0x9adf3a };
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 /**
  * Apparence de chaque famille de projectiles (en cases).
@@ -1983,4 +1983,6 @@ const PROJ_LOOKS: Record<number, ProjLook> = {
   8: { color: 0xff5050, core: [0.05, 1.1], halo: [0.15, 1.3], k: 3.2 },
   9: { color: 0xff2a2a, core: [0.045, 0.9], halo: [0.14, 1.05], k: 3.4 },
   11: { color: 0xc8ecff, core: [0.03, 3], halo: [0.11, 3.2], k: 3.4 },
+  // crachat acide d'un nid : boule verte baveuse
+  13: { color: 0x9adf3a, core: [0.16, 0.22], halo: [0.42, 0.5], k: 2 },
 };

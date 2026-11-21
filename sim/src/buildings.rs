@@ -15,7 +15,7 @@ pub const RECIPE_SCALE: u32 = 100 * 1024;
 fn needs_tick(c: BClass) -> bool {
     matches!(
         c,
-        BClass::Extractor | BClass::Depot | BClass::Power | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport
+        BClass::Extractor | BClass::Depot | BClass::Power | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport | BClass::Nest
     )
 }
 
@@ -1760,6 +1760,8 @@ pub fn update_buildings(w: &mut World) {
                     crate::combat::building_weapon(w, b);
                 }
             }
+            // nid de la faune : il crache sur les avions et les navires
+            BClass::Nest => crate::combat::building_weapon(w, b),
             BClass::Shield => tick_shield(w, b),
             BClass::Silo => tick_ammo_builder(w, b, MISSILE_COST, 1, 1200),
             BClass::AntiMissile => {
