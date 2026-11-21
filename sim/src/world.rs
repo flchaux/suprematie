@@ -73,9 +73,14 @@ impl Player {
 }
 
 // ---------- Ordres des unités ----------
+/// `Order::Move::eta` : durée pas encore commencée (le reste du champ est un nombre de ticks)
+pub const ETA_PENDING: u32 = 1 << 31;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
-    Move { x: i32, y: i32, gx: i32, gy: i32, attack: bool },
+    /// déplacement vers (x, y) ; (gx, gy) : but du groupe (champ de flux partagé). `eta` : allure d'un
+    /// déplacement en formation (0 : pleine vitesse) ; tick d'arrivée prévu du groupe, ou, avec le bit
+    /// `ETA_PENDING`, durée prévue comptée à partir du début de l'ordre (voir units::formation_pace)
+    Move { x: i32, y: i32, gx: i32, gy: i32, attack: bool, eta: u32 },
     Patrol { x: i32, y: i32, ox: i32, oy: i32 },
     Attack { target: u32 },
     AttackGround { x: i32, y: i32 },
@@ -124,11 +129,12 @@ impl Ser for Order {
     fn ser(&self, w: &mut crate::ser::W) {
         w.u8(self.code());
         match *self {
-            Order::Move { x, y, gx, gy, .. } => {
+            Order::Move { x, y, gx, gy, eta, .. } => {
                 x.ser(w);
                 y.ser(w);
                 gx.ser(w);
                 gy.ser(w);
+                eta.ser(w);
             }
             Order::Patrol { x, y, ox, oy } => {
                 x.ser(w);
@@ -157,7 +163,7 @@ impl Ser for Order {
         let i = |r: &mut crate::ser::R| i32::de(r);
         let u = |r: &mut crate::ser::R| u32::de(r);
         match c {
-            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2 },
+            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2, eta: u(r) },
             3 => Order::Patrol { x: i(r), y: i(r), ox: i(r), oy: i(r) },
             4 => Order::Attack { target: u(r) },
             5 => Order::AttackGround { x: i(r), y: i(r) },

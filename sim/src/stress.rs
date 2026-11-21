@@ -118,7 +118,7 @@ fn build_reference(verbose: bool) -> World {
             let id = w.spawn_unit(k, owner, x, y);
             let s = slot_of(id);
             let (tx, ty) = (512 * TILE, 512 * TILE);
-            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true });
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
         }
     }
     w.nav = crate::flow::Nav::new(&w.map);
@@ -522,7 +522,7 @@ pub fn weapons_demo() -> World {
         }
         let gx = if w.units.owner[s] == 0 { x0 + 64 } else { x0 + 10 };
         let (x, y) = (gx * TILE, w.units.y[s]);
-        crate::orders::give(&mut w, s, false, Order::Move { x, y, gx: x, gy: y, attack: true });
+        crate::orders::give(&mut w, s, false, Order::Move { x, y, gx: x, gy: y, attack: true, eta: 0 });
     }
     w
 }
@@ -560,6 +560,34 @@ pub fn showcase_demo() -> World {
     for k in 0..UNITS.len() as i32 {
         let (x, y) = (x0 + (k % 12) * 5, uy + (k / 12) * 6);
         w.spawn_unit(k as u16, 0, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    }
+    w
+}
+
+/// Démo des déplacements en formation orientée : une armée mêlée du joueur 0 (motos, chars,
+/// artilleries, marcheurs, robots, glisseurs), en bloc tourné vers l'est, sur un grand terrain plat
+/// autour du départ du joueur 0.
+/// Le client lui donne des ordres en local (`?demo=formation`).
+pub fn formation_demo() -> World {
+    let mut w = World::new(&[13, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    // près du départ du joueur 0 (la caméra y commence), à côté de son commandant
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx - 30).clamp(4, w.map.w - 124), (sy - 36).clamp(4, w.map.h - 84));
+    flat(&mut w, x0, y0, x0 + 120, y0 + 80);
+    let keys = ["moto", "light_tank", "artillery", "assault_walker", "line_robot", "hover_tank"];
+    let kinds: Vec<u16> = keys.iter().map(|k| UNITS.iter().position(|u| u.key == *k).unwrap() as u16).collect();
+    for r in 0..4 {
+        for c in 0..6 {
+            let kind = kinds[((r * 6 + c) % 6) as usize];
+            let id = w.spawn_unit(kind, 0, (x0 + 20 + c * 2) * TILE + TILE / 2, (y0 + 30 + r * 2) * TILE + TILE / 2);
+            if let Some(s) = w.unit(id) {
+                w.units.facing[s] = 0;
+            }
+        }
     }
     w
 }

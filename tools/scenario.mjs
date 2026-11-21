@@ -1,5 +1,5 @@
 // Générateur d'ordres aléatoires (mais reproductibles) pour les tests.
-import { O, pack, move, build, target, factoryQueue, research, point, harvest } from "../packages/shared/src/orders.ts";
+import { O, pack, move, moveFormation, build, target, factoryQueue, research, point, harvest } from "../packages/shared/src/orders.ts";
 import { parseBotDump } from "../packages/shared/src/render.ts";
 
 export function randomOrders(seed, sim) {
@@ -35,7 +35,12 @@ export function randomOrders(seed, sim) {
       const u = mine[rnd(mine.length)];
       const tx = (u.x >> 8) + rnd(41) - 20;
       const ty = (u.y >> 8) + rnd(41) - 20;
-      if (r < 3) pack(p, move([u], tx * 256, ty * 256, false, rnd(2) === 0), out);
+      if (r < 2) pack(p, move([u], tx * 256, ty * 256, false, rnd(2) === 0), out);
+      else if (r < 3) {
+        // formation orientée (allure du plus lent, orientation à l'arrivée) : jusqu'à 6 unités, angle au hasard
+        const group = mine.slice(0, 6).map((v) => ({ id: v.id, x: v.x, y: v.y, facing: 0 }));
+        pack(p, moveFormation(group, tx * 256, ty * 256, (rnd(360) * Math.PI) / 180, rnd(4) === 0, rnd(2) === 0), out);
+      }
       else if (r < 6) {
         const kinds = [0, 1, 4, 5, 11, 12, 13, 14, 16, 22];
         pack(p, build([u.id], kinds[rnd(kinds.length)], Math.max(2, Math.min(size - 8, tx)), Math.max(2, Math.min(size - 8, ty)), rnd(4), true), out);

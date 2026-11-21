@@ -135,6 +135,38 @@ pub fn clear_orders(w: &mut World, s: usize) {
 
 /// Déplace l'unité vers (tx, ty). Renvoie vrai à l'arrivée (à moins de `stop`).
 pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: i32) -> bool {
+    steer_paced(w, s, tx, ty, gx, gy, stop, i32::MAX, 20)
+}
+
+/// Allure d'une unité dans un déplacement en formation (`Order::Move::eta`, voir
+/// orders::formation_etas) : vitesse (sous-unités par tick) qui la fait arriver à (x, y) au tick prévu
+/// pour le groupe. Une unité en avance ralentit (ou attend), une unité en retard (détour, combat)
+/// reprend sa pleine vitesse. Au premier tick de l'ordre, la durée prévue devient un tick d'arrivée.
+pub fn formation_pace(w: &mut World, s: usize, x: i32, y: i32, eta: u32) -> i32 {
+    if eta == 0 || fixed_wing(w.units.kind[s]) {
+        return i32::MAX;
+    }
+    let eta = if eta & ETA_PENDING != 0 {
+        let at = w.tick.saturating_add(eta & !ETA_PENDING);
+        if let Some(Order::Move { eta: e, .. }) = w.units.cold[s].orders.first_mut() {
+            *e = at;
+        }
+        at
+    } else {
+        eta
+    };
+    let left = eta as i64 - w.tick as i64;
+    if left <= 0 {
+        return i32::MAX;
+    }
+    let d = dist(w.units.x[s], w.units.y[s], x, y) as i64;
+    ((d + left - 1) / left).max(1) as i32
+}
+
+/// Comme `steer`, à une vitesse d'au plus `cap` sous-unités par tick (allure d'un groupe en formation).
+/// `patience` : ticks sans rapprochement, près du but, avant de s'arrêter là (foule autour du but).
+#[allow(clippy::too_many_arguments)]
+pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: i32, cap: i32, patience: u16) -> bool {
     let kind = w.units.kind[s];
     let def = udef(kind);
     let (x, y) = (w.units.x[s], w.units.y[s]);
@@ -156,7 +188,11 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
         w.units.cold[s].turret = w.trig.atan2((gy - y) as i64, (gx - x) as i64);
     }
     if let Some(class) = move_class(def.layer) {
-        if d > 5 * TILE {
+        // le champ de flux mène au but du groupe ; une unité dont la place est loin de ce but (grand
+        // groupe, formation) la rejoint en ligne droite dès qu'elle en est aussi près que sa place,
+        // sinon elle tournerait autour du but du groupe sans jamais atteindre sa place
+        let far = d > 5 * TILE && ((tx == gx && ty == gy) || dist(x, y, gx, gy) > dist(tx, ty, gx, gy) + 5 * TILE);
+        if far {
             if w.units.cold[s].goal == 0 {
                 let key = flow::acquire_goal(w, class, gx / TILE, gy / TILE);
                 w.units.cold[s].goal = key;
@@ -177,7 +213,7 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
             }
         }
     }
-    let speed = unit_speed(kind);
+    let speed = unit_speed(kind).min(cap.max(1));
     let f = w.units.facing[s];
     let nf = turn_towards(f, heading, turn_rate(kind));
     w.units.facing[s] = nf;
@@ -216,7 +252,7 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
     } else {
         c.stuck = c.stuck.saturating_sub(2);
     }
-    if nd + 16 < c.best_dist {
+    if nd + 16.min(speed / 2) < c.best_dist {
         c.best_dist = nd;
         c.noprog = 0;
     } else if following && moved * 4 >= speed && nd > stop + 6 * TILE {
@@ -229,7 +265,7 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
         return nd <= stop.max(2 * TILE);
     }
     // arrivé si on piétine près du but (groupes), ou si bloqué longtemps
-    (c.noprog > 20 && nd < stop + 6 * TILE) || c.stuck > 120 || c.noprog > 1200
+    (c.noprog > patience && nd < stop + 6 * TILE) || c.stuck > 120 || c.noprog > 1200
 }
 
 fn try_move(w: &mut World, s: usize, vx: i32, vy: i32) {
@@ -540,12 +576,16 @@ fn run_order(w: &mut World, s: usize) -> u32 {
     let def = udef(kind);
     let owner = w.units.owner[s];
     match o {
-        Order::Move { x, y, gx, gy, attack } => {
+        Order::Move { x, y, gx, gy, attack, eta } => {
             if attack && has_target_in_range(w, s) && !fixed_wing(kind) {
                 return NONE;
             }
-            let stop = def.radius + TILE / 2;
-            if steer(w, s, x, y, gx, gy, stop) {
+            let cap = formation_pace(w, s, x, y, eta);
+            // en formation, chacun va jusqu'à sa place (le groupe garde sa forme), quitte à attendre
+            // qu'un voisin qui croise son chemin se dégage ; sinon on s'arrête dès qu'on touche sa
+            // place, et on renonce vite si la foule bloque, pour ne pas se bousculer autour d'un but commun
+            let (stop, patience) = if eta != 0 { (TILE / 4, 100) } else { (def.radius + TILE / 2, 20) };
+            if steer_paced(w, s, x, y, gx, gy, stop, cap, patience) {
                 pop_order(w, s);
             }
             NONE

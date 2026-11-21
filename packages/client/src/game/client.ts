@@ -145,7 +145,14 @@ export class GameClient {
     if (text.trim()) this.send({ t: "chat", text });
   }
 
+  /** Démo à ordres locaux (?demo=formation) : les ordres vont directement au worker. */
+  private demoOrders = false;
+
   cmd(c: Ord.Cmd): void {
+    if (this.demoOrders) {
+      this.worker?.postMessage({ type: "demoCmd", cmd: c });
+      return;
+    }
     if (ui.replay || ui.spectator) return;
     this.send({ t: "cmd", tick: this.lastTick + ORDER_DELAY, cmd: c });
   }
@@ -261,9 +268,12 @@ export class GameClient {
     // ?demo=armes : expérimentales, balles, traits d'énergie et rayons prolongés face à une armée
     // ?demo=projectiles : une rangée par arme qui tire au sol, pour juger chaque projectile
     // ?demo=vitrine : un exemplaire de chaque bâtiment et de chaque unité, pour juger les modèles en jeu
+    // ?demo=formation : une armée mêlée du joueur 0, à qui l'on donne des ordres (déplacements en formation)
     const scene = new URLSearchParams(location.search).get("demo") ?? "";
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;
+    this.demoOrders = scene === "formation";
+    if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
 
@@ -821,16 +831,19 @@ export class GameClient {
   private formStart: { x: number; z: number } | null = null;
   private formAngle: number | null = null;
 
-  /** Unités sélectionnées prêtes pour une formation : rayon et rang (courte portée devant, soutien derrière). */
-  private formationUnits(): Ord.FormationUnit[] {
+  /** Unités sélectionnées prêtes pour une formation : position, orientation et taille. */
+  private formationUnits(): (Ord.FormationUnit & { radius: number })[] {
     const data = this.data!;
-    return this.selectedUnits().map((u) => {
-      const d = data.units[u.kind];
-      const range = d.weapons.length ? Math.max(...d.weapons.map((wi) => data.weapons[wi]?.range ?? 0)) : 0;
-      // rang : portée des armes ; sans arme (ingénieurs, transports, boucliers) en dernier
-      const rank = range > 0 ? range : 1000;
-      return { id: u.id, x: u.x, y: u.y, radius: d.radius, rank };
-    });
+    const f = this.frame;
+    if (!f) return [];
+    const out: (Ord.FormationUnit & { radius: number })[] = [];
+    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
+      const id = f.buf[o] >>> 0;
+      if (!this.selected.has(id) || ((f.buf[o + 1] >> 8) & 0xff) !== ui.me) continue;
+      const d = data.units[f.buf[o + 1] & 0xff];
+      out.push({ id, x: f.buf[o + 2], y: f.buf[o + 3], facing: f.buf[o + 6] & 0xffff, radius: d.radius });
+    }
+    return out;
   }
 
   /** Aperçu de la formation pendant le glisser. */
@@ -935,7 +948,8 @@ export class GameClient {
       this.formAngle = null;
       this.scene?.setFormation(null);
       if (this.mouse.dragging && start && angle !== null && this.data && ui.me >= 0) {
-        // formation orientée : chacun à sa place, puis tourné vers la direction du glisser
+        // formation orientée : le groupe garde sa disposition, tournée vers la direction du glisser,
+        // avance à la vitesse du plus lent et chacun se tourne vers cette direction à l'arrivée
         const units = this.formationUnits();
         if (units.length) {
           this.cmd(Ord.moveFormation(units, Math.round(start.x * TILE), Math.round(start.z * TILE), angle, e.shiftKey));

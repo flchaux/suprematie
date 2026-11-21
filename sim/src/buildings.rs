@@ -2370,7 +2370,7 @@ fn tick_factory(w: &mut World, b: usize) {
         let id = w.spawn_unit(kind, owner as u8, sx, sy);
         let s = slot_of(id);
         w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
-        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false });
+        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
         let bb = &mut w.buildings[b];
         if let Some(q) = bb.queue.first_mut() {
             q.1 = q.1.saturating_sub(1);

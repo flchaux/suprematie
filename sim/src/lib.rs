@@ -327,6 +327,15 @@ pub extern "C" fn showcase_demo() -> u32 {
     h
 }
 
+/// Démo des déplacements en formation orientée (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn formation_demo() -> u32 {
+    let w = stress::formation_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Scène de démonstration des armes (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn weapons_demo() -> u32 {
@@ -348,6 +357,8 @@ mod tests;
 mod logistics_tests;
 #[cfg(test)]
 mod features_tests;
+#[cfg(test)]
+mod formation_tests;
 #[cfg(test)]
 mod nature_tests;
 #[cfg(test)]
