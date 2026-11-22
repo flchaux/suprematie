@@ -9,7 +9,7 @@ export interface Message { id: number; text: string; kind: "info" | "alert" | "c
  * gisement, état (0 en route, 1 récolte, 2 combat, 3 soute pleine), avancement du cycle (‰), durée d'un cycle (ticks). */
 export interface HarvestInfo { raw: number; out: number; x: number; y: number; state: number; progress: number; cycle: number }
 /** Ramassage de la sortie d'un bâtiment (sim : render::pickup_info) : bâtiment, objet de sa sortie (0 : rien),
- * en attente, centre (cases), état (0 en route, 1 posté, 2 soute pleine vidée par les drones, 3 aucun dépôt). */
+ * en attente, centre (cases), état (0 en route, 1 posté, 2 soute pleine vidée par les drones, 3 soute pleine que rien ne vide). */
 export interface PickupInfo { kind: number; item: number; out: number; x: number; y: number; state: number }
 /** Livraison de la soute (sim : render::deliver_info) : objet (0 : tout), dépôt visé (cases ; -1 : aucun). */
 export interface DeliverInfo { item: number; x: number; y: number }

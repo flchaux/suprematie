@@ -751,8 +751,8 @@ fn update_robot(w: &mut World, ci: usize) {
                     }
                     match crate::drones::store_with_room(w, owner, px, py, ROBOPORT_RANGE * TILE, i as u8) {
                         Some(d) => {
-                            let k = n.min(crate::drones::store_room(&w.buildings[d], i as u8));
-                            crate::drones::put(&mut w.buildings[d].stash, i as u8, k);
+                            let k = n.min(d.room(w, i as u8));
+                            d.put(w, i as u8, k);
                             crate::drones::refund(w, owner, px, py, i as u8, (n - k) as u32);
                         }
                         None => crate::drones::refund(w, owner, px, py, i as u8, n as u32),
@@ -798,7 +798,7 @@ fn update_robot(w: &mut World, ci: usize) {
                             _ => w.buildings[t].recipe,
                         };
                         // pas plus que la place du dépôt qui les recevra (le reste attend dans le bâtiment)
-                        let room = crate::drones::store_with_room(w, owner, px, py, ROBOPORT_RANGE * TILE, it).map_or(0, |d| crate::drones::store_room(&w.buildings[d], it));
+                        let room = crate::drones::store_with_room(w, owner, px, py, ROBOPORT_RANGE * TILE, it).map_or(0, |d| d.room(w, it));
                         let k = w.buildings[t].out.min(CARRIERS[2].capacity).min(room);
                         w.buildings[t].out -= k;
                         w.carriers[ci].cargo[it as usize] += k;

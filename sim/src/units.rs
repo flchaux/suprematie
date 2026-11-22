@@ -18,10 +18,11 @@ pub const DELIVER_RANGE: i32 = 3 * TILE;
 pub const PK_GOING: u16 = 0;
 /// posté : prend ce qui sort, à mesure
 pub const PK_WORKING: u16 = 1;
-/// soute pleine : ses drones la vident dans un dépôt à portée
+/// soute d'un ingénieur pleine : ses drones la vident dans un dépôt
 pub const PK_FULL: u16 = 2;
-/// soute pleine, et aucun dépôt (à portée ou non) n'a de place
-pub const PK_NO_DEPOT: u16 = 3;
+/// soute pleine et rien ne la vide : soute du commandant (un dépôt) pleine pour ce produit, ou aucun
+/// dépôt n'a de place pour ce que porte l'ingénieur
+pub const PK_STUCK: u16 = 3;
 
 /// Le joueur `p` peut-il ramasser la sortie du bâtiment `b` ? Ses propres extracteurs et fabricants
 /// terminés (foreuses et fabricants des Transhumants compris).
@@ -337,8 +338,8 @@ fn retarget(w: &mut World, s: usize, tx: i32, ty: i32) {
 /// drones::plan) : l'unité va au dépôt, à moins de la moitié de son rayon de ravitaillement, puis y
 /// attend que ses drones remplissent sa soute. Faux s'il n'y a pas de chargement à faire.
 fn supply_detour(w: &mut World, s: usize) -> bool {
-    let Some(d) = w.building(w.units.cold[s].supply_at) else { return false };
-    let (dx, dy) = w.buildings[d].center();
+    let Some(d) = crate::drones::Store::resolve(w, w.units.cold[s].supply_at) else { return false };
+    let (dx, dy) = d.pos(w);
     let r = udef(w.units.kind[s]).supply * TILE / 2;
     if dist(w.units.x[s], w.units.y[s], dx, dy) > r {
         retarget(w, s, dx, dy);
@@ -409,7 +410,7 @@ fn reclaim_wreck(w: &mut World, s: usize, wk: usize) -> bool {
     let bp = build_power(w, s) as i32;
     let amount = (bp / 5).max(1);
     // dans la soute de l'ingénieur, dans la limite de sa place (ses drones la vident dans un dépôt)
-    let room = crate::drones::hold_room(w, s) as i32;
+    let room = crate::drones::hold_room(w, s, IRON_PLATE) as i32;
     if room == 0 {
         // soute pleine (ou pas de soute) : le recyclage s'arrête
         return false;
@@ -904,10 +905,11 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             }
             clear_goal(w, s);
             // dans la limite de la soute (ses drones la vident dans un dépôt)
-            if crate::drones::hold_room(w, s) == 0 {
+            let room: Vec<bool> = (0..NUM_ITEMS).map(|it| crate::drones::hold_room(w, s, it as u8) > 0).collect();
+            if !room.iter().skip(1).any(|&r| r) {
                 return NONE;
             }
-            let it = crate::belts::take_from_belt(w, b, &|_| true);
+            let it = crate::belts::take_from_belt(w, b, &|it| room[it as usize]);
             if it != 0 {
                 crate::drones::put(&mut w.units.cold[s].hold, it, 1);
                 w.units.cold[s].flags |= UF_WORKING;
@@ -935,10 +937,11 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             }
             clear_goal(w, s);
-            let room = crate::drones::hold_room(w, s);
+            // place pour le produit de sa sortie (soute du commandant : 600 par objet ; d'un ingénieur : au total)
+            let it = buildings::output_of(&w.buildings[b]);
+            let room = if it != 0 { crate::drones::hold_room(w, s, it) } else { 1 };
             if room > 0 {
                 w.units.cold[s].timer = PK_WORKING;
-                let it = buildings::output_of(&w.buildings[b]);
                 if it != 0 {
                     let k = (w.buildings[b].out as u32).min(room) as u16;
                     w.buildings[b].out -= k;
@@ -948,37 +951,32 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 }
                 return NONE;
             }
-            // soute pleine : ses drones la vident s'il y a un dépôt à portée ; sinon il va livrer lui-même
-            // au dépôt le plus proche qui a de la place, puis revient
-            if crate::drones::can_unload_near(w, s) {
-                w.units.cold[s].timer = PK_FULL;
-            } else if crate::drones::deliver_target(w, s, 0).is_some() {
-                clear_goal(w, s);
-                let c = &mut w.units.cold[s];
-                c.orders.insert(0, Order::Deliver { item: 0 });
-                c.orders.truncate(64);
-                c.timer = 0;
-                c.stuck = 0;
-                c.noprog = 0;
-                c.best_dist = i32::MAX;
-            } else {
-                w.units.cold[s].timer = PK_NO_DEPOT;
-            }
+            // soute pleine : les drones d'un ingénieur la vident au dépôt qui a de la place, à toute distance ;
+            // celle du commandant est un dépôt, qu'il ne vide pas : il attend (le reste attend en sortie)
+            w.units.cold[s].timer = if crate::drones::will_unload(w, s) { PK_FULL } else { PK_STUCK };
             NONE
         }
         Order::Deliver { item } => {
             // porter un objet de la soute (0 : toute la soute) au dépôt le plus proche qui a de la place
-            let Some((first, b)) = (if def.hold > 0 { crate::drones::deliver_target(w, s, item) } else { None }) else {
+            let Some((first, st)) = (if def.hold > 0 { crate::drones::deliver_target(w, s, item) } else { None }) else {
                 // aucun dépôt n'a de place pour ce qu'il porte (une demande explicite le signale)
-                let hold = &w.units.cold[s].hold;
-                if item != 0 && crate::drones::has(hold, item) > 0 {
+                if item != 0 && crate::drones::has(&w.units.cold[s].hold, item) > 0 {
                     w.ev(crate::drones::EV_NO_DEPOT, owner as i32, w.units.x[s], w.units.y[s], item as i32);
                 }
                 pop_order(w, s);
                 return NONE;
             };
-            let (near, tx, ty, reach) = near_building(w, s, b, DELIVER_RANGE);
-            if !near {
+            // à 3 cases du bord du dépôt (ou du commandant, dont la soute est un dépôt)
+            let (tx, ty) = st.pos(w);
+            let reach = DELIVER_RANGE
+                + match st {
+                    crate::drones::Store::B(b) => {
+                        let (bw, bh) = w.buildings[b].size();
+                        bw.max(bh) * TILE / 2
+                    }
+                    crate::drones::Store::U(u) => udef(w.units.kind[u]).radius,
+                };
+            if dist(w.units.x[s], w.units.y[s], tx, ty) > reach {
                 steer(w, s, tx, ty, tx, ty, reach - TILE);
                 return NONE;
             }
@@ -986,10 +984,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             // dépose tout ce que ce dépôt peut prendre ; le reste ira au suivant (tick d'après)
             let items: Vec<u8> = if item != 0 { vec![item] } else { (first..NUM_ITEMS as u8).collect() };
             for it in items {
-                let k = crate::drones::has(&w.units.cold[s].hold, it).min(crate::drones::store_room(&w.buildings[b], it));
+                let k = crate::drones::has(&w.units.cold[s].hold, it).min(st.room(w, it));
                 if k > 0 {
                     crate::drones::take(&mut w.units.cold[s].hold, it, k);
-                    crate::drones::put(&mut w.buildings[b].stash, it, k);
+                    st.put(w, it, k);
                     w.units.cold[s].flags |= UF_WORKING;
                 }
             }
@@ -1021,7 +1019,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             let (out, n) = RECIPES[r].output;
             let o = owner as usize;
             // soute pleine : la récolte attend que les drones la vident dans un dépôt
-            if crate::drones::hold_room(w, s) < n as u32 {
+            if crate::drones::hold_room(w, s, out) < n as u32 {
                 w.units.cold[s].timer = HV_FULL;
                 return NONE;
             }

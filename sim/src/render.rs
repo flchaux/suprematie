@@ -41,6 +41,12 @@ fn stock_totals(w: &World) -> (Vec<[i32; NUM_ITEMS]>, Vec<i32>, Vec<[i32; NUM_IT
             dst[i] += n as i32;
         }
     }
+    // la soute d'un commandant compte comme un dépôt
+    for (p, c) in cap.iter_mut().enumerate() {
+        if crate::drones::commander_store(w, p as u8).is_some() {
+            *c += crate::drones::COMMANDER_CAP as i32;
+        }
+    }
     for s in 0..w.units.alive.len() {
         let h = &w.units.cold[s].hold;
         if w.units.alive[s] && !h.is_empty() {
@@ -132,7 +138,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
                 Order::Harvest { x, y } => (x * TILE + TILE / 2, y * TILE + TILE / 2),
                 Order::DeployAt { x, y } => (x, y),
-                Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map_or((w.units.x[s], w.units.y[s]), |(_, b)| w.buildings[b].center()),
+                Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map_or((w.units.x[s], w.units.y[s]), |(_, st)| st.pos(w)),
             };
             ((tx / TILE) & 0xfff) | (((ty / TILE) & 0xfff) << 12) | ((o.code() as i32) << 24)
         }
@@ -518,7 +524,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         // niveau d'amélioration : même multiplicateur que tick_extractor
         let lvl = crate::data::EXTRACTOR_LEVELS[(bb.level as usize).min(crate::data::EXTRACTOR_LEVELS.len() - 1)].speed as u64;
         let purity = crate::buildings::purity_of(bb) as i32;
-        let per = |s: u64| per(s) * lvl as i32 / 100 * purity / 100;
+        let clock = crate::buildings::clock_of(bb) as i32;
+        let per = |s: u64| per(s) * lvl as i32 / 100 * purity / 100 * clock / 100;
         (per(sat.clamp(0, 1024) as u64), per(1024))
     } else {
         (0, 0)
@@ -548,8 +555,8 @@ pub fn info_building(w: &World, r: u32) -> String {
         None => "null".to_string(),
     };
     format!(
-        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{},\"ruin\":{},\"missing\":{},\"storeCap\":{},\"drones\":{}{}}}",
-        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b), missing, store_cap, drones, race_info(w, b)
+        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{},\"ruin\":{},\"missing\":{},\"storeCap\":{},\"drones\":{},\"kwMax\":{}{}}}",
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b), missing, store_cap, drones, crate::buildings::power_need(bb), race_info(w, b)
     )
 }
 
@@ -614,7 +621,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let c = &w.units.cold[s];
     // constructeur : ce qui est disponible à sa portée (dépôts utilisables), drones en vol
     let d = udef(w.units.kind[s]);
-    let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE).iter()) } else { "[]".into() };
+    let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id).count();
     format!(
         "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{}}}",
@@ -636,7 +643,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
         js_list(c.hold.iter()),
         reach,
         drones,
-        w.building(c.supply_at).is_some(),
+        crate::drones::Store::resolve(w, c.supply_at).is_some(),
         c.pack,
         if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 },
         pickup_info(w, s),
@@ -664,8 +671,8 @@ fn pickup_info(w: &World, s: usize) -> String {
 /// aucun)} ou null.
 fn deliver_info(w: &World, s: usize) -> String {
     let Some(&Order::Deliver { item }) = w.units.cold[s].orders.first() else { return "null".into() };
-    let (x, y) = crate::drones::deliver_target(w, s, item).map_or((-1, -1), |(_, b)| {
-        let (x, y) = w.buildings[b].center();
+    let (x, y) = crate::drones::deliver_target(w, s, item).map_or((-1, -1), |(_, st)| {
+        let (x, y) = st.pos(w);
         (x / TILE, y / TILE)
     });
     format!("{{\"item\":{},\"x\":{},\"y\":{}}}", item, x, y)
@@ -722,7 +729,7 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
         Order::Face { .. } => None,
         Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),
         Order::DeployAt { x, y } => Some((x, y)),
-        Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map(|(_, b)| w.buildings[b].center()),
+        Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map(|(_, st)| st.pos(w)),
     }
 }
 

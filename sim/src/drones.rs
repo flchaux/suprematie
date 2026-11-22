@@ -18,8 +18,6 @@ use crate::world::*;
 pub const DRONE: u8 = 3;
 /// Les départs de drones se décident une fois toutes ces ticks.
 pub const PLAN_PERIOD: u32 = 10;
-/// Avance de travail (ticks) que les drones d'un constructeur vont chercher pour le chantier en cours.
-const AHEAD_TICKS: u64 = 200;
 /// Ordres de la file pris en compte pour les besoins d'un constructeur.
 const MAX_QUEUE: usize = 64;
 const N: usize = NUM_ITEMS;
@@ -86,6 +84,81 @@ pub fn usable(w: &World, p: u8, b: usize) -> bool {
         }
 }
 
+/// Plafond par objet de la soute d'un commandant (elle compte comme un dépôt).
+pub const COMMANDER_CAP: u16 = DEPOT_CAP[0] as u16;
+
+/// La soute de l'unité `s` est-elle un stock (commandant à soute : robot de commandement, arche) ?
+#[inline]
+pub fn unit_is_store(w: &World, s: usize) -> bool {
+    let d = udef(w.units.kind[s]);
+    d.commander && d.hold > 0
+}
+
+/// Commandant du joueur `p`, si sa soute est un stock.
+pub fn commander_store(w: &World, p: u8) -> Option<usize> {
+    let s = w.unit(w.players.get(p as usize)?.commander)?;
+    (w.units.alive[s] && unit_is_store(w, s)).then_some(s)
+}
+
+/// Un stock : dépôt ou entrepôt d'équipe (`B`, indice de bâtiment), ou soute d'un commandant (`U`, case
+/// d'unité).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Store {
+    B(usize),
+    U(usize),
+}
+
+impl Store {
+    pub fn stash(self, w: &World) -> &[u16] {
+        match self {
+            Store::B(b) => &w.buildings[b].stash,
+            Store::U(s) => &w.units.cold[s].hold,
+        }
+    }
+    pub fn stash_mut(self, w: &mut World) -> &mut Vec<u16> {
+        match self {
+            Store::B(b) => &mut w.buildings[b].stash,
+            Store::U(s) => &mut w.units.cold[s].hold,
+        }
+    }
+    pub fn has(self, w: &World, it: u8) -> u16 {
+        has(self.stash(w), it)
+    }
+    pub fn put(self, w: &mut World, it: u8, n: u16) {
+        put(self.stash_mut(w), it, n)
+    }
+    pub fn take(self, w: &mut World, it: u8, n: u16) -> u16 {
+        take(self.stash_mut(w), it, n)
+    }
+    /// Place libre pour `it` (plafond par objet).
+    pub fn room(self, w: &World, it: u8) -> u16 {
+        match self {
+            Store::B(b) => store_room(&w.buildings[b], it),
+            Store::U(s) => COMMANDER_CAP.saturating_sub(has(&w.units.cold[s].hold, it)),
+        }
+    }
+    pub fn pos(self, w: &World) -> (i32, i32) {
+        match self {
+            Store::B(b) => w.buildings[b].center(),
+            Store::U(s) => (w.units.x[s], w.units.y[s]),
+        }
+    }
+    /// Référence durable (celle des bâtiments ou identifiant d'unité), pour `Carrier::b`.
+    pub fn id(self, w: &World) -> u32 {
+        match self {
+            Store::B(b) => w.building_ref(b),
+            Store::U(s) => w.unit_id(s),
+        }
+    }
+    /// Stock désigné par une référence durable, s'il existe encore.
+    pub fn resolve(w: &World, id: u32) -> Option<Store> {
+        if let Some(b) = w.building(id) {
+            return Some(Store::B(b));
+        }
+        w.unit(id).filter(|&s| w.units.alive[s] && unit_is_store(w, s)).map(Store::U)
+    }
+}
+
 /// Empreinte d'un stock (hachage de l'état).
 pub fn fold(v: &[u16]) -> u64 {
     v.iter().enumerate().fold(0u64, |a, (i, &n)| a.wrapping_mul(0x9E37_79B9).wrapping_add(n as u64 | (i as u64) << 16))
@@ -119,9 +192,9 @@ pub fn rebuild_stores(w: &mut World) {
     w.stores = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].complete() && is_store(&w.buildings[b])).map(|b| b as u32).collect();
 }
 
-/// Stocks utilisables par `p` à moins de `r` (sous-unités) de (x, y), du plus proche au plus loin, puis par
-/// indice croissant : (distance², indice).
-pub fn stores_near(w: &World, p: u8, x: i32, y: i32, r: i32) -> Vec<(i64, usize)> {
+/// Stocks utilisables par `p` à moins de `r` (sous-unités) de (x, y), du plus proche au plus loin, puis
+/// bâtiments par indice croissant avant la soute de son commandant : (distance², stock).
+pub fn stores_near(w: &World, p: u8, x: i32, y: i32, r: i32) -> Vec<(i64, Store)> {
     let r2 = r as i64 * r as i64;
     let mut v = Vec::new();
     for &b in &w.stores {
@@ -132,7 +205,13 @@ pub fn stores_near(w: &World, p: u8, x: i32, y: i32, r: i32) -> Vec<(i64, usize)
         let (cx, cy) = w.buildings[b].center();
         let d = dist2(x, y, cx, cy);
         if d <= r2 {
-            v.push((d, b));
+            v.push((d, Store::B(b)));
+        }
+    }
+    if let Some(s) = commander_store(w, p) {
+        let d = dist2(x, y, w.units.x[s], w.units.y[s]);
+        if d <= r2 {
+            v.push((d, Store::U(s)));
         }
     }
     v.sort_unstable();
@@ -141,18 +220,18 @@ pub fn stores_near(w: &World, p: u8, x: i32, y: i32, r: i32) -> Vec<(i64, usize)
 
 /// Quantité de `it` dans les stocks utilisables par `p` à moins de `r` (sous-unités) de (x, y).
 pub fn near_amount(w: &World, p: u8, x: i32, y: i32, r: i32, it: u8) -> u32 {
-    stores_near(w, p, x, y, r).iter().map(|&(_, b)| has(&w.buildings[b].stash, it) as u32).sum()
+    stores_near(w, p, x, y, r).iter().map(|&(_, st)| st.has(w, it) as u32).sum()
 }
 
 /// Prend au plus `n` objets `it` dans les stocks utilisables à moins de `r` de (x, y), le plus proche
 /// d'abord ; renvoie ce qui a été pris.
 pub fn take_near(w: &mut World, p: u8, x: i32, y: i32, r: i32, it: u8, n: u16) -> u16 {
     let mut got = 0;
-    for (_, b) in stores_near(w, p, x, y, r) {
+    for (_, st) in stores_near(w, p, x, y, r) {
         if got >= n {
             break;
         }
-        got += take(&mut w.buildings[b].stash, it, n - got);
+        got += st.take(w, it, n - got);
     }
     got
 }
@@ -162,13 +241,13 @@ pub fn take_near(w: &mut World, p: u8, x: i32, y: i32, r: i32, it: u8, n: u16) -
 pub fn pay_near(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> bool {
     let r = NEAR_SUPPLY * TILE;
     let near = stores_near(w, p, x, y, r);
-    if !cost.iter().all(|&(it, n)| near.iter().map(|&(_, b)| has(&w.buildings[b].stash, it) as u32).sum::<u32>() >= n as u32) {
+    if !cost.iter().all(|&(it, n)| near.iter().map(|&(_, st)| st.has(w, it) as u32).sum::<u32>() >= n as u32) {
         return false;
     }
     for &(it, n) in cost {
         let mut left = n;
-        for &(_, b) in &near {
-            left -= take(&mut w.buildings[b].stash, it, left);
+        for &(_, st) in &near {
+            left -= st.take(w, it, left);
         }
         w.players[p as usize].consumed[it as usize] += n as u32;
     }
@@ -176,20 +255,24 @@ pub fn pay_near(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> boo
 }
 
 /// Stock utilisable par `p` le plus proche de (x, y), à moins de `r`, qui a de la place pour `it`.
-pub fn store_with_room(w: &World, p: u8, x: i32, y: i32, r: i32, it: u8) -> Option<usize> {
-    stores_near(w, p, x, y, r).into_iter().map(|(_, b)| b).find(|&b| store_room(&w.buildings[b], it) > 0)
+pub fn store_with_room(w: &World, p: u8, x: i32, y: i32, r: i32, it: u8) -> Option<Store> {
+    stores_near(w, p, x, y, r).into_iter().map(|(_, st)| st).find(|&st| st.room(w, it) > 0)
 }
 
-/// Remboursement, sans plafond : au dépôt du joueur le plus proche de (x, y) ; à défaut, à l'entrepôt
-/// de son équipe le plus proche ; perdu s'il n'a ni l'un ni l'autre.
+/// Remboursement, sans plafond : au dépôt du joueur (ou à la soute de son commandant) le plus proche de
+/// (x, y) ; à défaut, à l'entrepôt de son équipe le plus proche ; perdu s'il n'a ni l'un ni l'autre.
 pub fn refund(w: &mut World, p: u8, x: i32, y: i32, it: u8, n: u32) {
     if n == 0 || it == 0 || it as usize >= N || p as usize >= w.players.len() {
         return;
     }
     let near = stores_near(w, p, x, y, i32::MAX);
-    let pick = near.iter().find(|&&(_, b)| w.buildings[b].def().class == BClass::Depot).or(near.first()).map(|&(_, b)| b);
-    if let Some(b) = pick {
-        put(&mut w.buildings[b].stash, it, n.min(u16::MAX as u32) as u16);
+    let own = |st: &Store| match *st {
+        Store::B(b) => w.buildings[b].def().class == BClass::Depot,
+        Store::U(_) => true,
+    };
+    let pick = near.iter().find(|(_, st)| own(st)).or(near.first()).map(|&(_, st)| st);
+    if let Some(st) = pick {
+        st.put(w, it, n.min(u16::MAX as u32) as u16);
     }
 }
 
@@ -245,7 +328,11 @@ fn ring(r: i32, k: i32) -> (i32, i32) {
 // ---------- constructeurs ----------
 
 /// Place de la soute pour ce qui y entre par récolte, recyclage ou ramassage.
-pub fn hold_room(w: &World, s: usize) -> u32 {
+/// Soute d'un commandant (un dépôt) : plafond par objet ; d'un ingénieur : plafond total.
+pub fn hold_room(w: &World, s: usize, it: u8) -> u32 {
+    if unit_is_store(w, s) {
+        return Store::U(s).room(w, it) as u32;
+    }
     (udef(w.units.kind[s]).hold as u32).saturating_sub(total(&w.units.cold[s].hold))
 }
 
@@ -254,87 +341,72 @@ pub fn hold_room(w: &World, s: usize) -> u32 {
 pub const EV_NO_DEPOT: i32 = 46;
 
 /// Livraison au dépôt (ordre Deliver) du constructeur `s` : objet à livrer et stock visé. Pour un objet
-/// donné, le stock utilisable le plus proche (à vol d'oiseau, sans limite de distance) qui a de la place
-/// pour lui ; pour `item` 0 (toute la soute), le plus proche qui a de la place pour au moins un des objets
-/// de la soute, et le premier de ces objets. Rien si la soute n'en a pas, ou si aucun stock n'a de place.
-pub fn deliver_target(w: &World, s: usize, item: u8) -> Option<(u8, usize)> {
+/// donné, le stock utilisable le plus proche (à vol d'oiseau, sans limite de distance ; jamais sa propre
+/// soute) qui a de la place pour lui ; pour `item` 0 (toute la soute), le plus proche qui a de la place
+/// pour au moins un des objets de la soute, et le premier de ces objets. Rien si la soute n'en a pas, ou
+/// si aucun stock n'a de place.
+pub fn deliver_target(w: &World, s: usize, item: u8) -> Option<(u8, Store)> {
     let hold = &w.units.cold[s].hold;
     if item as usize >= N || (item != 0 && has(hold, item) == 0) {
         return None;
     }
     let near = stores_near(w, w.units.owner[s], w.units.x[s], w.units.y[s], i32::MAX);
-    near.into_iter().find_map(|(_, b)| {
-        let bb = &w.buildings[b];
+    near.into_iter().filter(|&(_, st)| st != Store::U(s)).find_map(|(_, st)| {
         if item != 0 {
-            return (store_room(bb, item) > 0).then_some((item, b));
+            return (st.room(w, item) > 0).then_some((item, st));
         }
-        (1..N).find(|&it| has(hold, it as u8) > 0 && store_room(bb, it as u8) > 0).map(|it| (it as u8, b))
+        (1..N).find(|&it| has(hold, it as u8) > 0 && st.room(w, it as u8) > 0).map(|it| (it as u8, st))
     })
 }
 
-/// Les drones du constructeur `s` peuvent-ils vider sa soute ? Un objet de la soute a de la place dans un
-/// stock utilisable à son rayon de ravitaillement.
-pub fn can_unload_near(w: &World, s: usize) -> bool {
-    let d = udef(w.units.kind[s]);
-    if d.drones == 0 {
+/// Les drones du constructeur `s` videront-ils sa soute ? Ingénieur (la soute du commandant est un dépôt,
+/// jamais vidée) dont un objet de la soute a de la place dans un stock utilisable, à toute distance.
+pub fn will_unload(w: &World, s: usize) -> bool {
+    if unit_is_store(w, s) || udef(w.units.kind[s]).drones == 0 {
         return false;
     }
-    let hold = &w.units.cold[s].hold;
-    let near = stores_near(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE);
-    near.iter().any(|&(_, b)| (1..N).any(|it| has(hold, it as u8) > 0 && store_room(&w.buildings[b], it as u8) > 0))
+    deliver_target(w, s, 0).is_some()
 }
 
-/// Puissance de construction effective d'une unité.
-fn build_power(w: &World, s: usize) -> u64 {
-    udef(w.units.kind[s]).build_power as u64 * w.players[w.units.owner[s] as usize].build_mult as u64 / 100
-}
-
-/// Chantier en tête de file d'un constructeur : avance voulue par objet.
-struct Head {
-    ahead: [u32; N],
-}
-
-/// Reste à payer d'un chantier (bâtiment `kind`, déjà construit à `build`, payé `paid`) dans `rem`, et
-/// ce qu'en consomment les prochaines `AHEAD_TICKS` ticks de travail à la puissance `bp` dans `ahead`.
-fn remaining(kind: u16, build: u32, paid: &[u16; 4], bp: u64, rem: &mut [u32; N], ahead: &mut [u32; N]) {
-    let def = bdef(kind);
-    let work = def.build as u64 * 20 * 10;
-    let delta = (bp * BUILD_FULL as u64 / work.max(1)).max(1);
-    let until = (build as u64 + delta * AHEAD_TICKS).min(BUILD_FULL as u64);
-    for (k, &(it, n)) in def.cost.iter().enumerate() {
+/// Reste à payer d'un chantier (bâtiment `kind`, payé `paid`), ajouté à `seq` (objet, quantité).
+fn remaining(kind: u16, paid: &[u16; 4], seq: &mut Vec<(u8, u32)>) {
+    for (k, &(it, n)) in bdef(kind).cost.iter().enumerate() {
         let rest = (n as u32).saturating_sub(paid[k] as u32);
-        rem[it as usize] += rest;
-        let by = (n as u64 * until).div_ceil(BUILD_FULL as u64) as u32;
-        ahead[it as usize] += by.saturating_sub(paid[k] as u32).min(rest);
+        if rest > 0 {
+            seq.push((it, rest));
+        }
     }
 }
 
-/// Besoins d'un constructeur de rayon `r` : reste à payer de tous les chantiers de sa file (ordres de
-/// construction et d'assistance), ce que leurs environs ne contiennent pas (à emporter : manque, chantier
-/// par chantier, des stocks utilisables à moins de `r` moins la portée de construction du chantier), et
-/// chantier en tête de file.
-fn queue_need(w: &World, s: usize, r: i32) -> ([u32; N], [u32; N], Option<Head>) {
-    let mut need = [0u32; N];
-    let mut deficit = [0u32; N];
-    let mut head = None;
+/// Besoins d'un constructeur de rayon `r`, pour toute sa file (ordres de construction et d'assistance) :
+/// - `need` : reste à payer de tous ses chantiers ;
+/// - `deficit` : ce que leurs environs ne contiennent pas (à emporter : manque, chantier par chantier, des
+///   stocks utilisables à moins de `r` moins la portée de construction du chantier) ;
+/// - `seq` : les restes à payer (objet, quantité), chantier par chantier dans l'ordre de la file.
+struct Needs {
+    need: [u32; N],
+    deficit: [u32; N],
+    seq: Vec<(u8, u32)>,
+}
+
+fn queue_need(w: &World, s: usize, r: i32) -> Needs {
+    let mut nd = Needs { need: [0; N], deficit: [0; N], seq: Vec::new() };
     let owner = w.units.owner[s];
-    let bp = build_power(w, s);
     // stocks à portée du dernier chantier examiné (une file de tapis : des chantiers voisins)
-    let mut last: Option<(i32, i32, Vec<(i64, usize)>)> = None;
-    for (i, o) in w.units.cold[s].orders.iter().take(MAX_QUEUE).enumerate() {
-        let mut rem = [0u32; N];
-        let mut ahead = [0u32; N];
+    let mut last: Option<(i32, i32, Vec<(i64, Store)>)> = None;
+    for o in w.units.cold[s].orders.iter().take(MAX_QUEUE) {
+        let start = nd.seq.len();
         let site = match *o {
             Order::Build { kind, x, y, dir, bid } => match w.building(bid) {
                 Some(b) if !w.buildings[b].complete() => {
                     let bb = &w.buildings[b];
-                    remaining(bb.kind, bb.build, &bb.paid, bp, &mut rem, &mut ahead);
+                    remaining(bb.kind, &bb.paid, &mut nd.seq);
                     let (cx, cy) = bb.center();
                     Some((cx, cy, crate::units::build_range(bb.kind, bb.dir)))
                 }
                 Some(_) => None,
                 None if bid == 0 || bid == NONE => {
-                    remaining(kind, 0, &[0; 4], bp, &mut rem, &mut ahead);
+                    remaining(kind, &[0; 4], &mut nd.seq);
                     let (bw, bh) = crate::buildings::dims(kind, dir);
                     Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2, crate::units::build_range(kind, dir)))
                 }
@@ -343,7 +415,7 @@ fn queue_need(w: &World, s: usize, r: i32) -> ([u32; N], [u32; N], Option<Head>)
             Order::Assist { target } => match w.building(target) {
                 Some(b) if !w.buildings[b].complete() && w.team_of(w.buildings[b].owner) == w.team_of(owner) => {
                     let bb = &w.buildings[b];
-                    remaining(bb.kind, bb.build, &bb.paid, bp, &mut rem, &mut ahead);
+                    remaining(bb.kind, &bb.paid, &mut nd.seq);
                     let (cx, cy) = bb.center();
                     Some((cx, cy, crate::units::build_range(bb.kind, bb.dir)))
                 }
@@ -356,37 +428,36 @@ fn queue_need(w: &World, s: usize, r: i32) -> ([u32; N], [u32; N], Option<Head>)
         // qui resteront à son rayon de ravitaillement où qu'il se tienne
         let reuse = matches!(&last, Some((lx, ly, _)) if (lx - cx).abs() <= 4 * TILE && (ly - cy).abs() <= 4 * TILE);
         if !reuse {
-            last = Some((cx, cy, stores_near(w, owner, cx, cy, (r - range - TILE).max(TILE))));
+            let mut near = stores_near(w, owner, cx, cy, (r - range - TILE).max(TILE));
+            // la soute du commandant compte comme un dépôt, mais pas pour lui-même (elle est déjà « sur lui »)
+            near.retain(|&(_, st)| st != Store::U(s));
+            last = Some((cx, cy, near));
         }
         let near = last.as_ref().map(|l| &l.2[..]).unwrap_or(&[]);
-        for it in 1..N {
-            if rem[it] > 0 {
-                need[it] += rem[it];
-                let avail: u32 = near.iter().map(|&(_, b)| has(&w.buildings[b].stash, it as u8) as u32).sum();
-                deficit[it] += rem[it].saturating_sub(avail);
-            }
-        }
-        if i == 0 {
-            head = Some(Head { ahead });
+        for &(it, rest) in &nd.seq[start..] {
+            nd.need[it as usize] += rest;
+            let avail: u32 = near.iter().map(|&(_, st)| st.has(w, it) as u32).sum();
+            nd.deficit[it as usize] += rest.saturating_sub(avail);
         }
     }
-    (need, deficit, head)
+    nd
 }
 
 // ---------- départs des drones ----------
 
-/// Chargements en vol : (constructeur, objet, quantité, en route vers lui).
-type Flights = Vec<(u32, u8, u16, bool)>;
+/// Chargements en vol : (constructeur, objet, quantité, en route vers lui, indice du drone).
+type Flights = Vec<(u32, u8, u16, bool, usize)>;
 
 fn flights(w: &World) -> Flights {
     let mut v: Flights = w
         .carriers
         .iter()
-        .filter(|c| c.alive && c.kind == DRONE)
-        .map(|c| {
+        .enumerate()
+        .filter(|(_, c)| c.alive && c.kind == DRONE)
+        .map(|(ci, c)| {
             let it = (1..N).find(|&i| c.cargo[i] > 0).unwrap_or(0) as u8;
             // vers le constructeur : au retour, ou à l'aller d'une prise (chargement réservé au dépôt)
-            (c.a, it, c.load, c.state == 3 || !c.ready)
+            (c.a, it, c.load, c.state == 3 || !c.ready, ci)
         })
         .collect();
     v.sort_unstable();
@@ -409,10 +480,10 @@ fn home_flights(fl: &Flights, home: u32) -> (usize, [u32; N]) {
 
 /// Lance un drone de `home` (en (x, y)) vers le stock `b`, avec `k` objets `it` : réservés au dépôt (prise,
 /// `ready` faux) ou pris dans la soute (vidage, `ready` vrai).
-fn launch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, b: usize, it: u8, k: u16, ready: bool) {
-    let mut c = Carrier { alive: true, kind: DRONE, owner, a: home, b: w.building_ref(b), state: 1, x, y, ready, load: k, ..Carrier::default() };
+fn launch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, st: Store, it: u8, k: u16, ready: bool) {
+    let mut c = Carrier { alive: true, kind: DRONE, owner, a: home, b: st.id(w), state: 1, x, y, ready, load: k, ..Carrier::default() };
     c.cargo[it as usize] = k;
-    c.to = w.buildings[b].center();
+    c.to = st.pos(w);
     c.from = (x, y);
     c.angle = w.trig.atan2((c.to.1 - y) as i64, (c.to.0 - x) as i64);
     if let Some(slot) = w.carriers.iter().position(|c| !c.alive) {
@@ -422,22 +493,28 @@ fn launch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, b: usize, it: u8,
     }
 }
 
-/// Envoie les drones libres chercher `want` dans les stocks `near` (du plus proche au plus loin) ; `free` :
-/// drones libres, décompté.
-fn fetch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, near: &[(i64, usize)], want: &mut [u32; N], free: &mut usize) {
-    for it in 1..N {
-        for &(_, b) in near {
-            while *free > 0 && want[it] > 0 {
-                let k = has(&w.buildings[b].stash, it as u8).min(DRONE_CAP).min(want[it].min(u16::MAX as u32) as u16);
-                if k == 0 {
-                    break;
-                }
-                take(&mut w.buildings[b].stash, it as u8, k);
-                launch(w, owner, home, x, y, b, it as u8, k, false);
-                want[it] -= k as u32;
-                *free -= 1;
+/// Envoie les drones libres chercher `n` objets `it` dans les stocks `near` (du plus proche au plus
+/// loin) ; `n` et `free` (drones libres) sont décomptés.
+#[allow(clippy::too_many_arguments)]
+fn fetch_item(w: &mut World, owner: u8, home: u32, x: i32, y: i32, near: &[(i64, Store)], it: u8, n: &mut u32, free: &mut usize) {
+    for &(_, st) in near {
+        while *free > 0 && *n > 0 {
+            let k = st.has(w, it).min(DRONE_CAP).min((*n).min(u16::MAX as u32) as u16);
+            if k == 0 {
+                break;
             }
+            st.take(w, it, k);
+            launch(w, owner, home, x, y, st, it, k, false);
+            *n -= k as u32;
+            *free -= 1;
         }
+    }
+}
+
+/// Envoie les drones libres chercher `want` dans les stocks `near` ; `free` : drones libres, décompté.
+fn fetch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, near: &[(i64, Store)], want: &mut [u32; N], free: &mut usize) {
+    for (it, n) in want.iter_mut().enumerate().skip(1) {
+        fetch_item(w, owner, home, x, y, near, it as u8, n, free);
     }
 }
 
@@ -487,7 +564,7 @@ fn plan_generator(w: &mut World, b: usize, fl: &Flights) {
     let mut want = [0u32; N];
     for it in [HYDROCARBON, FUEL, ENERGY_CELL] {
         let e = crate::buildings::fuel_energy(kind, it);
-        if e > 0 && room >= e && near.iter().any(|&(_, d)| has(&w.buildings[d].stash, it) > 0) {
+        if e > 0 && room >= e && near.iter().any(|&(_, st)| st.has(w, it) > 0) {
             want[it as usize] = (room / e) as u32;
             break;
         }
@@ -496,27 +573,57 @@ fn plan_generator(w: &mut World, b: usize, fl: &Flights) {
 }
 
 /// Commandant ou ingénieur : chargement avant les chantiers dont les environs n'ont pas les matériaux,
-/// prises pour le chantier en cours, vidage de ce qui ne sert pas.
+/// prises pour tous les chantiers de la file, rapatriement de ce qui ne sert plus.
 fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     let def = udef(w.units.kind[s]);
     let owner = w.units.owner[s];
     let home = w.unit_id(s);
     let (x, y) = (w.units.x[s], w.units.y[s]);
     let r = def.supply * TILE;
-    let (busy, incoming) = home_flights(fl, home);
-    let (need, deficit, head) = queue_need(w, s, r);
-    let hold = w.units.cold[s].hold.clone();
-    let have = |it: usize| has(&hold, it as u8) as u32 + incoming[it];
+    let Needs { need, deficit, seq } = queue_need(w, s, r);
+    // la soute d'un commandant est un dépôt : il n'y puise pas avec ses drones et ne la vide pas
+    let me = Store::U(s);
+    let is_store = unit_is_store(w, s);
+    // prises en route vers leur dépôt dont la file n'a plus besoin (ordre annulé) : le chargement réservé
+    // reste au dépôt, le drone revient à vide
+    let a = fl.partition_point(|f| f.0 < home);
+    let mine = &fl[a..fl[a..].iter().position(|f| f.0 != home).map_or(fl.len(), |k| a + k)];
+    let busy = mine.len();
+    let mut incoming = [0u32; N];
+    for f in mine.iter().filter(|f| f.3) {
+        incoming[f.1 as usize] += f.2 as u32;
+    }
+    for &(_, it, _, _, ci) in mine.iter().rev() {
+        let it = it as usize;
+        let c = &w.carriers[ci];
+        let surplus = (has(&w.units.cold[s].hold, it as u8) as u32 + incoming[it]).saturating_sub(need[it]);
+        if c.state != 1 || c.ready || surplus == 0 {
+            continue;
+        }
+        let k = (c.load as u32).min(surplus) as u16;
+        if let Some(st) = Store::resolve(w, c.b) {
+            st.put(w, it as u8, k);
+        }
+        let c = &mut w.carriers[ci];
+        c.cargo[it] -= k;
+        c.load -= k;
+        incoming[it] -= k as u32;
+        if c.load == 0 {
+            c.state = 3;
+            c.ready = false;
+        }
+    }
+    let have = |w: &World, it: usize| has(&w.units.cold[s].hold, it as u8) as u32 + incoming[it];
     let inside = w.units.cold[s].carried_by != NONE;
     // chantiers dont les environs n'ont pas tout : emporter d'abord ce qui manque, depuis le dépôt le plus
     // proche qui en a (à portée : on s'arrête le temps que les drones partent le chercher)
     let mut supply_at = NONE;
-    if !inside && head.is_some() {
-        let missing: Vec<u8> = (1..N).filter(|&it| deficit[it] > have(it)).map(|it| it as u8).collect();
+    if !inside && !seq.is_empty() {
+        let missing: Vec<u8> = (1..N).filter(|&it| deficit[it] > have(w, it)).map(|it| it as u8).collect();
         if !missing.is_empty() {
             let all = stores_near(w, owner, x, y, i32::MAX);
-            if let Some(&(_, b)) = all.iter().find(|&&(_, b)| missing.iter().any(|&it| has(&w.buildings[b].stash, it) > 0)) {
-                supply_at = w.building_ref(b);
+            if let Some(&(_, st)) = all.iter().find(|&&(_, st)| st != me && missing.iter().any(|&it| st.has(w, it) > 0)) {
+                supply_at = st.id(w);
             }
         }
     }
@@ -524,34 +631,58 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     if inside {
         return;
     }
+    // un drone qui revient à vide d'une prise annulée reste occupé jusqu'à son retour
     let mut free = (def.drones as usize).saturating_sub(busy);
     if free == 0 {
         return;
     }
-    let near = stores_near(w, owner, x, y, r);
-    if near.is_empty() {
+    // prises : pendant un chargement d'abord ce qui manque aux environs des chantiers, puis tout le reste à
+    // payer de la file, chantier par chantier dans l'ordre de la file
+    let mut near = stores_near(w, owner, x, y, r);
+    near.retain(|&(_, st)| st != me);
+    if !near.is_empty() {
+        let mut got = [0u32; N];
+        for (it, g) in got.iter_mut().enumerate() {
+            *g = have(w, it);
+        }
+        let mut go = |w: &mut World, it: usize, target: u32, free: &mut usize| {
+            if target > got[it] {
+                let mut n = target - got[it];
+                let before = n;
+                fetch_item(w, owner, home, x, y, &near, it as u8, &mut n, free);
+                got[it] += before - n;
+            }
+        };
+        if supply_at != NONE {
+            for (it, &d) in deficit.iter().enumerate().skip(1) {
+                go(w, it, d, &mut free);
+            }
+        }
+        let mut cum = [0u32; N];
+        for &(it, n) in &seq {
+            if free == 0 {
+                break;
+            }
+            cum[it as usize] += n;
+            go(w, it as usize, cum[it as usize], &mut free);
+        }
+    }
+    // rapatriement : ce dont la file n'a pas besoin (ordre annulé, récolte, recyclage...) repart au dépôt
+    // utilisable le plus proche qui a de la place, à toute distance
+    let extra: Vec<(usize, u32)> = (1..N).map(|it| (it, (has(&w.units.cold[s].hold, it as u8) as u32).saturating_sub(need[it]))).filter(|e| e.1 > 0).collect();
+    if is_store || free == 0 || extra.is_empty() {
         return;
     }
-    // prises : l'avance du chantier en cours, et pendant un chargement tout ce qui manque aux environs des
-    // chantiers de la file
-    let mut want = [0u32; N];
-    for it in 1..N {
-        let ahead = head.as_ref().map_or(0, |h| h.ahead[it]);
-        let target = if supply_at != NONE { ahead.max(deficit[it]) } else { ahead };
-        want[it] = target.saturating_sub(have(it));
-    }
-    fetch(w, owner, home, x, y, &near, &mut want, &mut free);
-    // vidage : ce dont la file n'a pas besoin repart au dépôt le plus proche qui a de la place
-    for it in 1..N {
-        let mut extra = (has(&w.units.cold[s].hold, it as u8) as u32).saturating_sub(need[it]);
-        for &(_, b) in &near {
+    let back = stores_near(w, owner, x, y, i32::MAX);
+    for (it, mut extra) in extra {
+        for &(_, st) in &back {
             while free > 0 && extra > 0 {
-                let k = store_room(&w.buildings[b], it as u8).min(DRONE_CAP).min(extra.min(u16::MAX as u32) as u16);
+                let k = st.room(w, it as u8).min(DRONE_CAP).min(extra.min(u16::MAX as u32) as u16);
                 if k == 0 {
                     break;
                 }
                 take(&mut w.units.cold[s].hold, it as u8, k);
-                launch(w, owner, home, x, y, b, it as u8, k, true);
+                launch(w, owner, home, x, y, st, it as u8, k, true);
                 extra -= k as u32;
                 free -= 1;
             }
@@ -611,14 +742,14 @@ fn fly(w: &mut World, ci: usize, tx: i32, ty: i32) -> bool {
 }
 
 /// Dépose le chargement du drone dans le stock `b` (sans plafond si `all`) ; il garde ce qui ne rentre pas.
-fn unload_into(w: &mut World, ci: usize, b: usize, all: bool) {
+fn unload_into(w: &mut World, ci: usize, st: Store, all: bool) {
     for it in 1..N {
         let n = w.carriers[ci].cargo[it];
         if n == 0 {
             continue;
         }
-        let k = if all { n } else { n.min(store_room(&w.buildings[b], it as u8)) };
-        put(&mut w.buildings[b].stash, it as u8, k);
+        let k = if all { n } else { n.min(st.room(w, it as u8)) };
+        st.put(w, it as u8, k);
         w.carriers[ci].cargo[it] -= k;
         w.carriers[ci].load -= k;
     }
@@ -627,9 +758,9 @@ fn unload_into(w: &mut World, ci: usize, b: usize, all: bool) {
 /// Vol d'un drone de ravitaillement. État 1 : vers le dépôt (prise ou vidage) ; 3 : retour au constructeur.
 pub fn update_drone(w: &mut World, ci: usize) {
     let home = home_pos(w, w.carriers[ci].a);
-    let store = w.building(w.carriers[ci].b);
+    let store = Store::resolve(w, w.carriers[ci].b);
     if w.carriers[ci].state == 1 {
-        let Some(b) = store else {
+        let Some(st) = store else {
             // dépôt détruit : une prise réservée disparaît avec lui ; un vidage revient au constructeur
             let c = &mut w.carriers[ci];
             if !c.ready {
@@ -642,18 +773,18 @@ pub fn update_drone(w: &mut World, ci: usize) {
             }
             return;
         };
-        let (tx, ty) = w.buildings[b].center();
+        let (tx, ty) = st.pos(w);
         if !fly(w, ci, tx, ty) {
             return;
         }
         if home.is_none() {
             // constructeur disparu : le chargement reste au dépôt
-            unload_into(w, ci, b, true);
+            unload_into(w, ci, st, true);
             w.carriers[ci].alive = false;
             return;
         }
         if w.carriers[ci].ready {
-            unload_into(w, ci, b, false);
+            unload_into(w, ci, st, false);
         }
         let c = &mut w.carriers[ci];
         c.ready = c.load > 0;
@@ -723,11 +854,14 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
 }
 
 /// Ce qui est disponible à portée d'un constructeur : total par objet des stocks utilisables à moins de
-/// son rayon.
-pub fn in_reach(w: &World, p: u8, x: i32, y: i32, r: i32) -> [u32; N] {
+/// son rayon (sans compter `skip`, sa propre soute si c'est un commandant).
+pub fn in_reach(w: &World, p: u8, x: i32, y: i32, r: i32, skip: Option<Store>) -> [u32; N] {
     let mut v = [0u32; N];
-    for (_, b) in stores_near(w, p, x, y, r) {
-        for (i, &n) in w.buildings[b].stash.iter().enumerate().take(N) {
+    for (_, st) in stores_near(w, p, x, y, r) {
+        if Some(st) == skip {
+            continue;
+        }
+        for (i, &n) in st.stash(w).iter().enumerate().take(N) {
             v[i] += n as u32;
         }
     }

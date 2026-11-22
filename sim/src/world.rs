@@ -706,12 +706,12 @@ impl World {
                     break;
                 }
             }
-            // ressources de départ : un dépôt rempli, à côté du générateur principal
-            let mut items = [0i32; NUM_ITEMS];
-            for &(it, n) in START_ITEMS {
-                items[it as usize] = n as i32;
+            // ressources de départ : dans la soute du commandant (elle compte comme un dépôt), pas de dépôt
+            if let Some(s) = crate::drones::commander_store(self, p as u8) {
+                for &(it, n) in START_ITEMS {
+                    crate::drones::put(&mut self.units.cold[s].hold, it, n);
+                }
             }
-            crate::drones::place_filled_depot(self, p as u8, &items);
         }
         crate::buildings::rebuild_power(self);
         crate::souche::endow_start(self);

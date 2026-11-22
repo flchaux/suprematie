@@ -1,8 +1,8 @@
 // Ramassage d'une sortie et livraison au dépôt, en jeu : partie contre une IA. Le commandant pose un
-// extracteur sur le gisement de fer libre le plus proche et une fonderie collée ; un clic droit du commandant
-// sur la fonderie (curseur, message, fiche) l'envoie ramasser les plaques qui sortent (stock en hausse).
-// Ensuite, loin de tout dépôt (récolte d'un gisement lointain), sa soute se remplit ; un clic sur la plaque
-// de fer de l'inventaire de sa fiche l'envoie la porter au dépôt le plus proche. Captures dans OUT.
+// extracteur sur le gisement de fer libre le plus proche, une fonderie collée et un dépôt à l'écart ; un clic
+// droit du commandant sur la fonderie (curseur, message, fiche) l'envoie ramasser les plaques qui sortent,
+// dans sa soute (un dépôt mobile). Ensuite, un clic sur la plaque de fer de l'inventaire de sa fiche l'envoie
+// porter toutes ses plaques au dépôt. Captures dans OUT.
 //   node tools/e2e-pickup.mjs [url]   (WEBGPU=1 sous xvfb-run : Chromium avec fenêtre, rendu WebGPU)
 import { launchBrowser } from "./browser.mjs";
 const gpu = !!process.env.WEBGPU;
@@ -67,9 +67,8 @@ const screenOf = (x, z) => page.evaluate(([x, z]) => {
 }, [x, z]);
 
 let s = await state();
-const depot = s.bs.find((b) => b.key === "depot");
 const main = s.bs.find((b) => b.key === "main_generator");
-console.log("dépôt :", JSON.stringify(depot), "générateur principal :", JSON.stringify(main));
+console.log("générateur principal :", JSON.stringify(main));
 // gisements de fer libres, du plus proche au plus loin du générateur principal
 const spots = await page.evaluate(([mx, my]) => {
   const { client } = window.__game;
@@ -81,7 +80,7 @@ const near = spots[0];
 console.log("gisement proche :", JSON.stringify(near));
 const kinds = await page.evaluate(() => {
   const b = window.__game.ui.data.buildings;
-  return { ext: b.findIndex((d) => d.key === "extractor"), fur: b.findIndex((d) => d.key === "furnace"), pyl: b.findIndex((d) => d.key === "pylon") };
+  return { ext: b.findIndex((d) => d.key === "extractor"), fur: b.findIndex((d) => d.key === "furnace"), pyl: b.findIndex((d) => d.key === "pylon"), dep: b.findIndex((d) => d.key === "depot") };
 });
 // fonderie collée à l'extracteur, du côté où elle se pose
 const sides = [[near.x + 2, near.y], [near.x - 2, near.y], [near.x, near.y + 2], [near.x, near.y - 2]];
@@ -91,6 +90,18 @@ const ok = await page.evaluate(async ([kind, c]) => {
 }, [kinds.fur, sides]);
 const fpos = sides[Math.max(0, ok.findIndex((v) => v))];
 console.log("fonderie en", fpos.join(","), "posables :", JSON.stringify(ok));
+// dépôt à une dizaine de cases du générateur principal, à l'opposé du gisement
+const cands = [];
+for (let k = 0; k < 24; k++) {
+  const a = Math.atan2(main.y - near.y, main.x - near.x) + ((k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI) / 12;
+  cands.push([Math.round(main.x + 1 + 10 * Math.cos(a)), Math.round(main.y + 1 + 10 * Math.sin(a))]);
+}
+const okd = await page.evaluate(async ([kind, c]) => {
+  const { client, ui } = window.__game;
+  return await client.query("canPlaceMany", [ui.me, kind, ...c.flatMap(([x, y]) => [x, y, 0])]);
+}, [kinds.dep, cands]);
+const dpos = cands[Math.max(0, okd.findIndex((v) => v))];
+console.log("dépôt en", dpos.join(","));
 // relais à mi-chemin si le gisement sort de la zone du générateur principal (18 cases)
 const relay = near.d > 15 ? [Math.round((main.x + near.x) / 2), Math.round((main.y + near.y) / 2) - 3] : null;
 await page.evaluate(([id, k, sx, sy, fx, fy, relay]) => {
@@ -99,6 +110,7 @@ await page.evaluate(([id, k, sx, sy, fx, fy, relay]) => {
   client.cmd([3, relay ? 1 : 0, k.ext, sx, sy, 0, 1, id]);
   client.cmd([3, 1, k.fur, fx, fy, 0, 1, id]);
 }, [s.cmd.id, kinds, near.x, near.y, fpos[0], fpos[1], relay]);
+await page.evaluate(([id, k, x, y]) => window.__game.client.cmd([3, 1, k.dep, x, y, 0, 1, id]), [s.cmd.id, kinds, dpos[0], dpos[1]]);
 await page.evaluate(([x, y]) => { const sc = window.__game.client.scene; sc.target.x = x; sc.target.z = y; sc.distance = 26; }, [fpos[0] + 1, fpos[1] + 1]);
 
 // la fonderie est terminée et sort des plaques (fiche du bâtiment : produits en attente)
@@ -114,7 +126,13 @@ for (let k = 0; k < 240 && !fur; k++) {
   if (info && info.out > 0) fur = { ...f, out: info.out };
 }
 check(!!fur, "fonderie posée, alimentée par l'extracteur, plaques en sortie", JSON.stringify(fur));
-if (!fur) {
+for (let k = 0; k < 120 && !(s.bs.find((b) => b.key === "depot" && b.build >= 65536)); k++) {
+  await page.waitForTimeout(1000);
+  s = await state();
+}
+const depot = s.bs.find((b) => b.key === "depot" && b.build >= 65536);
+check(!!depot, "dépôt bâti", JSON.stringify(depot));
+if (!fur || !depot) {
   console.log("erreurs :", errors.slice(0, 8));
   await browser.close();
   process.exit(1);
@@ -147,32 +165,32 @@ await page.screenshot({ path: `${out}/e2e-pickup-ramassage.png` });
 const stock1 = (await state()).stock[6];
 check(stock1 > stock0, "plaques ramassées (soute et dépôts)", `${stock0} -> ${stock1}`);
 
-// loin de tout dépôt : récolte d'un gisement lointain, la soute se remplit
-const far = spots.find((q) => Math.hypot(q.x - depot.x, q.y - depot.y) > 36 && Math.hypot(q.x - depot.x, q.y - depot.y) < 60) ?? spots[spots.length - 1];
-console.log("gisement lointain :", JSON.stringify(far));
-await page.evaluate(([id, x, y]) => window.__game.client.cmd([26, 0, x, y, 1, id]), [s.cmd.id, far.x, far.y]);
-await page.waitForFunction(() => (window.__game.ui.unitInfo?.hold?.[6] ?? 0) >= 3, null, { timeout: 240000 }).catch(() => {});
+// livraison : un clic sur la plaque de fer de sa soute l'envoie porter toutes ses plaques au dépôt
 const hold0 = await page.evaluate(() => window.__game.ui.unitInfo?.hold?.[6] ?? 0);
-check(hold0 >= 3, "plaques dans la soute, loin de tout dépôt", String(hold0));
+check(hold0 > 0, "plaques de fer dans la soute du commandant", String(hold0));
 await page.evaluate(() => { const { client } = window.__game; client.centerOnCommander(); client.scene.distance = 30; });
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/e2e-pickup-soute.png` });
-// clic sur la plaque de fer de l'inventaire
 const btn = page.locator("button.hitem").filter({ has: page.locator(".item[title='Plaque de fer']") });
 check((await btn.count()) === 1, "plaque de fer cliquable dans l'inventaire");
 await btn.first().click();
 await page.waitForTimeout(1500);
 const dv = await page.evaluate(() => window.__game.ui.unitInfo?.deliver ?? null);
-check(!!dv && dv.item === 6, "ordre de livraison (plaque de fer, dépôt visé)", JSON.stringify(dv));
+check(!!dv && dv.item === 6 && dv.x === depot.x + 1 && dv.y === depot.y + 1, "ordre de livraison (plaque de fer, au dépôt bâti)", JSON.stringify(dv));
 const msg2 = await page.evaluate(() => JSON.stringify(window.__game.ui.messages?.slice?.(-1) ?? null));
 console.log("message :", msg2);
 await page.screenshot({ path: `${out}/e2e-pickup-livraison.png` });
-await page.waitForFunction(() => { const u = window.__game.ui.unitInfo; return u && !u.deliver && (u.hold?.[6] ?? 0) === 0; }, null, { timeout: 240000 }).catch(() => {});
+await page.waitForFunction(() => { const u = window.__game.ui.unitInfo; return u && !u.deliver; }, null, { timeout: 240000 }).catch(() => {});
 s = await state();
 const left = await page.evaluate(() => window.__game.ui.unitInfo?.hold?.[6] ?? -1);
 const dd = Math.hypot(s.cmd.x - depot.x - 1, s.cmd.y - depot.y - 1);
 check(left === 0, "soute vidée de ses plaques", String(left));
-check(dd < 33, "le commandant est revenu à portée du dépôt (lui ou ses drones y versent les plaques)", `${dd.toFixed(1)} cases`);
+check(dd < 6, "le commandant est allé au dépôt", `${dd.toFixed(1)} cases`);
+await page.evaluate((r) => window.__game.client.selectIds([r]), depot.ref);
+await page.waitForTimeout(1200);
+const stash = await page.evaluate(() => window.__game.ui.buildingInfo?.stash?.[6] ?? -1);
+check(stash >= hold0, "les plaques sont dans le dépôt", `${stash} (soute avant : ${hold0})`);
+await page.screenshot({ path: `${out}/e2e-pickup-depot.png` });
 check(errors.length === 0, "aucune erreur dans la page", errors.slice(0, 5).join(" | "));
 await browser.close();
 process.exit(failed ? 1 : 0);
