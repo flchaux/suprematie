@@ -43,11 +43,11 @@ pub const O_SET_TURN: i32 = 43;
 pub const O_SET_LOT: i32 = 44;
 /// sorties d'un répartiteur : [réf., mode] (0 : les trois, 1 : gauche et avant, 2 : droite et avant)
 pub const O_SET_SPLIT: i32 = 45;
-/// vider une gare ou un héliport : [réf.] ; « à envoyer » et « reçus » retournent au stock du joueur
+/// vider une gare ou un héliport : [réf.] ; « à envoyer » et « reçus » sont remboursés (dépôt le plus proche)
 pub const O_EMPTY_STASH: i32 = 46;
 /// cadence d'une machine : [réf., cadence %] (10 à 250, par pas de 10 ; au-dessus de 100 %, des fragments)
 pub const O_SET_CLOCK: i32 = 47;
-/// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), versés au stock commun.
+/// Commandant : récupérer les objets d'un de nos tapis (référence du tapis), mis dans sa soute.
 pub const O_COLLECT: i32 = 23;
 /// tourner d'un quart de tour (sens horaire) nos tapis, bras et tapis de contrôle : [n, réf…]
 pub const O_ROTATE: i32 = 24;
@@ -275,7 +275,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     }
                 }
             }
-            // ce qui dépasse l'avance voulue par la nouvelle file retourne au stock
+            // ce qui dépasse l'avance voulue par la nouvelle file est remboursé
             crate::buildings::factory_trim(w, b);
             w.buildings[b].wake = 0;
         }
@@ -296,7 +296,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 }
             }
             if let Some(b) = own_building(w, p, b) {
-                if w.buildings[b].def().class == BClass::Depot && w.buildings[b].level > 0 {
+                if w.buildings[b].def().class == BClass::Depot {
                     w.buildings[b].filters = items;
                     w.buildings[b].wake = 0;
                 }
@@ -332,15 +332,15 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if !ok || bb.recipe as i32 == r {
                 return;
             }
-            // rendre le contenu au stock
+            // rembourser le contenu (dépôt le plus proche)
             if bb.recipe != RECIPE_NONE {
                 let rec = &RECIPES[bb.recipe as usize];
                 let inv = bb.inv;
                 let out = bb.out;
                 for (j, &(it, _)) in rec.inputs.iter().enumerate() {
-                    w.players[p as usize].stock[it as usize] += inv[j] as i32;
+                    crate::drones::refund_at(w, p, b, it, inv[j] as u32);
                 }
-                w.players[p as usize].stock[rec.output.0 as usize] += out as i32;
+                crate::drones::refund_at(w, p, b, rec.output.0, out as u32);
             }
             let bb = &mut w.buildings[b];
             bb.recipe = r as u8;
@@ -581,7 +581,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     let def = w.buildings[b].def();
                     let paid = w.buildings[b].paid;
                     for (k, &(it, _)) in def.cost.iter().enumerate() {
-                        w.players[p as usize].stock[it as usize] += paid[k] as i32;
+                        crate::drones::refund_at(w, p, b, it, paid[k] as u32);
                     }
                     if w.buildings[b].kind == B_EPPZ_SOCKET {
                         w.players[p as usize].eppz += 1;

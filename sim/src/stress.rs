@@ -252,11 +252,14 @@ pub fn logistics_demo() -> World {
     let pb = put(&mut w, 1, B_CARGO_PAD, x0 + 85, y0 + 5, 0);
     // entrepôt d'équipe
     let wh = put(&mut w, 0, B_WAREHOUSE, x0 + 10, y0 + 10, 0);
-    for p in w.players.iter_mut() {
-        p.stock[IRON_PLATE as usize] = 2000;
-        p.stock[GEAR as usize] = 500;
-        p.stock[STEEL as usize] = 500;
-        p.stock[CIRCUIT as usize] = 500;
+    // dépôts remplis près des gares et des héliports (véhicules payés par les dépôts proches)
+    for (owner, dx, dy) in [(0u8, 4, 3), (0, 4, 57), (1, 80, 30)] {
+        let d = put(&mut w, owner, B_DEPOT, x0 + dx, y0 + dy, 0);
+        if d != usize::MAX {
+            for (it, n) in [(IRON_PLATE, 600), (GEAR, 500), (STEEL, 500), (CIRCUIT, 500)] {
+                crate::drones::put(&mut w.buildings[d].stash, it, n);
+            }
+        }
     }
     if a != usize::MAX && b != usize::MAX && pa != usize::MAX && pb != usize::MAX {
         w.buildings[a].stash[IRON_PLATE as usize] = 1500;
@@ -271,8 +274,8 @@ pub fn logistics_demo() -> World {
         }
     }
     if wh != usize::MAX {
-        w.team_stock[0][IRON_PLATE as usize] = 750;
-        w.team_stock[0][STEEL as usize] = 120;
+        crate::drones::put(&mut w.buildings[wh].stash, IRON_PLATE, 750);
+        crate::drones::put(&mut w.buildings[wh].stash, STEEL, 120);
         w.buildings[wh].recipe = STEEL;
     }
     // diagnostics : fonderie sans minerai (entrée manquante), assembleur hors réseau
@@ -281,12 +284,15 @@ pub fn logistics_demo() -> World {
     if f != usize::MAX {
         w.buildings[f].recipe = 0;
     }
-    // base de robots : ils apportent du minerai (stock) à la fonderie voisine et évacuent ses plaques
+    // base de robots : ils apportent du minerai (dépôt voisin) à la fonderie voisine et évacuent ses plaques
     // (hors du cadre de copie du test des plans : x0+10..38, y0+10..30)
     put(&mut w, 0, B_GENERATOR, x0 + 10, y0 + 35, 0);
     put(&mut w, 0, B_GENERATOR, x0 + 13, y0 + 35, 0);
     put(&mut w, 0, B_ROBOPORT, x0 + 12, y0 + 38, 0);
-    w.players[0].stock[IRON_ORE as usize] = 400;
+    let rd = put(&mut w, 0, B_DEPOT, x0 + 16, y0 + 38, 0);
+    if rd != usize::MAX {
+        crate::drones::put(&mut w.buildings[rd].stash, IRON_ORE, 400);
+    }
     // portail de don de l'allié (joueur 1)
     put(&mut w, 1, B_PORTAL, x0 + 60, y0 + 20, 0);
     let asm = put(&mut w, 0, B_ASSEMBLER1, x0 + 34, y0 + 26, 0);
@@ -349,7 +355,8 @@ pub fn logistics_demo() -> World {
     if d != usize::MAX {
         w.buildings[d].level = 1;
         w.buildings[d].filters = vec![GEAR, CIRCUIT];
-        w.players[0].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
+        crate::drones::put(&mut w.buildings[d].stash, GEAR, 200);
+        crate::drones::put(&mut w.buildings[d].stash, CIRCUIT, 200);
     }
     for y in y0 + 41..y0 + 47 {
         put(&mut w, 0, B_BELT1, x0 + 49, y, 1);
@@ -419,7 +426,7 @@ pub fn logistics_demo() -> World {
         if d != usize::MAX {
             w.buildings[d].level = 1;
             w.buildings[d].filters = vec![IRON_PLATE];
-            w.players[0].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
+            crate::drones::put(&mut w.buildings[d].stash, IRON_PLATE, 400);
         }
         for y in ty - 4..ty {
             put(&mut w, 0, B_BELT1, px, y, 1);
@@ -440,15 +447,15 @@ pub fn logistics_demo() -> World {
             put(&mut w, 0, B_DEPOT, dx, ty + 7, 0);
         }
     }
-    // générateurs jumeaux : un générateur principal nourri par un dépôt collé (hydrocarbure de la réserve),
+    // générateurs jumeaux : un générateur principal nourri par un dépôt collé (hydrocarbure de son stock),
     // collé à un générateur vide sans fournisseur, qui vit du combustible partagé (conduite verte)
     let gm = put(&mut w, 0, B_MAIN_GENERATOR, tx + 20, ty, 0);
     let gs = put(&mut w, 0, B_GENERATOR, tx + 23, ty, 0);
-    put(&mut w, 0, B_DEPOT, tx + 20, ty + 3, 0);
-    if gm != usize::MAX && gs != usize::MAX {
+    let gd = put(&mut w, 0, B_DEPOT, tx + 20, ty + 3, 0);
+    if gm != usize::MAX && gs != usize::MAX && gd != usize::MAX {
         w.buildings[gm].fuel = 10 * FUEL_HYDROCARBON;
         w.buildings[gs].fuel = 0;
-        w.players[0].stock[HYDROCARBON as usize] = 400;
+        crate::drones::put(&mut w.buildings[gd].stash, HYDROCARBON, 400);
     }
     for _ in 0..20 {
         w.step(&[]);

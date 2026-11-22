@@ -31,7 +31,9 @@ pub struct Player {
     pub is_bot: bool,
     pub res_mult: i32,
     pub build_mult: i32,
-    pub stock: [i32; NUM_ITEMS],
+    /// ancienne réserve du joueur (sauvegardes de version < 3) : convertie en dépôt au chargement
+    /// (save::convert_v2), toujours vide ensuite
+    pub old_stock: [i32; NUM_ITEMS],
     pub researched: u64,
     pub research: u8,
     /** recherches en attente, lancées dans l'ordre quand la recherche en cours se termine */
@@ -45,14 +47,14 @@ pub struct Player {
     pub power_use: i32,
     pub kills: u32,
     pub losses: u32,
-    /// plafond de la réserve, par objet (STOCK_BASE + dépôts terminés)
-    pub stock_cap: i32,
+    /// ancien plafond de la réserve (sauvegardes de version < 3), sans usage
+    pub old_stock_cap: i32,
     /// fragments d'énergie en réserve (gagnés en détruisant des nids ; ils permettent le surcadençage)
     pub shards: u32,
     /// EPPZ en réserve (capturés dans les ruines des Anciens, posés dans un socle)
     pub eppz: u32,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap; since 2: shards, eppz });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, old_stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -99,10 +101,10 @@ pub enum Order {
     /// se tourner vers l'angle `a` (16 bits) : fin d'un déplacement en formation orientée
     Face { a: i32 },
     /// commandant : se poster près d'un de nos tapis et en retirer les objets qui passent sur cette
-    /// case, versés au stock commun (comme un dépôt)
+    /// case, mis dans sa soute (ses drones les rapportent à un dépôt)
     Collect { target: u32 },
     /// commandant : récolter le gisement de la case (x, y) (cases) et fondre le minerai dans sa
-    /// fonderie intégrée ; le produit fondu va au stock du joueur (voir units::HARVEST_*)
+    /// fonderie intégrée ; le produit fondu va dans sa soute (voir units::HARVEST_*)
     Harvest { x: i32, y: i32 },
 }
 
@@ -236,8 +238,12 @@ pub struct UnitCold {
     pub reveal: u16,
     /// sortie d'une porte de transit : ticks pendant lesquels l'unité ne peut pas y rentrer à nouveau
     pub warp: u16,
+    /// constructeur : soute, objets apportés par ses drones (vide, ou NUM_ITEMS cases ; voir drones.rs)
+    pub hold: Vec<u16>,
+    /// constructeur : dépôt où charger d'abord sa soute avant d'aller construire (NONE : aucun)
+    pub supply_at: u32,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: hold, supply_at });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -507,8 +513,8 @@ pub struct World {
     pub dead_buildings: Vec<u32>,
     pub buildings_version: u32,
     pub n_teams: u8,
-    /// stock commun de chaque équipe (alimenté par les entrepôts d'équipe)
-    pub team_stock: Vec<[i32; NUM_ITEMS]>,
+    /// dépôts et entrepôts d'équipe terminés, par indice croissant (dérivé, voir drones::store_added)
+    pub stores: Vec<u32>,
     /// trains et drones de fret
     pub carriers: Vec<crate::logistics::Carrier>,
     /// bâtiments détruits à reconstruire (fantômes) : les ingénieurs inactifs s'en chargent
@@ -545,19 +551,13 @@ impl World {
             let b = 4 + i * 4;
             let team = params.get(b).copied().unwrap_or(i as i32).clamp(0, 7) as u8;
             n_teams = n_teams.max(team + 1);
-            let mut stock = [0i32; NUM_ITEMS];
-            stock[IRON_PLATE as usize] = 300;
-            stock[COPPER_PLATE as usize] = 150;
-            stock[STEEL as usize] = 20;
-            stock[GEAR as usize] = 40;
-            stock[CIRCUIT as usize] = 20;
             players.push(Player {
                 team,
                 alive: true,
                 is_bot: params.get(b + 1).copied().unwrap_or(0) != 0,
                 res_mult: params.get(b + 2).copied().unwrap_or(100).clamp(50, 500),
                 build_mult: params.get(b + 3).copied().unwrap_or(100).clamp(50, 500),
-                stock,
+                old_stock: [0; NUM_ITEMS],
                 researched: 1,
                 research: 0,
                 research_queue: Vec::new(),
@@ -570,7 +570,7 @@ impl World {
                 power_use: 0,
                 kills: 0,
                 losses: 0,
-                stock_cap: STOCK_BASE,
+                old_stock_cap: 0,
                 shards: 0,
                 eppz: 0,
             });
@@ -614,7 +614,7 @@ impl World {
             dead_buildings: Vec::new(),
             buildings_version: 0,
             n_teams,
-            team_stock: vec![[0i32; NUM_ITEMS]; 8],
+            stores: Vec::new(),
             carriers: Vec::new(),
             ghosts: Vec::new(),
             shooter: NONE,
@@ -646,6 +646,12 @@ impl World {
                     break;
                 }
             }
+            // ressources de départ : un dépôt rempli, à côté du générateur principal
+            let mut items = [0i32; NUM_ITEMS];
+            for &(it, n) in START_ITEMS {
+                items[it as usize] = n as i32;
+            }
+            crate::drones::place_filled_depot(self, p as u8, &items);
         }
         crate::buildings::rebuild_power(self);
         crate::nature::place_initial_nests(self);
@@ -708,7 +714,7 @@ impl World {
         u.py[slot] = y;
         u.facing[slot] = 16384;
         u.hp[slot] = def.hp;
-        u.cold[slot] = UnitCold { wtarget: [NONE; 2], carried_by: NONE, parent: NONE, last_hit: NONE, shield: def.shield_hp, best_dist: i32::MAX, ..UnitCold::default() };
+        u.cold[slot] = UnitCold { wtarget: [NONE; 2], carried_by: NONE, parent: NONE, last_hit: NONE, supply_at: NONE, shield: def.shield_hp, best_dist: i32::MAX, ..UnitCold::default() };
         if kind == U_COMMANDER {
             // le bouclier personnel vient de la recherche
             u.cold[slot].shield = 0;
@@ -855,6 +861,7 @@ impl World {
         self.grid.rebuild_units(&self.units, &teams);
         crate::combat::collect_shields(self);
         crate::buildings::update_buildings(self);
+        crate::drones::plan(self);
         crate::belts::update_belts(self);
         crate::nature::update(self);
         crate::units::update_units(self);
@@ -871,31 +878,6 @@ impl World {
 
     pub fn update_vis_all(&mut self) {
         crate::combat::update_visibility(self);
-    }
-
-    /// Place libre dans la réserve du joueur pour cet objet (plafond fixé par ses dépôts).
-    #[inline]
-    pub fn stock_room(&self, p: usize, item: u8) -> i32 {
-        (self.players[p].stock_cap - self.players[p].stock[item as usize]).max(0)
-    }
-
-    /// Quantité disponible pour un joueur : son stock puis le stock commun de son équipe.
-    #[inline]
-    pub fn avail(&self, p: usize, item: u8) -> i32 {
-        let t = self.players[p].team as usize;
-        self.players[p].stock[item as usize] + self.team_stock.get(t).map(|s| s[item as usize]).unwrap_or(0)
-    }
-    /// Paie `n` objets : d'abord le stock du joueur, puis le stock commun de son équipe.
-    pub fn pay(&mut self, p: usize, item: u8, n: i32) {
-        let own = self.players[p].stock[item as usize].clamp(0, n);
-        self.players[p].stock[item as usize] -= own;
-        let rest = n - own;
-        if rest > 0 {
-            let t = self.players[p].team as usize;
-            if let Some(ts) = self.team_stock.get_mut(t) {
-                ts[item as usize] -= rest;
-            }
-        }
     }
 
     pub fn hash(&self) -> u32 {
@@ -915,6 +897,10 @@ impl World {
                     // récolte du commandant : avancement du cycle en cours
                     h.add(u.cold[s].work as u64);
                 }
+                // soute d'un constructeur
+                if !u.cold[s].hold.is_empty() {
+                    h.add(crate::drones::fold(&u.cold[s].hold) | (u.cold[s].supply_at as u64) << 40);
+                }
             }
         }
         for (i, b) in self.buildings.iter().enumerate() {
@@ -926,6 +912,10 @@ impl World {
                 h.add(b.hand as u64 | (b.timer as u64) << 8);
                 // niveau et amélioration en cours (zone du générateur principal, vitesses, production)
                 h.add(b.level as u64 | (b.upgrade as u64) << 8);
+                // stock d'un dépôt ou d'un entrepôt, réserve d'une usine, tampons d'une gare
+                if !b.stash.is_empty() {
+                    h.add(crate::drones::fold(&b.stash));
+                }
             }
         }
         h.add(self.ghosts.len() as u64);
@@ -942,9 +932,6 @@ impl World {
             }
         }
         for p in &self.players {
-            for &s in &p.stock {
-                h.add_i32(s);
-            }
             h.add(p.researched);
             h.add(p.research as u64 | (p.tech_progress.iter().map(|&x| x as u64).sum::<u64>() << 8));
             for &q in &p.research_queue {
@@ -959,11 +946,6 @@ impl World {
         for wk in &self.wrecks {
             if wk.alive {
                 h.add_i32(wk.iron + wk.steel * 7);
-            }
-        }
-        for ts in &self.team_stock {
-            for &s in ts {
-                h.add_i32(s);
             }
         }
         for c in &self.carriers {

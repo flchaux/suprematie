@@ -583,11 +583,10 @@ fn output_item(w: &mut World, li: u32, pos: usize, floor: u8, item: u8) -> bool 
             tline.insert_at(item, p)
         }
         BClass::Depot => {
-            let owner = b.owner as usize;
-            if w.stock_room(owner, item) == 0 {
+            if crate::drones::store_room(b, item) == 0 {
                 return false;
             }
-            w.players[owner].stock[item as usize] += 1;
+            crate::drones::put(&mut w.buildings[bi].stash, item, 1);
             true
         }
         _ => {

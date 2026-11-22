@@ -73,10 +73,10 @@ fn feed(w: &mut World, r: usize, item: u8, n: usize) {
 #[test]
 fn splitter_alternates_outputs() {
     let (mut w, r, _) = router(B_SPLITTER);
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     feed(&mut w, r, IRON_PLATE, 30);
     // toutes les sorties sont des dépôts du joueur : le total arrive au stock
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize] - before, 30);
+    assert_eq!(w.stock(0, IRON_PLATE) - before, 30);
     assert!(w.buildings[r].stash.is_empty());
 }
 
@@ -92,11 +92,11 @@ fn sorter_sends_chosen_item_left_only() {
     put(&mut w, 0, B_DEPOT, 100, 97, 0);
     let f = put(&mut w, 0, B_FURNACE, 101, 100, 0);
     w.buildings[f].recipe = 0; // fonderie : minerai de fer -> plaque
-    let before = w.players[0].stock[COPPER_PLATE as usize];
+    let before = w.stock(0, COPPER_PLATE);
     feed(&mut w, r, COPPER_PLATE, 5);
     feed(&mut w, r, IRON_ORE, 2);
     run(&mut w, 100);
-    assert_eq!(w.players[0].stock[COPPER_PLATE as usize] - before, 5, "le cuivre part à gauche");
+    assert_eq!(w.stock(0, COPPER_PLATE) - before, 5, "le cuivre part à gauche");
     assert!(w.buildings[f].inv[0] > 0 || w.buildings[f].working || w.buildings[f].out > 0, "le minerai continue tout droit");
 }
 
@@ -108,10 +108,10 @@ fn overflow_prefers_front_then_sides() {
     let f = put(&mut w, 0, B_FURNACE, 101, 100, 0);
     w.buildings[f].recipe = 0;
     put(&mut w, 0, B_DEPOT, 100, 98, 0);
-    let before = w.players[0].stock[IRON_ORE as usize];
+    let before = w.stock(0, IRON_ORE);
     feed(&mut w, r, IRON_ORE, 12);
     // la fonderie n'en garde qu'une petite réserve : le reste déborde à gauche (dépôt)
-    let overflowed = w.players[0].stock[IRON_ORE as usize] - before;
+    let overflowed = w.stock(0, IRON_ORE) - before;
     assert!(overflowed > 0 && overflowed < 12, "débordement partiel : {overflowed}");
 }
 
@@ -162,17 +162,18 @@ fn veterancy_levels_up_from_kills() {
 fn robots_feed_and_evacuate_nearby_buildings() {
     let mut w = world(&[0]);
     flatten(&mut w, 90, 90, 140, 140);
+    put(&mut w, 0, B_DEPOT, 92, 112, 0);
     put(&mut w, 0, B_GENERATOR, 100, 96, 0);
     put(&mut w, 0, B_GENERATOR, 103, 96, 0);
     let port = put(&mut w, 0, B_ROBOPORT, 100, 100, 0);
     put(&mut w, 0, B_GENERATOR, 114, 106, 0);
     let f = put(&mut w, 0, B_FURNACE, 114, 110, 0);
     w.buildings[f].recipe = 0;
-    w.players[0].stock[IRON_ORE as usize] = 40;
+    w.set_stock(0, IRON_ORE, 40);
     run(&mut w, 1200);
     assert!(w.buildings[port].working, "la base de robots est alimentée");
     // la fonderie a reçu du minerai par robot, et ses plaques (sortie sans bras) ont été évacuées
-    assert!(w.players[0].stock[IRON_ORE as usize] < 40, "minerai livré");
+    assert!(w.stock(0, IRON_ORE) < 40, "minerai livré");
     assert!(w.players[0].produced[IRON_PLATE as usize] >= 4, "la fonderie a produit");
     assert!(w.carriers.iter().filter(|c| c.alive && c.kind == 2).count() == ROBOTS_PER_PORT);
 }
@@ -207,6 +208,16 @@ fn build_with(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) {
     }
 }
 
+/// Dépôt du joueur 0 en (x, y), rempli de 500 objets de chaque sorte : les drones des constructeurs et
+/// les paiements immédiats (améliorations) y puisent ; `set_stock` le remplit (premier dépôt du joueur).
+fn supply(w: &mut World, x: i32, y: i32) -> usize {
+    let d = put(w, 0, B_DEPOT, x, y, 0);
+    for it in 1..NUM_ITEMS as u8 {
+        crate::drones::put(&mut w.buildings[d].stash, it, 500);
+    }
+    d
+}
+
 fn building_at(w: &World, x: i32, y: i32) -> Option<usize> {
     let o = w.map.occ[w.map.idx(x, y)];
     (o != 0).then(|| (o - 1) as usize)
@@ -239,20 +250,21 @@ fn belt_corner_shape_follows_neighbours() {
     put(&mut w, 0, B_BELT1, 103, 101, 1);
     put(&mut w, 0, B_DEPOT, 103, 102, 0);
     let first = building_at(&w, 100, 100).unwrap();
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     for _ in 0..4 {
         while !crate::belts::put_on_belt(&mut w, first, IRON_PLATE) {
             w.step(&[]);
         }
     }
     run(&mut w, 400);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize] - before, 4, "objets arrivés après le virage");
+    assert_eq!(w.stock(0, IRON_PLATE) - before, 4, "objets arrivés après le virage");
 }
 
 #[test]
 fn belt_replacement_rotates_or_swaps_with_refund() {
     let mut w = world(&[0, 1]);
     flatten(&mut w, 90, 90, 115, 115);
+    supply(&mut w, 92, 108);
     let b = put(&mut w, 0, B_BELT1, 100, 100, 0);
     let other = put(&mut w, 1, B_BELT1, 105, 100, 0);
     let _ = other;
@@ -268,14 +280,14 @@ fn belt_replacement_rotates_or_swaps_with_refund() {
     assert_eq!(building_at(&w, 100, 100), Some(b));
     assert_eq!(w.buildings[b].dir, 1);
     // autre type : le tapis est démonté et remboursé, le répartiteur construit à sa place
-    let iron = w.players[0].stock[IRON_PLATE as usize];
+    let iron = w.stock(0, IRON_PLATE);
     let belt_iron: i32 = bdef(B_BELT1).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
     let split_iron: i32 = bdef(B_SPLITTER).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
     build_with(&mut w, 0, B_SPLITTER, 100, 100, crate::buildings::DIR_REPLACE);
     let s = building_at(&w, 100, 100).expect("répartiteur posé");
     assert_eq!(w.buildings[s].kind, B_SPLITTER);
     assert!(w.buildings[s].complete());
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], iron + belt_iron - split_iron, "tapis remboursé, répartiteur payé");
+    assert_eq!(w.stock(0, IRON_PLATE), iron + belt_iron - split_iron, "tapis remboursé, répartiteur payé");
 }
 
 #[test]
@@ -539,14 +551,14 @@ fn extractor_upgrade_speeds_up_extraction() {
         w.step(&[3, O_UPGRADE, 0, r]);
     };
     // sans la recherche : refusé
-    w.players[0].stock[STEEL as usize] = 100;
-    w.players[0].stock[GEAR as usize] = 100;
-    w.players[0].stock[CIRCUIT as usize] = 100;
+    w.set_stock(0, STEEL, 100);
+    w.set_stock(0, GEAR, 100);
+    w.set_stock(0, CIRCUIT, 100);
     order(&mut w, ext[1]);
     assert_eq!(w.buildings[ext[1]].level, 0, "automatisation non faite");
     w.players[0].researched |= 1 << T_AUTOMATION;
     order(&mut w, ext[1]);
-    assert_eq!(w.players[0].stock[STEEL as usize], 90, "coût payé");
+    assert_eq!(w.stock(0, STEEL), 90, "coût payé");
     // l'amélioration prend du temps (20 s) : le niveau ne change qu'à la fin, sans extraction entre-temps
     assert!(w.buildings[ext[1]].upgrade > 0);
     assert_eq!(w.buildings[ext[1]].level, 0);
@@ -603,14 +615,14 @@ fn unpowered_arm_does_not_starve_the_output_belt() {
     run(&mut w, 5);
     assert_eq!(w.buildings[arm].net, 0, "le bras doit être hors réseau pour ce test");
     assert_ne!(w.buildings[f].net, 0, "la fonderie doit être alimentée");
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     for _ in 0..3000 {
         if crate::buildings::accepts(&w, f, IRON_ORE) {
             insert_item(&mut w, f, IRON_ORE);
         }
         w.step(&[]);
     }
-    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    let got = w.stock(0, IRON_PLATE) - before;
     assert!(got > 20, "le tapis de sortie n'a presque rien reçu : {} plaques", got);
 }
 
@@ -628,7 +640,7 @@ fn single_output_belt_gets_everything() {
     }
     put(&mut w, 0, B_DEPOT, 106, 100, 0);
     assert_eq!(crate::buildings::outlets_of(&w, f).len(), 1);
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     let mut fed = 0;
     for _ in 0..3000 {
         if crate::buildings::accepts(&w, f, IRON_ORE) {
@@ -637,7 +649,7 @@ fn single_output_belt_gets_everything() {
         }
         w.step(&[]);
     }
-    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    let got = w.stock(0, IRON_PLATE) - before;
     assert!(got > 20 && got as i64 + 6 >= fed as i64, "production perdue ou bloquée : {} plaques pour {} minerais", got, fed);
 }
 
@@ -684,7 +696,7 @@ fn elevated_belts_cross_over_ground_belts() {
     let under = w.map.occ_floor(w.map.idx(107, 100), 0) as usize - 1;
     assert_ne!(w.buildings[under].line, w.buildings[a].line);
     // du fer sur la ligne qui monte, du cuivre sur celle du sol
-    let (fe0, cu0) = (w.players[0].stock[IRON_ORE as usize], w.players[0].stock[COPPER_ORE as usize]);
+    let (fe0, cu0) = (w.stock(0, IRON_ORE), w.stock(0, COPPER_ORE));
     let mut sent = [0, 0];
     for k in 0..700 {
         if k % 10 == 0 && k < 300 {
@@ -693,8 +705,8 @@ fn elevated_belts_cross_over_ground_belts() {
         }
         w.step(&[]);
     }
-    let fe = w.players[0].stock[IRON_ORE as usize] - fe0;
-    let cu = w.players[0].stock[COPPER_ORE as usize] - cu0;
+    let fe = w.stock(0, IRON_ORE) - fe0;
+    let cu = w.stock(0, COPPER_ORE) - cu0;
     println!("fer {} cuivre {}", fe, cu);
     // tout arrive, rien ne se perd ni ne se mélange au croisement
     assert_eq!((fe, cu), (sent[0], sent[1]), "fer {} sur {}, cuivre {} sur {}", fe, sent[0], cu, sent[1]);
@@ -746,10 +758,11 @@ fn elevated_belts_survive_snapshot() {
 fn building_over_belts_replaces_them() {
     let mut w = world(&[0]);
     flatten(&mut w, 90, 90, 115, 115);
+    supply(&mut w, 92, 108);
     for x in 98..103 {
         put(&mut w, 0, B_BELT1, x, 100, 0);
     }
-    let iron = w.players[0].stock[IRON_PLATE as usize];
+    let iron = w.stock(0, IRON_PLATE);
     let belt_iron: i32 = bdef(B_BELT1).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
     let depot_iron: i32 = bdef(B_DEPOT).cost.iter().filter(|c| c.0 == IRON_PLATE).map(|c| c.1 as i32).sum();
     // dépôt 2 x 2 sur les tapis de x = 100 et 101
@@ -758,7 +771,7 @@ fn building_over_belts_replaces_them() {
     assert_eq!(w.buildings[d].kind, B_DEPOT);
     assert_eq!(building_at(&w, 101, 100), Some(d));
     assert_eq!(w.buildings[building_at(&w, 99, 100).unwrap()].kind, B_BELT1, "les autres tapis restent");
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], iron + 2 * belt_iron - depot_iron, "deux tapis remboursés, dépôt payé");
+    assert_eq!(w.stock(0, IRON_PLATE), iron + 2 * belt_iron - depot_iron, "deux tapis remboursés, dépôt payé");
 }
 
 /// Reconstruction automatique : un bâtiment détruit laisse un fantôme qu'un ingénieur inactif reconstruit
@@ -768,13 +781,14 @@ fn destroyed_buildings_are_rebuilt_by_idle_engineers() {
     use crate::orders::{apply_orders, O_CANCEL_GHOSTS};
     let mut w = world(&[0, 1]);
     flatten(&mut w, 85, 85, 130, 130);
+    supply(&mut w, 88, 122);
     put(&mut w, 0, B_GENERATOR, 96, 100, 0);
     let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
     let gear = RECIPES.iter().position(|r| r.key == "gear").unwrap() as u8;
     w.buildings[a].recipe = gear;
     let eng = w.spawn_unit(U_ENG1, 0, 104 * TILE, 104 * TILE);
-    for it in 0..NUM_ITEMS {
-        w.players[0].stock[it] = 500;
+    for it in 0..NUM_ITEMS as u8 {
+        w.set_stock(0, it, 500);
     }
     // destruction au combat
     crate::combat::damage_building(&mut w, a, 1_000_000, 1);
@@ -864,7 +878,7 @@ fn single_tile_overpass_crosses_a_belt() {
     assert_eq!(crate::belts::ramp_to(&w, before), Some(1), "la case avant le croisement doit monter");
     let under = w.map.occ_floor(w.map.idx(105, 100), 0) as usize - 1;
     assert_eq!(crate::belts::belt_shape(&w, under), 0, "le tapis croisé reste droit");
-    let fe0 = w.players[0].stock[IRON_ORE as usize];
+    let fe0 = w.stock(0, IRON_ORE);
     let mut sent = 0;
     for k in 0..600 {
         if k % 10 == 0 && k < 300 {
@@ -873,7 +887,7 @@ fn single_tile_overpass_crosses_a_belt() {
         w.step(&[]);
     }
     assert!(sent > 20);
-    assert_eq!(w.players[0].stock[IRON_ORE as usize] - fe0, sent, "tout le fer doit passer par-dessus, jusqu'au dépôt de l'est");
+    assert_eq!(w.stock(0, IRON_ORE) - fe0, sent, "tout le fer doit passer par-dessus, jusqu'au dépôt de l'est");
 }
 
 /// Collecteur de surplus : sur une file bouchée, il met le surplus en réserve et la file reste fluide ;
@@ -892,7 +906,7 @@ fn collector_takes_only_the_surplus() {
     assert_eq!(w.buildings[col].kind, B_COLLECTOR);
     // un dépôt à l'écart : la réserve a de la place pour tout le surplus
     put(&mut w, 0, B_DEPOT, 100, 110, 0);
-    let stock0 = w.players[0].stock[IRON_ORE as usize];
+    let stock0 = w.stock(0, IRON_ORE);
     let mut sent = 0;
     for t in 0..2000 {
         if t % 3 == 0 && crate::belts::put_on_belt(&mut w, start, IRON_ORE) {
@@ -900,7 +914,7 @@ fn collector_takes_only_the_surplus() {
         }
         w.step(&[]);
     }
-    let kept = w.players[0].stock[IRON_ORE as usize] - stock0;
+    let kept = w.stock(0, IRON_ORE) - stock0;
     // référence : la même file, sans collecteur, qui se vide librement dans un dépôt
     let mut r = world(&[0]);
     flatten(&mut r, 85, 85, 125, 125);
@@ -949,21 +963,22 @@ fn assembler_upgrade_takes_time_and_can_be_cancelled() {
     use crate::orders::O_UPGRADE;
     let mut w = world(&[0]);
     flatten(&mut w, 85, 85, 125, 125);
+    supply(&mut w, 88, 118);
     put(&mut w, 0, B_GENERATOR, 100, 96, 0);
     let a = put(&mut w, 0, B_ASSEMBLER1, 100, 100, 0);
     let rid = RECIPES.iter().position(|r| r.key == "gear").unwrap() as i32;
     let r = w.building_ref(a) as i32;
     w.step(&[4, crate::orders::O_SET_RECIPE, 0, r, rid]);
     for (it, n) in [(STEEL, 50), (GEAR, 50), (CIRCUIT, 50)] {
-        w.players[0].stock[it as usize] = n;
+        w.set_stock(0, it, n);
     }
     // lancé puis annulé : remboursé, toujours assembleur simple
     w.step(&[3, O_UPGRADE, 0, r]);
     assert!(w.buildings[a].upgrade > 0);
-    assert_eq!(w.players[0].stock[STEEL as usize], 44);
+    assert_eq!(w.stock(0, STEEL), 44);
     w.step(&[3, O_UPGRADE, 0, r]);
     assert_eq!(w.buildings[a].upgrade, 0);
-    assert_eq!(w.players[0].stock[STEEL as usize], 50, "remboursé");
+    assert_eq!(w.stock(0, STEEL), 50, "remboursé");
     // lancé jusqu'au bout
     w.step(&[3, O_UPGRADE, 0, r]);
     for _ in 0..450 {
@@ -974,143 +989,133 @@ fn assembler_upgrade_takes_time_and_can_be_cancelled() {
     assert_eq!(w.buildings[a].hp, bdef(B_ASSEMBLER1 + 1).hp, "points de vie à la même proportion");
 }
 
-/// La réserve est plafonnée par les dépôts : une file qui livre un dépôt s'arrête quand la réserve est
-/// pleine ; un dépôt amélioré agrandit la réserve et pose sur ses tapis de sortie les objets filtrés.
+/// Chaque dépôt a son propre stock, plafonné par objet : une file qui le livre s'arrête quand il est
+/// plein ; amélioré, il est plus grand. Ses sorties sont actives par défaut (tous les objets de son
+/// stock, sur les tapis qui partent de ses faces) ; des filtres, permis sur tout dépôt, les restreignent.
 #[test]
-fn depots_cap_the_reserve_and_upgraded_depot_outputs_filtered_items() {
+fn depot_has_its_own_capped_stock_and_outputs() {
+    use crate::drones::has;
     use crate::orders::{O_SET_FILTERS, O_UPGRADE};
     let mut w = world(&[0]);
     flatten(&mut w, 85, 85, 125, 125);
-    assert_eq!(w.players[0].stock_cap, STOCK_BASE);
     for x in 100..106 {
         put(&mut w, 0, B_BELT1, x, 100, 0);
     }
     let d = put(&mut w, 0, B_DEPOT, 106, 100, 0);
-    assert_eq!(w.players[0].stock_cap, STOCK_BASE + DEPOT_CAP[0]);
     let start = w.map.occ[w.map.idx(100, 100)] as usize - 1;
-    let cap = w.players[0].stock_cap;
-    w.players[0].stock[IRON_ORE as usize] = cap - 5;
+    let cap = DEPOT_CAP[0] as u16;
+    crate::drones::put(&mut w.buildings[d].stash, IRON_ORE, cap - 5);
     for t in 0..600 {
         if t % 4 == 0 {
             crate::belts::put_on_belt(&mut w, start, IRON_ORE);
         }
         w.step(&[]);
     }
-    assert_eq!(w.players[0].stock[IRON_ORE as usize], cap, "réserve pleine : le dépôt n'accepte plus");
+    assert_eq!(has(&w.buildings[d].stash, IRON_ORE), cap, "dépôt plein : il n'accepte plus");
     assert!(w.belts.lines.iter().any(|l| !l.items.is_empty()), "la file attend devant le dépôt");
-    // amélioration : plus de place, la file repart
-    for (it, n) in DEPOT_UPGRADE_COST {
-        w.players[0].stock[*it as usize] = *n as i32;
+    // amélioration, payée par un autre dépôt proche : plus de place, la file repart
+    let other = put(&mut w, 0, B_DEPOT, 100, 110, 0);
+    for &(it, n) in DEPOT_UPGRADE_COST {
+        crate::drones::put(&mut w.buildings[other].stash, it, n);
     }
     let r = w.building_ref(d) as i32;
     w.step(&[3, O_UPGRADE, 0, r]);
     assert!(w.buildings[d].upgrade > 0, "amélioration lancée");
+    assert_eq!(has(&w.buildings[other].stash, STEEL), 0, "coût pris dans le dépôt proche");
     for _ in 0..DEPOT_UPGRADE_TIME as u32 * 20 + 5 {
         w.step(&[]);
     }
     assert_eq!(w.buildings[d].level, 1);
-    assert_eq!(w.players[0].stock_cap, STOCK_BASE + DEPOT_CAP[1]);
+    assert_eq!(crate::drones::store_cap(&w.buildings[d]), DEPOT_CAP[1] as u16);
     run(&mut w, 100);
-    assert!(w.players[0].stock[IRON_ORE as usize] > cap, "la file a repris");
+    assert!(has(&w.buildings[d].stash, IRON_ORE) > cap, "la file a repris");
     // sortie filtrée : un tapis qui part de la face est du dépôt
+    crate::drones::put(&mut w.buildings[d].stash, GEAR, 30);
+    w.step(&[6, O_SET_FILTERS, 0, r, 2, GEAR as i32, COPPER_PLATE as i32]);
+    assert_eq!(w.buildings[d].filters, vec![GEAR, COPPER_PLATE]);
     for x in 108..114 {
         put(&mut w, 0, B_BELT1, x, 100, 0);
     }
-    w.players[0].stock[GEAR as usize] = 30;
-    w.players[0].stock[COPPER_PLATE as usize] = 0;
-    w.step(&[6, O_SET_FILTERS, 0, r, 2, GEAR as i32, COPPER_PLATE as i32]);
-    assert_eq!(w.buildings[d].filters, vec![GEAR, COPPER_PLATE]);
     run(&mut w, 400);
-    // les engrenages quittent la réserve pour le tapis en cul-de-sac (pas de cuivre : il n'y en a pas)
+    // les engrenages quittent le stock pour le tapis en cul-de-sac (pas de cuivre : il n'y en a pas ;
+    // pas de minerai : il n'est pas filtré)
     let on_belts = |w: &World, it: u8| -> i32 { w.belts.lines.iter().map(|l| l.items.iter().filter(|i| i.0 == it).count() as i32).sum() };
     let g = on_belts(&w, GEAR);
     assert!(g > 5, "des engrenages sortent sur le tapis : {}", g);
-    assert_eq!(w.players[0].stock[GEAR as usize], 30 - g);
+    assert_eq!(has(&w.buildings[d].stash, GEAR) as i32, 30 - g);
     assert_eq!(on_belts(&w, COPPER_PLATE), 0);
-    let out = put(&mut w, 0, B_DEPOT, 100, 110, 0);
-    // les filtres d'un dépôt simple sont refusés
-    let r2 = w.building_ref(out) as i32;
+    // un dépôt simple accepte aussi des filtres ; sans filtre, tout sort (par défaut)
+    let r2 = w.building_ref(other) as i32;
     w.step(&[5, O_SET_FILTERS, 0, r2, 1, GEAR as i32]);
-    assert!(w.buildings[out].filters.is_empty());
-    // destruction : la réserve rétrécit
-    let before = w.players[0].stock_cap;
-    crate::buildings::remove_building(&mut w, d, false);
-    assert_eq!(w.players[0].stock_cap, before - DEPOT_CAP[1]);
+    assert_eq!(w.buildings[other].filters, vec![GEAR]);
+    let ore0 = has(&w.buildings[d].stash, IRON_ORE);
+    w.step(&[4, O_SET_FILTERS, 0, r, 0]);
+    assert!(w.buildings[d].filters.is_empty());
+    // le tapis de sortie est presque plein d'engrenages : on le vide pour voir sortir le minerai
+    for l in w.belts.lines.iter_mut() {
+        l.items.retain(|i| i.0 != GEAR);
+    }
+    run(&mut w, 200);
+    assert!(on_belts(&w, IRON_ORE) > 0 && has(&w.buildings[d].stash, IRON_ORE) < ore0 + 200, "sans filtre, le minerai sort aussi");
 }
 
 fn unit_kind(key: &str) -> i32 {
     UNITS.iter().position(|u| u.key == key).unwrap() as i32
 }
 
-/// Un dépôt collé à une usine l'alimente depuis la réserve du joueur, sans tapis ni bras.
+/// Les drones d'une usine vont chercher ses composants dans les dépôts à moins de 30 cases, sans tapis
+/// ni bras ; l'avance qui reste à la fin de la file est remboursée au dépôt le plus proche.
 #[test]
-fn depot_touching_a_factory_feeds_it_from_the_reserve() {
+fn factory_drones_fetch_components_from_nearby_depots() {
+    use crate::drones::{has, DRONE};
     use crate::orders::O_FACTORY_QUEUE;
     let mut w = world(&[0]);
-    flatten(&mut w, 85, 85, 125, 125);
+    flatten(&mut w, 85, 85, 145, 125);
     put(&mut w, 0, B_GENERATOR, 100, 96, 0);
     put(&mut w, 0, B_GENERATOR, 102, 96, 0);
     let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
     let r = w.building_ref(f) as i32;
     let robot = unit_kind("line_robot");
-    w.players[0].stock[IRON_PLATE as usize] = 100;
-    w.players[0].stock[GEAR as usize] = 100;
+    // un dépôt trop loin (plus de 30 cases) : rien n'arrive
+    let far = put(&mut w, 0, B_DEPOT, 138, 100, 0);
+    crate::drones::put(&mut w.buildings[far].stash, IRON_PLATE, 100);
+    crate::drones::put(&mut w.buildings[far].stash, GEAR, 100);
     w.step(&[5, O_FACTORY_QUEUE, 0, r, robot, 2]);
     let units0 = w.players[0].unit_count;
-    // sans dépôt : rien n'arrive
     run(&mut w, 200);
     assert_eq!(w.players[0].unit_count, units0);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], 100);
-    // dépôt contre la face ouest
-    put(&mut w, 0, B_DEPOT, 98, 100, 0);
-    assert_eq!(crate::buildings::touching_depots(&w, f), 1);
-    run(&mut w, 900);
+    assert_eq!(has(&w.buildings[far].stash, IRON_PLATE), 100);
+    // un dépôt à 15 cases : les drones y vont
+    let d = put(&mut w, 0, B_DEPOT, 115, 100, 0);
+    crate::drones::put(&mut w.buildings[d].stash, IRON_PLATE, 100);
+    crate::drones::put(&mut w.buildings[d].stash, GEAR, 100);
+    let mut flying = 0;
+    for _ in 0..900 {
+        w.step(&[]);
+        flying = flying.max(w.carriers.iter().filter(|c| c.alive && c.kind == DRONE && c.a == w.building_ref(f)).count());
+    }
+    assert!(flying >= 1 && flying <= FACTORY_DRONES as usize, "drones de l'usine en vol : {flying}");
     assert_eq!(w.players[0].unit_count, units0 + 2, "deux robots produits");
     assert_eq!(w.buildings[f].flow.iter().map(|&n| n as u32).sum::<u32>(), 2, "débit : deux unités comptées");
     let cost = udef(robot as u16).cost;
-    let iron = cost.iter().find(|c| c.0 == IRON_PLATE).unwrap().1 as i32;
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], 100 - 2 * iron, "pris dans la réserve, l'avance rendue à la fin de la file");
+    let iron = cost.iter().find(|c| c.0 == IRON_PLATE).unwrap().1;
+    run(&mut w, 100);
+    assert_eq!(has(&w.buildings[d].stash, IRON_PLATE), 100 - 2 * iron, "pris dans le dépôt proche, l'avance rendue à la fin de la file");
     assert_eq!(crate::buildings::factory_has(&w.buildings[f], IRON_PLATE), 0);
-}
-
-/// L'alimentation par dépôt est lente (1 objet par seconde) et un seul dépôt compte : en coller un
-/// second ne va pas plus vite.
-#[test]
-fn only_one_depot_feeds_a_factory_slowly() {
-    use crate::buildings::DEPOT_FEED_PERIOD;
-    use crate::orders::O_FACTORY_QUEUE;
-    let delivered = |depots: &[(i32, i32)]| {
-        let mut w = world(&[0]);
-        flatten(&mut w, 85, 85, 125, 125);
-        put(&mut w, 0, B_GENERATOR, 100, 96, 0);
-        put(&mut w, 0, B_GENERATOR, 102, 96, 0);
-        let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
-        let r = w.building_ref(f) as i32;
-        // une grosse unité : la réserve de l'usine ne se remplit pas pendant la mesure
-        w.step(&[5, O_FACTORY_QUEUE, 0, r, unit_kind("light_tank"), 1]);
-        for it in [STEEL, GEAR, CIRCUIT] {
-            w.players[0].stock[it as usize] = 100;
-        }
-        for &(x, y) in depots {
-            put(&mut w, 0, B_DEPOT, x, y, 0);
-        }
-        run(&mut w, 10 * DEPOT_FEED_PERIOD);
-        // pris dans la réserve (une partie a déjà pu partir dans un char en construction)
-        [STEEL, GEAR, CIRCUIT].iter().map(|&it| (100 - w.players[0].stock[it as usize]) as u32).sum::<u32>()
-    };
-    let one = delivered(&[(98, 100)]);
-    assert!((9..=11).contains(&one), "un objet par période : {one}");
-    assert_eq!(delivered(&[(98, 100), (100, 103)]), one, "un second dépôt ne va pas plus vite");
+    assert_eq!(has(&w.buildings[far].stash, IRON_PLATE), 100, "le dépôt lointain n'a pas servi");
 }
 
 /// L'usine garde d'avance les composants de deux unités pour chaque type de sa file ; ce qui dépasse
-/// quand la file change retourne à la réserve, et une unité abandonnée en cours rend ses composants.
+/// quand la file change est remboursé (dépôt le plus proche), et une unité abandonnée en cours rend ses
+/// composants.
 #[test]
 fn factory_buffers_two_units_for_its_whole_queue() {
     use crate::buildings::{accepts, factory_has};
     use crate::orders::O_FACTORY_QUEUE;
     let mut w = world(&[0]);
     flatten(&mut w, 85, 85, 125, 125);
+    // dépôt vide : il reçoit ce que l'usine rend (remboursement au dépôt le plus proche)
+    put(&mut w, 0, B_DEPOT, 88, 118, 0);
     let f = put(&mut w, 0, B_LAND_FACTORY, 100, 100, 0);
     let r = w.building_ref(f) as i32;
     let (robot, moto) = (unit_kind("line_robot"), unit_kind("moto"));
@@ -1126,16 +1131,16 @@ fn factory_buffers_two_units_for_its_whole_queue() {
     let lim = 2 * need(robot, IRON_PLATE).max(need(moto, IRON_PLATE));
     assert_eq!(n, lim, "deux unités d'avance pour le plus gros besoin de la file");
     assert!(!accepts(&w, f, STEEL), "objet inutile à la file refusé");
-    // retirer la moto : l'excédent retourne à la réserve
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    // retirer la moto : l'excédent est remboursé
+    let before = w.stock(0, IRON_PLATE);
     w.step(&[5, O_FACTORY_QUEUE, 0, r, moto, -1]);
     let keep = 2 * need(robot, IRON_PLATE);
     assert_eq!(factory_has(&w.buildings[f], IRON_PLATE), keep);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], before + (lim - keep) as i32);
+    assert_eq!(w.stock(0, IRON_PLATE), before + (lim - keep) as i32);
     // vider la file : tout revient
     w.step(&[5, O_FACTORY_QUEUE, 0, r, robot, -1]);
     assert_eq!(factory_has(&w.buildings[f], IRON_PLATE), 0);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], before + lim as i32);
+    assert_eq!(w.stock(0, IRON_PLATE), before + lim as i32);
 }
 
 /// Une usine en panne de composants depuis 10 s le signale une fois à son joueur.
@@ -1311,8 +1316,9 @@ fn heavy_transport_carries_heavy_units() {
 fn carrier_launches_interceptors_and_repairs_aircraft() {
     let mut w = world(&[0]);
     flatten(&mut w, 90, 90, 130, 130);
+    supply(&mut w, 100, 120);
     for it in [STEEL, CIRCUIT, FUEL] {
-        w.players[0].stock[it as usize] = 200;
+        w.set_stock(0, it, 200);
     }
     let c = w.spawn_unit(U_CARRIER, 0, 110 * TILE, 110 * TILE);
     for _ in 0..200 * 8 {
@@ -1320,7 +1326,7 @@ fn carrier_launches_interceptors_and_repairs_aircraft() {
     }
     let wing: Vec<usize> = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_INTERCEPTOR && w.units.cold[s].parent == c).collect();
     assert_eq!(wing.len(), CARRIER_WING as usize);
-    assert_eq!(w.players[0].stock[STEEL as usize], 200 - 4 * CARRIER_WING as i32, "payés");
+    assert_eq!(w.stock(0, STEEL), 200 - 4 * CARRIER_WING as i32, "payés");
     // réparation : un intercepteur abîmé près du porte-avions
     let cs = w.unit(c).unwrap();
     let i = wing[0];
@@ -1344,12 +1350,14 @@ fn arm_turn_picks_from_the_chosen_side() {
     // bras tourné vers l'est en (100, 100), dépôt devant lui ; un tapis à sa droite (sud) et un à sa
     // gauche (nord), chacun chargé d'un objet différent, qui partent vers l'ouest (ils ne touchent rien)
     let arm = put(&mut w, 0, B_INSERTER, 100, 100, 0);
-    put(&mut w, 0, B_DEPOT, 101, 100, 0);
+    let d = put(&mut w, 0, B_DEPOT, 101, 100, 0);
+    // le tapis de droite part de la face ouest du dépôt : on restreint ses sorties (actives par défaut)
+    w.buildings[d].filters = vec![IRON_ORE];
     let right = put(&mut w, 0, B_BELT1, 100, 101, 2);
     let left = put(&mut w, 0, B_BELT1, 100, 99, 2);
     assert_eq!(crate::buildings::arm_ends(&w.buildings[arm]).0, (99, 100), "½ tour par défaut : derrière");
     let r = w.building_ref(arm) as i32;
-    let stock = |w: &World, it: u8| w.players[0].stock[it as usize];
+    let stock = |w: &World, it: u8| w.stock(0, it);
     let (g0, c0) = (stock(&w, GEAR), stock(&w, CIRCUIT));
     let mut feed = |w: &mut World| {
         crate::belts::put_on_belt(w, right, GEAR);
@@ -1430,9 +1438,9 @@ fn belt_along_a_face_becomes_a_building_fed_curve() {
     assert_eq!(crate::belts::belt_shape(&w, out), 2, "virage alimenté par la fonderie");
     assert_eq!(crate::belts::belt_shape(&w, mid), 0, "le tapis suivant, alimenté par derrière, reste droit");
     assert_eq!(crate::buildings::out_belts(&w, f), vec![out], "seul le virage reçoit les produits");
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     run(&mut w, 4000);
-    assert!(w.players[0].stock[IRON_PLATE as usize] - before > 10, "les plaques passent par le virage jusqu'au dépôt");
+    assert!(w.stock(0, IRON_PLATE) - before > 10, "les plaques passent par le virage jusqu'au dépôt");
 }
 
 /// Un générateur s'améliore deux fois : sans production pendant le chantier, puis plus de puissance.
@@ -1441,10 +1449,11 @@ fn generator_upgrade_raises_power_production() {
     use crate::orders::O_UPGRADE;
     let mut w = world(&[0]);
     flatten(&mut w, 85, 85, 125, 125);
+    supply(&mut w, 88, 118);
     let g = put(&mut w, 0, B_GENERATOR, 100, 100, 0);
     let r = w.building_ref(g) as i32;
     for (it, n) in [(STEEL, 100), (GEAR, 50), (CIRCUIT, 50), (ENGINE, 50)] {
-        w.players[0].stock[it as usize] = n;
+        w.set_stock(0, it, n);
     }
     run(&mut w, 10);
     assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[0].prod);
@@ -1460,10 +1469,10 @@ fn generator_upgrade_raises_power_production() {
     run(&mut w, GENERATOR_LEVELS[2].time as u32 * 20 + 10);
     assert_eq!(w.buildings[g].level, 2);
     assert_eq!(w.players[0].power_prod, GENERATOR_LEVELS[2].prod);
-    let steel = w.players[0].stock[STEEL as usize];
+    let steel = w.stock(0, STEEL);
     w.step(&[3, O_UPGRADE, 0, r]);
     assert_eq!(w.buildings[g].upgrade, 0);
-    assert_eq!(w.players[0].stock[STEEL as usize], steel, "niveau maximal : rien n'est payé");
+    assert_eq!(w.stock(0, STEEL), steel, "niveau maximal : rien n'est payé");
 }
 
 /// Débit maximal calculé : un assembleur toujours approvisionné et vidé l'atteint (à un tick près par cycle).
@@ -1654,10 +1663,10 @@ fn generators_burn_fuel_according_to_load() {
     // un dépôt collé l'alimente depuis la réserve (1 par seconde)
     w.buildings[g1].fuel = 0;
     put(&mut w, 0, B_DEPOT, 92, 100, 0);
-    w.players[0].stock[HYDROCARBON as usize] = 10;
+    w.set_stock(0, HYDROCARBON, 10);
     run(&mut w, 70);
     assert!(w.buildings[g1].fuel >= 3 * FUEL_HYDROCARBON, "le dépôt collé verse de l'hydrocarbure");
-    assert!(w.players[0].stock[HYDROCARBON as usize] <= 7);
+    assert!(w.stock(0, HYDROCARBON) <= 7);
 }
 
 /// Un extracteur sur un gisement d'hydrocarbure fonctionne sans électricité ; collé à un générateur, il
@@ -1987,7 +1996,7 @@ fn splitter_outputs_shape_neighbour_belts() {
     assert_eq!(belt_shape(&w, front), 0, "sortie avant : droit");
     assert_eq!((belt_shape(&w, left2), belt_shape(&w, right2)), (0, 0));
     // les objets entrent par la file et sortent des trois côtés
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     for _ in 0..6 {
         while !crate::belts::put_on_belt(&mut w, top, IRON_PLATE) {
             w.step(&[]);
@@ -1995,7 +2004,7 @@ fn splitter_outputs_shape_neighbour_belts() {
         run(&mut w, 10);
     }
     run(&mut w, 400);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize] - before, 4, "deux par la gauche, deux par la droite");
+    assert_eq!(w.stock(0, IRON_PLATE) - before, 4, "deux par la gauche, deux par la droite");
     assert_eq!(w.belts.lines[w.buildings[front].line as usize].items.len(), 2, "deux devant (cul-de-sac)");
     // gauche et avant seulement : le tapis de droite n'est plus alimenté, il redevient droit
     w.buildings[s].split = 1;
@@ -2021,15 +2030,16 @@ fn furnace_upgrade_speeds_up_smelting() {
     use crate::orders::O_UPGRADE;
     let mut w = world(&[0]);
     flatten(&mut w, 85, 85, 125, 125);
+    supply(&mut w, 88, 118);
     let f = put(&mut w, 0, B_FURNACE, 100, 100, 0);
     for it in [STEEL, GEAR, CIRCUIT, ENGINE, PROCESSOR] {
-        w.players[0].stock[it as usize] = 100;
+        w.set_stock(0, it, 100);
     }
     let r = w.building_ref(f) as i32;
     let base = crafter_speed(&w.buildings[f]);
     w.step(&[3, O_UPGRADE, 0, r]);
     assert!(w.buildings[f].upgrade > 0, "amélioration lancée");
-    assert_eq!(w.players[0].stock[STEEL as usize], 92, "coût payé");
+    assert_eq!(w.stock(0, STEEL), 92, "coût payé");
     for _ in 0..20 * 20 + 5 {
         w.step(&[]);
     }

@@ -118,12 +118,12 @@ fn production_chain_reaches_tier3_packs() {
     for x in [101, 107, 113] {
         put(&mut w, B_PYLON, x, 114, 0);
     }
-    let stock0 = w.players[0].stock;
+    let stock0: Vec<i32> = (0..NUM_ITEMS as u8).map(|it| w.stock(0, it)).collect();
     for _ in 0..20 * 60 * 6 {
         w.step(&[]);
     }
+    let gained = |it: u8| w.stock(0, it) - stock0[it as usize];
     let p = &w.players[0];
-    let gained = |it: u8| p.stock[it as usize] - stock0[it as usize];
     println!(
         "fer {} cuivre {} acier {} munitions {} lots1 {} lots3 {} | produit lots3 {} | énergie {}/{}",
         gained(IRON_PLATE),
@@ -209,20 +209,35 @@ fn battle_1000_vs_1000_deterministic() {
     assert!(deaths > 200, "pas assez de combat ({deaths})");
 }
 
+/// Le commandant construit avec le dépôt de départ (posé, rempli, à côté du générateur principal) : ses
+/// drones y prennent les plaques. Sans aucun dépôt, le chantier reste à l'arrêt.
 #[test]
-fn commander_builds_with_stock() {
-    let mut w = World::new(&params(1, 512));
-    w.infinite_grid = true;
-    let c = w.players[0].commander;
-    let s = slot_of(c);
-    let (sx, sy) = (w.units.x[s] / TILE, w.units.y[s] / TILE);
-    let o = [9, crate::orders::O_BUILD, 0, 0, B_GENERATOR as i32, sx + 4, sy + 4, 0, 1, c as i32];
-    w.step(&o);
-    for _ in 0..400 {
-        w.step(&[]);
+fn commander_builds_from_the_start_depot() {
+    for with_depot in [true, false] {
+        let mut w = World::new(&params(1, 512));
+        w.infinite_grid = true;
+        if with_depot {
+            w.place_start_buildings();
+        }
+        let iron0 = w.stock(0, IRON_PLATE);
+        assert_eq!(iron0, if with_depot { 300 } else { 0 });
+        let c = w.players[0].commander;
+        let s = slot_of(c);
+        let (sx, sy) = (w.units.x[s] / TILE, w.units.y[s] / TILE);
+        let o = [9, crate::orders::O_BUILD, 0, 0, B_GENERATOR as i32, sx + 4, sy + 4, 0, 1, c as i32];
+        w.step(&o);
+        for _ in 0..400 {
+            w.step(&[]);
+        }
+        let built = w.buildings.iter().any(|b| b.alive && b.kind == B_GENERATOR && b.complete());
+        assert_eq!(built, with_depot, "le commandant construit avec le dépôt de départ, pas sans");
+        if with_depot {
+            let iron = bdef(B_GENERATOR).cost.iter().find(|c| c.0 == IRON_PLATE).map_or(0, |c| c.1 as i32);
+            assert_eq!(w.stock(0, IRON_PLATE), iron0 - iron, "payé par le dépôt de départ");
+        } else {
+            assert!(w.buildings.iter().any(|b| b.alive && b.kind == B_GENERATOR && b.stalled), "chantier à l'arrêt");
+        }
     }
-    let built = w.buildings.iter().any(|b| b.alive && b.kind == B_GENERATOR && b.complete());
-    assert!(built, "le commandant n'a pas construit le générateur");
 }
 
 #[test]
@@ -416,11 +431,11 @@ fn belts_feed_and_drain_buildings_without_arms() {
     put(&mut w, B_DEPOT, 106, 100, 0);
     put(&mut w, B_GENERATOR, 100, 104, 0);
     assert_eq!(crate::buildings::out_belts(&w, f).len(), 1);
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     for _ in 0..4000 {
         w.step(&[]);
     }
-    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    let got = w.stock(0, IRON_PLATE) - before;
     assert!(got >= 10, "plaques arrivées au dépôt : {}", got);
 }
 
@@ -507,13 +522,13 @@ fn long_arm_reaches_over_a_belt() {
     put(&mut w, B_DEPOT, 105, 100, 0);
     put(&mut w, B_GENERATOR, 100, 104, 0);
     assert_eq!(crate::buildings::takers_of(&w, ext), vec![arm]);
-    let before = w.players[0].stock[IRON_ORE as usize];
+    let before = w.stock(0, IRON_ORE);
     for _ in 0..3000 {
         w.step(&[]);
         let bb = &w.buildings[belt];
         assert!(w.belts.lines[bb.line as usize].items.is_empty(), "le bras long a posé sur le tapis du milieu");
     }
-    let got = w.players[0].stock[IRON_ORE as usize] - before;
+    let got = w.stock(0, IRON_ORE) - before;
     assert!(got > 20, "trop peu de minerai livré au dépôt par le bras long : {}", got);
 }
 
@@ -541,7 +556,7 @@ fn commander_collects_items_from_belt() {
     let cmd = w.spawn_unit(U_COMMANDER, 0, 110 * TILE, 110 * TILE);
     let robot = w.spawn_unit(U_LINE_ROBOT, 0, 111 * TILE, 110 * TILE);
     let target = w.building_ref(belts[7]) as i32;
-    let before = w.players[0].stock[IRON_ORE as usize];
+    let before = w.stock(0, IRON_ORE);
     w.step(&[7, crate::orders::O_COLLECT, 0, 0, target, 2, cmd as i32, robot as i32]);
     let rs = w.unit(robot).unwrap();
     assert!(w.units.cold[rs].orders.is_empty(), "seul le commandant reçoit l'ordre");
@@ -550,7 +565,7 @@ fn commander_collects_items_from_belt() {
     }
     let cs = w.unit(cmd).unwrap();
     assert!(matches!(w.units.cold[cs].orders.first(), Some(Order::Collect { .. })), "l'ordre reste actif");
-    let got = w.players[0].stock[IRON_ORE as usize] - before;
+    let got = w.stock(0, IRON_ORE) - before;
     assert!(got > 30, "trop peu d'objets récupérés : {}", got);
     assert!(w.belts.lines[line].items.len() < piled, "le tapis s'est vidé en partie");
     // un tapis ennemi ou un autre bâtiment : ordre refusé
@@ -650,14 +665,14 @@ fn direct_transfer_between_touching_buildings() {
     put(&mut w, B_DEPOT, 104, 100, 0);
     put(&mut w, B_GENERATOR, 100, 104, 0);
     assert_eq!(crate::buildings::outlets_of(&w, ext), vec![f]);
-    let before = w.players[0].stock[IRON_PLATE as usize];
+    let before = w.stock(0, IRON_PLATE);
     for _ in 0..4000 {
         w.step(&[]);
     }
-    let got = w.players[0].stock[IRON_PLATE as usize] - before;
+    let got = w.stock(0, IRON_PLATE) - before;
     let mined = w.players[0].produced[IRON_ORE as usize] as i32;
     assert!(got > 30, "{} plaques seulement ({} minerais extraits)", got, mined);
-    assert_eq!(w.players[0].stock[IRON_ORE as usize], 0, "le minerai doit aller à la fonderie, pas au stock");
+    assert_eq!(w.stock(0, IRON_ORE), 0, "le minerai doit aller à la fonderie, pas au stock");
     assert!(w.buildings[ext].out < 5, "extracteur bloqué");
 }
 
@@ -720,7 +735,7 @@ fn rotate_order_turns_a_built_belt() {
     for _ in 0..200 {
         w.step(&[]);
     }
-    assert!(w.players[0].stock[IRON_PLATE as usize] >= 310, "les plaques ne sont pas arrivées au dépôt du sud");
+    assert!(w.stock(0, IRON_PLATE) >= 10, "les plaques ne sont pas arrivées au dépôt du sud");
 }
 
 /// Ordre CANCEL_PLAN : la construction prévue sous la case est annulée (ordre non commencé du

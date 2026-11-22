@@ -22,7 +22,7 @@ pub const HV_GOING: u16 = 0;
 pub const HV_WORKING: u16 = 1;
 /// canon du commandant occupé par un ennemi à portée : la fonderie s'arrête
 pub const HV_COMBAT: u16 = 2;
-/// réserve pleine pour le produit fondu
+/// soute pleine pour le produit fondu
 pub const HV_FULL: u16 = 3;
 
 /// Recette de fonderie utilisable par la récolte du commandant du joueur `owner` sur la case (x, y) :
@@ -120,6 +120,7 @@ pub fn pop_order(w: &mut World, s: usize) {
     c.best_dist = i32::MAX;
     c.timer = 0;
     c.work = 0;
+    c.supply_at = NONE;
 }
 
 pub fn clear_orders(w: &mut World, s: usize) {
@@ -131,6 +132,7 @@ pub fn clear_orders(w: &mut World, s: usize) {
     c.best_dist = i32::MAX;
     c.timer = 0;
     c.work = 0;
+    c.supply_at = NONE;
 }
 
 /// Déplace l'unité vers (tx, ty). Renvoie vrai à l'arrivée (à moins de `stop`).
@@ -292,6 +294,34 @@ fn try_move(w: &mut World, s: usize, vx: i32, vy: i32) {
     }
 }
 
+/// Oublie le champ de flux de l'unité s'il mène ailleurs qu'en (tx, ty) (à plus de 6 cases).
+fn retarget(w: &mut World, s: usize, tx: i32, ty: i32) {
+    let g = w.units.cold[s].goal;
+    if g != 0 {
+        let gt = (g & 0xffff_ffff) as i32;
+        if ((gt % w.map.w) - tx / TILE).abs() + ((gt / w.map.w) - ty / TILE).abs() > 6 {
+            clear_goal(w, s);
+        }
+    }
+}
+
+/// Chargement avant un chantier hors de portée des dépôts (`UnitCold::supply_at`, décidé par
+/// drones::plan) : l'unité va au dépôt, à moins de la moitié de son rayon de ravitaillement, puis y
+/// attend que ses drones remplissent sa soute. Faux s'il n'y a pas de chargement à faire.
+fn supply_detour(w: &mut World, s: usize) -> bool {
+    let Some(d) = w.building(w.units.cold[s].supply_at) else { return false };
+    let (dx, dy) = w.buildings[d].center();
+    let r = udef(w.units.kind[s]).supply * TILE / 2;
+    if dist(w.units.x[s], w.units.y[s], dx, dy) > r {
+        retarget(w, s, dx, dy);
+        steer(w, s, dx, dy, dx, dy, r - TILE);
+        w.units.cold[s].stuck = 0;
+    } else {
+        clear_goal(w, s);
+    }
+    true
+}
+
 /// Puissance de construction effective.
 fn build_power(w: &World, s: usize) -> u64 {
     let bp = udef(w.units.kind[s]).build_power as u64;
@@ -305,7 +335,7 @@ pub fn construct(w: &mut World, s: usize, b: usize) -> bool {
         return false;
     }
     let def = bb.def();
-    let owner = bb.owner as usize;
+    let owner = w.units.owner[s] as usize;
     if bb.complete() {
         if bb.hp < def.hp {
             // réparation
@@ -324,14 +354,14 @@ pub fn construct(w: &mut World, s: usize, b: usize) -> bool {
     for (k, &(it, n)) in def.cost.iter().enumerate() {
         let total = (n as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as i32;
         need[k] = total - bb.paid[k] as i32;
-        // le stock du joueur d'abord, puis le stock commun de son équipe (entrepôts)
-        if w.avail(owner, it) < need[k] {
+        // payé depuis la soute du constructeur, que ses drones remplissent (voir drones.rs)
+        if (crate::drones::has(&w.units.cold[s].hold, it) as i32) < need[k] {
             w.buildings[b].stalled = true;
             return true;
         }
     }
     for (k, &(it, _)) in def.cost.iter().enumerate() {
-        w.pay(owner, it, need[k]);
+        crate::drones::take(&mut w.units.cold[s].hold, it, need[k].max(0) as u16);
         w.players[owner].consumed[it as usize] += need[k] as u32;
         w.buildings[b].paid[k] += need[k] as u16;
     }
@@ -349,21 +379,22 @@ pub fn construct(w: &mut World, s: usize, b: usize) -> bool {
 
 fn reclaim_wreck(w: &mut World, s: usize, wk: usize) -> bool {
     let bp = build_power(w, s) as i32;
-    let owner = w.units.owner[s] as usize;
     let amount = (bp / 5).max(1);
-    let (room_iron, room_steel) = (w.stock_room(owner, IRON_PLATE), w.stock_room(owner, STEEL));
-    if room_iron == 0 && room_steel == 0 {
-        // réserve pleine : le recyclage s'arrête
-        return false;
+    // dans la soute de l'ingénieur, dans la limite de sa place (ses drones la vident dans un dépôt)
+    let room = crate::drones::hold_room(w, s) as i32;
+    if room == 0 {
+        // soute pleine : le recyclage attend
+        return true;
     }
+    let amount = amount.min(room);
     let wr = &mut w.wrecks[wk];
-    let take_iron = amount.min(wr.iron).min(room_iron);
+    let take_iron = amount.min(wr.iron);
     wr.iron -= take_iron;
-    let take_steel = (amount - take_iron).min(wr.steel).min(room_steel);
+    let take_steel = (amount - take_iron).min(wr.steel);
     wr.steel -= take_steel;
     let empty = wr.iron <= 0 && wr.steel <= 0;
-    w.players[owner].stock[IRON_PLATE as usize] += take_iron;
-    w.players[owner].stock[STEEL as usize] += take_steel;
+    crate::drones::put(&mut w.units.cold[s].hold, IRON_PLATE, take_iron.max(0) as u16);
+    crate::drones::put(&mut w.units.cold[s].hold, STEEL, take_steel.max(0) as u16);
     w.units.cold[s].flags |= UF_WORKING;
     if empty {
         w.wrecks[wk].alive = false;
@@ -380,12 +411,18 @@ fn deconstruct(w: &mut World, s: usize, b: usize) -> bool {
     let delta = (build_power(w, s) * 2 * BUILD_FULL as u64 / work).max(1) as u32;
     let bb = &mut w.buildings[b];
     let p2 = bb.build.saturating_sub(delta);
+    // ce qui est récupéré va dans la soute de l'ingénieur, sans plafond (remboursement)
+    let mut back = [(0u8, 0u16); 4];
     for (k, &(it, n)) in def.cost.iter().enumerate() {
         let total = (n as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as u16;
         let refund = bb.paid[k].saturating_sub(total);
         bb.paid[k] -= refund;
-        w.players[owner].stock[it as usize] += refund as i32;
+        back[k] = (it, refund);
     }
+    for (it, n) in back {
+        crate::drones::put(&mut w.units.cold[s].hold, it, n);
+    }
+    let bb = &mut w.buildings[b];
     bb.build = p2;
     w.units.cold[s].flags |= UF_WORKING;
     if p2 == 0 {
@@ -399,7 +436,13 @@ fn deconstruct(w: &mut World, s: usize, b: usize) -> bool {
         let _ = (inv, out);
         w.players[owner].shards += shards;
         w.players[owner].eppz += eppz;
+        // dépôt démonté : son stock part au dépôt le plus proche (remboursement)
+        let stash = if crate::drones::is_store(&w.buildings[b]) { std::mem::take(&mut w.buildings[b].stash) } else { Vec::new() };
+        let (bx, by) = w.buildings[b].center();
         buildings::remove_building(w, b, false);
+        for (it, &n) in stash.iter().enumerate() {
+            crate::drones::refund(w, owner as u8, bx, by, it as u8, n as u32);
+        }
         return false;
     }
     if bb.build < BUILD_FULL && bb.def().class == BClass::Belt && bb.line != NONE {
@@ -675,6 +718,11 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             let cy = y * TILE + bh * TILE / 2;
             let range = build_range(bk, dir);
             if dist(w.units.x[s], w.units.y[s], cx, cy) > range {
+                // chantier hors de portée des dépôts : charger d'abord la soute
+                if supply_detour(w, s) {
+                    return NONE;
+                }
+                retarget(w, s, cx, cy);
                 if steer(w, s, cx, cy, cx, cy, range - TILE) && w.units.cold[s].stuck > 100 {
                     pop_order(w, s);
                 }
@@ -718,6 +766,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                     return NONE;
                 }
                 if dist(w.units.x[s], w.units.y[s], cx, cy) > range {
+                    if !w.buildings[b].complete() && supply_detour(w, s) {
+                        return NONE;
+                    }
+                    retarget(w, s, cx, cy);
                     steer(w, s, cx, cy, cx, cy, range - TILE);
                     return NONE;
                 }
@@ -785,7 +837,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             NONE
         }
         Order::Collect { target } => {
-            // commandant posté près d'un de nos tapis : chaque objet qui passe sur cette case est versé au stock
+            // commandant posté près d'un de nos tapis : chaque objet qui passe sur cette case va dans sa soute
             let Some(b) = w.building(target) else {
                 pop_order(w, s);
                 return NONE;
@@ -801,12 +853,13 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             }
             clear_goal(w, s);
-            let o = owner as usize;
-            // dans la limite de la réserve
-            let (st, cap) = (w.players[o].stock, w.players[o].stock_cap);
-            let it = crate::belts::take_from_belt(w, b, &|i| st[i as usize] < cap);
+            // dans la limite de la soute (ses drones la vident dans un dépôt)
+            if crate::drones::hold_room(w, s) == 0 {
+                return NONE;
+            }
+            let it = crate::belts::take_from_belt(w, b, &|_| true);
             if it != 0 {
-                w.players[owner as usize].stock[it as usize] += 1;
+                crate::drones::put(&mut w.units.cold[s].hold, it, 1);
                 w.units.cold[s].flags |= UF_WORKING;
             }
             NONE
@@ -831,7 +884,8 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             }
             let (out, n) = RECIPES[r].output;
             let o = owner as usize;
-            if w.stock_room(o, out) == 0 {
+            // soute pleine : la récolte attend que les drones la vident dans un dépôt
+            if crate::drones::hold_room(w, s) < n as u32 {
                 w.units.cold[s].timer = HV_FULL;
                 return NONE;
             }
@@ -844,9 +898,8 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             c.work += mult;
             if c.work >= need {
                 c.work -= need;
-                let p = &mut w.players[o];
-                p.stock[out as usize] += n as i32;
-                p.produced[out as usize] += n as u32;
+                crate::drones::put(&mut c.hold, out, n as u16);
+                w.players[o].produced[out as usize] += n as u32;
             }
             NONE
         }
@@ -1093,10 +1146,9 @@ fn special(w: &mut World, s: usize) {
             c.timer += 1;
             if c.timer >= period && c.children < max && w.players[owner].unit_count < UNIT_CAP {
                 let cost = udef(child).cost;
-                if cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
-                    for &(it, n) in cost {
-                        w.pay(owner, it, n as i32);
-                    }
+                let (ux, uy) = (w.units.x[s], w.units.y[s]);
+                // payé par les dépôts proches (paiement immédiat)
+                if crate::drones::pay_near(w, owner as u8, ux, uy, cost) {
                     w.units.cold[s].timer = 0;
                     w.units.cold[s].children += 1;
                     let (x, y) = (w.units.x[s], w.units.y[s]);

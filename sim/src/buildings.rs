@@ -189,7 +189,7 @@ pub fn rebuild_ghosts(w: &mut World) {
 
 /// Libère l'emprise d'une pose avec remplacement. Un tapis du même type sur la même case est
 /// simplement réorienté (renvoie son indice : rien à construire) ; sinon les tapis remplacés sont
-/// démontés, leur coût et les objets qu'ils portent rendus au stock (renvoie None : poser le chantier).
+/// démontés, leur coût et les objets qu'ils portent remboursés (renvoie None : poser le chantier).
 pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
     // tapis surélevé : jamais de remplacement (il ne doit pas toucher aux tapis du sol en dessous)
     if floor_of(dir) > 0 {
@@ -233,7 +233,7 @@ pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, di
                 if it == 0 {
                     break;
                 }
-                w.players[p].stock[it as usize] += 1;
+                crate::drones::refund_at(w, owner, b, it, 1);
             }
         }
         let def = w.buildings[b].def();
@@ -241,7 +241,8 @@ pub fn clear_for_replace(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, di
         // fragments d'énergie installés : rendus au joueur
         w.players[p].shards += w.buildings[b].shards as u32;
         for (k, &(it, n)) in def.cost.iter().enumerate() {
-            w.players[p].stock[it as usize] += if complete { n as i32 } else { w.buildings[b].paid[k] as i32 };
+            let n = if complete { n as u32 } else { w.buildings[b].paid[k] as u32 };
+            crate::drones::refund_at(w, owner, b, it, n);
         }
         remove_building(w, b, false);
     }
@@ -426,10 +427,8 @@ pub fn complete_building(w: &mut World, b: usize) {
     if def.class == BClass::Belt {
         belts::rebuild_around(w, &[(x, y)]);
     }
-    if def.class == BClass::Depot {
-        let lv = (w.buildings[b].level as usize).min(DEPOT_CAP.len() - 1);
-        w.players[owner as usize].stock_cap += DEPOT_CAP[lv];
-    }
+    // dépôt, entrepôt : ses drones et ceux des constructeurs voisins peuvent y puiser
+    crate::drones::store_added(w, b);
     // fabricant sans recette collé à une machine identique : il prend sa recette (machines jumelles)
     crate::twins::adopt_twin_recipe(w, b);
     w.buildings_version = w.buildings_version.wrapping_add(1);
@@ -441,11 +440,7 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     let (bw, bh) = w.buildings[b].size();
     let def = bdef(kind);
     let floor = w.buildings[b].floor;
-    if def.class == BClass::Depot && w.buildings[b].complete() {
-        let lv = (w.buildings[b].level as usize).min(DEPOT_CAP.len() - 1);
-        let owner = w.buildings[b].owner as usize;
-        w.players[owner].stock_cap -= DEPOT_CAP[lv];
-    }
+    crate::drones::store_removed(w, b);
     w.buildings[b].alive = false;
     for ty in y..y + bh {
         for tx in x..x + bw {
@@ -529,7 +524,7 @@ pub fn needs_power(bb: &Building) -> bool {
     bb.def().power_use > 0 && !(bb.def().class == BClass::Extractor && bb.recipe == HYDROCARBON)
 }
 
-/// Générateur : un dépôt collé l'alimente depuis la réserve du joueur (1 unité de combustible par
+/// Générateur : un dépôt collé l'alimente depuis son stock (1 unité de combustible par
 /// seconde au plus, quand le réservoir a la place), puis il partage son combustible avec les générateurs
 /// collés (`share_fuel`) ; il dort le reste du temps.
 fn tick_generator(w: &mut World, b: usize) {
@@ -543,14 +538,19 @@ fn tick_generator(w: &mut World, b: usize) {
 }
 
 fn feed_generator_from_depot(w: &mut World, b: usize) {
-    let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner as usize);
-    if touching_depots(w, b) == 0 {
+    let kind = w.buildings[b].kind;
+    let depots = touching_depots(w, b);
+    if depots.is_empty() {
         return;
     }
     for it in [HYDROCARBON, FUEL, ENERGY_CELL] {
         let e = fuel_energy(kind, it);
-        if e > 0 && w.buildings[b].fuel + e <= fuel_tank(kind) && w.avail(owner, it) > 0 {
-            w.pay(owner, it, 1);
+        if e <= 0 || w.buildings[b].fuel + e > fuel_tank(kind) {
+            continue;
+        }
+        // le premier dépôt collé (plus petit indice) qui en a
+        if let Some(&d) = depots.iter().find(|&&d| crate::drones::has(&w.buildings[d].stash, it) > 0) {
+            crate::drones::take(&mut w.buildings[d].stash, it, 1);
             if w.buildings[b].fuel <= 0 {
                 w.power_dirty = true;
             }
@@ -1220,15 +1220,16 @@ pub fn factory_put(bb: &mut Building, item: u8, n: u16) {
     bb.stash[item as usize] += n;
 }
 
-/// Après un changement de file : rend au stock du joueur ce qui dépasse le nouveau plafond de la réserve.
+/// Après un changement de file : ce qui dépasse le nouveau plafond de la réserve de l'usine est
+/// remboursé (dépôt le plus proche).
 pub fn factory_trim(w: &mut World, b: usize) {
-    let owner = w.buildings[b].owner as usize;
+    let owner = w.buildings[b].owner;
     for it in 0..w.buildings[b].stash.len() {
         let bb = &w.buildings[b];
         let extra = bb.stash[it].saturating_sub(factory_limit(bb, it as u8));
         if extra > 0 {
             w.buildings[b].stash[it] -= extra;
-            w.players[owner].stock[it] += extra as i32;
+            crate::drones::refund_at(w, owner, b, it as u8, extra as u32);
         }
     }
 }
@@ -1526,16 +1527,16 @@ fn share_outputs(w: &mut World, b: usize, twins: &[usize]) -> bool {
     waiting && b_outs.is_some_and(|o| stuck(w.buildings[b].out, o))
 }
 
-/// Un dépôt collé à une usine lui donne un objet de la réserve du joueur toutes les `DEPOT_FEED_PERIOD` ticks
-/// (1 par seconde) : un appoint lent, bien en deçà d'un tapis. Un seul dépôt compte par usine.
+/// Un dépôt collé à un générateur lui donne une unité de combustible toutes les `DEPOT_FEED_PERIOD`
+/// ticks (1 par seconde).
 pub const DEPOT_FEED_PERIOD: u32 = 20;
 
 /// Usine en attente de composants depuis 10 s : alerte EV_FACTORY_STARVED pour son joueur.
 const FACTORY_ALERT_DELAY: u32 = 200;
 const FACTORY_ALERTED: u32 = NONE - 1;
 
-/// Nombre de dépôts terminés du même joueur collés à une face du bâtiment `b`.
-pub fn touching_depots(w: &World, b: usize) -> u32 {
+/// Dépôts terminés du même joueur collés à une face du bâtiment `b`, par indice croissant.
+pub fn touching_depots(w: &World, b: usize) -> Vec<usize> {
     let bb = &w.buildings[b];
     let (bw, bh) = bb.size();
     let mut v: Vec<usize> = Vec::new();
@@ -1557,47 +1558,7 @@ pub fn touching_depots(w: &World, b: usize) -> u32 {
     }
     v.sort_unstable();
     v.dedup();
-    v.len() as u32
-}
-
-/// Dépôt collé (un seul compte, quel que soit leur nombre) : l'usine puise dans la réserve du joueur (puis de son équipe) les composants de sa file,
-/// à tour de rôle entre les objets de l'unité en tête, puis ceux des suivantes. `charge` garde le tick de la dernière prise.
-fn feed_from_depots(w: &mut World, b: usize) {
-    let last = w.buildings[b].charge;
-    if w.tick < last.saturating_add(DEPOT_FEED_PERIOD) {
-        return;
-    }
-    if touching_depots(w, b) == 0 {
-        w.buildings[b].charge = w.tick;
-        return;
-    }
-    // au plus 3 objets accumulés pendant un sommeil (SLEEP = 60 ticks)
-    let mut budget = ((w.tick - last) / DEPOT_FEED_PERIOD).min(SLEEP / DEPOT_FEED_PERIOD);
-    w.buildings[b].charge = w.tick;
-    let owner = w.buildings[b].owner as usize;
-    let kinds: Vec<u16> = w.buildings[b].queue.iter().map(|q| q.0).collect();
-    for k in kinds {
-        let cost = udef(k).cost;
-        // tour de rôle : un objet de chaque composant par passe, jusqu'au plafond de la réserve
-        loop {
-            let mut took = false;
-            for &(it, _) in cost {
-                if budget == 0 {
-                    return;
-                }
-                if factory_room(&w.buildings[b], it) == 0 || w.avail(owner, it) <= 0 {
-                    continue;
-                }
-                w.pay(owner, it, 1);
-                factory_put(&mut w.buildings[b], it, 1);
-                budget -= 1;
-                took = true;
-            }
-            if !took {
-                break;
-            }
-        }
-    }
+    v
 }
 
 /// Le bâtiment accepte-t-il cet objet (par un bras ou un tapis) ?
@@ -1607,7 +1568,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
         return false;
     }
     match bb.def().class {
-        BClass::Depot => w.stock_room(bb.owner as usize, item) > 0,
+        BClass::Depot => crate::drones::store_room(bb, item) > 0,
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::accepts(w, b, item),
         BClass::Power => {
             let e = fuel_energy(bb.kind, item);
@@ -1640,8 +1601,7 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
     let class = w.buildings[b].def().class;
     match class {
         BClass::Depot => {
-            let o = w.buildings[b].owner as usize;
-            w.players[o].stock[item as usize] += 1;
+            crate::drones::put(&mut w.buildings[b].stash, item, 1);
             let tick = w.tick;
             flow_add(&mut w.buildings[b], tick, 1);
         }
@@ -1928,8 +1888,9 @@ pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
 
 /**
  * Ordre UPGRADE sur l'extracteur ou l'assembleur `b` : lance son amélioration (il doit être terminé, la
- * recherche faite et le coût disponible, payé aussitôt). Le bâtiment ne travaille plus jusqu'à la fin
- * (voir tick_upgrade). Sur une amélioration en cours, l'ordre l'annule et rembourse.
+ * recherche faite et le coût disponible dans les dépôts proches, payé aussitôt : drones::pay_near). Le
+ * bâtiment ne travaille plus jusqu'à la fin (voir tick_upgrade). Sur une amélioration en cours, l'ordre
+ * l'annule et rembourse (dépôt le plus proche).
  */
 pub fn upgrade(w: &mut World, b: usize) -> bool {
     let bb = &w.buildings[b];
@@ -1937,21 +1898,19 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
         return false;
     }
     let Some((cost, tech, _)) = upgrade_spec(bb) else { return false };
-    let owner = bb.owner as usize;
+    let owner = bb.owner;
     if bb.upgrade > 0 {
         for &(it, n) in cost {
-            w.players[owner].stock[it as usize] += n as i32;
+            crate::drones::refund_at(w, owner, b, it, n as u32);
         }
         w.buildings[b].upgrade = 0;
         w.buildings[b].wake = 0;
         w.power_dirty |= w.buildings[b].def().class == BClass::Power;
         return true;
     }
-    if !w.players[owner].has_tech(tech) || !cost.iter().all(|&(it, n)| w.avail(owner, it) >= n as i32) {
+    let (x, y) = w.buildings[b].center();
+    if !w.players[owner as usize].has_tech(tech) || !crate::drones::pay_near(w, owner, x, y, cost) {
         return false;
-    }
-    for &(it, n) in cost {
-        w.pay(owner, it, n as i32);
     }
     w.buildings[b].upgrade = 1;
     w.buildings[b].wake = 0;
@@ -2011,16 +1970,17 @@ const COLLECT_PER_TICK: usize = 2;
 
 /**
  * Collecteur de surplus (tapis surmonté d'un portique) : quand la file est bouchée en aval, les objets
- * à l'arrêt sur sa case (tassés à l'avant de la ligne) partent dans le stock du joueur ; la file reste
- * fluide en amont. Tant que la file avance, il ne prend rien. Compteur des objets mis en réserve : `out`.
+ * à l'arrêt sur sa case (tassés à l'avant de la ligne) partent au dépôt du joueur le plus proche (à moins
+ * de NEAR_SUPPLY cases) qui a de la place pour eux ; la file reste fluide en amont. Tant que la file
+ * avance, il ne prend rien. Compteur des objets mis en dépôt : `out`.
  */
 fn tick_collector(w: &mut World, b: usize) {
-    let (li, idx, owner) = {
+    let (li, idx, owner, (cx, cy)) = {
         let bb = &w.buildings[b];
         if bb.line == NONE {
             return;
         }
-        (bb.line as usize, bb.line_idx as i32, bb.owner as usize)
+        (bb.line as usize, bb.line_idx as i32, bb.owner, bb.center())
     };
     for _ in 0..COLLECT_PER_TICK {
         let l = &mut w.belts.lines[li];
@@ -2044,11 +2004,10 @@ fn tick_collector(w: &mut World, b: usize) {
             pos = p;
         }
         let Some(k) = found else { return };
-        // réserve pleine pour cet objet : il laisse passer
-        let pl = &w.players[owner];
-        if pl.stock[l.items[k].0 as usize] >= pl.stock_cap {
-            return;
-        }
+        // aucun dépôt proche n'a de place pour cet objet : il laisse passer
+        let item = l.items[k].0;
+        let Some(dest) = crate::drones::store_with_room(w, owner, cx, cy, NEAR_SUPPLY * TILE, item) else { return };
+        let l = &mut w.belts.lines[li];
         // surplus : la file arrêtée en aval remonte jusqu'à la case (l'objet suivant s'y arrêterait),
         // ou la case est au bout de la ligne et sa sortie est bloquée
         let blocked = match prev {
@@ -2065,7 +2024,7 @@ fn tick_collector(w: &mut World, b: usize) {
         }
         l.moving = k as u32;
         if it != 0 {
-            w.players[owner].stock[it as usize] += 1;
+            crate::drones::put(&mut w.buildings[dest].stash, it, 1);
             let bb = &mut w.buildings[b];
             bb.out = bb.out.wrapping_add(1);
             bb.working = true;
@@ -2095,10 +2054,8 @@ fn tick_upgrade(w: &mut World, b: usize) {
             w.power_dirty = true;
         }
         BClass::Depot => {
-            // dépôt plus grand : la réserve du joueur grandit d'autant
+            // dépôt plus grand : son plafond passe à DEPOT_CAP[1]
             bb.level += 1;
-            let owner = bb.owner as usize;
-            w.players[owner].stock_cap += DEPOT_CAP[1] - DEPOT_CAP[0];
         }
         _ => {
             if let Some(u) = ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind) {
@@ -2111,21 +2068,23 @@ fn tick_upgrade(w: &mut World, b: usize) {
     wake_watchers(w, b);
 }
 
-/// Sortie d'un dépôt amélioré : prochain objet filtré (à tour de rôle) que le joueur a en réserve et
-/// que `want` accepte ; il quitte la réserve. 0 : rien (dépôt non amélioré, sans filtre, réserve vide).
+/// Sortie d'un dépôt (actives par défaut) : prochain objet de son stock, à tour de rôle, que `want`
+/// accepte ; avec des filtres, seulement les objets filtrés. Il quitte le stock. 0 : rien.
 fn depot_take(w: &mut World, b: usize, want: &dyn Fn(u8) -> bool) -> u8 {
     let bb = &w.buildings[b];
-    if bb.level == 0 || bb.filters.is_empty() {
+    if bb.stash.is_empty() {
         return 0;
     }
-    let owner = bb.owner as usize;
-    let n = bb.filters.len();
+    // objets candidats : les filtres, sinon tous les objets
+    let n = if bb.filters.is_empty() { NUM_ITEMS - 1 } else { bb.filters.len() };
     let start = bb.timer as usize % n;
     for k in 0..n {
-        let it = w.buildings[b].filters[(start + k) % n];
-        if it != 0 && w.players[owner].stock[it as usize] > 0 && want(it) {
-            w.players[owner].stock[it as usize] -= 1;
-            w.buildings[b].timer = ((start + k + 1) % n) as _;
+        let j = (start + k) % n;
+        let bb = &w.buildings[b];
+        let it = if bb.filters.is_empty() { j as u8 + 1 } else { bb.filters[j] };
+        if it != 0 && crate::drones::has(&bb.stash, it) > 0 && want(it) {
+            crate::drones::take(&mut w.buildings[b].stash, it, 1);
+            w.buildings[b].timer = ((j + 1) % n) as _;
             return it;
         }
     }
@@ -2133,16 +2092,10 @@ fn depot_take(w: &mut World, b: usize, want: &dyn Fn(u8) -> bool) -> u8 {
 }
 
 /**
- * Dépôt : un dépôt amélioré avec des filtres pose ses objets filtrés (pris dans la réserve, à tour de
- * rôle) sur les tapis qui partent de ses faces ; sinon il dort.
+ * Dépôt : il pose ses objets (filtrés, ou tous sans filtre), pris dans son stock à tour de rôle, sur les
+ * tapis qui partent de ses faces ; sinon il dort.
  */
 fn tick_depot(w: &mut World, b: usize) {
-    let bb = &w.buildings[b];
-    if bb.level == 0 || bb.filters.is_empty() {
-        w.buildings[b].working = false;
-        w.buildings[b].wake = w.tick + SLEEP;
-        return;
-    }
     let belts = out_belts(w, b);
     let mut any = false;
     for t in belts.iter().copied() {
@@ -2157,7 +2110,7 @@ fn tick_depot(w: &mut World, b: usize) {
         any = true;
     }
     w.buildings[b].working = any;
-    w.buildings[b].wake = w.tick + if belts.is_empty() { 20 } else { 2 };
+    w.buildings[b].wake = w.tick + if belts.is_empty() { SLEEP } else if any { 2 } else { 20 };
 }
 
 fn tick_extractor(w: &mut World, b: usize) {
@@ -2218,9 +2171,9 @@ fn tick_extractor(w: &mut World, b: usize) {
 
 /// Tapis qui partent d'une face du bâtiment `b` (case voisine d'un bord, tapis tourné vers l'extérieur) :
 /// les « trappes de sortie ». Par ordre de case (déterministe).
-/// Bâtiment qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt amélioré à sorties filtrées).
+/// Bâtiment qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt).
 pub fn feeds_belts(bb: &Building) -> bool {
-    bb.alive && bb.complete() && (bb.def().class == BClass::Crafter || (bb.def().class == BClass::Depot && bb.level > 0))
+    bb.alive && bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Depot)
 }
 
 pub fn out_belts(w: &World, b: usize) -> Vec<usize> {
@@ -2485,7 +2438,6 @@ fn tick_factory(w: &mut World, b: usize) {
         w.buildings[b].wake = w.tick + SLEEP;
         return;
     };
-    feed_from_depots(w, b);
     share_with_twins(w, b);
     let def = udef(kind);
     if !w.buildings[b].working {
@@ -2551,7 +2503,7 @@ fn tick_factory(w: &mut World, b: usize) {
             }
         }
         bb.wake = 0;
-        // dernier exemplaire d'un type : son avance de composants retourne au stock
+        // dernier exemplaire d'un type : son avance de composants est remboursée
         factory_trim(w, b);
         wake_watchers(w, b);
     }

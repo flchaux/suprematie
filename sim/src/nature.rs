@@ -195,7 +195,7 @@ pub fn nature_player() -> Player {
         is_bot: false,
         res_mult: 100,
         build_mult: 100,
-        stock: [0; NUM_ITEMS],
+        old_stock: [0; NUM_ITEMS],
         researched: 1,
         research: 0,
         research_queue: Vec::new(),
@@ -208,7 +208,7 @@ pub fn nature_player() -> Player {
         power_use: 0,
         kills: 0,
         losses: 0,
-        stock_cap: 0,
+        old_stock_cap: 0,
         shards: 0,
         eppz: 0,
     }
