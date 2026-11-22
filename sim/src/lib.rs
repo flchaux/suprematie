@@ -466,4 +466,6 @@ mod races_tests;
 mod ponte_tests;
 #[cfg(test)]
 mod zone_eco_tests;
+#[cfg(test)]
+mod pause_tests;
 pub mod stress;

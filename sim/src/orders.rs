@@ -79,6 +79,9 @@ pub const O_HITCH: i32 = 54;
 /// Chariots de convoi : navette entre leur soute et un module : [drapeaux (bit 0 en file, bit 1 livrer : de la
 /// soute vers le fabricant), réf. du module, n, unités…] (voir transhumants::haul_step).
 pub const O_HAUL: i32 = 55;
+/// Mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf. de bâtiment…]
+/// (extracteurs, fabricants, usines d'unités terminés ; voir buildings::paused).
+pub const O_SET_PAUSE: i32 = 56;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -690,6 +693,22 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if w.buildings[b].def().class == crate::data::BClass::Inserter && (1..=3).contains(&k) {
                     w.buildings[b].turn = k as u8;
                     w.buildings[b].wake = 0;
+                }
+            }
+        }
+        O_SET_PAUSE => {
+            let on = c.next() != 0;
+            let n = c.next().clamp(0, 4096);
+            for _ in 0..n {
+                if let Some(b) = own_building(w, p, c.next()) {
+                    if buildings::pausable(&w.buildings[b]) && w.buildings[b].enabled == on && (!on || w.buildings[b].complete()) {
+                        w.buildings[b].enabled = !on;
+                        w.buildings[b].wake = 0;
+                        if !on {
+                            // reprise : ses fournisseurs (bras endormis) réessaient
+                            buildings::wake_watchers(w, b);
+                        }
+                    }
                 }
             }
         }

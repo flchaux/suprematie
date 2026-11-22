@@ -209,6 +209,10 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             flags |= 128;
         }
     }
+    // en pause : ni marche ni diagnostic (le client montre le signe de pause, bit 8 éteint)
+    if crate::buildings::paused(bb) {
+        flags &= !(1 | 2 | 32 | 64 | 128);
+    }
     let (aux1, aux2) = match def.class {
         BClass::Crafter => {
             let pr = if bb.recipe != RECIPE_NONE && bb.working {

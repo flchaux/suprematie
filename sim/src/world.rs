@@ -1016,7 +1016,8 @@ impl World {
                 h.add_i32(b.hp);
                 h.add(b.build as u64 | (b.kind as u64) << 32);
                 h.add(b.progress as u64 | (b.out as u64) << 32);
-                h.add(b.hand as u64 | (b.timer as u64) << 8);
+                // bâtiment coupé ou en pause (`enabled` faux ; vrai : rien d'ajouté, hash inchangé)
+                h.add(b.hand as u64 | (b.timer as u64) << 8 | (!b.enabled as u64) << 24);
                 // niveau et amélioration en cours (zone du générateur principal, vitesses, production)
                 h.add(b.level as u64 | (b.upgrade as u64) << 8);
                 // stock d'un dépôt ou d'un entrepôt, réserve d'une usine, tampons d'une gare
