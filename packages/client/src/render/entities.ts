@@ -7,11 +7,11 @@ import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
-import { FLOOR_H, liftDash, liftOut, liftUp } from "./liftAnim.ts";
+import { FLOOR_H, liftDash, liftOut, liftPad, liftUp } from "./liftAnim.ts";
 import { barInView, siteBarOf, siteBarSize, type SiteBar } from "./siteBars.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
-import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
+import { ASCENSEUR_MAT, BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
 import { ITEM_MODELS } from "../../../../assets/models/items.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
@@ -150,13 +150,25 @@ const tmpQ2 = new THREE.Quaternion();
 const tmpQ3 = new THREE.Quaternion();
 /** rotation d'un modèle (avant : +z) vers la direction `dir` de la simulation (0 est, 1 sud, 2 ouest, 3 nord) */
 const dirQuat = (q: THREE.Quaternion, dir: number): THREE.Quaternion => q.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
-/** cage d'ascenseur (modèle « ascenseur ») : montants en (±LIFT_POST_X, ±LIFT_POST_Z), glissières en (±LIFT_POST_X, 0) */
-const LIFT_POST_X = 0.385;
-const LIFT_POST_Z = 0.235;
-/** traits lumineux par glissière, et leur course au-dessus du palier bas (cases) */
+/** anneaux lumineux sur le mât d'un ascenseur de tapis, et leur course au-dessus du palier bas (cases) */
 const LIFT_DASHES = 3;
 const LIFT_DASH_Y0 = 0.1;
-const LIFT_DASH_SPAN = FLOOR_H + 0.38;
+const LIFT_DASH_SPAN = FLOOR_H + 0.1;
+/** ascenseur de tapis de l'image : centre de la case, palier bas, orientation du mât, sens, plateau en attente */
+interface Lift {
+  x: number;
+  z: number;
+  /** hauteur du palier bas */
+  y: number;
+  /** orientation du modèle (le mât est en +x) */
+  orient: number;
+  /** vrai s'il monte : le palier d'entrée est le palier bas */
+  up: boolean;
+  /** terminé (pas en chantier) */
+  ready: boolean;
+  /** déploiement du plateau en attente au palier d'entrée (0 à 1 ; -1 : aucun objet dans la case) */
+  parked: number;
+}
 /** le plateau n'a pas de pièce aux couleurs d'une équipe */
 const NO_TEAM = new THREE.Color(1, 1, 1);
 // vue logistique : tapis vide, fluide, chargé, saturé ; bâtiment bloqué, affamé, sans énergie, en marche
@@ -275,16 +287,18 @@ export class Entities {
   fuelGauges = new Map<number, { f: number; low: boolean }>();
   logiPads: THREE.InstancedMesh;
   /**
-   * Ascenseurs des tapis, là où un tapis change de niveau : la cage (commune à tous les tapis), un plateau
-   * sous chaque objet qui y monte ou descend, et les quais par type de tapis (un au niveau d'entrée, un au
-   * niveau de sortie).
+   * Ascenseurs des tapis, là où un tapis change de niveau : le mât (commun à tous les tapis), les plateaux
+   * qui y coulissent (un sous l'objet en course, un en attente au palier d'entrée), et les quais par type
+   * de tapis (un au niveau d'entrée, un au niveau de sortie).
    */
-  liftCage: KindMesh | null = null;
+  liftMast: KindMesh | null = null;
   liftTray: KindMesh | null = null;
   beltQuays = new Map<number, KindMesh>();
-  /** ascenseurs dessinés à cette image : (case × 2 + niveau bas) -> direction du tapis (orientation des plateaux) */
+  /** ascenseurs dessinés à cette image : (case × 2 + niveau bas) -> rang dans `lifts` */
   private liftAt = new Map<number, number>();
-  /** tapis surélevés : piliers ; ascenseurs : pylône sous une cage en hauteur, traits lumineux des glissières */
+  private lifts: Lift[] = [];
+  private nLifts = 0;
+  /** tapis surélevés : piliers ; ascenseurs : mât prolongé jusqu'au sol quand il est en hauteur, anneaux lumineux du mât */
   supports: THREE.InstancedMesh;
   liftGlow: THREE.InstancedMesh;
   /** couleurs des joueurs, puis (indice 8) celle de la faune */
@@ -422,11 +436,11 @@ export class Entities {
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
         const jn = ["_jonction_g", "_jonction_d", "_jonction_gd"].map((suf) => BUILDING_MODELS[b.key + suf]);
         if (jn.every((m) => m)) this.beltJunctions.set(this.buildingMeshes.length - 1, jn.map((m) => new KindMesh(this.group, buildModel(m!), scale, TEX_PER_TILE_BUILDING)) as [KindMesh, KindMesh, KindMesh]);
-        // ascenseurs : quai aux couleurs du tapis ; cage et plateau communs (construits à la demande)
+        // ascenseurs : quai aux couleurs du tapis ; mât et plateau communs (construits à la demande)
         const quay = BUILDING_MODELS[b.key + "_quai"];
         if (quay) this.beltQuays.set(this.buildingMeshes.length - 1, new KindMesh(this.group, () => buildModel(quay), scale, TEX_PER_TILE_BUILDING));
-        if (!this.liftCage && BUILDING_MODELS.ascenseur && BUILDING_MODELS.ascenseur_plateau) {
-          this.liftCage = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.ascenseur), scale, TEX_PER_TILE_BUILDING);
+        if (!this.liftMast && BUILDING_MODELS.ascenseur && BUILDING_MODELS.ascenseur_plateau) {
+          this.liftMast = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.ascenseur), scale, TEX_PER_TILE_BUILDING);
           this.liftTray = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.ascenseur_plateau), scale, TEX_PER_TILE_BUILDING, false);
         }
       }
@@ -649,7 +663,7 @@ export class Entities {
     for (const l of this.levelMeshes.values()) all.push(...l);
     if (this.wallSeg) all.push(this.wallSeg);
     if (this.rootSeg) all.push(this.rootSeg);
-    for (const m of [this.liftCage, this.liftTray, ...this.beltQuays.values()]) if (m) all.push(m);
+    for (const m of [this.liftMast, this.liftTray, ...this.beltQuays.values()]) if (m) all.push(m);
     let i = 0;
     const idle: (cb: (d?: { timeRemaining(): number }) => void) => void =
       typeof requestIdleCallback === "function" ? (cb) => requestIdleCallback(cb, { timeout: 2000 }) : (cb) => setTimeout(cb, 30);
@@ -666,7 +680,7 @@ export class Entities {
 
   /** Niveau de détail réduit pour tous les modèles (pièces fines retirées), selon la distance de la caméra. */
   setDetail(lo: boolean): void {
-    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.rootSeg, this.chute, this.liftCage, this.liftTray, ...this.beltQuays.values()];
+    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.rootSeg, this.chute, this.liftMast, this.liftTray, ...this.beltQuays.values()];
     for (const l of this.levelMeshes.values()) all.push(...l);
     for (const l of this.beltCurves.values()) all.push(...l);
     for (const l of this.beltJunctions.values()) all.push(...l);
@@ -731,10 +745,11 @@ export class Entities {
     this.wallSeg?.begin();
     this.rootSeg?.begin();
     this.chute?.begin();
-    this.liftCage?.begin();
+    this.liftMast?.begin();
     this.liftTray?.begin();
     for (const m of this.beltQuays.values()) m.begin();
     this.liftAt.clear();
+    this.nLifts = 0;
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
@@ -1100,22 +1115,24 @@ export class Entities {
       const railCurve = railShape >= 1 && railShape <= 4 ? this.railCurves.get(kind) : undefined;
       if (railCurve) dir = (railShape + 2) & 3;
       // tapis surélevé (bits 28-29) ; montée ou descente vers le niveau des bits 3-4 du mot auxiliaire :
-      // la case est un ascenseur, dessiné par sa cage (du palier bas au palier haut) à la place du tapis
+      // la case est un ascenseur, dessiné par son mât (du palier bas au palier haut) et ses quais à la place du tapis
       const floor = def.cls === BClass.Belt ? (buf[o + 1] >>> 28) & 3 : 0;
       const ramp = def.cls === BClass.Belt && (buf[o + 5] & 4) !== 0 ? (buf[o + 5] >> 3) & 3 : -1;
-      const cage = ramp >= 0 ? this.liftCage : null;
-      const km = cage ?? railCurve ?? junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
+      const mast = ramp >= 0 ? this.liftMast : null;
+      const km = mast ?? railCurve ?? junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
       km.ensure(km.n + 1);
       const build = buf[o + 4] / 65536;
       const ground = groundHeight(this.map, cx, cz);
-      const low = cage ? Math.min(floor, ramp) : floor;
+      const low = mast ? Math.min(floor, ramp) : floor;
       const y = ground + low * FLOOR_H;
-      dirQuat(tmpQ, dir);
+      // le mât d'un ascenseur est à droite du modèle : on le retourne quand la file arrive par ce côté-là (forme 2)
+      const orient = mast && shape === 2 ? (dir + 2) & 3 : dir;
+      dirQuat(tmpQ, orient);
       const sc = km.scale;
-      // les hauteurs de la cage sont en cases du monde : seul son plan est à l'échelle du tapis
-      const sy = (cage ? 1 : sc) * (build >= 1 ? 1 : Math.max(0.08, build));
+      // les hauteurs du mât sont en cases du monde : seul son plan est à l'échelle du tapis
+      const sy = (mast ? 1 : sc) * (build >= 1 ? 1 : Math.max(0.08, build));
       tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
@@ -1165,9 +1182,18 @@ export class Entities {
         tmpQ.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
       }
       // tapis surélevé : pilier sous la case
-      if (def.cls === BClass.Belt && floor > 0 && !cage) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
-      if (cage) {
-        this.liftAt.set((bz * this.map.w + bx) * 2 + Math.min(1, low), dir);
+      if (def.cls === BClass.Belt && floor > 0 && !mast) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
+      if (mast) {
+        const li = this.nLifts++;
+        const l = (this.lifts[li] ??= { x: 0, z: 0, y: 0, orient: 0, up: false, ready: false, parked: -1 });
+        l.x = cx;
+        l.z = cz;
+        l.y = y;
+        l.orient = orient;
+        l.up = ramp > floor;
+        l.ready = build >= 1;
+        l.parked = -1;
+        this.liftAt.set((bz * this.map.w + bx) * 2 + Math.min(1, low), li);
         // quais aux couleurs du tapis : l'entrée au niveau du tapis, derrière lui (ou du côté d'où arrive
         // la file, s'il est pris par le côté : forme 1 ou 2), la sortie devant lui au niveau visé
         const quay = this.beltQuays.get(kind) ?? this.beltQuays.values().next().value;
@@ -1182,24 +1208,17 @@ export class Entities {
             quay.n++;
           }
         }
-        // cage en hauteur (du niveau 1 au niveau 2) : ses quatre montants descendent jusqu'au sol
-        if (low > 0) {
-          for (const px of [-LIFT_POST_X, LIFT_POST_X]) {
-            for (const pz of [-LIFT_POST_Z, LIFT_POST_Z]) {
-              tmpV2.set(px * sc, 0, pz * sc).applyQuaternion(tmpQ);
-              support(cx + tmpV2.x, ground, cz + tmpV2.z, 0.07 * sc, low * FLOOR_H + 0.01, 0.07 * sc, tmpQ);
-            }
-          }
-        }
-        // traits lumineux sur les deux glissières : ils courent dans le sens de la marche, et se figent
-        // quand le tapis n'a plus d'énergie
+        tmpV2.set(ASCENSEUR_MAT * sc, 0, 0).applyQuaternion(tmpQ);
+        const mx = cx + tmpV2.x;
+        const mz = cz + tmpV2.z;
+        // ascenseur en hauteur (du niveau 1 au niveau 2) : son mât descend jusqu'au sol
+        if (low > 0) support(mx, ground, mz, 0.05 * sc, low * FLOOR_H + 0.01, 0.07 * sc, tmpQ);
+        // anneaux lumineux sur le mât : ils courent dans le sens de la marche, et se figent quand le
+        // tapis n'a plus d'énergie
         if (build >= 1) {
-          for (const px of [-LIFT_POST_X, LIFT_POST_X]) {
-            tmpV2.set(px * sc, 0, 0).applyQuaternion(tmpQ);
-            for (let k = 0; k < LIFT_DASHES; k++) {
-              const h = LIFT_DASH_Y0 + liftDash(k, LIFT_DASHES, simT, ramp > floor, !(bflags & BF.UNPOWERED)) * LIFT_DASH_SPAN;
-              support(cx + tmpV2.x, y + h, cz + tmpV2.z, 0.04 * sc, 0.09, 0.06 * sc, tmpQ, true);
-            }
+          for (let k = 0; k < LIFT_DASHES; k++) {
+            const h = LIFT_DASH_Y0 + liftDash(k, LIFT_DASHES, simT, ramp > floor, !(bflags & BF.UNPOWERED)) * LIFT_DASH_SPAN;
+            support(mx, y + h, mz, 0.064 * sc, 0.07, 0.084 * sc, tmpQ, true);
           }
         }
       }
@@ -1410,7 +1429,7 @@ export class Entities {
     this.wallSeg?.end();
     this.rootSeg?.end();
     this.chute?.end();
-    this.liftCage?.end();
+    this.liftMast?.end();
     for (const m of this.beltQuays.values()) m.end();
     this.levelPips.count = npip;
     this.levelPips.instanceMatrix.needsUpdate = true;
@@ -1447,6 +1466,20 @@ export class Entities {
     }
     // ----- objets sur les tapis : petit modèle par type, teinté de la couleur de l'objet -----
     let ni = 0;
+    /** plateau d'un ascenseur, à `up` niveau (0 à 1) au-dessus du palier bas, déployé de `grow` (0 à 1) depuis le mât */
+    const pad = (l: Lift, up: number, grow: number) => {
+      const tray = this.liftTray;
+      if (!tray || grow <= 0) return;
+      tray.ensure(tray.n + 1);
+      const sc = tray.scale;
+      dirQuat(tmpQ2, l.orient);
+      // il sort du mât : son plan se réduit vers lui
+      tmpV2.set(ASCENSEUR_MAT * sc * (1 - grow), 0, 0).applyQuaternion(tmpQ2);
+      tmpM.compose(tmpV.set(l.x + tmpV2.x, l.y + up * FLOOR_H + 0.09 * sc, l.z + tmpV2.z), tmpQ2, tmpS.set(sc * grow, sc, sc));
+      tray.body!.mesh.setMatrixAt(tray.n, tmpM);
+      setTeamColor(tray.body!, tray.n, NO_TEAM);
+      tray.n++;
+    };
     for (const km of this.itemMeshes) km?.begin();
     if (!strategic) {
       o = f.itemOff;
@@ -1472,18 +1505,19 @@ export class Entities {
           const k = dist > 1e-6 ? (out * 0.5) / dist : 0;
           x = tx + 0.5 + (x - tx - 0.5) * k;
           z = tz + 0.5 + (z - tz - 0.5) * k;
-          elev = (low + liftUp(fr)) * FLOOR_H;
-          // plateau : il sort de la cage pendant que l'objet roule sur le quai d'entrée, le porte, puis rentre
-          const tray = this.liftTray;
-          const grow = Math.min(1, 2 * (1 - out));
-          if (tray && grow > 0) {
-            tray.ensure(tray.n + 1);
-            const ts = tray.scale * grow;
-            const g = groundHeight(this.map, tx + 0.5, tz + 0.5);
-            tmpM.compose(tmpV.set(tx + 0.5, g + elev + 0.09 * tray.scale, tz + 0.5), dirQuat(tmpQ2, this.liftAt.get((tz * this.map.w + tx) * 2 + Math.min(1, low)) ?? 0), tmpS.set(ts, tray.scale, ts));
-            tray.body!.mesh.setMatrixAt(tray.n, tmpM);
-            setTeamColor(tray.body!, tray.n, NO_TEAM);
-            tray.n++;
+          const up = liftUp(fr);
+          elev = (low + up) * FLOOR_H;
+          const li = this.liftAt.get((tz * this.map.w + tx) * 2 + Math.min(1, low));
+          if (li !== undefined) {
+            const l = this.lifts[li];
+            // sur le quai d'entrée : un plateau l'attend au palier ; en course : son plateau le porte ;
+            // sur le quai de sortie : son plateau rentre dans le mât, un autre se déploie au palier d'entrée
+            if (out > 0 && fr < 0.5 === l.up) l.parked = 1;
+            else {
+              const g = out > 0 ? liftPad(out) : 1;
+              pad(l, up, g);
+              l.parked = Math.max(l.parked, 1 - g);
+            }
           }
         }
         km.ensure(km.n + 1);
@@ -1496,6 +1530,11 @@ export class Entities {
       }
     }
     for (const km of this.itemMeshes) km?.end();
+    // plateau en attente au palier d'entrée de chaque ascenseur
+    for (let i = 0; i < this.nLifts; i++) {
+      const l = this.lifts[i];
+      if (l.ready) pad(l, l.up ? 0 : 1, l.parked < 0 ? 1 : l.parked);
+    }
     this.liftTray?.end();
     // ----- projectiles -----
     let np = 0;
