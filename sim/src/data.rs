@@ -427,7 +427,7 @@ pub const T_LOGISTICS3: u8 = 31;
 
 pub const TECHS: [TechDef; 64] = [
     t!("none", "Base", 0, 0, 0, [], ""),
-    t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur, collecteur de surplus ; améliorations : extracteur, générateur et dépôt"),
+    t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
     t!("light_defense", "Défense légère", 1, 10, 5, [], "Tourelle légère, mur, radar"),
     t!("electronics", "Électronique", 2, 20, 8, [1], "Usine aérienne, avion éclaireur, intercepteur, planeur d'attaque, transport, héliport de fret ; extracteur et générateur niveau 3, zone du générateur principal +50 %"),
