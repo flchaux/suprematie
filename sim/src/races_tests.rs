@@ -515,3 +515,53 @@ fn a_deploying_chenillard_settles_on_its_module_spot_and_direction() {
     assert_eq!(w.buildings[b].dir, dir, "sens du plan (rien de collé ne le change)");
     assert_eq!(w.buildings[b].link, k as u32);
 }
+
+#[test]
+fn a_module_placed_by_the_player_keeps_its_spot_and_angle() {
+    let (mut w, _s, _k) = nomads();
+    let a = find_unit(&w, 0, U_CH_ASSEMBLER).unwrap();
+    let (tx, ty) = (w.units.x[a] / TILE, w.units.y[a] / TILE);
+    flatten(&mut w, tx - 8, ty - 8, tx + 8, ty + 8);
+    // placement choisi : module 2 × 2 en (tx + 3, ty - 2), sens 3 (face avant vers le nord)
+    let (bx, by) = (tx + 3, ty - 2);
+    let id = w.unit_id(a) as i32;
+    order(&mut w, 0, O_DEPLOY_AT, &[(3 + 1) << 2, (bx + 1) * TILE, (by + 1) * TILE, 1, id]);
+    steps(&mut w, 200 + crate::transhumants::DEPLOY_TICKS as u32);
+    let b = find_building(&w, 0, B_T_ASSEMBLER).expect("assembleur déployé");
+    assert_eq!((w.buildings[b].x, w.buildings[b].y, w.buildings[b].dir), (bx, by, 3));
+    // un voisin qui arrive ne le fait pas tourner
+    let h = find_unit(&w, 0, U_CH_HOLD).unwrap();
+    let hid = w.unit_id(h) as i32;
+    order(&mut w, 0, O_DEPLOY_AT, &[0, (bx + 3) * TILE, (by + 1) * TILE, 1, hid]);
+    steps(&mut w, 300 + crate::transhumants::DEPLOY_TICKS as u32);
+    assert!(find_building(&w, 0, B_T_HOLD).is_some(), "soute collée");
+    assert_eq!(w.buildings[b].dir, 3, "sens choisi gardé");
+}
+
+#[test]
+fn a_drill_feeds_its_neighbours_on_every_side() {
+    let (mut w, s, k) = nomads();
+    let sp = w.map.spots[k].clone();
+    let f = find_unit(&w, 0, U_CH_FURNACE).unwrap();
+    let f2 = find_unit(&w, 0, U_CH_HOLD).unwrap();
+    let g = find_unit(&w, 0, U_CH_GENERATOR).unwrap();
+    // fonderie à l'ouest de la foreuse, soute à l'est, générateur au nord
+    let place = |w: &mut World, u: usize, cx: i32, cy: i32, flags: i32| {
+        let id = w.unit_id(u) as i32;
+        order(w, 0, O_DEPLOY_AT, &[flags, cx * TILE, cy * TILE, 1, id]);
+    };
+    place(&mut w, s, sp.x + 1, sp.y + 1, 1 << 2);
+    place(&mut w, f, sp.x - 1, sp.y + 1, 1 << 2);
+    place(&mut w, f2, sp.x + 3, sp.y + 1, 1 << 2);
+    place(&mut w, g, sp.x + 1, sp.y - 1, 1 << 2);
+    steps(&mut w, 300 + crate::transhumants::DEPLOY_TICKS as u32);
+    let d = find_building(&w, 0, B_T_DRILL).expect("foreuse");
+    let fu = find_building(&w, 0, B_T_FURNACE).expect("fonderie");
+    let ho = find_building(&w, 0, B_T_HOLD).expect("soute");
+    assert_eq!(w.buildings[d].dir, 0, "foreuse tournée vers l'est (soute)");
+    steps(&mut w, 1500);
+    // la fonderie (derrière la foreuse) reçoit aussi du minerai, pas seulement la soute (devant)
+    assert!(w.buildings[fu].recipe != RECIPE_NONE && w.players[0].produced[IRON_PLATE as usize] > 0, "la fonderie, à l'arrière, est servie");
+    let in_hold = crate::drones::has(&w.buildings[ho].stash, IRON_ORE);
+    assert!(in_hold > 0, "la soute, devant, est servie");
+}

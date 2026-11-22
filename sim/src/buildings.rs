@@ -2172,7 +2172,10 @@ fn tick_extractor(w: &mut World, b: usize) {
         let n = front_count(bw, bh, dir).max(1);
         let start = w.buildings[b].timer as usize % n;
         let mut done = false;
-        for k in 0..n {
+        // foreuse nomade : pas de face avant privilégiée, ses voisins collés sont servis à tour de rôle
+        // sur toutes ses faces (transfert direct ci-dessous)
+        let nomad = w.buildings[b].kind == B_T_DRILL;
+        for k in 0..if nomad { 0 } else { n } {
             let (fx, fy) = front_tile_k(x, y, bw, bh, dir, (start + k) % n);
             if push_to(w, fx, fy, it, dir) {
                 w.buildings[b].timer = ((start + k + 1) % n) as _;

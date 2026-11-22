@@ -203,9 +203,13 @@ export function harvest(ids: number[], x: number, y: number, queue = false): Cmd
 export function deploy(ids: number[]): Cmd {
   return [O.DEPLOY, ids.length, ...ids.map((x) => x | 0)];
 }
-/** Transhumants : chenillards qui roulent jusqu'au point (x, y) (sous-unités) et s'y déploient. */
-export function deployAt(ids: number[], x: number, y: number, queue = false): Cmd {
-  return point(O.DEPLOY_AT, ids, x, y, queue);
+/**
+ * Transhumants : chenillards qui roulent jusqu'au point (x, y) (sous-unités, centre du module) et s'y
+ * déploient ; `dir` : sens du module choisi par le joueur (absent : sens automatique).
+ */
+export function deployAt(ids: number[], x: number, y: number, queue = false, dir?: number): Cmd {
+  const flags = (queue ? 1 : 0) | (dir === undefined ? 0 : ((dir & 3) + 1) << 2);
+  return [O.DEPLOY_AT, flags, x | 0, y | 0, ids.length, ...ids.map((v) => v | 0)];
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {

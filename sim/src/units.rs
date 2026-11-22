@@ -886,8 +886,8 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             }
             NONE
         }
-        Order::DeployAt { x, y } => {
-            crate::transhumants::deploy_at(w, s, x, y);
+        Order::DeployAt { x, y, dir } => {
+            crate::transhumants::deploy_at(w, s, x, y, dir);
             NONE
         }
         Order::Harvest { x, y } => {

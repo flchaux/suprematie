@@ -22,6 +22,8 @@ use crate::fixed::TILE;
 use crate::world::*;
 
 pub const PACK_DEPLOYING: u8 = 1;
+/// Plan d'un déploiement (`UnitCold::timer`) : sens choisi par le joueur.
+const PLAN_CHOSEN: u16 = 0x100;
 pub const PACK_FOLDING: u8 = 2;
 /// Durées du déploiement et du repli (ticks).
 pub const DEPLOY_TICKS: u16 = 300;
@@ -87,25 +89,29 @@ pub fn start_deploy(w: &mut World, s: usize) {
         // second ordre : annule
         w.units.cold[s].pack = 0;
     } else {
-        begin_deploy(w, s);
+        begin_deploy(w, s, None, 0);
     }
 }
 
 /// Début d'un déploiement : fin prévue, emplacement et sens du module (le plan), que le chenillard rejoint
-/// pendant l'animation pour finir exactement sur le module posé. Plan : `work` = (x + 1) | y << 16 de
-/// l'emplacement (0 : aucun, le chenillard reste sur place), `timer` = sens + 1.
-fn begin_deploy(w: &mut World, s: usize) {
+/// pendant l'animation pour finir exactement sur le module posé. `at` : centre du module voulu (placement
+/// choisi par le joueur ; sinon, ou s'il n'est plus libre, la place libre la plus proche) ; `dir` : sens
+/// choisi + 1 (0 : sens automatique). Plan : `work` = (x + 1) | y << 16 de l'emplacement (0 : aucun, le
+/// chenillard reste sur place), `timer` = sens + 1, plus PLAN_CHOSEN si le joueur l'a choisi.
+fn begin_deploy(w: &mut World, s: usize, at: Option<(i32, i32)>, dir: u8) {
     let end = w.tick + DEPLOY_TICKS as u32;
     let (kind, owner) = (w.units.kind[s], w.units.owner[s]);
     let bkind = udef(kind).deploys;
-    let plan = deploy_spot(w, owner, bkind, w.units.x[s], w.units.y[s]);
+    let (bw, bh) = buildings::dims(bkind, 0);
+    let wanted = at.map(|(x, y)| (x / TILE - bw / 2, y / TILE - bh / 2)).filter(|&(bx, by)| buildings::can_place(w, owner, bkind, bx, by, 0));
+    let plan = wanted.or_else(|| deploy_spot(w, owner, bkind, w.units.x[s], w.units.y[s]));
     let (work, timer) = match plan {
         Some((bx, by)) => {
             let cur = (((w.units.facing[s] as u32 + 8192) / 16384) & 3) as u8;
             let raw = if bdef(bkind).class == BClass::Extractor { w.map.deposit[w.map.idx(bx, by)] } else { 0 };
             let recipe = if bdef(bkind).class == BClass::Extractor { raw } else { w.units.cold[s].pack_recipe };
-            let d = best_dir(w, owner, bkind, recipe, bx, by, cur);
-            ((bx as u32 + 1) | (by as u32) << 16, d as u16 + 1)
+            let (d, chosen) = if dir > 0 { ((dir - 1) & 3, PLAN_CHOSEN) } else { (best_dir(w, owner, bkind, recipe, bx, by, cur), 0) };
+            ((bx as u32 + 1) | (by as u32) << 16, d as u16 + 1 + chosen)
         }
         None => (0, 0),
     };
@@ -124,7 +130,7 @@ fn align(w: &mut World, s: usize) {
         return;
     }
     let (bx, by) = ((c.work & 0xffff) as i32 - 1, (c.work >> 16) as i32);
-    let d = (c.timer - 1) as u8;
+    let d = ((c.timer & !PLAN_CHOSEN) - 1) as u8 & 3;
     let bkind = udef(w.units.kind[s]).deploys;
     let (bw, bh) = buildings::dims(bkind, 0);
     let (tx, ty) = (bx * TILE + bw * TILE / 2, by * TILE + bh * TILE / 2);
@@ -246,9 +252,13 @@ fn deploy(w: &mut World, s: usize) {
     // sens logique : celui du plan (le chenillard s'y est tourné), puis le module et ses voisins collés se
     // tournent selon leurs liaisons (à égalité, chacun garde le sien)
     if pt != 0 {
-        w.buildings[b].dir = (pt - 1) as u8 & 3;
+        w.buildings[b].dir = ((pt & !PLAN_CHOSEN) - 1) as u8 & 3;
         if def.class == BClass::Factory {
             set_rally(w, b);
+        }
+        // sens choisi par le joueur (placement) : l'orientation automatique ne le change plus
+        if pt & PLAN_CHOSEN != 0 {
+            w.buildings[b].turn = 1;
         }
     }
     orient(w, b);
@@ -353,7 +363,8 @@ fn front_score(w: &World, me: usize, owner: u8, kind: u16, recipe: u8, fx: i32, 
 /// ralliement d'un atelier suit sa sortie.
 pub fn orient(w: &mut World, b: usize) {
     let bb = &w.buildings[b];
-    if !bb.alive || bb.def().race != RACE_TRANSH {
+    // `turn` = 1 : sens choisi par le joueur au placement, gardé
+    if !bb.alive || bb.def().race != RACE_TRANSH || bb.turn == 1 {
         return;
     }
     let (bw, bh) = bb.size();
@@ -408,13 +419,13 @@ fn best_dir_at(w: &World, me: usize, owner: u8, kind: u16, recipe: u8, x: i32, y
 
 /// Ordre « déployer ici » : le chenillard roule jusqu'au point (x, y), puis se déploie (ses ordres suivants
 /// sont abandonnés : il devient un bâtiment). Bloqué en route, il se déploie là où il est.
-pub fn deploy_at(w: &mut World, s: usize, x: i32, y: i32) {
+pub fn deploy_at(w: &mut World, s: usize, x: i32, y: i32, dir: u8) {
     let arrived = crate::units::steer(w, s, x, y, x, y, TILE / 3);
     if !arrived && w.units.cold[s].stuck <= 100 {
         return;
     }
     crate::units::clear_orders(w, s);
-    begin_deploy(w, s);
+    begin_deploy(w, s, Some((x, y)), dir);
 }
 
 /// Ordre « Replier » sur un module déployé : il redevient un chenillard.

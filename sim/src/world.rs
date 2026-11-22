@@ -126,7 +126,8 @@ pub enum Order {
     Harvest { x: i32, y: i32 },
     /// chenillard des Transhumants : rouler jusqu'au point (x, y) (sous-unités) et s'y déployer (clic droit
     /// d'un chenillard foreuse sur un gisement ; voir transhumants::deploy_at)
-    DeployAt { x: i32, y: i32 },
+    /// `dir` : sens du module choisi par le joueur + 1 (0 : sens automatique)
+    DeployAt { x: i32, y: i32, dir: u8 },
 }
 
 impl Order {
@@ -148,7 +149,8 @@ impl Order {
             Order::Face { .. } => 14,
             Order::Collect { .. } => 15,
             Order::Harvest { .. } => 16,
-            Order::DeployAt { .. } => 17,
+            // 17 : sans sens (sauvegardes du 22 novembre 2026), 18 : avec le sens
+            Order::DeployAt { .. } => 18,
         }
     }
 }
@@ -172,8 +174,13 @@ impl Ser for Order {
             }
             Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
+            Order::DeployAt { x, y, dir } => {
+                x.ser(w);
+                y.ser(w);
+                dir.ser(w);
+            }
             Order::Face { a } => a.ser(w),
-            Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } | Order::DeployAt { x, y } => {
+            Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } => {
                 x.ser(w);
                 y.ser(w);
             }
@@ -206,7 +213,8 @@ impl Ser for Order {
             14 => Order::Face { a: i(r) },
             15 => Order::Collect { target: u(r) },
             16 => Order::Harvest { x: i(r), y: i(r) },
-            17 => Order::DeployAt { x: i(r), y: i(r) },
+            17 => Order::DeployAt { x: i(r), y: i(r), dir: 0 },
+            18 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

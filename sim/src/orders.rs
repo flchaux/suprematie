@@ -58,7 +58,8 @@ pub const O_CANCEL_PLAN: i32 = 25;
 pub const O_HARVEST: i32 = 26;
 /// Replier des modules des Transhumants : [n, réf. de bâtiment…] (voir transhumants::fold).
 pub const O_PACK: i32 = 48;
-/// Chenillards : rouler jusqu'au point et s'y déployer : [drapeaux (1 : en file), x, y (sous-unités), n, unités…].
+/// Chenillards : rouler jusqu'au point et s'y déployer : [drapeaux, x, y (sous-unités), n, unités…] ; drapeaux :
+/// bit 0 en file, bits 2-4 sens du module + 1 (0 : sens automatique) ; le point est le centre du module.
 pub const O_DEPLOY_AT: i32 = 49;
 
 struct Cur<'a> {
@@ -511,14 +512,16 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             }
         }
         O_DEPLOY_AT => {
-            let q = c.next() & 1 != 0;
+            let flags = c.next();
+            let q = flags & 1 != 0;
+            let dir = ((flags >> 2) & 7).min(4) as u8;
             let (x, y) = (c.next().clamp(0, w.map.w * TILE - 1), c.next().clamp(0, w.map.h * TILE - 1));
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
                     if udef(w.units.kind[s]).deploys != NO_KIND && w.units.cold[s].pack != crate::transhumants::PACK_FOLDING {
                         // un déploiement en cours s'arrête : le chenillard repart vers le point
                         w.units.cold[s].pack = 0;
-                        give(w, s, q, Order::DeployAt { x, y });
+                        give(w, s, q, Order::DeployAt { x, y, dir });
                     }
                 }
             }

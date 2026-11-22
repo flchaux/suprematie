@@ -131,7 +131,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
                 Order::Harvest { x, y } => (x * TILE + TILE / 2, y * TILE + TILE / 2),
-                Order::DeployAt { x, y } => (x, y),
+                Order::DeployAt { x, y, .. } => (x, y),
             };
             ((tx / TILE) & 0xfff) | (((ty / TILE) & 0xfff) << 12) | ((o.code() as i32) << 24)
         }
@@ -691,7 +691,7 @@ fn order_point(w: &World, o: &Order) -> Option<(i32, i32)> {
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
         Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),
-        Order::DeployAt { x, y } => Some((x, y)),
+        Order::DeployAt { x, y, .. } => Some((x, y)),
     }
 }
 
