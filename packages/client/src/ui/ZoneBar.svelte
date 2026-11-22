@@ -10,14 +10,14 @@
   // ressources de base (plaques, acier, engrenages, câbles, circuits) : seules montrées, barre repliée ;
   // dépliée, s'y ajoutent les minerais et les autres objets qui ont un stock ou un débit dans la zone
   const BASE = [6, 7, 8, 10, 11, 12];
-  const KEY = "supreme.zoneBarOpen";
-  let open = $state(readOpen());
-  function readOpen() {
-    try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+  const ALL_KEY = "supreme.zoneBarOpen";
+  let all = $state(readAll());
+  function readAll() {
+    try { return localStorage.getItem(ALL_KEY) === "1"; } catch { return false; }
   }
-  function toggle() {
-    open = !open;
-    try { localStorage.setItem(KEY, open ? "1" : "0"); } catch { /* sans stockage : réglage non retenu */ }
+  function toggleAll() {
+    all = !all;
+    try { localStorage.setItem(ALL_KEY, all ? "1" : "0"); } catch { /* sans stockage : réglage non retenu */ }
   }
   const z = $derived(ui.zone);
   const souche = $derived(ui.race === RACE_SOUCHE);
@@ -34,7 +34,7 @@
   const cols = $derived.by(() => {
     if (!z || z.zone === 0) return [];
     if (souche) return [SEVE, SELS, ADN];
-    const ids = open ? [...BASE, ...extra].sort((a, b) => a - b) : BASE;
+    const ids = all ? [...BASE, ...extra].sort((a, b) => a - b) : BASE;
     return ui.race === RACE_TRANSH ? [RELEVES, ...ids] : ids;
   });
   // zone vivante mais sans générateur qui brûle (relais seuls) : éteinte, comme dans la vue électrique
@@ -127,10 +127,10 @@
       {/if}
     {/each}
     {#if !souche}
-      <button class="tip more" class:open onclick={toggle} aria-expanded={open}>
-        <span>{open ? "‹" : "›"}</span>{#if !open && extra.length > 0}<span class="n num">+{extra.length}</span>{/if}
+      <button class="tip more" class:open={all} onclick={toggleAll} aria-expanded={all}>
+        <span>{all ? "‹" : "›"}</span>{#if !all && extra.length > 0}<span class="n num">+{extra.length}</span>{/if}
         <span class="tt">
-          {#if open}<b>Replier</b><br />Ne montrer que les ressources de base (plaques, acier, engrenages, câbles, circuits).
+          {#if all}<b>Replier</b><br />Ne montrer que les ressources de base (plaques, acier, engrenages, câbles, circuits).
           {:else}<b>Déplier</b><br />Montrer aussi les minerais et les autres objets de la zone{#if extra.length > 0} ({extra.length} avec un stock ou un débit){/if}.{/if}
         </span>
       </button>
@@ -167,5 +167,6 @@
   .more { grid-row: 1 / -1; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 18px; padding: 0 3px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 4px; background: rgba(255, 255, 255, 0.04); color: var(--dim); font-size: 14px; line-height: 1; cursor: pointer; }
   .more:hover { color: var(--text); background: rgba(255, 255, 255, 0.09); }
   .more .n { font-size: 10px; color: var(--accent); }
+  .shut .more { flex-direction: row; gap: 3px; padding: 0 5px; }
   .res .team { font-size: 10px; color: var(--accent); margin-left: 1px; opacity: 0.9; }
 </style>

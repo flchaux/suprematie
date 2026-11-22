@@ -64,7 +64,7 @@
             <span class="bar amber"><span style:width={(ui.researchProgress / tech.count) * 100 + "%"}></span></span>
           </span>
           <span class="num dim">{ui.researchProgress}/{tech.count}</span>{#if ui.researchQueue.length}<span class="num qn" title="Recherches en file">+{ui.researchQueue.length}</span>{/if}
-        {:else}<Icon name="research" size={15} /> <span>Choisir une recherche</span> {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}{/if}
+        {:else}<Icon name="research" size={15} /> <span class="rn">Choisir une recherche</span> {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}{/if}
       </button>
     </div>
   {/if}
