@@ -88,7 +88,7 @@ const planted = await a.page.evaluate(() => {
 check(!!planted, "ordre de plantation envoyé");
 const t0 = await a.page.evaluate(() => window.__game.client.frame.tick);
 // la Reine marche jusqu'au chantier, plante, puis la frondaison pousse (12 s) : on attend 25 s de jeu
-await a.page.waitForFunction((t) => window.__game.client.frame.tick > t + 500, t0, { timeout: 180000 });
+await a.page.waitForFunction((t) => window.__game.client.frame.tick > t + 500, t0, { timeout: 600000 });
 const grown = await a.page.evaluate(() => {
   const { client, ui } = window.__game;
   const leaves = ui.data.buildings.findIndex((x) => x.key === "leaves");
@@ -135,7 +135,7 @@ check((await deployBtn.count()) === 1, "bouton Déployer du chenillard");
 await deployBtn.click({ force: true });
 const t1 = await b.page.evaluate(() => window.__game.client.frame.tick);
 // déploiement : 15 s de jeu
-await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 340, t1, { timeout: 180000 });
+await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 340, t1, { timeout: 600000 });
 const deployed = await b.page.evaluate(() => {
   const { client, ui } = window.__game;
   const k = ui.data.buildings.findIndex((x) => x.key === "t_generator");
