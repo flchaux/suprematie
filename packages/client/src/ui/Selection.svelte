@@ -26,12 +26,14 @@
   const has = (key: string) => !!d && kinds.some((k) => d.units[k].key === key);
   const anyCarrier = $derived(!!d && kinds.some((k) => d.units[k].carry > 0));
   const anyEng = $derived(!!d && kinds.some((k) => d.units[k].buildPower > 0));
-  const deployable = $derived(has("sonde") || has("heavy_artillery"));
+  // déploiement : sonde, artillerie lourde, canon tracté, chenillards des Transhumants (ils deviennent leur module)
+  const chenillards = $derived(!!d && kinds.some((k) => (d.units[k].deploys ?? -1) >= 0));
+  const deployable = $derived(has("sonde") || has("heavy_artillery") || has("towed_gun") || chenillards);
   // même ordre que la rangée de touches de l'usine (factory1, factory2…)
-  const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory).map((i) => ({ u: d.units[i], i })) : []);
+  const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory, bdef.race ?? 0).map((i) => ({ u: d.units[i], i })) : []);
   // amélioration possible (extracteur : niveau suivant ; assembleur : modèle suivant)
   const upg = $derived.by(() => {
-    if (!info || !bdef || !d) return null;
+    if (!info || !bdef || !d || (bdef.race ?? 0) !== 0) return null;
     if (bdef.cls === BClass.Depot) {
       const dp = d.depot;
       if (!dp || (info.level ?? 0) > 0) return null;
@@ -224,8 +226,25 @@
     {#if mine && info}
       {#if info.build < 65536}
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+      {:else if (bdef.race ?? 0) === 2}
+        <button class="icon-btn" title="Le module redevient un chenillard (immobile 10 s) ; son contenu retourne à la réserve, sa recette et son combustible restent à bord" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier</button>
       {:else}
         <button class="icon-btn danger" title="Démonté par vos constructeurs les plus proches, matériaux rendus au stock" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+      {/if}
+      {#if info.souche}
+        {@const sv = info.souche}
+        <div class="row small" title="Chaque réseau de racines a sa propre réserve : ses organes poussent et ses couveuses pondent avec elle. Une racine coupée partage la réserve entre les morceaux.">
+          <span class="kicker">Réseau</span>
+          {#if sv.net}
+            <Item id={27} size={16} /> <span class="num">{sv.seve}</span> <Item id={28} size={16} /> <span class="num">{sv.sels}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
+          {:else}<b class="bad">hors du terreau : rien ne pousse</b>{/if}
+        </div>
+        {#if sv.rateSeve || sv.rateSels}
+          <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if bdef.key === "leaves"}<span class="dim"> · les frondaisons voisines (4 cases) se font de l'ombre</span>{/if}</div>
+        {/if}
+      {/if}
+      {#if info.transh && info.transh.wear >= 0}
+        <div class="row small" title="La foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement : son débit baisse jusqu'à 60 %. Le gisement se reconstitue quand on le laisse."><span class="kicker">Usure du gisement</span> <b class="num" class:bad={info.transh.wear >= 400}>{Math.round(info.transh.wear / 10)} %</b><span class="dim"> · débit ×<span class="num">{((2000 - 2 * info.transh.wear) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span></div>
       {/if}
       {#if upg && info.build >= 65536}
         <div class="upgrade">
@@ -609,6 +628,12 @@
       {#if tr}<span class="dim small">{tr}</span>{/if}
       {#if ui.unitInfo.cloaked}<span class="good small">Camouflé : invisible pour l'ennemi</span>{:else if d.units[ui.selUnits[0].kind].key === "commando"}<span class="bad small">Repérable : il vient de tirer</span>{/if}
       {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
+      {#if ui.unitInfo.pack}
+        <!-- chenillard des Transhumants : déploiement (15 s) ou repli (10 s) en cours -->
+        {@const total = ui.unitInfo.pack === 1 ? 300 : 200}
+        <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
+        <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / total) * 100}%"></span></div>
+      {/if}
       {#if ui.unitInfo.harvest}
         <!-- récolte du commandant : gisement -> fonderie intégrée -> stock -->
         {@const h = ui.unitInfo.harvest}

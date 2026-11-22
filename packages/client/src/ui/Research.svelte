@@ -3,11 +3,20 @@
   import { client } from "../game/client.ts";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
-  import { PACK1 } from "@supreme/shared";
+  import { PACK1, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import { keyOf } from "../game/keys.svelte.ts";
   const d = $derived(ui.data);
-  const tiers = [1, 2, 3, 4, 5, 6];
-  const doneCount = $derived(d ? d.techs.filter((_, i) => i > 0 && hasTechUI(i)).length : 0);
+  // recherches de la race du joueur seulement ; paliers présents dans son arbre
+  const mine = $derived(d ? d.techs.map((t, i) => ({ t, i })).filter(({ t, i }) => i > 0 && (t.race ?? 0) === ui.race) : []);
+  const tiers = $derived([...new Set(mine.map(({ t }) => t.tier))].sort((a, b) => a - b));
+  const doneCount = $derived(mine.filter(({ i }) => hasTechUI(i)).length);
+  /** recherche interdite par un choix exclusif déjà fait ou prévu (Souche) */
+  const barred = (i: number): boolean => {
+    const x = d?.techs[i].excl ?? 0;
+    return x > 0 && (hasTechUI(x) || ui.research === x || ui.researchQueue.includes(x));
+  };
+  /** coût d'une unité de recherche selon la race */
+  const unitCost = (tier: number): string => (ui.race === RACE_SOUCHE ? `${tier} ADN` : ui.race === RACE_TRANSH ? `${3 * tier} relevés` : "");
 </script>
 
 <div class="modal panel">
@@ -15,32 +24,36 @@
   <div class="modal-head">
     <Icon name="research" size={26} />
     <div>
-      <div class="kicker">Laboratoires</div>
+      <div class="kicker">{ui.race === RACE_SOUCHE ? "Matrices" : ui.race === RACE_TRANSH ? "Laboratoires nomades" : "Laboratoires"}</div>
       <h2>Recherche</h2>
     </div>
     <div class="grow"></div>
-    {#if d}<span class="dim num">{doneCount}/{d.techs.length - 1} terminées</span>{/if}
+    {#if d}<span class="dim num">{doneCount}/{mine.length} terminées</span>{/if}
   </div>
   <div class="modal-body">
-    <p class="dim intro">Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.
+    <p class="dim intro">
+      {#if ui.race === RACE_SOUCHE}Les matrices évoluent avec l'ADN : chaque unité de recherche coûte autant d'ADN que son palier. L'ADN vient des ennemis et des bêtes digérés sur votre terreau ; à défaut, une matrice en tire de la sève (20 pour 1). Les mutations s'excluent deux à deux : le choix vaut pour toute la partie.
+      {:else if ui.race === RACE_TRANSH}Les laboratoires nomades étudient vos relevés : chaque unité de recherche coûte 3 relevés par palier. Les relevés viennent de l'exploration (cases découvertes) et des ennemis détruits ; à défaut, un laboratoire en tire un des environs toutes les 2 s.
+      {:else}Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.{/if}
       <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite. {#if ui.researchQueue.length}<button class="ghost small linkish" onclick={() => client.clearResearchQueue()}>Vider la file ({ui.researchQueue.length})</button>{/if}</p>
     {#if d}
       <div class="cols">
         {#each tiers as tier}
           <div class="col">
-            <h3><Item id={PACK1 + tier - 1} size={26} /> <span>Palier {tier}</span></h3>
-            {#each d.techs.map((t, i) => ({ t, i })).filter(({ t }) => t.tier === tier) as { t, i }}
+            <h3><Item id={ui.race === RACE_SOUCHE ? ADN : ui.race === RACE_TRANSH ? RELEVES : PACK1 + tier - 1} size={26} /> <span>Palier {tier}</span></h3>
+            {#each mine.filter(({ t }) => t.tier === tier) as { t, i }}
               {@const done = hasTechUI(i)}
-              {@const avail = !done && t.prereq.every((p) => hasTechUI(p))}
+              {@const excluded = !done && barred(i)}
+              {@const avail = !done && !excluded && t.prereq.every((p) => hasTechUI(p))}
               {@const cur = ui.research === i}
               {@const qn = ui.researchQueue.indexOf(i) + 1}
-              <button class="tech" class:done class:cur class:avail class:queued={qn > 0} disabled={done || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
+              <button class="tech" class:done class:cur class:avail class:queued={qn > 0} class:excluded disabled={done || excluded || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
                 <span class="tt-head">
                   <b>{t.name}</b>
                   {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if qn}<span class="qn num" title="Position dans la file">{qn}</span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
                 </span>
                 <span class="desc">{t.desc}</span>
-                <span class="meta num">{t.count} × {t.time} s{#if t.prereq.length}<span class="faint"> · après {t.prereq.map((p) => d.techs[p].name).join(", ")}</span>{/if}</span>
+                <span class="meta num">{t.count} × {t.time} s{#if unitCost(t.tier)} · {t.count} × {unitCost(t.tier)}{/if}{#if excluded}<span class="faint"> · exclue par {d.techs[t.excl].name}</span>{/if}{#if t.prereq.length}<span class="faint"> · après {t.prereq.map((p) => d.techs[p].name).join(", ")}</span>{/if}</span>
                 {#if cur}<span class="bar amber"><span style:width={(ui.researchProgress / t.count) * 100 + "%"}></span></span>{/if}
               </button>
             {/each}
@@ -54,7 +67,8 @@
 <style>
   .modal-head :global(.ic) { color: var(--accent); }
   .intro { margin: 0 0 14px; }
-  .cols { display: grid; grid-template-columns: repeat(6, minmax(150px, 1fr)); gap: 10px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tech.excluded { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
   .col { display: flex; flex-direction: column; gap: 6px; }
   h3 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .tech { display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 3px; padding: 8px 9px; font-weight: 400; letter-spacing: 0; }

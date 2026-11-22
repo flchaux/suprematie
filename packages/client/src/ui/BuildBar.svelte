@@ -4,13 +4,14 @@
   import Cost from "./Cost.svelte";
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
-  import { BUILD_CATS as CATS } from "../game/catalog.ts";
+  import { buildCats } from "../game/catalog.ts";
   import { kb, keyOf } from "../game/keys.svelte.ts";
   import { plans } from "../game/plans.svelte.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
 
-  // catégorie affichée : partagée avec le menu au clavier (B, puis chiffre, puis chiffre)
-  const cat = $derived(kb.buildCat);
+  // catégories de la race du joueur ; catégorie affichée : partagée avec le menu au clavier (B, puis chiffre, puis chiffre)
+  const CATS = $derived(buildCats(ui.race));
+  const cat = $derived(Math.min(kb.buildCat, Math.max(0, CATS.length - 1)));
   const idx = $derived(ui.data ? Object.fromEntries(ui.data.buildings.map((b, i) => [b.key, i])) : {});
   const short = (n: string) => n.replace("Tourelle ", "T. ").replace("Générateur de bouclier", "Bouclier").replace("Centrale à hydrocarbure", "Centrale").replace("Silo de missile stratégique", "Silo stratégique").replace("Plateforme de transfert", "Transfert").replace("Défense antimissile", "Antimissile").replace("Balise d'hyperespace", "Balise").replace("Portique expérimental", "Portique");
   const bKey = $derived(keyOf("buildMenu"));
@@ -23,7 +24,7 @@
     {/each}
     <span class="hint">
       {#if kb.buildStep === "cat"}<span class="ask">Catégorie ? <span class="key">1–{CATS.length}</span> <span class="key">Échap</span></span>
-      {:else if kb.buildStep === "item"}<span class="ask">Bâtiment ? <span class="key">1–{CATS[cat][2].length}</span> <span class="key">Échap</span></span>
+      {:else if kb.buildStep === "item"}<span class="ask">Bâtiment ? <span class="key">1–{CATS[cat]?.[2].length ?? 0}</span> <span class="key">Échap</span></span>
       {:else if bKey}<span class="key" title="Menu de construction au clavier : {bKey}, puis le numéro de la catégorie, puis celui du bâtiment">{bKey}</span>{/if}
     </span>
     <span class="plan-btns">
@@ -33,7 +34,10 @@
     </span>
   </div>
   <div class="grid" class:armed={kb.buildStep === "item"}>
-    {#each CATS[cat][2] as key, n}
+    {#if CATS.length === 0}
+      <p class="nomad">Les Transhumants ne construisent pas : sélectionnez un chenillard et déployez-le (bouton « Déployer » ou touche de déploiement) pour qu'il devienne son module ; repliez un module depuis sa fiche pour repartir.</p>
+    {/if}
+    {#each CATS[cat]?.[2] ?? [] as key, n}
       {@const i = idx[key]}
       {@const b = ui.data?.buildings[i]}
       {#if b}
@@ -42,7 +46,7 @@
         {@const src = sprite("buildings", key)}
         <div class="tip">
           <button class="card" class:on={ui.buildKind === i && ui.mode === "build"} class:locked={!ok} disabled={!ok} onclick={() => client.startBuild(i)}>
-            {#if src}<img {src} alt="" />{:else}<span class="ph"><Icon name={CATS[cat][1]} size={26} /></span>{/if}
+            {#if src}<img {src} alt="" />{:else}<span class="ph"><Icon name={CATS[cat]?.[1] ?? "production"} size={26} /></span>{/if}
             <span class="kn num">{n + 1}</span>
             <span class="name">{short(b.name)}</span>
             <span class="sz num">{b.w}×{b.h}</span>
@@ -101,5 +105,6 @@
     .card { width: 92px; height: 78px; } .grid { height: 166px; }
     .card img { width: 48px; height: 48px; }
   }
+  .nomad { grid-column: 1 / -1; margin: 6px 4px; line-height: 1.45; color: var(--dim); font-size: 12px; }
   .bdesc { display: block; margin: 3px 0; line-height: 1.4; max-width: 340px; color: color-mix(in srgb, var(--text) 82%, transparent); }
 </style>

@@ -13,11 +13,23 @@ export const BUILD_CATS: [string, string, string[]][] = [
   ["Spécial", "special", ["transfer", "gate", "area_shield", "missile_silo", "beacon", "orbital"]],
 ];
 
-/** Types d'unités produits par une usine (indice dans data.units), dans l'ordre du panneau. */
-export function factoryUnitKinds(data: GameData, factory: number): number[] {
+/** Menu de construction de la Souche : organes posés sur le terreau de ses racines. */
+export const SOUCHE_CATS: [string, string, string[]][] = [
+  ["Réseau", "production", ["root", "seed_heart", "leaves", "taproot", "bulb"]],
+  ["Organes", "factory", ["brood", "matrix"]],
+  ["Défense", "defense", ["thorn", "bloom"]],
+];
+
+/** Catégories du menu de construction selon la race (les Transhumants ne construisent pas : ils déploient leurs chenillards). */
+export function buildCats(race: number): [string, string, string[]][] {
+  return race === 1 ? SOUCHE_CATS : race === 2 ? [] : BUILD_CATS;
+}
+
+/** Types d'unités produits par une usine (indice dans data.units), dans l'ordre du panneau : ceux de la race de l'usine. */
+export function factoryUnitKinds(data: GameData, factory: number, race = 0): number[] {
   const out: number[] = [];
   data.units.forEach((u, i) => {
-    if (u.factory === factory) out.push(i);
+    if (u.factory === factory && (u.race ?? 0) === race) out.push(i);
   });
   return out;
 }

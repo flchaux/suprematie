@@ -296,7 +296,7 @@ export class Game {
         seed: this.lobby.seed,
         fauna: this.lobby.fauna,
         fog: this.lobby.fog,
-        players: this.lobby.players.map((p) => ({ name: p.name, bot: p.bot, team: p.team, personality: p.personality, aix: p.aix, level: p.level })),
+        players: this.lobby.players.map((p) => ({ name: p.name, bot: p.bot, team: p.team, personality: p.personality, aix: p.aix, level: p.level, race: p.race ?? 0 })),
       };
       const bots = this.bots.filter((b) => b.bot.save).map((b) => ({ slot: b.slot, state: Buffer.from(b.bot.save!()).toString("base64") }));
       const data: SaveData = { version: 1, meta, params: this.params, snapshot: Buffer.from(this.sim.snapshot()).toString("base64"), bots, pending: this.pending, replay: this.replay, stats: this.history };

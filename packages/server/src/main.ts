@@ -6,7 +6,7 @@ import { extname, join, normalize } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { LobbyState, LobbyPlayer, ClientMsg, SaveMeta, Fauna } from "@supreme/shared";
-import { FAUNA_LEVELS } from "@supreme/shared";
+import { FAUNA_LEVELS, RACE_COUNT } from "@supreme/shared";
 import { Game, type Peer } from "./game.ts";
 import { listSaves, readSave, readSaveMeta, deleteSave, validSaveId } from "./saves.ts";
 import { PERSONALITIES } from "./bots/index.ts";
@@ -217,6 +217,7 @@ function loadSaveInLobby(meta: SaveMeta): void {
     aix: p.aix,
     level: p.level,
     team: p.team,
+    race: p.race ?? 0,
     connected: p.bot,
     host: false,
     ...(p.bot ? {} : { savedName: p.name }),
@@ -369,6 +370,17 @@ wss.on("connection", (ws, req) => {
         if (msg.action === "claimSlot") {
           if (lobby.save && claimFor(client, msg.slot ?? -1)) {
             hostSlot();
+            sendLobby();
+          }
+          return;
+        }
+        // race : chaque joueur humain choisit la sienne (l'hôte aussi celle des autres) ; les bots jouent
+        // les Industriels ; une partie chargée garde les siennes
+        if (msg.action === "setRace") {
+          const t = lobby.players[msg.slot ?? -1];
+          const race = msg.race ?? 0;
+          if (!lobby.save && t && !t.bot && (client.slot === t.slot || client.slot === hostSlot()) && Number.isInteger(race) && race >= 0 && race < RACE_COUNT) {
+            t.race = race;
             sendLobby();
           }
           return;

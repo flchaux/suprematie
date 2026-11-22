@@ -16,10 +16,15 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient les 55 unités (dont 3 bêtes et le réplicateur de la faune), 52 bâtiments (dont le nid, la ruche, la ruine et le socle à EPPZ) et 48 recherches", () => {
-    expect(data.units.length).toBe(55);
-    expect(data.buildings.length).toBe(52);
-    expect(data.techs.length).toBe(48);
+  it("contient 77 unités (55 des Industriels et de la faune, 7 de la Souche, 15 des Transhumants), 70 bâtiments (52, 9, 9) et 64 recherches (48, 10, 6)", () => {
+    expect(data.units.length).toBe(77);
+    expect(data.buildings.length).toBe(70);
+    expect(data.techs.length).toBe(64);
+    expect(data.races.map((r) => r.key)).toEqual(["industriels", "souche", "transhumants"]);
+    expect(data.units.filter((u) => u.race === 1).length).toBe(7);
+    expect(data.units.filter((u) => u.race === 2).length).toBe(15);
+    // une unité de commandement par race
+    expect(data.units.filter((u) => u.commander).map((u) => u.key)).toEqual(["commander", "queen", "ark"]);
     expect(data.units[0].key).toBe("commander");
     // la faune : aucune usine ne produit ses bêtes, et son nid n'est pas une construction de joueur
     for (const k of ["beast_s", "beast_m", "beast_l"]) expect(data.units.find((u) => u.key === k)?.factory).toBe(0);
