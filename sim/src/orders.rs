@@ -70,6 +70,9 @@ pub const O_DELIVER: i32 = 51;
 /// Reine de la Souche : apprivoiser un nid de mordeurs sauvage : [drapeaux (1 : en file), réf. du nid, n, unités…]
 /// (voir souche::tame).
 pub const O_TAME: i32 = 52;
+/// Générateur nomade des Transhumants : planter un poteau relais : [réf. du générateur, x, y (cases, case du
+/// poteau)] (voir transhumants::plant_pole).
+pub const O_PLANT_POLE: i32 = 53;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -228,6 +231,10 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let q = c.next() & 1 != 0;
             let (kind, x, y, dir) = (c.next(), c.next(), c.next(), c.next());
             if kind < 0 || kind as usize >= BUILDINGS.len() || !w.players[p as usize].has_tech(bdef(kind as u16).tech) || !crate::races::building_ok(w, p, kind as u16) {
+                return;
+            }
+            // Transhumants : les modules viennent des chenillards et les poteaux des générateurs, jamais d'un chantier
+            if bdef(kind as u16).race == crate::data::RACE_TRANSH {
                 return;
             }
             for id in units_list(&mut c) {
@@ -570,6 +577,12 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                         give(w, s, q, Order::Tame { target });
                     }
                 }
+            }
+        }
+        O_PLANT_POLE => {
+            let (r, x, y) = (c.next(), c.next(), c.next());
+            if let Some(b) = own_building(w, p, r) {
+                crate::transhumants::plant_pole(w, b, x, y);
             }
         }
         O_PACK => {

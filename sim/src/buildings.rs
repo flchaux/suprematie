@@ -477,6 +477,10 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     let (bw, bh) = w.buildings[b].size();
     let def = bdef(kind);
     let floor = w.buildings[b].floor;
+    // générateur nomade : ses poteaux partent avec lui (replié, détruit ou démonté)
+    if kind == B_T_GENERATOR {
+        crate::transhumants::pull_poles(w, b);
+    }
     crate::drones::store_removed(w, b);
     w.buildings[b].alive = false;
     for ty in y..y + bh {

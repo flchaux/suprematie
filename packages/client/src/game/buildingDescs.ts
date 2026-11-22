@@ -73,4 +73,5 @@ export const BUILDING_DESCS: Record<string, string> = {
   t_lab: "Laboratoire nomade : étudie vos relevés (3 par palier pour chaque unité de recherche). À défaut, il en tire un des environs toutes les 2 s. Les relevés viennent de l'exploration et des ennemis détruits.",
   t_workshop: "Atelier : produit les chenillards et l'armée des Transhumants. Ses drones vont chercher les composants dans les soutes à moins de 30 cases.",
   t_bastion: "Bastion : module déployé d'un chenillard bastion, tourelle lourde à canon cinétique (30 cases).",
+  t_pole: "Poteau nomade : relais planté par un générateur nomade (dix au plus), à 13 cases au plus de lui ou d'un autre de ses poteaux ; agrandit sa zone électrique de 6 cases. Rembarqué quand le générateur se replie.",
 };

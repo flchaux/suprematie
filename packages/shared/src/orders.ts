@@ -48,6 +48,8 @@ export const O = {
   DELIVER: 51,
   /** Reine de la Souche : apprivoiser un nid de mordeurs sauvage : [drapeaux, réf. du nid, n, unités…] */
   TAME: 52,
+  /** Transhumants : le générateur nomade plante un poteau relais : [réf. du générateur, x, y (cases)] */
+  PLANT_POLE: 53,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -228,6 +230,10 @@ export function deliver(ids: number[], item: number, queue = false): Cmd {
 /** Souche : la Reine apprivoise le nid de mordeurs sauvage `nest` (référence de bâtiment). */
 export function tame(ids: number[], nest: number, queue = false): Cmd {
   return target(O.TAME, ids, nest, queue);
+}
+/** Transhumants : le générateur nomade `gen` plante un poteau relais sur la case (x, y). */
+export function plantPole(gen: number, x: number, y: number): Cmd {
+  return [O.PLANT_POLE, gen | 0, x | 0, y | 0];
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {

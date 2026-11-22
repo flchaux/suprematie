@@ -1151,6 +1151,7 @@ export class GameClient {
     if (e.button === 0) {
       if (ui.mode === "build") {
         if (this.deployUnits.length) this.placeDeploy(e.shiftKey);
+        else if (this.poleGen) this.placePole(e.shiftKey);
         else this.placeBuildings(e.shiftKey);
         return;
       }
@@ -1578,6 +1579,7 @@ export class GameClient {
   }
   cancelMode(): void {
     this.deployUnits = [];
+    this.poleGen = null;
     ui.mode = "";
     ui.buildKind = -1;
     this.resetLine();
@@ -2303,6 +2305,7 @@ export class GameClient {
   /** Mode placement du déploiement : le fantôme du module du premier chenillard suit la souris. */
   private startDeploy(list: { id: number; kind: number }[]): void {
     if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
+    this.poleGen = null;
     this.deployUnits = list;
     ui.buildKind = this.data!.units[list[0].kind].deploys;
     ui.mode = "build";
@@ -2334,10 +2337,67 @@ export class GameClient {
     if (shift && rest.length) this.startDeploy(rest);
     else this.cancelMode();
   }
+  /**
+   * générateur nomade qui plante des poteaux (mode placement des poteaux) : sa référence, le centre de son
+   * emprise (cases), ses poteaux (cases), la portée de liaison d'un poteau (cases) et le plafond
+   */
+  poleGen: { ref: number; cx: number; cy: number; poles: [number, number][]; reach: number; max: number } | null = null;
+
+  /** Transhumants : le générateur sélectionné plante ses poteaux relais (fantôme du poteau, clic pour le planter). */
+  startPole(): void {
+    const info = ui.buildingInfo as Record<string, any> | null;
+    const sel = ui.selBuildings.find((b) => b.owner === ui.me && this.data?.buildings[b.kind].key === "t_generator");
+    const kind = this.data?.buildings.findIndex((b) => b.key === "t_pole") ?? -1;
+    if (!sel || !info?.transh?.poles || kind < 0) return;
+    if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
+    this.deployUnits = [];
+    const t = info.transh;
+    this.poleGen = { ref: sel.ref, cx: t.at[0] + 1, cy: t.at[1] + 1, poles: [...t.poles], reach: t.poleReach, max: t.polesMax };
+    if (this.poleGen.poles.length >= this.poleGen.max) {
+      pushMessage(`Ce générateur a déjà planté ses ${this.poleGen.max} poteaux : repliez-en un ou plantez avec un autre générateur`, "alert");
+      sfx.error();
+      this.poleGen = null;
+      return;
+    }
+    ui.buildKind = kind;
+    ui.mode = "build";
+    this.resetLine();
+    this.beltForced = false;
+    sfx.click();
+    this.updateGhost();
+    pushMessage(`Planter un poteau : à ${t.poleReach} cases au plus du générateur ou d'un de ses poteaux (${this.poleGen.max - this.poleGen.poles.length} restants) · Maj+clic : en planter d'autres`, "info");
+  }
+
+  /** case (x, y) à portée du générateur qui plante ou d'un de ses poteaux (règle de transhumants::pole_in_reach) */
+  private poleInReach(x: number, y: number): boolean {
+    const g = this.poleGen;
+    if (!g) return true;
+    const r2 = g.reach * g.reach;
+    const near = (cx: number, cy: number) => (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r2;
+    return near(g.cx, g.cy) || g.poles.some(([px, py]) => near(px + 0.5, py + 0.5));
+  }
+
+  /** Clic en mode placement des poteaux : le générateur plante le poteau du fantôme. */
+  private placePole(shift: boolean): void {
+    const g = this.poleGen;
+    const c = this.ghostCells[0];
+    if (!g || !c || !c.ok) {
+      pushMessage(c && !this.poleInReach(c.x, c.y) ? `Trop loin : un poteau se plante à ${g?.reach ?? 0} cases au plus du générateur ou d'un de ses poteaux` : "Pas la place de planter un poteau ici", "alert");
+      sfx.error();
+      return;
+    }
+    this.cmd(Ord.plantPole(g.ref, c.x, c.y));
+    g.poles.push([c.x, c.y]);
+    this.scene?.addMarker(c.x + 0.5, c.y + 0.5, 0xff9a3c);
+    sfx.confirm();
+    if (shift && g.poles.length < g.max) this.updateGhost();
+    else this.cancelMode();
+  }
+
   /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */
   packSelected(): void {
     if (!this.data) return;
-    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2).map((b) => b.ref);
+    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2 && this.data!.buildings[b.kind].key !== "t_pole").map((b) => b.ref);
     if (refs.length) this.cmd(Ord.fold(refs));
   }
 
@@ -2345,6 +2405,7 @@ export class GameClient {
   startBuild(kind: number): void {
     if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
     this.deployUnits = [];
+    this.poleGen = null;
     ui.buildKind = kind;
     ui.mode = "build";
     this.resetLine();
@@ -2502,7 +2563,7 @@ export class GameClient {
     // machines qui peuvent se jumeler : une rangée se pose en glissant
     const machine = isMachine(def.cls);
     // placement d'un module de chenillard : un seul fantôme, pas de file
-    const lineable = !this.deployUnits.length && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine);
+    const lineable = !this.deployUnits.length && !this.poleGen && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine);
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const splitters = isBelt ? this.splitterTiles() : new Map<number, { dir: number; outs: number; owner: number }>();
@@ -2572,6 +2633,8 @@ export class GameClient {
     }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.scene.ghostLift = 0;
+    // poteaux d'un générateur nomade : à portée de lui ou d'un de ses poteaux
+    if (this.poleGen) okAt = okAt.map((ok, i) => ok && this.poleInReach(cells[i].x, cells[i].y));
     this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0, twins: twins[i] ?? 0 }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
