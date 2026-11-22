@@ -355,8 +355,9 @@ export class Entities {
     }
     const bScale = (b: (typeof data.buildings)[number]) => (built: Built) => buildingScale(b.w, built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z, b.reach);
     for (const b of data.buildings) {
-      // bâtiments qui reçoivent des objets : leurs trappes (fermées) font partie du modèle
-      const hatched = (built: Built) => (RECEIVERS.has(b.cls) && b.w === b.h && b.w > 1 ? withHatches(built, b.w) : built);
+      // bâtiments qui reçoivent des objets : leurs trappes (fermées) font partie du modèle ; pas ceux de la
+      // Souche (organes vivants, sans tapis ni bras)
+      const hatched = (built: Built) => (RECEIVERS.has(b.cls) && (b.race ?? 0) !== 1 && b.w === b.h && b.w > 1 ? withHatches(built, b.w) : built);
       if (b.cls === BClass.Belt) {
         const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(0.4));
         this.buildingMeshes.push(new KindMesh(this.group, built, bScale(b)(built), TEX_PER_TILE_BUILDING));
@@ -1567,7 +1568,8 @@ export class Entities {
     for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const kind = buf[o + 1] & 0xff;
       const def = this.data.buildings[kind];
-      if (!RECEIVERS.has(def.cls) || buf[o + 4] < 65536) continue;
+      // la Souche n'a pas de trappes (voir hatched)
+      if (!RECEIVERS.has(def.cls) || (def.race ?? 0) === 1 || buf[o + 4] < 65536) continue;
       const owner = (buf[o + 1] >> 8) & 0xff;
       if (!spectator && (f.players[owner]?.team ?? owner) !== myTeam) continue;
       const dir = (buf[o + 1] >> 16) & 3;
