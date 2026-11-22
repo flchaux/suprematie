@@ -23,7 +23,8 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 ///   drones) ; le stock commun des équipes n'est plus écrit. Une sauvegarde plus ancienne est convertie
 ///   à la lecture (`convert_reserve`) ; la réserve du joueur ne garde que les monnaies de race (`purse`).
 /// - 5 : apprivoisement par la Souche (Reine qui apprivoise un nid, nids greffés, bêtes calmées).
-pub const VERSION: u32 = 5;
+/// - 6 : relais logistiques (relais propriétaire d'un drone de ravitaillement, `Carrier::relay`).
+pub const VERSION: u32 = 6;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])

@@ -147,6 +147,7 @@ Les bâtiments de production viennent de Factorio, les bâtiments militaires de 
 | Générateur principal | Générateur de départ : grande zone, brûle de l'hydrocarbure | 0 |
 | Générateur | Crée une zone électrique, brûle de l'hydrocarbure ou du carburant | 0 |
 | Relais | Étend une zone électrique (petite zone) et relie les zones | 0 |
+| Relais logistique | Étend le réseau des dépôts : ses drones portent, depuis les dépôts reliés de relais en relais, ce qui manque aux chantiers, usines et générateurs de sa zone (voir economie.md) | 1 |
 | Centrale à hydrocarbure | Grosse production d'énergie, brûle de l'hydrocarbure ou du carburant | 2 |
 | Centrale géothermique | Posée sur un geyser, produit sans combustible une énergie qui ondule | 2 |
 

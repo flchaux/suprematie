@@ -40,8 +40,10 @@ pub struct Carrier {
     pub load: u16,
     /// à quai : la cargaison a été livrée, le chargement peut commencer
     pub ready: bool,
+    /// drone de ravitaillement d'un relais logistique : référence du relais (0 : drone du constructeur `a`)
+    pub relay: u32,
 }
-crate::ser_struct!(Carrier { alive, kind, owner, a, b, state, timer, path, pos, len, x, y, from, to, angle, cargo, load, ready });
+crate::ser_struct!(Carrier { alive, kind, owner, a, b, state, timer, path, pos, len, x, y, from, to, angle, cargo, load, ready; since 6: relay });
 
 const N: usize = NUM_ITEMS;
 

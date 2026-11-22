@@ -43,7 +43,7 @@ export interface GameData {
   fuel?: { hydrocarbon: number; refined: number; cell: number; tankUnits: number };
   /** dépôts : plafond par objet et par niveau, amélioration, filtres de sortie ; drones de ravitaillement
    * (objets par voyage, vitesse), drones et rayon des usines, rayon « à portée » (paiements immédiats, affichage) */
-  depot?: { cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number; droneCap: number; droneSpeed: number; factoryDrones: number; factorySupply: number; near: number };
+  depot?: { cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number; droneCap: number; droneSpeed: number; factoryDrones: number; factorySupply: number; near: number; relayRange: number; relayLink: number; relayDrones: number };
   extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; /** durée de l'amélioration vers ce niveau (s) */ time?: number }[];
   /** niveaux de la fonderie (amélioration sur place) : vitesse et énergie en %, coût, recherche, durée (s) */
   furnaceLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; time: number }[];
@@ -60,7 +60,7 @@ export interface GameData {
 export const BClass = {
   Extractor: 0, Belt: 1, Inserter: 2, Crafter: 3, Lab: 4, Depot: 5, Power: 6, Pylon: 7, Factory: 8, Radar: 9, Wall: 10,
   Turret: 11, Shield: 12, Transfer: 13, Gate: 14, Silo: 15, AntiMissile: 16, Beacon: 17, Orbital: 18,
-  Warehouse: 19, Rail: 20, Station: 21, CargoPad: 22, Router: 23, Portal: 24, Roboport: 25, Nest: 26, Ruin: 27, Organ: 28,
+  Warehouse: 19, Rail: 20, Station: 21, CargoPad: 22, Router: 23, Portal: 24, Roboport: 25, Nest: 26, Ruin: 27, Organ: 28, Relay: 29,
 } as const;
 /** Objets des races : sève et sels (réserve des réseaux de la Souche), ADN (recherche de la Souche), relevés (recherche des Transhumants). */
 export const SEVE = 27;

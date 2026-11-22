@@ -23,6 +23,7 @@ import { escapeAction, menuPauses, type MenuRole } from "./gameMenu.ts";
 import { isTextField, keyboardPan, syncModifiers, type FocusLike } from "./heldKeys.ts";
 import { isMachine, machineRow } from "./machineRow.ts";
 import * as Belts from "./belts.ts";
+import { shortCells } from "./reach.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -69,7 +70,8 @@ export class GameClient {
   pending = new Map<number, (r: unknown) => void>();
   lastTick = 0;
   /** `twins` : cases de bord collées à une future machine jumelle (liseré vert, voir sim twins::twin_preview) */
-  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[] = [];
+  /** fantôme de pose ; `short` : posable, mais le disponible à portée ne couvre pas son coût (cumulé le long de la file) */
+  ghostCells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number; short?: boolean }[] = [];
   ghostStart: { x: number; y: number } | null = null;
   lastUiUpdate = 0;
   lastMinimap = 0;
@@ -400,7 +402,8 @@ export class GameClient {
     if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers" || scene === "nomades") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
-    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "nomades";
+    // ?demo=relais : chaîne de relais logistiques qui ravitaille un chantier et une usine éloignés (joueur 0)
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "nomades" || scene === "relais";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -504,6 +507,40 @@ export class GameClient {
     });
   }
 
+  /**
+   * Disponible pour payer une construction en un lieu (voir sim render::reach_stock) : stocks à moins de
+   * `r` cases de la case (x, y), réseau des relais qui la couvrent, soutes des constructeurs `ids`.
+   */
+  private reachSent = 0;
+  private reachKey = "";
+  private reachAt = 0;
+  private async reachStock(x: number, y: number, r: number, ids: number[]): Promise<number[] | null> {
+    const key = `${x},${y},${r},${ids.join(",")}`;
+    const now = performance.now();
+    // même lieu interrogé il y a moins de 250 ms : réponse connue
+    if (key === this.reachKey && now - this.reachAt < 250 && ui.buildReach) return ui.buildReach;
+    this.reachKey = key;
+    this.reachAt = now;
+    return (await this.query<number[] | null>("reachStock", [ui.me, x, y, r, ...ids])) ?? null;
+  }
+  /** Hors de la pose : disponible autour du premier constructeur choisi (son rayon de ravitaillement), sinon
+   * autour du centre de l'écran (rayon des paiements immédiats). Une requête à la fois. */
+  private queryBuildReach(sc: GameScene): void {
+    const now = performance.now();
+    if (now - this.reachSent < 2000 || !this.frame || !this.data || ui.me < 0 || ui.spectator) return;
+    this.reachSent = now;
+    const me = ui.me;
+    const b = this.selectedUnits().find((u) => this.data!.units[u.kind].buildPower > 0);
+    const near = this.data.depot?.near ?? 30;
+    const at = b ? { x: Math.floor(b.x / TILE), y: Math.floor(b.y / TILE), r: Math.max(near, this.data.units[b.kind].supply), ids: this.engineers() } : { x: Math.floor(sc.target.x), y: Math.floor(sc.target.z), r: near, ids: [] };
+    void this.reachStock(at.x, at.y, at.r, at.ids).then((v) => {
+      this.reachSent = 0;
+      if (!v || ui.me !== me || (ui.mode === "build" && this.ghostCells.length)) return;
+      ui.buildReach = v;
+      ui.buildReachAt = b ? "builder" : "view";
+    });
+  }
+
   // ---------- boucle d'affichage ----------
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
@@ -529,6 +566,7 @@ export class GameClient {
       this.lastUiUpdate = now;
       this.updateUi();
       this.queryZone(sc);
+      if (!(ui.mode === "build" && this.ghostCells.length)) this.queryBuildReach(sc);
     }
     // zones électriques : vue électrique (touche maintenue) ou pose d'un bâtiment qui consomme ou alimente
     const pv = keymap.held("powerView", this.keys);
@@ -2667,11 +2705,19 @@ export class GameClient {
       for (const c of cells) args.push(c.x, c.y, c.dir | rf);
       twins = (await this.query<number[] | null>("twinPreview", args)) ?? [];
     }
+    // matériaux : disponible à portée du lieu (stocks à moins de 30 cases, réseau des relais, soutes des
+    // constructeurs choisis) ; les cases de la file qu'il ne couvre plus (coût cumulé) sont ambre
+    const reach = def.cost.length && ui.race === 0 ? await this.reachStock(cur.x + (def.w >> 1), cur.y + (def.h >> 1), this.data.depot?.near ?? 30, this.engineers()) : null;
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
+    if (reach) {
+      ui.buildReach = reach;
+      ui.buildReachAt = "cursor";
+    }
     this.scene.ghostLift = 0;
     // poteaux d'un générateur nomade : à portée de lui ou d'un de ses poteaux
     if (this.poleGen) okAt = okAt.map((ok, i) => ok && this.poleInReach(cells[i].x, cells[i].y));
-    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0, twins: twins[i] ?? 0 }));
+    const short = shortCells(reach, def.cost, cells.map((_, i) => !!okAt[i]));
+    this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0, twins: twins[i] ?? 0, short: short[i] }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
       for (const c of this.ghostCells) belts.set(c.y * this.map.w + c.x, { dir: c.dir, owner: ui.me });
@@ -2681,7 +2727,9 @@ export class GameClient {
       this.scene.setGhost(ui.buildKind, this.ghostCells.map((c) => ({ ...c, shape: ui.buildSplit })));
     } else this.scene.setGhost(ui.buildKind, this.ghostCells);
     const wpn = def.weapon >= 0 ? this.data.weapons[def.weapon] : null;
-    this.scene.showRange(cur.x + def.w / 2, cur.y + def.h / 2, wpn ? wpn.range : def.radar || def.shieldR || 0);
+    // portée : arme, radar, bouclier ; relais logistique : sa zone (dépôts du réseau, destinations servies)
+    const relayR = def.cls === BClass.Relay ? (this.data.depot?.relayRange ?? 0) : 0;
+    this.scene.showRange(cur.x + def.w / 2, cur.y + def.h / 2, wpn ? wpn.range : def.radar || def.shieldR || relayR);
   }
 
   private placeBuildings(shift: boolean): void {

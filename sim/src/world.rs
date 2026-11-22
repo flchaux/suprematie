@@ -584,6 +584,8 @@ pub struct World {
     pub n_teams: u8,
     /// dépôts et entrepôts d'équipe terminés, par indice croissant (dérivé, voir drones::store_added)
     pub stores: Vec<u32>,
+    /// relais logistiques terminés, par indice croissant (dérivé, voir drones::store_added)
+    pub relays: Vec<u32>,
     /// trains et drones de fret
     pub carriers: Vec<crate::logistics::Carrier>,
     /// bâtiments détruits à reconstruire (fantômes) : les ingénieurs inactifs s'en chargent
@@ -693,6 +695,7 @@ impl World {
             buildings_version: 0,
             n_teams,
             stores: Vec::new(),
+            relays: Vec::new(),
             carriers: Vec::new(),
             ghosts: Vec::new(),
             shooter: NONE,

@@ -234,6 +234,26 @@ pub extern "C" fn twin_preview(n_words: u32) -> *const u8 {
     set_out_i32(&v)
 }
 
+/// Disponible pour payer en un point (voir render::reach_stock). Tampon d'entrée (i32) : [joueur, x, y
+/// (cases, centre), rayon (cases), puis identifiants des constructeurs dont la soute compte…] ; renvoie la
+/// quantité par objet.
+#[no_mangle]
+pub extern "C" fn reach_stock(n_words: u32) -> *const u8 {
+    let a = read_i32s(n_words);
+    let v = with_world(
+        |w| {
+            if a.len() < 4 || a[0] < 0 {
+                return Vec::new();
+            }
+            let ids: Vec<u32> = a[4..].iter().map(|&v| v as u32).collect();
+            let t = crate::fixed::TILE;
+            render::reach_stock(w, a[0] as u8, a[1] * t + t / 2, a[2] * t + t / 2, a[3].max(0) * t, &ids)
+        },
+        Vec::new(),
+    );
+    set_out_i32(&v)
+}
+
 /// Aperçu de pose d'une file (voir buildings::can_place_line). Tampon d'entrée (i32) : [joueur, type, puis
 /// (x, y, dir)…] ; renvoie 1 ou 0 par emplacement.
 #[no_mangle]
@@ -392,6 +412,15 @@ pub extern "C" fn chantiers_demo() -> u32 {
     h
 }
 
+/// Démo des relais logistiques : chaîne de relais qui ravitaille un chantier et une usine éloignés.
+#[no_mangle]
+pub extern "C" fn relais_demo() -> u32 {
+    let w = stress::relais_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des ascenseurs de tapis : files qui changent de niveau (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn lifts_demo() -> u32 {
@@ -458,6 +487,8 @@ mod anciens_tests;
 mod main_gen_tests;
 #[cfg(test)]
 mod drones_tests;
+#[cfg(test)]
+mod relays_tests;
 #[cfg(test)]
 mod pickup_tests;
 #[cfg(test)]

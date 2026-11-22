@@ -22,6 +22,8 @@ import { worldPerPixel } from "./siteBars.ts";
 
 const PAD_OK = new THREE.Color(0.2, 0.75, 0.35);
 const PAD_BAD = new THREE.Color(1.6, 0.12, 0.1);
+// posable, mais le disponible à portée (dépôts, relais logistiques, soute) ne couvre pas le coût
+const PAD_SHORT = new THREE.Color(1.5, 0.75, 0.1);
 /** distance de caméra où les pièces fines des modèles disparaissent (LOD_FAR) et reviennent (LOD_NEAR) */
 const LOD_FAR = 95;
 const LOD_NEAR = 85;
@@ -333,7 +335,7 @@ export class GameScene {
   /** dalles sous les cases du fantôme : vert pâle si la pose est possible, rouge si la case est occupée */
   ghostPads: THREE.InstancedMesh | null = null;
   private padN = 0;
-  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number; floor?: number; twins?: number }[]): void {
+  setGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; shape?: number; floor?: number; twins?: number; short?: boolean }[]): void {
     if (kind < 0) return this.setGhosts([]);
     const groups = [0, 1, 2].map((variant) => ({ kind, variant, cells: cells.filter((c) => (c.shape ?? 0) === variant) }));
     this.setGhosts(groups);
@@ -343,7 +345,7 @@ export class GameScene {
    * Fantômes de plusieurs types à la fois (plans) : vert si la case est libre, rouge sinon,
    * ou la teinte donnée (aperçu d'une copie). Les types absents de la liste sont cachés.
    */
-  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[]; tint?: number }[]): void {
+  setGhosts(groups: { kind: number; variant?: number; cells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number; short?: boolean }[]; tint?: number }[]): void {
     const shown = new Set(groups.filter((g) => g.cells.length).map((g) => g.kind * 4 + (g.variant ?? 0)));
     for (const [k, g] of this.ghostMeshes) g.mesh.visible = shown.has(k);
     if (!this.ghostPads) {
@@ -410,7 +412,7 @@ export class GameScene {
   }
 
   private edgeN = 0;
-  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number }[], tint?: number, variant = 0): void {
+  private fillGhost(kind: number, cells: { x: number; y: number; dir: number; ok: boolean; floor?: number; twins?: number; short?: boolean }[], tint?: number, variant = 0): void {
     const key = kind * 4 + variant;
     let g = this.ghostMeshes.get(key);
     if (!g || g.mesh.count === undefined) {
@@ -435,6 +437,8 @@ export class GameScene {
     const m = new THREE.Matrix4();
     const good = tint !== undefined ? new THREE.Color(tint) : new THREE.Color(0.4, 1, 0.5);
     const bad = tint !== undefined ? good : new THREE.Color(1, 0.3, 0.3);
+    // posable, mais le disponible à portée ne couvre pas le coût (voir client.updateGhost) : ambre
+    const short = tint !== undefined ? good : new THREE.Color(1, 0.72, 0.25);
     let n = 0;
     for (const c of cells.slice(0, 512)) {
       // empreinte tournée d'un quart de tour : largeur et hauteur échangées
@@ -449,13 +453,13 @@ export class GameScene {
         const fh = c.dir & 1 ? def.w : def.h;
         m.compose(new THREE.Vector3(cx, y + 0.04 + lift, cz), new THREE.Quaternion(), new THREE.Vector3(fw * 0.96, 1, fh * 0.96));
         pads.setMatrixAt(this.padN, m);
-        pads.setColorAt(this.padN, c.ok ? PAD_OK : PAD_BAD);
+        pads.setColorAt(this.padN, c.ok ? (c.short ? PAD_SHORT : PAD_OK) : PAD_BAD);
         this.padN++;
       }
       if (c.twins) this.fillTwinEdges(c.x, c.y, c.dir & 1 ? def.h : def.w, c.dir & 1 ? def.w : def.h, c.twins, lift);
       m.compose(new THREE.Vector3(cx, y + 0.05 + lift, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2 - (c.dir * Math.PI) / 2), new THREE.Vector3(s, s, s));
       g.mesh.setMatrixAt(n, m);
-      setTeamColor(g, n, c.ok ? good : bad);
+      setTeamColor(g, n, c.ok ? (c.short ? short : good) : bad);
       n++;
     }
     g.mesh.count = n;

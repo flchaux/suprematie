@@ -2397,6 +2397,61 @@ export const BUILDING_MODELS: Record<string, Model> = {
       { shape: "sphere", radius: 0.14, pos: [-1.0, 2.83, -1.0], color: "glow" },
     ],
   },
+  // logistic_relay : relais logistique (2 x 2, dessiné sur 3) — socle de béton à quatre berceaux d'appontage
+  // aux angles (drone posé dans chacun, anneau cyan), fût hexagonal d'acier à bandeau d'équipe, mât effilé
+  // haubané, couronne d'émetteurs tournante (pivot « emetteur » : quatre paraboles ambre vers les relais
+  // voisins), feu cyan au sommet
+  logistic_relay: {
+    parts: [
+      ...socle(3),
+      ...filets(3),
+      // fût central hexagonal, bandeau d'équipe, trappe de service
+      { shape: "cylinder", sides: 6, radius: 0.62, radiusTop: 0.5, height: 0.9, pos: [0, 0.7, 0], bevel: 0.04, color: "metal" },
+      { shape: "cylinder", sides: 6, radius: 0.54, height: 0.14, pos: [0, 1.2, 0], color: "faction" },
+      { shape: "torus", radius: 0.56, tube: 0.025, sides: 16, pos: [0, 1.29, 0], color: "glow" },
+      { shape: "box", size: [0.36, 0.44, 0.04], pos: [0, 0.62, 0.55], color: "black" },
+      { shape: "box", size: [0.3, 0.03, 0.05], pos: [0, 0.88, 0.56], color: "amber", fine: true },
+      // berceaux d'appontage aux quatre angles : plot d'acier, aire sombre à anneau cyan, drone posé
+      ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].flatMap(([sx, sz]): Part[] => {
+        const x = lotAr(sx * 0.98);
+        const z = lotAr(sz * 0.98);
+        return [
+          { shape: "cylinder", sides: 8, radius: 0.36, height: 0.16, pos: [x, 0.33, z], bevel: 0.03, color: "steel" },
+          { shape: "cylinder", sides: 12, radius: 0.3, height: 0.03, pos: [x, 0.425, z], color: "dark" },
+          { shape: "torus", radius: 0.3, tube: 0.018, sides: 12, pos: [x, 0.44, z], color: "glow" },
+          { shape: "box", size: [0.42, 0.012, 0.06], pos: [x, 0.445, z], rot: [0, 45 * sx * sz, 0], color: "hazard", fine: true },
+          { shape: "lathe", sides: 10, pos: [x, 0.45, z], color: "light", profile: [[0, 0], [0.11, 0], [0.14, 0.04], [0.1, 0.09], [0, 0.11]] },
+          { shape: "box", size: [0.42, 0.02, 0.035], pos: [x, 0.52, z], rot: [0, 45, 0], color: "dark" },
+          { shape: "box", size: [0.42, 0.02, 0.035], pos: [x, 0.52, z], rot: [0, -45, 0], color: "dark" },
+          ...[45, 135, 225, 315].map((a): Part => ({ shape: "cylinder", sides: 10, radius: 0.065, height: 0.01, pos: [lotAr(x + Math.sin((a * Math.PI) / 180) * 0.2), 0.54, lotAr(z + Math.cos((a * Math.PI) / 180) * 0.2)], color: "steel", fine: true })),
+          { shape: "sphere", radius: 0.03, pos: [x, 0.57, z], color: "faction", fine: true },
+          // passerelle du fût au berceau
+          { shape: "box", size: [0.08, 0.05, 0.7], pos: [lotAr(sx * 0.6), 0.34, lotAr(sz * 0.6)], rot: [0, 45 * sx * sz, 0], color: "dark", fine: true },
+        ];
+      }),
+      // mât effilé à bagues, haubans vers les plots
+      { shape: "cylinder", sides: 8, radius: 0.16, radiusTop: 0.08, height: 1.7, pos: [0, 2.15, 0], color: "light" },
+      { shape: "torus", radius: 0.14, tube: 0.02, sides: 8, pos: [0, 1.65, 0], color: "steel", fine: true },
+      { shape: "torus", radius: 0.11, tube: 0.02, sides: 8, pos: [0, 2.35, 0], color: "steel", fine: true },
+      ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz]): Part => ({ shape: "tube", radius: 0.012, sides: 4, path: [[0, 2.5, 0], [lotAr(sx * 0.8), 0.42, lotAr(sz * 0.8)]], color: "steel", fine: true })),
+      // couronne d'émetteurs tournante : moyeu, anneau cyan, quatre paraboles ambre
+      { shape: "cylinder", sides: 8, radius: 0.18, height: 0.14, pos: [0, 2.9, 0], color: "dark", pivot: "emetteur" },
+      { shape: "torus", radius: 0.42, tube: 0.03, sides: 16, pos: [0, 2.9, 0], color: "glow", parent: "emetteur" },
+      ...[0, 90, 180, 270].flatMap((a): Part[] => {
+        const r = (a * Math.PI) / 180;
+        const dx = lotAr(Math.sin(r));
+        const dz = lotAr(Math.cos(r));
+        return [
+          { shape: "box", size: [0.04, 0.04, 0.42], pos: [lotAr(dx * 0.21), 2.9, lotAr(dz * 0.21)], rot: [0, a, 0], color: "steel", parent: "emetteur" },
+          { shape: "lathe", sides: 12, pos: [lotAr(dx * 0.48), 2.9, lotAr(dz * 0.48)], rot: [90, 0, -a], color: "light", parent: "emetteur", profile: [[0, 0], [0.1, 0.01], [0.17, 0.05], [0.19, 0.07], [0, 0.02]] },
+          { shape: "sphere", radius: 0.035, pos: [lotAr(dx * 0.56), 2.9, lotAr(dz * 0.56)], color: "amber", parent: "emetteur", fine: true },
+        ];
+      }),
+      // feu cyan au sommet
+      { shape: "cylinder", sides: 8, radius: 0.06, height: 0.3, pos: [0, 3.12, 0], color: "steel" },
+      { shape: "sphere", radius: 0.12, pos: [0, 3.32, 0], color: "glow" },
+    ],
+  },
   // faune : nid de mordeurs (voir faune.ts)
   ...NEST_MODELS,
   ...GEO_MODELS,

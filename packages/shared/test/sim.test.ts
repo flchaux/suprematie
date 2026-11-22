@@ -16,9 +16,9 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 81 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 16 des Transhumants), 71 bâtiments (52, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
+  it("contient 81 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 16 des Transhumants), 72 bâtiments (53 dont le relais logistique, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
     expect(data.units.length).toBe(81);
-    expect(data.buildings.length).toBe(71);
+    expect(data.buildings.length).toBe(72);
     expect(data.buildings.filter((b) => b.race === 2).length).toBe(10);
     expect(data.techs.length).toBe(64);
     expect(data.races.map((r) => r.key)).toEqual(["industriels", "souche", "transhumants"]);
@@ -136,6 +136,22 @@ describe("simulation", () => {
     // un seul laboratoire, ou une case impossible : aucun liseré
     expect(Array.from(a.twinPreview([0, lab, x, y, 0]))).toEqual([0]);
     expect(Array.from(a.twinPreview([0, lab, x, y, 0, -50, -50, 0]))).toEqual([0, 0]);
+  });
+  it("disponible à portée (couleur des coûts) : soute du commandant près de lui, ou partout s'il construit", async () => {
+    const a = await Sim.load(wasm);
+    a.init(params);
+    const v = parseBotDump(a.botDump());
+    const c = v.units.find((u) => u.id === v.players[0].commander)!;
+    const iron = data.items.findIndex((it) => it.key === "iron_plate");
+    const [cx, cy] = [c.x >> 8, c.y >> 8];
+    // ressources de départ dans sa soute : à portée près de lui
+    expect(a.reachStock([0, cx + 5, cy, 30])[iron]).toBe(300);
+    // loin de lui, sans constructeur : rien (pas le stock de tout le joueur)
+    expect(a.reachStock([0, cx + 120, cy, 30])[iron]).toBe(0);
+    // loin, mais construit par le commandant : il emporte sa soute
+    expect(a.reachStock([0, cx + 120, cy, 30, c.id])[iron]).toBe(300);
+    // pas compté deux fois quand il est à portée
+    expect(a.reachStock([0, cx + 5, cy, 30, c.id])[iron]).toBe(300);
   });
   it("produit un tampon de rendu lisible", async () => {
     const a = await Sim.load(wasm);

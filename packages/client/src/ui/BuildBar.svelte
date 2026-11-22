@@ -15,6 +15,8 @@
   const idx = $derived(ui.data ? Object.fromEntries(ui.data.buildings.map((b, i) => [b.key, i])) : {});
   const short = (n: string) => n.replace("Tourelle ", "T. ").replace("Générateur de bouclier", "Bouclier").replace("Centrale à hydrocarbure", "Centrale").replace("Silo de missile stratégique", "Silo stratégique").replace("Plateforme de transfert", "Transfert").replace("Défense antimissile", "Antimissile").replace("Balise d'hyperespace", "Balise").replace("Portique expérimental", "Portique");
   const bKey = $derived(keyOf("buildMenu"));
+  // lieu du disponible qui colore le coût (voir client.queryBuildReach)
+  const REACH_AT = { cursor: "En rouge : ce qui manque à portée de l'emplacement visé", builder: "En rouge : ce qui manque à portée du constructeur choisi", view: "En rouge : ce qui manque à portée du centre de l'écran" };
 </script>
 
 <div class="panel build">
@@ -56,7 +58,8 @@
             <b>{b.name}</b> <span class="dim num">{b.w}×{b.h}</span><br />
             {#if BUILDING_DESCS[key]}<span class="bdesc">{BUILDING_DESCS[key]}</span><br />{/if}
             {#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche requise : {ui.data?.techs[b.tech].name}</span><br />{/if}
-            <Cost cost={b.cost} />
+            <Cost cost={b.cost} have={ui.race === 0 ? ui.buildReach : undefined} />
+            {#if ui.race === 0 && b.cost.length}<span class="reach dim">{REACH_AT[ui.buildReachAt]}</span><br />{/if}
             {#if b.powerUse}<span class="dim"><Icon name="power" size={12} /> Consomme {b.powerUse} kW</span><br />{/if}
             {#if b.powerProd}<span class="good"><Icon name="power" size={12} /> Produit {b.powerProd} kW</span><br />{/if}
             {#if b.deposit === 255}<span class="dim">Se pose sur un gisement</span>{/if}
@@ -106,5 +109,6 @@
     .card img { width: 48px; height: 48px; }
   }
   .nomad { grid-column: 1 / -1; margin: 6px 4px; line-height: 1.45; color: var(--dim); font-size: 12px; }
+  .reach { font-size: 11px; }
   .bdesc { display: block; margin: 3px 0; line-height: 1.4; max-width: 340px; color: color-mix(in srgb, var(--text) 82%, transparent); }
 </style>

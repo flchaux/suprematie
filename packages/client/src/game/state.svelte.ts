@@ -27,6 +27,14 @@ export const ui = $state({
   tick: 0,
   // joueur local
   stock: [] as number[],
+  /**
+   * Disponible pour payer une construction (couleur des coûts du menu de construction et du fantôme) :
+   * stocks à portée du lieu (fantôme sous le curseur, sinon constructeur choisi, sinon centre de l'écran),
+   * réseau des relais logistiques qui le couvrent et soute des constructeurs choisis ; null tant qu'inconnu.
+   */
+  buildReach: null as number[] | null,
+  /** lieu de `buildReach` : « cursor » (fantôme), « builder » (constructeur choisi), « view » (centre de l'écran) */
+  buildReachAt: "view" as "cursor" | "builder" | "view",
   /** stock commun de l'équipe (entrepôts d'équipe) */
   teamStock: [] as number[],
   /** capacité totale de vos dépôts, par objet */

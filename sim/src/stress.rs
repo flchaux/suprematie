@@ -928,3 +928,48 @@ pub fn nomades_demo() -> World {
     w.power_dirty = true;
     w
 }
+
+/// Démo des relais logistiques (`?demo=relais`, joueur 0) : un dépôt garni, une chaîne de trois relais, au
+/// bout un ingénieur qui bâtit trois chantiers et une usine terrestre qui produit : les drones des relais leur
+/// portent tout depuis le dépôt, à 100 cases. Commandant à côté du dépôt, soute vide. Réseau partout.
+pub fn relais_demo() -> World {
+    let mut w = World::new(&[23, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    w.players[0].researched = u64::MAX;
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx - 50).clamp(8, w.map.w - 140), (sy - 10).clamp(8, w.map.h - 40));
+    flat(&mut w, x0 - 4, y0 - 8, x0 + 128, y0 + 26);
+    let put = |w: &mut World, kind: u16, x: i32, y: i32| -> Option<usize> {
+        let b = place_building(w, 0, kind, x, y, 0)?;
+        complete_building(w, b);
+        Some(b)
+    };
+    if let Some(d) = put(&mut w, B_DEPOT, x0, y0) {
+        for (it, n) in [(IRON_PLATE, 600), (COPPER_PLATE, 400), (GEAR, 300), (CIRCUIT, 300), (STEEL, 200)] {
+            crate::drones::put(&mut w.buildings[d].stash, it, n);
+        }
+    }
+    for k in 0..3 {
+        put(&mut w, B_RELAY, x0 + 10 + 38 * k, y0);
+    }
+    if let Some(c) = w.unit(w.players[0].commander) {
+        w.units.cold[c].hold.clear();
+        for (v, t) in [(&mut w.units.x, x0 - 6), (&mut w.units.px, x0 - 6)] {
+            v[c] = t * TILE;
+        }
+        for v in [&mut w.units.y, &mut w.units.py] {
+            v[c] = (y0 + 1) * TILE;
+        }
+    }
+    let id = w.spawn_unit(U_ENG1, 0, (x0 + 100) * TILE, (y0 + 6) * TILE);
+    if let Some(s) = w.unit(id) {
+        for (k, kind) in [B_GENERATOR, B_LAB, B_FURNACE].into_iter().enumerate() {
+            w.units.cold[s].orders.push(Order::Build { kind, x: x0 + 96 + 5 * k as i32, y: y0 + 10, dir: 0, bid: 0 });
+        }
+    }
+    if let Some(f) = put(&mut w, B_LAND_FACTORY, x0 + 92, y0 - 6) {
+        w.buildings[f].queue.push((U_LINE_ROBOT, 20));
+        w.buildings[f].repeat = true;
+    }
+    w
+}

@@ -171,25 +171,42 @@ pub fn total(v: &[u16]) -> u32 {
 
 // ---------- liste des stocks (dérivée, par indice croissant) ----------
 
-/// Un dépôt ou un entrepôt vient d'être terminé : il entre dans `World::stores`.
+/// Relais logistique.
+#[inline]
+pub fn is_relay(bb: &Building) -> bool {
+    bb.def().class == BClass::Relay
+}
+
+/// Un dépôt, un entrepôt ou un relais vient d'être terminé : il entre dans `World::stores` (ou
+/// `World::relays`).
 pub fn store_added(w: &mut World, b: usize) {
-    if is_store(&w.buildings[b]) {
-        if let Err(p) = w.stores.binary_search(&(b as u32)) {
-            w.stores.insert(p, b as u32);
-        }
+    let list = if is_store(&w.buildings[b]) {
+        &mut w.stores
+    } else if is_relay(&w.buildings[b]) {
+        &mut w.relays
+    } else {
+        return;
+    };
+    if let Err(p) = list.binary_search(&(b as u32)) {
+        list.insert(p, b as u32);
     }
 }
 
-/// Un bâtiment disparaît : il quitte `World::stores`.
+/// Un bâtiment disparaît : il quitte `World::stores` (ou `World::relays`).
 pub fn store_removed(w: &mut World, b: usize) {
     if let Ok(p) = w.stores.binary_search(&(b as u32)) {
         w.stores.remove(p);
     }
+    if let Ok(p) = w.relays.binary_search(&(b as u32)) {
+        w.relays.remove(p);
+    }
 }
 
-/// Reconstruit `World::stores` (après une restauration).
+/// Reconstruit `World::stores` et `World::relays` (après une restauration).
 pub fn rebuild_stores(w: &mut World) {
-    w.stores = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].complete() && is_store(&w.buildings[b])).map(|b| b as u32).collect();
+    let done = |w: &World, b: usize| w.buildings[b].alive && w.buildings[b].complete();
+    w.stores = (0..w.buildings.len()).filter(|&b| done(w, b) && is_store(&w.buildings[b])).map(|b| b as u32).collect();
+    w.relays = (0..w.buildings.len()).filter(|&b| done(w, b) && is_relay(&w.buildings[b])).map(|b| b as u32).collect();
 }
 
 /// Stocks utilisables par `p` à moins de `r` (sous-unités) de (x, y), du plus proche au plus loin, puis
@@ -237,10 +254,10 @@ pub fn take_near(w: &mut World, p: u8, x: i32, y: i32, r: i32, it: u8, n: u16) -
 }
 
 /// Paiement immédiat (sans chantier) : le coût est pris dans les stocks utilisables à moins de
-/// NEAR_SUPPLY cases de (x, y), le plus proche d'abord. Faux, sans rien prendre, s'ils ne couvrent pas tout.
+/// NEAR_SUPPLY cases de (x, y) et dans ceux du réseau des relais qui couvrent (x, y), le plus proche
+/// d'abord. Faux, sans rien prendre, s'ils ne couvrent pas tout.
 pub fn pay_near(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> bool {
-    let r = NEAR_SUPPLY * TILE;
-    let near = stores_near(w, p, x, y, r);
+    let near = supply_stores(w, p, x, y, NEAR_SUPPLY * TILE, RELAY_RANGE * TILE);
     if !cost.iter().all(|&(it, n)| near.iter().map(|&(_, st)| st.has(w, it) as u32).sum::<u32>() >= n as u32) {
         return false;
     }
@@ -252,6 +269,184 @@ pub fn pay_near(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> boo
         w.players[p as usize].consumed[it as usize] += n as u32;
     }
     true
+}
+
+// ---------- relais logistiques ----------
+//
+// Un relais a une zone de RELAY_RANGE cases (entre centres). Deux relais du même joueur à moins de
+// RELAY_LINK cases l'un de l'autre sont reliés. Le réseau d'un point : les relais dont la zone couvre ce
+// point, et ceux qui leur sont reliés de proche en proche ; ses stocks : les stocks utilisables dans la zone
+// d'un de ces relais (dépôts, entrepôts d'équipe, soute du commandant). Les drones des relais qui couvrent
+// une destination (chantier par le constructeur qui le bâtit, usine, générateur) y portent ce qui lui
+// manque depuis les stocks du réseau, en vol direct.
+
+/// Le joueur `p` a-t-il un relais terminé ?
+pub fn has_relay(w: &World, p: u8) -> bool {
+    w.relays.iter().any(|&b| w.buildings[b as usize].owner == p)
+}
+
+/// Relais du joueur `p` reliés au point (x, y) : ceux à moins de `reach` (sous-unités) du point, puis, de
+/// proche en proche, ceux à moins de RELAY_LINK cases d'un relais retenu. Indices de bâtiments, croissants.
+pub fn net_relays(w: &World, p: u8, x: i32, y: i32, reach: i32) -> Vec<usize> {
+    let mine: Vec<(usize, i32, i32)> = w
+        .relays
+        .iter()
+        .map(|&b| b as usize)
+        .filter(|&b| w.buildings[b].owner == p && w.buildings[b].alive)
+        .map(|b| {
+            let (cx, cy) = w.buildings[b].center();
+            (b, cx, cy)
+        })
+        .collect();
+    if mine.is_empty() || reach <= 0 {
+        return Vec::new();
+    }
+    let r2 = reach as i64 * reach as i64;
+    let l2 = (RELAY_LINK * TILE) as i64 * (RELAY_LINK * TILE) as i64;
+    let mut on = vec![false; mine.len()];
+    let mut stack = Vec::new();
+    for (k, &(_, cx, cy)) in mine.iter().enumerate() {
+        if dist2(x, y, cx, cy) <= r2 {
+            on[k] = true;
+            stack.push(k);
+        }
+    }
+    while let Some(k) = stack.pop() {
+        let (_, ax, ay) = mine[k];
+        for (j, &(_, bx, by)) in mine.iter().enumerate() {
+            if !on[j] && dist2(ax, ay, bx, by) <= l2 {
+                on[j] = true;
+                stack.push(j);
+            }
+        }
+    }
+    mine.iter().zip(on).filter(|e| e.1).map(|e| e.0 .0).collect()
+}
+
+/// Stocks du réseau des relais `rel` : stocks utilisables par `p` à moins de RELAY_RANGE cases d'un de ces
+/// relais, (distance² à (x, y), stock), du plus proche de (x, y) au plus loin.
+pub fn net_stores(w: &World, p: u8, rel: &[usize], x: i32, y: i32) -> Vec<(i64, Store)> {
+    let mut v = Vec::new();
+    if rel.is_empty() {
+        return v;
+    }
+    let rr = (RELAY_RANGE * TILE) as i64 * (RELAY_RANGE * TILE) as i64;
+    let covered = |sx: i32, sy: i32| {
+        rel.iter().any(|&r| {
+            let (cx, cy) = w.buildings[r].center();
+            dist2(sx, sy, cx, cy) <= rr
+        })
+    };
+    for &b in &w.stores {
+        let b = b as usize;
+        if !usable(w, p, b) {
+            continue;
+        }
+        let (cx, cy) = w.buildings[b].center();
+        if covered(cx, cy) {
+            v.push((dist2(x, y, cx, cy), Store::B(b)));
+        }
+    }
+    if let Some(s) = commander_store(w, p) {
+        let (ux, uy) = (w.units.x[s], w.units.y[s]);
+        if covered(ux, uy) {
+            v.push((dist2(x, y, ux, uy), Store::U(s)));
+        }
+    }
+    v.sort_unstable();
+    v
+}
+
+/// Stocks qui ravitaillent le point (x, y) : ceux à moins de `r` (sous-unités), et ceux du réseau des
+/// relais à moins de `relay_reach` du point ; sans doublon, du plus proche au plus loin (puis bâtiments par
+/// indice croissant avant la soute du commandant).
+pub fn supply_stores(w: &World, p: u8, x: i32, y: i32, r: i32, relay_reach: i32) -> Vec<(i64, Store)> {
+    let mut v = stores_near(w, p, x, y, r);
+    if relay_reach > 0 && has_relay(w, p) {
+        let rel = net_relays(w, p, x, y, relay_reach);
+        if !rel.is_empty() {
+            v.extend(net_stores(w, p, &rel, x, y));
+            v.sort_unstable();
+            v.dedup();
+        }
+    }
+    v
+}
+
+/// Drones de relais en vol, par relais : (référence du relais, nombre), par référence croissante.
+type RelayBusy = Vec<(u32, u8)>;
+
+fn relay_busy(w: &World) -> RelayBusy {
+    let mut v: RelayBusy = Vec::new();
+    if w.relays.is_empty() {
+        return v;
+    }
+    let mut refs: Vec<u32> = w.carriers.iter().filter(|c| c.alive && c.kind == DRONE && c.relay != 0).map(|c| c.relay).collect();
+    refs.sort_unstable();
+    for r in refs {
+        match v.last_mut() {
+            Some(e) if e.0 == r => e.1 = e.1.saturating_add(1),
+            _ => v.push((r, 1)),
+        }
+    }
+    v
+}
+
+/// Aide des relais pour une destination en (x, y) : relais du réseau dont la zone la couvre et qui ont des
+/// drones libres (le plus proche d'abord : distance², bâtiment, référence, drones libres), et stocks du réseau
+/// (sans `skip`).
+struct RelayHelp {
+    seeds: Vec<(i64, usize, u32, u8)>,
+    stores: Vec<(i64, Store)>,
+}
+
+fn relay_help(w: &World, p: u8, x: i32, y: i32, skip: Option<Store>, busy: &RelayBusy) -> Option<RelayHelp> {
+    let reach = RELAY_RANGE * TILE;
+    let rel = net_relays(w, p, x, y, reach);
+    let r2 = reach as i64 * reach as i64;
+    let mut seeds: Vec<(i64, usize, u32, u8)> = rel
+        .iter()
+        .filter_map(|&b| {
+            let (cx, cy) = w.buildings[b].center();
+            let d = dist2(x, y, cx, cy);
+            let rf = w.building_ref(b);
+            let used = busy.binary_search_by_key(&rf, |e| e.0).map_or(0, |k| busy[k].1);
+            let free = RELAY_DRONES.saturating_sub(used);
+            (d <= r2 && free > 0).then_some((d, b, rf, free))
+        })
+        .collect();
+    if seeds.is_empty() {
+        return None;
+    }
+    seeds.sort_unstable();
+    let mut stores = net_stores(w, p, &rel, x, y);
+    stores.retain(|&(_, st)| Some(st) != skip);
+    (!stores.is_empty()).then_some(RelayHelp { seeds, stores })
+}
+
+/// Envoie les drones libres des relais de `h` chercher `n` objets `it` dans les stocks du réseau, pour la
+/// destination `home` ; `n` est décompté.
+fn relay_fetch_item(w: &mut World, h: &mut RelayHelp, busy: &mut RelayBusy, owner: u8, home: u32, it: u8, n: &mut u32) {
+    for si in 0..h.stores.len() {
+        let st = h.stores[si].1;
+        while *n > 0 {
+            let Some(k) = h.seeds.iter().position(|e| e.3 > 0) else { return };
+            let q = st.has(w, it).min(DRONE_CAP).min((*n).min(u16::MAX as u32) as u16);
+            if q == 0 {
+                break;
+            }
+            st.take(w, it, q);
+            let (_, rb, rf, _) = h.seeds[k];
+            let (rx, ry) = w.buildings[rb].center();
+            launch(w, owner, home, rx, ry, st, it, q, false, rf);
+            h.seeds[k].3 -= 1;
+            match busy.binary_search_by_key(&rf, |e| e.0) {
+                Ok(j) => busy[j].1 += 1,
+                Err(j) => busy.insert(j, (rf, 1)),
+            }
+            *n -= q as u32;
+        }
+    }
 }
 
 /// Stock utilisable par `p` le plus proche de (x, y), à moins de `r`, qui a de la place pour `it`.
@@ -428,7 +623,8 @@ fn queue_need(w: &World, s: usize, r: i32) -> Needs {
         // qui resteront à son rayon de ravitaillement où qu'il se tienne
         let reuse = matches!(&last, Some((lx, ly, _)) if (lx - cx).abs() <= 4 * TILE && (ly - cy).abs() <= 4 * TILE);
         if !reuse {
-            let mut near = stores_near(w, owner, cx, cy, (r - range - TILE).max(TILE));
+            // relais : seuls ceux dont la zone couvrira le constructeur où qu'il se tienne
+            let mut near = supply_stores(w, owner, cx, cy, (r - range - TILE).max(TILE), RELAY_RANGE * TILE - range - TILE);
             // la soute du commandant compte comme un dépôt, mais pas pour lui-même (elle est déjà « sur lui »)
             near.retain(|&(_, st)| st != Store::U(s));
             last = Some((cx, cy, near));
@@ -445,32 +641,33 @@ fn queue_need(w: &World, s: usize, r: i32) -> Needs {
 
 // ---------- départs des drones ----------
 
-/// Chargements en vol : (constructeur, objet, quantité, en route vers lui, indice du drone).
-type Flights = Vec<(u32, u8, u16, bool, usize)>;
+/// Chargements en vol : (constructeur, objet, quantité, en route vers lui, indice du drone, drone du
+/// constructeur lui-même plutôt que d'un relais).
+type Flights = Vec<(u32, u8, u16, bool, usize, bool)>;
 
 fn flights(w: &World) -> Flights {
     let mut v: Flights = w
         .carriers
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.alive && c.kind == DRONE)
+        .filter(|(_, c)| c.alive && c.kind == DRONE && c.state != RELAY_BACK)
         .map(|(ci, c)| {
             let it = (1..N).find(|&i| c.cargo[i] > 0).unwrap_or(0) as u8;
             // vers le constructeur : au retour, ou à l'aller d'une prise (chargement réservé au dépôt)
-            (c.a, it, c.load, c.state == 3 || !c.ready, ci)
+            (c.a, it, c.load, c.state == 3 || !c.ready, ci, c.relay == 0)
         })
         .collect();
     v.sort_unstable();
     v
 }
 
-/// Drones en vol d'un constructeur, et ce qu'ils lui apportent.
+/// Drones en vol d'un constructeur (les siens), et ce que tous les drones lui apportent (relais compris).
 fn home_flights(fl: &Flights, home: u32) -> (usize, [u32; N]) {
     let a = fl.partition_point(|f| f.0 < home);
     let mut incoming = [0u32; N];
     let mut n = 0;
     for f in fl[a..].iter().take_while(|f| f.0 == home) {
-        n += 1;
+        n += f.5 as usize;
         if f.3 {
             incoming[f.1 as usize] += f.2 as u32;
         }
@@ -478,10 +675,11 @@ fn home_flights(fl: &Flights, home: u32) -> (usize, [u32; N]) {
     (n, incoming)
 }
 
-/// Lance un drone de `home` (en (x, y)) vers le stock `b`, avec `k` objets `it` : réservés au dépôt (prise,
-/// `ready` faux) ou pris dans la soute (vidage, `ready` vrai).
-fn launch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, st: Store, it: u8, k: u16, ready: bool) {
-    let mut c = Carrier { alive: true, kind: DRONE, owner, a: home, b: st.id(w), state: 1, x, y, ready, load: k, ..Carrier::default() };
+/// Lance un drone de `home` (ou du relais `relay`, parti de (x, y)) vers le stock `b`, avec `k` objets
+/// `it` : réservés au dépôt (prise, `ready` faux) ou pris dans la soute (vidage, `ready` vrai).
+#[allow(clippy::too_many_arguments)]
+fn launch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, st: Store, it: u8, k: u16, ready: bool, relay: u32) {
+    let mut c = Carrier { alive: true, kind: DRONE, owner, a: home, b: st.id(w), state: 1, x, y, ready, load: k, relay, ..Carrier::default() };
     c.cargo[it as usize] = k;
     c.to = st.pos(w);
     c.from = (x, y);
@@ -504,7 +702,7 @@ fn fetch_item(w: &mut World, owner: u8, home: u32, x: i32, y: i32, near: &[(i64,
                 break;
             }
             st.take(w, it, k);
-            launch(w, owner, home, x, y, st, it, k, false);
+            launch(w, owner, home, x, y, st, it, k, false, 0);
             *n -= k as u32;
             *free -= 1;
         }
@@ -525,11 +723,12 @@ pub fn plan(w: &mut World) {
         return;
     }
     let fl = flights(w);
+    let mut rb = relay_busy(w);
     for s in 0..w.units.alive.len() {
         if !w.units.alive[s] || udef(w.units.kind[s]).drones == 0 {
             continue;
         }
-        plan_unit(w, s, &fl);
+        plan_unit(w, s, &fl, &mut rb);
     }
     for i in 0..w.active.len() {
         let b = w.active[i] as usize;
@@ -538,20 +737,21 @@ pub fn plan(w: &mut World) {
             continue;
         }
         match bb.def().class {
-            BClass::Factory if !bb.queue.is_empty() => plan_factory(w, b, &fl),
-            BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::fuel_tank(bb.kind) => plan_generator(w, b, &fl),
+            BClass::Factory if !bb.queue.is_empty() => plan_factory(w, b, &fl, &mut rb),
+            BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::fuel_tank(bb.kind) => plan_generator(w, b, &fl, &mut rb),
             _ => {}
         }
     }
 }
 
 /// Générateur à moitié vide : son drone va chercher du combustible dans les dépôts à moins de
-/// NEAR_SUPPLY cases, de quoi remplir son réservoir.
-fn plan_generator(w: &mut World, b: usize, fl: &Flights) {
+/// NEAR_SUPPLY cases, de quoi remplir son réservoir ; les relais qui le couvrent apportent le reste.
+fn plan_generator(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     let home = w.building_ref(b);
     let (busy, incoming) = home_flights(fl, home);
     let mut free = (GENERATOR_DRONES as usize).saturating_sub(busy);
-    if free == 0 {
+    let relays = has_relay(w, w.buildings[b].owner);
+    if free == 0 && !relays {
         return;
     }
     let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner);
@@ -561,20 +761,39 @@ fn plan_generator(w: &mut World, b: usize, fl: &Flights) {
         room -= n as i32 * crate::buildings::fuel_energy(kind, it as u8);
     }
     let near = stores_near(w, owner, x, y, NEAR_SUPPLY * TILE);
+    let all = if relays { supply_stores(w, owner, x, y, NEAR_SUPPLY * TILE, RELAY_RANGE * TILE) } else { Vec::new() };
     let mut want = [0u32; N];
     for it in [HYDROCARBON, FUEL, ENERGY_CELL] {
         let e = crate::buildings::fuel_energy(kind, it);
-        if e > 0 && room >= e && near.iter().any(|&(_, st)| st.has(w, it) > 0) {
+        if e > 0 && room >= e && near.iter().chain(all.iter()).any(|&(_, st)| st.has(w, it) > 0) {
             want[it as usize] = (room / e) as u32;
             break;
         }
     }
     fetch(w, owner, home, x, y, &near, &mut want, &mut free);
+    if relays {
+        relay_fetch(w, owner, home, x, y, None, rb, &mut want);
+    }
+}
+
+/// Les drones des relais qui couvrent (x, y) vont chercher `want` dans les stocks du réseau (sans `skip`)
+/// pour la destination `home` ; `want` est décompté.
+#[allow(clippy::too_many_arguments)]
+fn relay_fetch(w: &mut World, owner: u8, home: u32, x: i32, y: i32, skip: Option<Store>, rb: &mut RelayBusy, want: &mut [u32; N]) {
+    if want.iter().all(|&n| n == 0) {
+        return;
+    }
+    let Some(mut h) = relay_help(w, owner, x, y, skip, rb) else { return };
+    for (it, n) in want.iter_mut().enumerate().skip(1) {
+        if *n > 0 {
+            relay_fetch_item(w, &mut h, rb, owner, home, it as u8, n);
+        }
+    }
 }
 
 /// Commandant ou ingénieur : chargement avant les chantiers dont les environs n'ont pas les matériaux,
 /// prises pour tous les chantiers de la file, rapatriement de ce qui ne sert plus.
-fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
+fn plan_unit(w: &mut World, s: usize, fl: &Flights, rb: &mut RelayBusy) {
     let def = udef(w.units.kind[s]);
     let owner = w.units.owner[s];
     let home = w.unit_id(s);
@@ -588,12 +807,13 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     // reste au dépôt, le drone revient à vide
     let a = fl.partition_point(|f| f.0 < home);
     let mine = &fl[a..fl[a..].iter().position(|f| f.0 != home).map_or(fl.len(), |k| a + k)];
-    let busy = mine.len();
+    // ses propres drones (ceux des relais qui le ravitaillent ne comptent pas)
+    let busy = mine.iter().filter(|f| f.5).count();
     let mut incoming = [0u32; N];
     for f in mine.iter().filter(|f| f.3) {
         incoming[f.1 as usize] += f.2 as u32;
     }
-    for &(_, it, _, _, ci) in mine.iter().rev() {
+    for &(_, it, _, _, ci, _) in mine.iter().rev() {
         let it = it as usize;
         let c = &w.carriers[ci];
         let surplus = (has(&w.units.cold[s].hold, it as u8) as u32 + incoming[it]).saturating_sub(need[it]);
@@ -633,23 +853,33 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     }
     // un drone qui revient à vide d'une prise annulée reste occupé jusqu'à son retour
     let mut free = (def.drones as usize).saturating_sub(busy);
-    if free == 0 {
+    // relais : leurs drones apportent ce que les siens ne peuvent pas prendre (stocks hors de son rayon,
+    // ou drones tous partis) ; aide calculée au premier besoin
+    let relays = has_relay(w, owner) && !seq.is_empty();
+    if free == 0 && !relays {
         return;
     }
     // prises : pendant un chargement d'abord ce qui manque aux environs des chantiers, puis tout le reste à
     // payer de la file, chantier par chantier dans l'ordre de la file
     let mut near = stores_near(w, owner, x, y, r);
     near.retain(|&(_, st)| st != me);
-    if !near.is_empty() {
+    if !near.is_empty() || relays {
         let mut got = [0u32; N];
         for (it, g) in got.iter_mut().enumerate() {
             *g = have(w, it);
         }
+        let mut help: Option<Option<RelayHelp>> = None;
         let mut go = |w: &mut World, it: usize, target: u32, free: &mut usize| {
             if target > got[it] {
                 let mut n = target - got[it];
                 let before = n;
                 fetch_item(w, owner, home, x, y, &near, it as u8, &mut n, free);
+                if n > 0 && relays {
+                    let h = help.get_or_insert_with(|| relay_help(w, owner, x, y, Some(me), rb));
+                    if let Some(h) = h {
+                        relay_fetch_item(w, h, rb, owner, home, it as u8, &mut n);
+                    }
+                }
                 got[it] += before - n;
             }
         };
@@ -660,7 +890,7 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
         }
         let mut cum = [0u32; N];
         for &(it, n) in &seq {
-            if free == 0 {
+            if free == 0 && !relays {
                 break;
             }
             cum[it as usize] += n;
@@ -682,7 +912,7 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
                     break;
                 }
                 take(&mut w.units.cold[s].hold, it as u8, k);
-                launch(w, owner, home, x, y, st, it as u8, k, true);
+                launch(w, owner, home, x, y, st, it as u8, k, true, 0);
                 extra -= k as u32;
                 free -= 1;
             }
@@ -690,12 +920,14 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     }
 }
 
-/// Usine d'unités : ses drones vont chercher les composants de sa file (réserve d'avance de 2 unités).
-fn plan_factory(w: &mut World, b: usize, fl: &Flights) {
+/// Usine d'unités : ses drones vont chercher les composants de sa file (réserve d'avance de 2 unités) ;
+/// les relais qui la couvrent apportent ce qui manque encore.
+fn plan_factory(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     let home = w.building_ref(b);
     let (busy, incoming) = home_flights(fl, home);
     let mut free = (FACTORY_DRONES as usize).saturating_sub(busy);
-    if free == 0 {
+    let relays = has_relay(w, w.buildings[b].owner);
+    if free == 0 && !relays {
         return;
     }
     let mut want = [0u32; N];
@@ -711,6 +943,9 @@ fn plan_factory(w: &mut World, b: usize, fl: &Flights) {
     let (x, y) = w.buildings[b].center();
     let near = stores_near(w, owner, x, y, FACTORY_SUPPLY * TILE);
     fetch(w, owner, home, x, y, &near, &mut want, &mut free);
+    if relays {
+        relay_fetch(w, owner, home, x, y, None, rb, &mut want);
+    }
 }
 
 // ---------- vol ----------
@@ -723,19 +958,20 @@ fn home_pos(w: &World, home: u32) -> Option<(i32, i32)> {
     w.building(home).map(|b| w.buildings[b].center())
 }
 
-/// Avance le drone vers (tx, ty) ; vrai s'il est arrivé.
+/// Avance le drone vers (tx, ty) ; vrai s'il est arrivé. Les drones des relais vont plus vite.
 fn fly(w: &mut World, ci: usize, tx: i32, ty: i32) -> bool {
     let (x, y) = (w.carriers[ci].x, w.carriers[ci].y);
     let d = dist(x, y, tx, ty);
     let c = &mut w.carriers[ci];
+    let speed = if c.relay != 0 { RELAY_DRONE_SPEED } else { DRONE_SPEED };
     c.to = (tx, ty);
-    if d <= DRONE_SPEED {
+    if d <= speed {
         c.x = tx;
         c.y = ty;
         return true;
     }
-    c.x = x + ((tx - x) as i64 * DRONE_SPEED as i64 / d as i64) as i32;
-    c.y = y + ((ty - y) as i64 * DRONE_SPEED as i64 / d as i64) as i32;
+    c.x = x + ((tx - x) as i64 * speed as i64 / d as i64) as i32;
+    c.y = y + ((ty - y) as i64 * speed as i64 / d as i64) as i32;
     let a = w.trig.atan2((ty - y) as i64, (tx - x) as i64);
     w.carriers[ci].angle = a;
     false
@@ -755,8 +991,24 @@ fn unload_into(w: &mut World, ci: usize, st: Store, all: bool) {
     }
 }
 
-/// Vol d'un drone de ravitaillement. État 1 : vers le dépôt (prise ou vidage) ; 3 : retour au constructeur.
+/// État d'un drone de relais qui a livré : retour à son relais, où il se range.
+pub const RELAY_BACK: u8 = 5;
+
+/// Vol d'un drone de ravitaillement. État 1 : vers le dépôt (prise ou vidage) ; 3 : vers le constructeur
+/// (retour, ou livraison d'un drone de relais) ; RELAY_BACK : drone de relais qui rentre à son relais.
 pub fn update_drone(w: &mut World, ci: usize) {
+    if w.carriers[ci].state == RELAY_BACK {
+        match w.building(w.carriers[ci].relay) {
+            Some(r) => {
+                let (rx, ry) = w.buildings[r].center();
+                if fly(w, ci, rx, ry) {
+                    w.carriers[ci].alive = false;
+                }
+            }
+            None => w.carriers[ci].alive = false,
+        }
+        return;
+    }
     let home = home_pos(w, w.carriers[ci].a);
     let store = Store::resolve(w, w.carriers[ci].b);
     if w.carriers[ci].state == 1 {
@@ -805,10 +1057,19 @@ pub fn update_drone(w: &mut World, ci: usize) {
     if !fly(w, ci, hx, hy) {
         return;
     }
-    // arrivé : le chargement entre dans la soute ou dans la réserve de l'usine
+    // arrivé : le chargement entre dans la soute ou dans la réserve de l'usine ; un drone de relais rentre
+    // ensuite à son relais
     let cargo = w.carriers[ci].cargo;
     let home = w.carriers[ci].a;
-    w.carriers[ci].alive = false;
+    let c = &mut w.carriers[ci];
+    c.cargo = [0; N];
+    c.load = 0;
+    c.ready = false;
+    if c.relay != 0 {
+        c.state = RELAY_BACK;
+    } else {
+        c.alive = false;
+    }
     if let Some(s) = w.unit(home) {
         for (it, &n) in cargo.iter().enumerate() {
             put(&mut w.units.cold[s].hold, it as u8, n);
@@ -827,7 +1088,8 @@ pub fn update_drone(w: &mut World, ci: usize) {
 // ---------- affichage ----------
 
 /// Objets du chantier (ou de l'unité en tête de file d'une usine) qui manquent encore, avec la quantité
-/// disponible à portée (stocks utilisables à moins de NEAR_SUPPLY cases) : [objet, manque, à portée].
+/// disponible à portée (stocks utilisables à moins de NEAR_SUPPLY cases, et ceux du réseau des relais qui
+/// le couvrent) : [objet, manque, à portée].
 pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
     let bb = &w.buildings[b];
     let (x, y) = bb.center();
@@ -837,7 +1099,7 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
         for (k, &(it, n)) in bb.def().cost.iter().enumerate() {
             let miss = (n as u32).saturating_sub(bb.paid[k] as u32);
             if miss > 0 {
-                out.push((it, miss, near_amount(w, bb.owner, x, y, r, it)));
+                out.push((it, miss, reach_amount(w, bb.owner, x, y, r, it)));
             }
         }
     } else if bb.def().class == BClass::Factory {
@@ -845,7 +1107,7 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
             for &(it, n) in udef(k).cost {
                 let miss = (n as u32 * batch(k) as u32).saturating_sub(crate::buildings::factory_has(bb, it) as u32);
                 if miss > 0 {
-                    out.push((it, miss, near_amount(w, bb.owner, x, y, FACTORY_SUPPLY * TILE, it)));
+                    out.push((it, miss, reach_amount(w, bb.owner, x, y, FACTORY_SUPPLY * TILE, it)));
                 }
             }
         }
@@ -853,11 +1115,17 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
     out
 }
 
-/// Ce qui est disponible à portée d'un constructeur : total par objet des stocks utilisables à moins de
-/// son rayon (sans compter `skip`, sa propre soute si c'est un commandant).
+/// Quantité de `it` à portée de (x, y) : stocks à moins de `r` et réseau des relais qui couvrent le point.
+pub fn reach_amount(w: &World, p: u8, x: i32, y: i32, r: i32, it: u8) -> u32 {
+    supply_stores(w, p, x, y, r, RELAY_RANGE * TILE).iter().map(|&(_, st)| st.has(w, it) as u32).sum()
+}
+
+/// Ce qui est disponible à portée d'un point (d'un constructeur, d'un chantier, d'une usine) : total par
+/// objet des stocks utilisables à moins de `r` et de ceux du réseau des relais qui couvrent le point (sans
+/// compter `skip`, la propre soute d'un commandant).
 pub fn in_reach(w: &World, p: u8, x: i32, y: i32, r: i32, skip: Option<Store>) -> [u32; N] {
     let mut v = [0u32; N];
-    for (_, st) in stores_near(w, p, x, y, r) {
+    for (_, st) in supply_stores(w, p, x, y, r, RELAY_RANGE * TILE) {
         if Some(st) == skip {
             continue;
         }

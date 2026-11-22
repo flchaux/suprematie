@@ -8,6 +8,7 @@
   import { BClass, RECIPE_NONE, PACK1, HYDROCARBON, ENERGY_CELL } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
+  import { canPay } from "../game/reach.ts";
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
   import { PLAYER_COLORS } from "../models/generator.ts";
@@ -456,7 +457,7 @@
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
                 <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `${(u.build * u.litter) / 2} s de gestation` : `${u.build} s`}</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}
-                {#if u.litter}<span class="good">Portée de {u.litter} œufs, qui éclosent 15 s après la ponte</span><br /><span class="dim">La portée :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} />{/if}</div>
+                {#if u.litter}<span class="good">Portée de {u.litter} œufs, qui éclosent 15 s après la ponte</span><br /><span class="dim">La portée :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
             </div>
           {/each}
         </div>
@@ -588,6 +589,12 @@
         {@const flying = (info.carriers ?? []).filter((c: { state: number }) => c.state === 1 || c.state === 3).length}
         <span class="dim small">8 robots apportent depuis le stock (le vôtre puis celui de l'équipe) ce qui manque aux fabricants, usines, laboratoires et silos dans un rayon de 25 cases, et évacuent vers le stock les sorties bloquées.</span>
         <div class="row"><span class="kicker">Robots en vol</span> <b class="num">{flying}</b> / 8</div>
+      {:else if bdef.cls === BClass.Relay && info.relayNet}
+        {@const [nRel, nSt] = info.relayNet}
+        <span class="dim small">Ses drones portent, depuis les dépôts de son réseau, ce qui manque aux chantiers, usines et générateurs à moins de {d.depot?.relayRange ?? 20} cases. Il se relie aux relais à moins de {d.depot?.relayLink ?? 40} cases.</span>
+        <div class="row"><span class="kicker">Drones en vol</span> <b class="num">{info.drones ?? 0}</b> / {d.depot?.relayDrones ?? 4}</div>
+        <div class="row"><span class="kicker">Réseau</span> <b class="num">{nRel}</b> {nRel > 1 ? "relais reliés" : "relais"} · <b class="num" class:bad={nSt === 0}>{nSt}</b> {nSt > 1 ? "dépôts" : "dépôt"}</div>
+        {#if nSt === 0}<span class="bad small">Aucun dépôt dans son réseau : posez un dépôt (ou un autre relais relié à un dépôt) à moins de {d.depot?.relayRange ?? 20} cases.</span>{/if}
       {:else if isStation}
         {@const air = bdef.cls === BClass.CargoPad}
         {@const capa = d.carriers?.[air ? 1 : 0]?.capacity ?? (air ? 25 : 400)}
@@ -614,7 +621,7 @@
           <button class="icon-btn" onclick={() => client.setMode("link")}><Icon name="link" size={14} /> {air ? "Ajouter un drone vers…" : "Ajouter un train vers…"}</button>
           {#if (info.carriers ?? []).some((c: { out: number }) => c.out)}<button class="ghost danger icon-btn" title="Retirer les véhicules partant d'ici" onclick={() => client.removeCarriers()}><Icon name="trash" size={14} /></button>{/if}
         </div>
-        {#if d.carriers?.[air ? 1 : 0]}<span class="dim small">Coût d'un {air ? "drone" : "train"} : <Cost cost={d.carriers[air ? 1 : 0].cost} /></span>{/if}
+        {#if d.carriers?.[air ? 1 : 0]}<span class="dim small">Coût d'un {air ? "drone" : "train"} : <Cost cost={d.carriers[air ? 1 : 0].cost} have={info.reach ?? null} /></span>{/if}
       {/if}
       {#if upg && info.build >= 65536}
         <!-- amélioration : le bouton seul ; ce qu'elle apporte et coûte s'affiche au survol, dans une carte -->
@@ -625,13 +632,13 @@
           {:else}
             {@const ok = hasTechUI(upg.tech)}
             <div class="tip upcard">
-              <button class="icon-btn" disabled={!ok || upg.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name={ok ? "plus" : "lock"} size={14} /> {upg.label}</button>
+              <button class="icon-btn" disabled={!ok || !canPay(info.reach ?? null, upg.cost)} onclick={() => client.upgradeBuilding()}><Icon name={ok ? "plus" : "lock"} size={14} /> {upg.label}</button>
               <div class="tt">
                 <b>{upg.label}</b><br />
                 {#if upgCur}<span class="dim">Actuellement :</span> {upgCur}<br />{/if}
                 <span class="dim">Après :</span> {upg.gain}<br />
                 <span class="dim">Chantier :</span> <span class="num">{upg.time}</span> s, {"running" in upg ? "le bâtiment reste en service" : "le bâtiment s'arrête pendant ce temps"}<br />
-                {#if ok}<span class="dim">Coût :</span> <Cost cost={upg.cost} />{:else}<span class="bad"><Icon name="lock" size={12} /> Recherche requise : {d.techs[upg.tech]?.name}</span>{/if}
+                {#if ok}<span class="dim">Coût (pris à portée du bâtiment, réseau des relais compris) :</span> <Cost cost={upg.cost} have={info.reach ?? null} />{:else}<span class="bad"><Icon name="lock" size={12} /> Recherche requise : {d.techs[upg.tech]?.name}</span>{/if}
               </div>
             </div>
           {/if}

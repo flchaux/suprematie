@@ -19,6 +19,7 @@ export interface SimExports {
   zone_economy(player: number, tx: number, ty: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
+  reach_stock(nWords: number): number;
   can_place_line(nWords: number): number;
   tile_info(x: number, y: number): number;
   building_at(x: number, y: number): number;
@@ -37,6 +38,7 @@ export interface SimExports {
   ponte_demo(): number;
   lifts_demo(): number;
   chantiers_demo(): number;
+  relais_demo(): number;
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
   research_queue(player: number): number;
@@ -151,6 +153,13 @@ export class Sim {
   twinPreview(args: number[]): Int32Array {
     return this.outI32(this.ex.twin_preview(this.writeI32(args)));
   }
+  /**
+   * Disponible pour payer en un point (couleur des coûts) : `args` = [joueur, x, y (case), rayon (cases),
+   * puis identifiants des constructeurs dont la soute compte…] ; quantité par objet (voir sim render::reach_stock).
+   */
+  reachStock(args: number[]): Int32Array {
+    return this.outI32(this.ex.reach_stock(this.writeI32(args)));
+  }
   /** Aperçu de pose d'une file : `args` = [joueur, type, puis (x, y, dir)…] ; posable ou non, par emplacement. */
   canPlaceLine(args: number[]): boolean[] {
     return Array.from(this.outI32(this.ex.can_place_line(this.writeI32(args))), (v) => v !== 0);
@@ -204,6 +213,10 @@ export class Sim {
   }
   chantiersDemo(): number {
     return this.ex.chantiers_demo() >>> 0;
+  }
+  /** Démo des relais logistiques (voir sim/src/stress.rs, relais_demo). */
+  relaisDemo(): number {
+    return this.ex.relais_demo() >>> 0;
   }
   benchReference(): number {
     return this.ex.bench_reference() >>> 0;

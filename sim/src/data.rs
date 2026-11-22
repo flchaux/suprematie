@@ -179,6 +179,13 @@ pub const FACTORY_SUPPLY: i32 = 30;
 pub const GENERATOR_DRONES: u8 = 1;
 /// Rayon (cases) des paiements immédiats, du collecteur de surplus et de l'affichage « à portée ».
 pub const NEAR_SUPPLY: i32 = 30;
+/// Relais logistiques (voir drones.rs) : rayon de leur zone (cases, entre centres) : dépôts du réseau et
+/// destinations servies ; distance (cases) jusqu'à laquelle deux relais se relient (zones qui se touchent) ;
+/// drones par relais ; vitesse de leurs drones (sous-unités par tick : 24 cases par seconde).
+pub const RELAY_RANGE: i32 = 20;
+pub const RELAY_LINK: i32 = 40;
+pub const RELAY_DRONES: u8 = 4;
+pub const RELAY_DRONE_SPEED: i32 = 24 * 256 / 20;
 /// Amélioration d'un dépôt (plus haut, plus grand) : coût, recherche, durée (secondes).
 pub const DEPOT_UPGRADE_COST: &[(u8, u16)] = &[(STEEL, 20), (GEAR, 10), (CIRCUIT, 6)];
 pub const DEPOT_UPGRADE_TECH: u8 = T_AUTOMATION;
@@ -555,6 +562,9 @@ pub enum BClass {
     Ruin,
     /// Organe de la Souche : produit ou garde la sève et les sels de son réseau (voir souche.rs).
     Organ,
+    /// Relais logistique : étend le réseau des dépôts, ses drones portent des dépôts reliés aux destinations
+    /// à sa portée (voir drones.rs, « Relais logistiques »).
+    Relay,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -717,8 +727,10 @@ pub const B_T_WORKSHOP: u16 = 68;
 pub const B_T_BASTION: u16 = 69;
 /// poteau relais planté par un générateur nomade (voir transhumants::plant_pole)
 pub const B_T_POLE: u16 = 70;
+/// relais logistique (voir drones.rs, « Relais logistiques »)
+pub const B_RELAY: u16 = 71;
 
-pub const BUILDINGS: [BuildingDef; 71] = [
+pub const BUILDINGS: [BuildingDef; 72] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -801,6 +813,8 @@ pub const BUILDINGS: [BuildingDef; 71] = [
     BuildingDef { key: "t_workshop", name: "Atelier", size: (3, 3), hp: 5000, power_use: 400, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_bastion", name: "Bastion", size: (2, 2), hp: 4000, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, class: BClass::Turret, weapon: 74, vision: 30, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_pole", name: "Poteau nomade", hp: 200, cost: &[], build: 1, class: BClass::Pylon, supply: 6, connect: 13, vision: 0, race: RACE_TRANSH, ..BD },
+    // relais logistique (Industriels) : sans énergie ; zone de RELAY_RANGE cases, reliés à RELAY_LINK cases
+    BuildingDef { key: "logistic_relay", name: "Relais logistique", size: (2, 2), hp: 600, cost: &[(IRON_PLATE, 20), (GEAR, 10), (CIRCUIT, 10)], build: 8, tech: T_AUTOMATION, class: BClass::Relay, vision: 10, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -1220,7 +1234,7 @@ pub fn data_json() -> String {
     let mains: Vec<String> = MAIN_GENERATOR_LEVELS.iter().map(|l| format!("{{\"supply\":{},\"connect\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.supply, l.connect, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{},\"droneCap\":{},\"droneSpeed\":{},\"factoryDrones\":{},\"factorySupply\":{},\"near\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{},\"droneCap\":{},\"droneSpeed\":{},\"factoryDrones\":{},\"factorySupply\":{},\"near\":{},\"relayRange\":{},\"relayLink\":{},\"relayDrones\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
@@ -1240,6 +1254,9 @@ pub fn data_json() -> String {
         FACTORY_DRONES,
         FACTORY_SUPPLY,
         NEAR_SUPPLY,
+        RELAY_RANGE,
+        RELAY_LINK,
+        RELAY_DRONES,
         FUEL_HYDROCARBON,
         FUEL_REFINED,
         FUEL_CELL,
