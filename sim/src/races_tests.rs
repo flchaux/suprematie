@@ -198,6 +198,22 @@ fn organs_grow_on_terreau_only_and_draw_their_network() {
 }
 
 #[test]
+fn a_line_of_roots_grows_step_by_step() {
+    let mut w = game(RACE_SOUCHE, RACE_INDUS);
+    let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    flatten(&mut w, hx - 30, hy - 4, hx - 3, hy + 6);
+    // une file plantée d'un coup, au-delà du terreau actuel
+    let roots: Vec<usize> = (0..6).map(|k| place_building(&mut w, 0, B_ROOT, hx - 5 - 3 * k, hy + 1, 0).expect("racine sur le terreau à venir")).collect();
+    assert!(place_building(&mut w, 0, B_ROOT, hx - 40, hy + 1, 0).is_none(), "loin de tout : refusée");
+    steps(&mut w, 1200);
+    for &r in &roots {
+        assert!(w.buildings[r].complete(), "chaque racine pousse à son tour");
+        assert_eq!(w.buildings[r].net, w.buildings[heart].net);
+    }
+}
+
+#[test]
 fn a_cut_root_splits_the_network_and_its_reserve() {
     let mut w = game(RACE_SOUCHE, RACE_INDUS);
     let heart = find_building(&w, 0, B_SEED_HEART).unwrap();

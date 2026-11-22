@@ -102,7 +102,8 @@ export class Intel {
     this.aaTurrets = new Array(np).fill(0);
     this.eco = new Array(np).fill(0);
     const kp = kindPowers(data);
-    const cmd = data.units.findIndex((u) => u.key === "commander");
+    // unités de commandement de toutes les races (robot, Reine, Arche) : hors de l'armée de terre
+    const cmd = data.units.map((u) => !!u.commander);
     for (const u of view.units) {
       if (u.carried || u.owner >= np) continue;
       const k = kp.units[u.kind];
@@ -119,7 +120,7 @@ export class Intel {
         this.airToAir[u.owner] += a;
       } else {
         L[T.Surface][c] += g;
-        if (u.kind !== cmd) this.land[u.owner] += g;
+        if (!cmd[u.kind]) this.land[u.owner] += g;
         this.aaUnits[u.owner] += a;
       }
       L[T.AntiAir][c] += a;

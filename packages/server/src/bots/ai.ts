@@ -223,8 +223,8 @@ export class SkirmishAI implements Bot {
     const st = ctx.map.starts[ctx.slot] ?? [ctx.map.w >> 1, ctx.map.h >> 1];
     this.home = [st[0], st[1]];
     this.rng = (ctx.slot + 1) * 2654435761;
-    this.combatKinds = ctx.data.units.map((u, i) => i !== this.ids.u.commander && u.buildPower === 0 && u.weapons.length > 0);
-    this.engKinds = ctx.data.units.map((u, i) => i !== this.ids.u.commander && u.buildPower > 0);
+    this.combatKinds = ctx.data.units.map((u) => !u.commander && u.buildPower === 0 && u.weapons.length > 0);
+    this.engKinds = ctx.data.units.map((u) => !u.commander && u.buildPower > 0);
     for (const s of ctx.map.spots) this.spots.push({ kind: s.kind, x: s.x, y: s.y, st: 0, tries: 0, next: 0 });
     // direction des adversaires (moyenne des départs des autres joueurs)
     let ex = 0;

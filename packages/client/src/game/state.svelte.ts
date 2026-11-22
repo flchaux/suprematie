@@ -93,7 +93,7 @@ export const ui = $state({
   /** vue électrique (touche maintenue) */
   powerView: false,
   /** réseaux électriques de l'équipe (légende de la vue électrique) */
-  powerNets: [] as { id: number; color: number; prod: number; demand: number; cap: number; sat: number; autonomy: number; dead: boolean }[],
+  powerNets: [] as { id: number; color: number; prod: number; demand: number; cap: number; sat: number; autonomy: number; dead: boolean; roots?: boolean }[],
   chatOpen: false,
   volume: 0.5,
   music: 0.35,

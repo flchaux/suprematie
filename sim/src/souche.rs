@@ -115,7 +115,9 @@ pub fn net_at(w: &World, owner: u8, tx: i32, ty: i32) -> u16 {
     }
 }
 
-/// Un poteau de la Souche (racine ou graine-mère terminée) du joueur couvre-t-il une case de l'emprise ?
+/// Un poteau de la Souche (racine ou graine-mère) du joueur couvre-t-il une case de l'emprise ? Un
+/// poteau encore en croissance compte : une file de racines se plante d'un coup, chacune sur le terreau
+/// à venir de la précédente, et pousse quand celle-ci a poussé (son réseau la nourrit alors).
 pub fn on_terreau(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> bool {
     let r = (crate::buildings::max_supply() + bw.max(bh) + 2) * TILE;
     let mut ok = false;
@@ -124,7 +126,7 @@ pub fn on_terreau(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> boo
             return;
         }
         let pb = &w.buildings[p];
-        if !pb.alive || pb.owner != owner || !pb.complete() || pb.def().race != RACE_SOUCHE || pb.def().supply == 0 {
+        if !pb.alive || pb.owner != owner || pb.def().race != RACE_SOUCHE || pb.def().supply == 0 {
             return;
         }
         let (pw, ph) = pb.size();

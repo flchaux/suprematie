@@ -499,7 +499,8 @@ pub fn info_building(w: &World, r: u32) -> String {
 
 /// Zones électriques des joueurs de l'équipe de `player` (vue électrique, mini-carte, pose) :
 /// `nets` : [id, joueur, production, demande, puissance installée, satisfaction, combustible total,
-/// autonomie en s (-1 : rien ne brûle)] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
+/// autonomie en s (-1 : rien ne brûle), 0] ; réseau de racines de la Souche : [id, joueur, sève, sels,
+/// plafond, 1024, 0, -1, 1] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
 /// réseau (0 : aucun), genre (0 relais, 1 générateur), combustible en millièmes du réservoir (-1 : relais),
 /// joueur, référence, type de bâtiment, portée de liaison]. Portée et liaison suivent le niveau (générateur
 /// principal amélioré). Un générateur à sec garde sa portée mais n'a pas de réseau.
@@ -511,10 +512,15 @@ pub fn power_zones(w: &World, player: i32) -> String {
         if n.unlimited || !mine(n.owner) {
             continue;
         }
+        // Souche : réseau de racines, [id, joueur, sève, sels, plafond, 1024, 0, -1, 1] (à sec : sans sève)
+        if w.players.get(n.owner as usize).is_some_and(|p| p.race == crate::data::RACE_SOUCHE) {
+            nets.push(format!("[{},{},{},{},{},1024,0,-1,1]", i, n.owner, n.seve, n.sels, n.store));
+            continue;
+        }
         let fuel: i64 = n.gens.iter().map(|&g| w.buildings[g as usize].fuel.max(0) as i64).sum();
         let burn = n.demand.min(n.prod) as i64;
         let autonomy = if burn > 0 { fuel / burn / 20 } else { -1 };
-        nets.push(format!("[{},{},{},{},{},{},{},{}]", i, n.owner, n.prod, n.demand, n.cap, n.sat, fuel, autonomy));
+        nets.push(format!("[{},{},{},{},{},{},{},{},0]", i, n.owner, n.prod, n.demand, n.cap, n.sat, fuel, autonomy));
     }
     let mut poles = Vec::new();
     for (b, bb) in w.buildings.iter().enumerate() {

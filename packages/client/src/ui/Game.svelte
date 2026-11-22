@@ -123,15 +123,24 @@
       {@const alive = ui.powerNets.filter((n) => !n.dead)}
       {@const dead = ui.powerNets.filter((n) => n.dead).length}
       <div class="powerlegend panel">
-        <span class="kicker">Vue électrique</span>
+        <span class="kicker">{ui.race === 1 ? "Vue des racines" : "Vue électrique"}</span>
         {#each alive as n (n.id)}
           <div class="pnet">
             <i style:background={"#" + n.color.toString(16).padStart(6, "0")}></i>
+            {#if n.roots}
+              <span class="num">sève {n.prod} · sels {n.demand}&nbsp;/&nbsp;{n.cap}</span>
+            {:else}
             <span class="num">{n.demand}&nbsp;/&nbsp;{n.prod}&nbsp;kW</span>{#if n.sat < 1024}<span class="bad">&nbsp;·&nbsp;{Math.round((n.sat / 1024) * 100)}&nbsp;%</span>{/if}<span class="dim">&nbsp;·&nbsp;</span>{#if n.autonomy < 0}<span class="dim">rien ne brûle</span>{:else}<span class:warn={n.autonomy < 60} class="num">autonomie {n.autonomy >= 120 ? Math.round(n.autonomy / 60) + " min" : n.autonomy + " s"}</span>{/if}
+            {/if}
           </div>
         {:else}<span class="dim">Aucune zone alimentée</span>{/each}
+        {#if ui.race === 1}
+          {#if dead}<div class="pnet"><i class="deadsw"></i><span class="dim">{dead} réseau{dead > 1 ? "x" : ""} à sec (sans sève)</span></div>{/if}
+          <span class="dim small">Une couleur par réseau de racines : le terreau de même couleur partage sa réserve. Couper une racine coupe le réseau.</span>
+        {:else}
         {#if dead}<div class="pnet"><i class="deadsw"></i><span class="dim">{dead} zone{dead > 1 ? "s" : ""} sans combustible ou sans générateur</span></div>{/if}
         <span class="dim small">Une couleur par réseau : des zones de même couleur sont reliées. Consommation / production · autonomie à cette charge.</span>
+        {/if}
       </div>
     {/if}
     {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.key === "splitter"}
