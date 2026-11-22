@@ -71,9 +71,9 @@ fn zone_counts_its_machines_depots_and_fuel() {
     let s = zone_economy(&w, 0, 171, 171);
     assert_eq!(field(&s, "zone"), [1]);
     assert_eq!(field(&s, "net"), [net as i64]);
-    // stock : le dépôt de la zone seulement (l'autre est hors zone)
-    assert_eq!(field(&s, "stock")[IRON_ORE as usize], 77);
-    assert_eq!(field(&s, "cap"), [DEPOT_CAP[0] as i64]);
+    // stock : le dépôt de la zone, et le dépôt lointain, hors de toute zone, qui compte dans la plus proche
+    assert_eq!(field(&s, "stock")[IRON_ORE as usize], 577);
+    assert_eq!(field(&s, "cap"), [2 * DEPOT_CAP[0] as i64]);
     // fonderie de base : une plaque toutes les 40 ticks à vitesse 100, soit 30 par minute
     assert_eq!(bdef(B_FURNACE).speed, 100);
     assert_eq!(field(&s, "prod")[IRON_PLATE as usize], 3000);
@@ -175,4 +175,34 @@ fn commander_hold_counts_where_he_stands() {
     assert_eq!(field(&e, "stock")[IRON_PLATE as usize], crate::drones::has(&w.units.cold[s].hold, IRON_PLATE) as i64);
     assert!(field(&e, "stock")[IRON_PLATE as usize] > 0, "ressources de départ dans sa soute");
     assert_eq!(field(&e, "cap"), [crate::drones::COMMANDER_CAP as i64]);
+}
+
+/// Un dépôt hors de portée des poteaux (il ne prend pas d'énergie) compte dans la zone la plus proche :
+/// chaque dépôt compte dans une seule zone.
+#[test]
+fn depot_out_of_reach_counts_in_the_nearest_zone() {
+    let mut w = world();
+    let g1 = put(&mut w, B_GENERATOR, 170, 170);
+    // zone de g1 : cases 162 à 179 ; dépôt une case au-delà
+    let d1 = put(&mut w, B_DEPOT, 181, 170);
+    w.buildings[d1].stash = vec![0; NUM_ITEMS];
+    w.buildings[d1].stash[COPPER_PLATE as usize] = 249;
+    w.step(&[]);
+    assert_eq!(zone_at(&w, 0, 182, 171), Zone::None, "le dépôt est hors de portée");
+    let s = zone_economy(&w, 0, 171, 171);
+    assert_eq!(field(&s, "stock")[COPPER_PLATE as usize], 249);
+    assert_eq!(field(&s, "cap"), [DEPOT_CAP[0] as i64]);
+    // deuxième zone, plus proche de ce dépôt (zone de g2 : cases 202 à 219)
+    let g2 = put(&mut w, B_GENERATOR, 210, 170);
+    let d2 = put(&mut w, B_DEPOT, 196, 170);
+    w.buildings[d2].stash = vec![0; NUM_ITEMS];
+    w.buildings[d2].stash[COPPER_PLATE as usize] = 40;
+    crate::buildings::rebuild_power(&mut w);
+    assert_ne!(w.buildings[g1].net, w.buildings[g2].net, "deux zones");
+    let s1 = zone_economy(&w, 0, 171, 171);
+    let s2 = zone_economy(&w, 0, 211, 171);
+    assert_eq!(field(&s1, "stock")[COPPER_PLATE as usize], 249);
+    assert_eq!(field(&s2, "stock")[COPPER_PLATE as usize], 40);
+    // hors zone, la barre ne compte rien
+    assert_eq!(zone_economy(&w, 0, 189, 171), "{\"zone\":0}");
 }

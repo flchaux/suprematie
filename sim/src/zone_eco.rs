@@ -4,8 +4,8 @@
 //! - Zone d'un point : celle du premier poteau vivant (plus petit indice) du joueur dont la zone d'alimentation
 //!   couvre la case, comme le rattachement des bâtiments (`rebuild_power`). Sinon, un générateur à sec qui
 //!   couvre la case : sa zone éteinte. Souche : le réseau de racines dont le terreau couvre la case.
-//! - Stock : dépôts du joueur rattachés à la zone (emprise touchée par la zone) et soutes de ses unités qui
-//!   s'y trouvent (celle du commandant est un dépôt : son plafond compte) ; plus sa bourse (ADN, relevés), qui n'a pas de lieu. Souche : réserve du réseau.
+//! - Stock : dépôts du joueur rattachés à la zone (emprise touchée par la zone ; un dépôt qu'aucune zone ne
+//!   touche compte dans la plus proche, voir `depot_zone`) et soutes de ses unités qui s'y trouvent (celle du commandant est un dépôt : son plafond compte) ; plus sa bourse (ADN, relevés), qui n'a pas de lieu. Souche : réserve du réseau.
 //! - Production et consommation maximales : toutes les machines terminées de la zone à pleine vitesse
 //!   (énergie à 100 %, cadence, pureté, niveau, usure des gisements), sans pénurie ni sortie bloquée.
 //!   Les chantiers ne comptent pas. Débits en centièmes d'objet par minute.
@@ -109,6 +109,36 @@ fn in_zone(w: &World, b: usize, z: Zone) -> bool {
         (Zone::Dry(_), true) if bb.net != 0 && w.nets.get(bb.net as usize).is_some_and(|z| !z.unlimited) => false,
         _ => zone_of(w, bb.owner, bb.x, bb.y, bw, bh, wired(bb).then_some(bb.net)) == z,
     }
+}
+
+/// Zone d'un dépôt du joueur : celle qui touche son emprise, sinon celle du poteau le plus proche (écart en
+/// cases entre l'emprise et la zone d'alimentation du poteau ; à égalité, le plus petit indice). Un dépôt ne
+/// prend pas d'énergie : posé à côté de sa base mais hors de portée des poteaux, il en fait quand même partie,
+/// et chaque dépôt compte ainsi dans une seule zone. `poles` : poteaux du joueur, par indice croissant.
+fn depot_zone(w: &World, b: usize, poles: &[usize]) -> Zone {
+    let bb = &w.buildings[b];
+    let (bw, bh) = bb.size();
+    let z = zone_of(w, bb.owner, bb.x, bb.y, bw, bh, None);
+    if z != Zone::None {
+        return z;
+    }
+    let mut best: Option<(i32, usize)> = None;
+    for &p in poles {
+        let pb = &w.buildings[p];
+        let (pw, ph) = pb.size();
+        let sp = supply_of(pb);
+        let gx = (pb.x - sp - (bb.x + bw)).max(bb.x - (pb.x + pw + sp)).max(0);
+        let gy = (pb.y - sp - (bb.y + bh)).max(bb.y - (pb.y + ph + sp)).max(0);
+        let d = gx.max(gy);
+        if best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, p));
+        }
+    }
+    let Some((_, p)) = best else { return Zone::None };
+    // zone du poteau lui-même : il est dans la sienne (vivante, ou éteinte s'il est à sec)
+    let pb = &w.buildings[p];
+    let (pw, ph) = pb.size();
+    zone_of(w, pb.owner, pb.x, pb.y, pw, ph, None)
 }
 
 /// Débits maximaux d'une machine terminée : ajoute à `prod` et `cons` (centièmes par minute).
@@ -224,11 +254,17 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         stock[SELS as usize] += net.sels.max(0) as i64;
         cap = net.store as i64;
     } else {
-        // dépôts du joueur dans la zone (les entrepôts d'équipe n'en font pas partie)
+        // dépôts du joueur dans la zone, ou les plus proches d'elle (les entrepôts d'équipe n'en font pas partie)
+        let poles: Vec<usize> = (0..w.buildings.len())
+            .filter(|&b| {
+                let bb = &w.buildings[b];
+                bb.alive && bb.owner == p && bb.complete() && supply_of(bb) > 0 && zone_of(w, p, bb.x, bb.y, bb.size().0, bb.size().1, None) != Zone::None
+            })
+            .collect();
         for &b in &w.stores {
             let b = b as usize;
             let bb = &w.buildings[b];
-            if bb.alive && bb.complete() && bb.owner == p && bb.def().class == BClass::Depot && in_zone(w, b, z) {
+            if bb.alive && bb.complete() && bb.owner == p && bb.def().class == BClass::Depot && depot_zone(w, b, &poles) == z {
                 cap += crate::drones::store_cap(bb) as i64;
                 for (i, &n) in bb.stash.iter().enumerate().take(N) {
                     stock[i] += n as i64;
