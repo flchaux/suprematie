@@ -6,6 +6,7 @@
   import ZoneBar from "./ZoneBar.svelte";
   import Icon from "./Icon.svelte";
   import Shortcuts from "./Shortcuts.svelte";
+  import Settings from "./Settings.svelte";
   import { kb, keyOf } from "../game/keys.svelte.ts";
   const t = (label: string, id: string) => {
     const k = keyOf(id);
@@ -69,11 +70,22 @@
   {/if}
   <div class="panel right">
     <span class="clock num"><Icon name="clock" size={14} /> {time}</span>
-    {#if client.isSolo()}
+    {#if !ui.replay && (client.isSolo() || client.isHost() || ui.speed === 0)}
       <span class="speed">
-        <button class="ghost sp" disabled={ui.speed <= GAME_SPEEDS[0]} onclick={() => client.stepSpeed(-1)} title={t("Ralentir le jeu", "speedDown")}>−</button>
-        <span class="num sv" class:fast={ui.speed > 1} class:slow={ui.speed < 1} title="Vitesse de jeu (partie solo)">×{String(ui.speed).replace(".", ",")}</span>
-        <button class="ghost sp" disabled={ui.speed >= GAME_SPEEDS[GAME_SPEEDS.length - 1]} onclick={() => client.stepSpeed(1)} title={t("Accélérer le jeu", "speedUp")}>+</button>
+        {#if client.canPause()}
+          <button class="ghost sp pz" class:on={ui.speed === 0} onclick={() => client.togglePause()} title={t(ui.speed === 0 ? "Reprendre la partie" : "Mettre en pause", "pause")}><Icon name={ui.speed === 0 ? "play" : "pause"} size={13} /></button>
+        {/if}
+        {#if client.isSolo()}
+          <button class="ghost sp" disabled={ui.speed !== 0 && ui.speed <= GAME_SPEEDS[0]} onclick={() => client.stepSpeed(-1)} title={t("Ralentir le jeu", "speedDown")}>−</button>
+        {/if}
+        {#if ui.speed === 0}
+          <span class="num sv paused" title={ui.pausedBy ? `Mise en pause par ${ui.pausedBy}` : "Partie en pause"}>Pause</span>
+        {:else if client.isSolo()}
+          <span class="num sv" class:fast={ui.speed > 1} class:slow={ui.speed < 1} title="Vitesse de jeu (partie solo)">×{String(ui.speed).replace(".", ",")}</span>
+        {/if}
+        {#if client.isSolo()}
+          <button class="ghost sp" disabled={ui.speed >= GAME_SPEEDS[GAME_SPEEDS.length - 1]} onclick={() => client.stepSpeed(1)} title={t("Accélérer le jeu", "speedUp")}>+</button>
+        {/if}
       </span>
     {/if}
     <div class="sep"></div>
@@ -81,33 +93,12 @@
     <button class="ghost icon-btn" class:on={ui.showRecipes} onclick={() => (ui.showRecipes = !ui.showRecipes)} title={t("Recettes débloquées", "recipes")}><Icon name="recipe" /></button>
     <button class="ghost icon-btn" class:on={ui.showHelp} onclick={() => (ui.showHelp = !ui.showHelp)} title={t("Aide", "help")}><Icon name="help" /></button>
     <button class="ghost icon-btn" class:on={ui.showGfx} onclick={() => (ui.showGfx = !ui.showGfx)} title="Réglages"><Icon name="settings" /></button>
+    <button class="ghost icon-btn" class:on={ui.menuOpen} onclick={() => client.openMenu()} title="Menu de la partie (Échap)"><Icon name="menu" /></button>
     <button class="ghost perf num" onclick={() => (ui.showPerf = !ui.showPerf)} title={t("Détail des performances", "perf")}>{ui.fps} i/s · {ui.backend} · {ui.ping} ms</button>
   </div>
 </div>
 {#if ui.showGfx}
-  <div class="gfx panel">
-    <div class="kicker">Réglages</div>
-    <label class="row"><Icon name="volume" /> <span>Effets sonores</span><input type="range" min="0" max="1" step="0.05" value={ui.volume} oninput={(e) => client.setVolume(Number((e.target as HTMLInputElement).value))} /></label>
-    <label class="row"><Icon name="volume" /> <span>Annonces vocales</span><input type="checkbox" checked={ui.voice} onchange={(e) => client.setVoice((e.target as HTMLInputElement).checked)} /></label>
-    <label class="row"><Icon name="music" /> <span>Musique</span><input type="range" min="0" max="1" step="0.05" value={ui.music} oninput={(e) => client.setMusicVolume(Number((e.target as HTMLInputElement).value))} /></label>
-    <label class="row" title="Distance de la caméra à partir de laquelle les unités deviennent des icônes"><Icon name="icons" /> <span>Vue stratégique</span><input type="range" min="80" max="600" step="10" value={client.iconDistance()} oninput={(e) => client.setIconDistance(Number((e.target as HTMLInputElement).value))} /></label>
-    <div class="kicker sub">Graphismes</div>
-    <label class="row"><Icon name="eye" /> <span>Ombres portées</span><input type="checkbox" checked={ui.gfx.shadows} onchange={(e) => client.setGfx({ shadows: (e.target as HTMLInputElement).checked })} /></label>
-    <label class="row"><Icon name="factory" /> <span>Textures des modèles</span><input type="checkbox" checked={ui.gfx.textures} onchange={(e) => client.setGfx({ textures: (e.target as HTMLInputElement).checked })} /></label>
-    <label class="row" title="Textures du sol mélangées selon l'altitude et la pente"><Icon name="map" /> <span>Détails du sol</span><input type="checkbox" checked={ui.gfx.ground} onchange={(e) => client.setGfx({ ground: (e.target as HTMLInputElement).checked })} /></label>
-    <label class="row" title="Herbes, buissons, arbres, rochers et débris sur le sol"><Icon name="seed" /> <span>Décorations</span><input type="checkbox" checked={ui.gfx.decor} onchange={(e) => client.setGfx({ decor: (e.target as HTMLInputElement).checked })} /></label>
-    <label class="row" title="Bulles de bouclier à alvéoles hexagonales, bord lumineux et ondulation (sinon une simple bulle translucide)"><Icon name="assist" /> <span>Boucliers détaillés</span><input type="checkbox" checked={ui.gfx.shieldFx !== false} onchange={(e) => client.setGfx({ shieldFx: (e.target as HTMLInputElement).checked })} /></label>
-    <label class="row"><Icon name="special" /> <span>Halo lumineux</span><input type="checkbox" checked={ui.gfx.bloom} onchange={(e) => client.setGfx({ bloom: (e.target as HTMLInputElement).checked })} /></label>
-    <label class="row"><Icon name="target" /> <span>Effets de combat</span>
-      <select value={String(ui.gfx.effects)} onchange={(e) => client.setGfx({ effects: Number((e.target as HTMLSelectElement).value) })}>
-        <option value="1">Complets</option>
-        <option value="0.4">Réduits</option>
-      </select>
-    </label>
-    <div class="kicker sub">Clavier</div>
-    <button class="icon-btn kbtn" onclick={() => { ui.showGfx = false; kb.showKeys = true; }}><Icon name="keyboard" /> Raccourcis clavier…</button>
-    {#if keyOf("perf")}<p class="dim small"><span class="key">{keyOf("perf")}</span> détail des performances</p>{/if}
-  </div>
+  <div class="gfx panel"><Settings onkeys={() => { ui.showGfx = false; kb.showKeys = true; }} /></div>
 {/if}
 {#if kb.showKeys}<Shortcuts />{/if}
 
@@ -143,6 +134,8 @@
   .speed .sv { min-width: 34px; text-align: center; font-size: 12.5px; color: var(--dim); }
   .speed .sv.fast { color: var(--accent); }
   .speed .sv.slow { color: var(--warn); }
+  .speed .sv.paused { color: var(--amber); letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
+  .speed .pz { display: inline-flex; align-items: center; justify-content: center; }
   .clock { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
   .clock :global(.ic) { color: var(--accent); }
   .right .icon-btn { padding: 6px 7px; }
@@ -156,13 +149,6 @@
     .research { min-width: 44px; }
     .rn, .research.idle span:not(.key) { display: none; }
   }
-  .gfx { position: absolute; top: 56px; right: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; z-index: 25; width: 290px; animation: drop 0.14s ease-out; }
-  .gfx .row { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 9px; color: var(--accent); }
-  .gfx .row span { color: var(--text); }
-  .gfx input[type="range"] { width: 100px; }
-  .gfx .sub { margin-top: 6px; }
-  .gfx p { margin: 4px 0 0; }
-  .gfx .kbtn { justify-content: flex-start; gap: 9px; }
-  .gfx .kbtn :global(.ic) { color: var(--accent); }
+  .gfx { position: absolute; top: 56px; right: 8px; padding: 14px 16px; z-index: 25; width: 290px; animation: drop 0.14s ease-out; }
   @keyframes drop { from { opacity: 0; transform: translateY(-6px); } }
 </style>

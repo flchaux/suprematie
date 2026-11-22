@@ -82,6 +82,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "perf", label: "Détail des performances", group: "Interface", ctx: "global" },
   { id: "speedUp", label: "Accélérer le jeu (partie solo)", group: "Interface", ctx: "global" },
   { id: "speedDown", label: "Ralentir le jeu (partie solo)", group: "Interface", ctx: "global" },
+  { id: "pause", label: "Pause / reprendre (partie solo, ou hôte)", group: "Interface", ctx: "global" },
   ...Array.from({ length: FACTORY_SLOTS }, (_, i): ActionDef => ({ id: `factory${i + 1}`, label: `Unité ${i + 1} (Maj : ×5)`, group: "Usine", ctx: "factory", shiftFree: true })),
 ];
 
@@ -211,6 +212,7 @@ export function defaultBindings(layout: Layout): Record<string, Chord[]> {
     perf: [named("F9")],
     speedUp: [named("NumpadMultiply")],
     speedDown: [named("NumpadDivide")],
+    pause: [named("Pause"), named("F10")],
   };
   for (let i = 0; i < FACTORY_SLOTS; i++) out[`factory${i + 1}`] = i < FACTORY_ROW.length ? [named(FACTORY_ROW[i])] : [];
   return out;

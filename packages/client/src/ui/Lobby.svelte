@@ -51,6 +51,15 @@
     showReplays = false;
     if (showSaves) void refreshSaves();
   }
+  // retour du menu de partie par « Charger une partie » : la liste des sauvegardes s'ouvre
+  $effect(() => {
+    if (ui.lobbySaves && ui.screen === "lobby") {
+      ui.lobbySaves = false;
+      showSaves = true;
+      showReplays = false;
+      void refreshSaves();
+    }
+  });
   function loadSave(id: string) {
     client.lobbyAction("loadSave", { id });
     showSaves = false;

@@ -94,7 +94,8 @@ export type ClientMsg =
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
   | { t: "chat"; text: string }
-  | { t: "speed"; speed: number }
+  | { t: "speed"; speed: number } // 0 : pause (solo ou hôte) ; sinon reprise ou vitesse (solo)
+  | { t: "quit" } // hôte : arrête la partie (sauvegarde automatique) et ramène tout le monde au salon
   | { t: "ping"; time: number };
 
 export type ServerMsg =
@@ -110,12 +111,14 @@ export type ServerMsg =
   | { t: "end"; winner: number; replay: string; stats?: StatSample[] } // historique complet, tous les joueurs
   | { t: "saved"; name: string; by: string; auto: boolean }
   | { t: "pong"; time: number }
-  | { t: "speed"; speed: number; by: string } // vitesse de jeu (partie solo seulement)
+  | { t: "speed"; speed: number; by: string; resume?: number } // vitesse de jeu ; 0 : pause (`resume` : vitesse de reprise)
+  | { t: "quit"; by: string } // partie arrêtée par l'hôte : retour au salon
   | { t: "error"; message: string };
 
 export const ORDER_DELAY = 3; // ticks
 export const TICK_MS = 50;
-/** Vitesses de jeu possibles (multiplicateur du rythme des ticks) ; réglables seulement en solo (un seul joueur humain). */
+/** Vitesses de jeu possibles (multiplicateur du rythme des ticks) ; réglables seulement en solo (un seul joueur humain).
+ * La pause est la vitesse 0, hors de cette liste : en solo, ou par l'hôte d'une partie à plusieurs. */
 export const GAME_SPEEDS = [0.5, 1, 1.5, 2, 3, 4];
 export const HASH_EVERY = 20;
 

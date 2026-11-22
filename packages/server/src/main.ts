@@ -446,9 +446,22 @@ wss.on("connection", (ws, req) => {
       case "chat":
         broadcast({ t: "chat", from: client.name, text: String(msg.text).slice(0, 200) });
         return;
-      case "speed":
-        // vitesse de jeu : partie solo seulement (refusée sinon, sans message)
-        if (game && !game.setSpeed(client, Number(msg.speed))) client.send({ t: "error", message: "La vitesse ne se règle qu'en partie solo" });
+      case "speed": {
+        // vitesse de jeu : partie solo seulement ; pause (vitesse 0) et reprise : en solo, ou par l'hôte
+        const speed = Number(msg.speed);
+        if (game && !game.setSpeed(client, speed, client.slot === hostSlot()))
+          client.send({ t: "error", message: speed === 0 || game.speed === 0 ? "Seul l'hôte peut mettre en pause ou reprendre la partie" : "La vitesse ne se règle qu'en partie solo" });
+        return;
+      }
+      case "quit":
+        // l'hôte arrête la partie : sauvegarde automatique (reprise possible depuis le salon), retour au salon
+        if (game && !game.ended && client.slot >= 0 && client.slot === hostSlot()) {
+          if (game.tick > 0) game.save("", true);
+          log("partie arrêtée par l'hôte", client.name);
+          broadcast({ t: "quit", by: client.name });
+          if (endTimer) clearTimeout(endTimer);
+          resetLobby();
+        }
         return;
       case "ping":
         client.send({ t: "pong", time: msg.time });

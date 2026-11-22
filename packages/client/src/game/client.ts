@@ -19,6 +19,7 @@ import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { buildCats, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
+import { escapeAction, menuPauses, type MenuRole } from "./gameMenu.ts";
 import { isMachine, machineRow } from "./machineRow.ts";
 import * as Belts from "./belts.ts";
 
@@ -119,14 +120,110 @@ export class GameClient {
     return ui.players.length > 0 && ui.players.filter((p) => !p.bot).length === 1 && !ui.spectator;
   }
 
-  /** Vitesse de jeu suivante (+1) ou précédente (-1) parmi GAME_SPEEDS ; le serveur l'applique et l'annonce. */
+  /** Hôte de la partie (le joueur seul d'une partie solo l'est aussi). */
+  isHost(): boolean {
+    return !ui.spectator && ui.me >= 0 && !!ui.lobby?.players.some((p) => p.host && p.slot === ui.me);
+  }
+
+  /** Peut mettre en pause : en solo, l'hôte d'une partie à plusieurs, ou dans un replay. */
+  canPause(): boolean {
+    return ui.replay || this.isSolo() || this.isHost();
+  }
+
+  /** Partie (ou replay) en pause. */
+  paused(): boolean {
+    return ui.replay ? ui.replaySpeed === 0 : ui.speed === 0;
+  }
+
+  /** Met en pause (vitesse 0) ou reprend à la vitesse d'avant ; le serveur l'applique pour tous et l'annonce. */
+  setPaused(on: boolean): void {
+    if (ui.replay) {
+      if (on && ui.replaySpeed !== 0) this.replayResume = ui.replaySpeed;
+      this.setReplaySpeed(on ? 0 : this.replayResume || 1);
+      return;
+    }
+    if (!this.canPause()) {
+      pushMessage("Seul l'hôte peut mettre la partie en pause", "alert");
+      return;
+    }
+    if (on) {
+      if (ui.speed !== 0) this.pauseResume = ui.speed;
+      this.pauseSentAt = performance.now();
+      this.send({ t: "speed", speed: 0 });
+    } else {
+      this.send({ t: "speed", speed: ui.speed === 0 ? ui.resumeSpeed : this.pauseResume });
+    }
+  }
+  private replayResume = 1;
+  private pauseResume = 1;
+  private pauseSentAt = -1e9;
+
+  togglePause(): void {
+    this.setPaused(!this.paused());
+  }
+
+  /** Menu de partie (Échap) : le met en pause si on en a le droit ; le refermer reprend la partie si le menu
+   * l'avait mise en pause. */
+  menuRole(): MenuRole {
+    return { solo: this.isSolo(), host: this.isHost(), spectator: ui.spectator, replay: ui.replay, ended: ui.ended };
+  }
+
+  openMenu(): void {
+    if (ui.menuOpen) return;
+    ui.menuOpen = true;
+    ui.showGfx = false;
+    this.menuPaused = menuPauses(this.menuRole()) && !this.paused();
+    if (this.menuPaused) this.setPaused(true);
+  }
+  closeMenu(): void {
+    if (!ui.menuOpen) return;
+    ui.menuOpen = false;
+    // la pause demandée à l'ouverture peut ne pas encore être confirmée par le serveur
+    if (this.menuPaused && (this.paused() || performance.now() - this.pauseSentAt < 2000)) this.setPaused(false);
+    this.menuPaused = false;
+  }
+  private menuPaused = false;
+
+  /** Hôte : arrête la partie pour tous (sauvegarde automatique) et revient au salon ; `load` : y ouvre la liste
+   * des sauvegardes. Replay ou démo : recharge la page. */
+  quitToLobby(load = false): void {
+    if (ui.replay || ui.ended || this.demoOrders || !ui.connected) {
+      location.reload();
+      return;
+    }
+    if (!this.isHost()) return;
+    ui.lobbySaves = load;
+    this.send({ t: "quit" });
+  }
+
+  /** Partie arrêtée par l'hôte : on quitte l'écran de jeu pour le salon. */
+  private leaveGame(): void {
+    this.worker?.terminate();
+    this.worker = null;
+    this.frame = null;
+    this.selected.clear();
+    this.menuPaused = false;
+    ui.menuOpen = ui.chatOpen = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = ui.showGfx = false;
+    plans.show = false;
+    kb.buildStep = "";
+    if (ui.mode) this.cancelMode();
+    ui.speed = ui.resumeSpeed = 1;
+    ui.pausedBy = "";
+    ui.waiting = [];
+    ui.gameOver = null;
+    ui.ended = false;
+    ui.screen = "lobby";
+  }
+
+  /** Vitesse de jeu suivante (+1) ou précédente (-1) parmi GAME_SPEEDS ; le serveur l'applique et l'annonce.
+   * En pause, part de la vitesse de reprise (et reprend la partie). */
   stepSpeed(delta: number): void {
     if (!this.isSolo()) {
       pushMessage("La vitesse ne se règle qu'en partie solo", "alert");
       return;
     }
     // part de la dernière vitesse demandée : plusieurs appuis rapides s'enchaînent avant la réponse du serveur
-    const cur = performance.now() - this.speedAskedAt < 1000 ? this.speedAsked : ui.speed;
+    const cur = performance.now() - this.speedAskedAt < 1000 ? this.speedAsked : ui.speed === 0 ? ui.resumeSpeed : ui.speed;
     const k = GAME_SPEEDS.indexOf(cur);
     const next = GAME_SPEEDS[Math.max(0, Math.min(GAME_SPEEDS.length - 1, (k < 0 ? GAME_SPEEDS.indexOf(1) : k) + delta))];
     if (next === cur) return;
@@ -169,13 +266,15 @@ export class GameClient {
         if (!m.lobby.running && ui.screen !== "game") ui.screen = "lobby";
         break;
       case "start":
-        ui.speed = 1;
+        ui.speed = ui.resumeSpeed = 1;
+        ui.pausedBy = "";
         void this.begin(m.start, null);
         ui.stats = [];
         break;
       case "snapshot":
-        // la vitesse en cours (si elle n'est pas ×1) suit dans un message « speed »
-        ui.speed = 1;
+        // la vitesse en cours (si elle n'est pas ×1, pause comprise) suit dans un message « speed »
+        ui.speed = ui.resumeSpeed = 1;
+        ui.pausedBy = "";
         void this.begin(m.start, { tick: m.tick, data: Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0)) });
         ui.stats = m.stats ?? [];
         break;
@@ -203,14 +302,28 @@ export class GameClient {
         break;
       }
       case "saved":
+        ui.lastSaved = { name: m.name, at: performance.now() };
         pushMessage(m.auto ? `Sauvegarde automatique : ${m.name}` : `Partie sauvegardée par ${m.by} : ${m.name}`, "good");
         break;
       case "pong":
         ui.ping = Math.round(performance.now() - m.time);
         break;
-      case "speed":
+      case "speed": {
+        const was = ui.speed;
         ui.speed = m.speed;
-        if (m.by) pushMessage(`Vitesse de jeu ×${String(m.speed).replace(".", ",")}`, "info");
+        if (m.speed === 0) {
+          ui.resumeSpeed = m.resume ?? 1;
+          ui.pausedBy = m.by;
+          if (m.by) pushMessage(`Partie mise en pause par ${m.by}`, "info");
+        } else {
+          ui.resumeSpeed = m.speed;
+          ui.pausedBy = "";
+          if (m.by) pushMessage(was === 0 ? `Partie reprise par ${m.by}` : `Vitesse de jeu ×${String(m.speed).replace(".", ",")}`, "info");
+        }
+        break;
+      }
+      case "quit":
+        this.leaveGame();
         break;
       case "error":
         ui.error = m.message;
@@ -389,7 +502,10 @@ export class GameClient {
     this.fpsTime = now;
     this.fpsCount++;
     this.panCamera(dt);
-    const alpha = this.frame ? Math.min(1, ((performance.now() - this.frameTime) * ui.speed) / 50) : 0;
+    // en pause, l'image reste sur le dernier tick (et les effets se figent)
+    const paused = this.paused();
+    const alpha = !this.frame ? 0 : paused ? 1 : Math.min(1, ((performance.now() - this.frameTime) * ui.speed) / 50);
+    sc.paused = paused;
     const myTeam = this.frame?.players[ui.me]?.team ?? -1;
     if (!NORENDER) sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator, ui.fog);
     // zone vue envoyée au Worker
@@ -1135,6 +1251,12 @@ export class GameClient {
     if (ui.screen !== "game" || e.metaKey) return;
     this.keys.add(e.code);
     if (isModifierCode(e.code)) return;
+    // menu de partie ouvert : le clavier ne commande plus le jeu (Échap le referme, la pause reste possible)
+    if (ui.menuOpen) {
+      if (e.code === "Escape") this.closeMenu();
+      else if (keymap.match(e, {})?.id === "pause" && !e.repeat) this.togglePause();
+      return;
+    }
     // menu de construction au clavier : B, puis la catégorie, puis le bâtiment
     if (kb.buildStep) {
       if (this.buildMenuKey(e)) {
@@ -1164,10 +1286,20 @@ export class GameClient {
       return;
     }
     if (e.code === "Escape" && !e.ctrlKey && !e.altKey) {
-      if (kb.buildStep) kb.buildStep = "";
-      else if (ui.mode) this.cancelMode();
-      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = false;
-      else {
+      // Échap annonce d'abord ce qui est en cours (menu, outil, panneau, sélection) ; le menu de partie
+      // ne s'ouvre que s'il n'y a plus rien à annuler
+      const act = escapeAction({
+        menuOpen: ui.menuOpen,
+        buildStep: !!kb.buildStep,
+        mode: !!ui.mode,
+        panel: kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show || ui.showGfx,
+        selection: this.selected.size > 0 || !!ui.selDeposit || !!ui.selPlan,
+      });
+      if (act === "closeMenu") this.closeMenu();
+      else if (act === "buildStep") kb.buildStep = "";
+      else if (act === "mode") this.cancelMode();
+      else if (act === "panels") kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = ui.showGfx = false;
+      else if (act === "deselect") {
         this.selected.clear();
         ui.selDeposit = null;
         if (ui.selPlan) {
@@ -1175,7 +1307,7 @@ export class GameClient {
           this.scene?.overlay?.setPlanned(this.planned, null);
         }
         this.updateUi();
-      }
+      } else if (!e.repeat) this.openMenu();
       return;
     }
     const units = ui.me >= 0 && this.selectedUnits().length > 0;
@@ -1311,6 +1443,9 @@ export class GameClient {
         break;
       case "speedDown":
         this.stepSpeed(-1);
+        break;
+      case "pause":
+        this.togglePause();
         break;
     }
   }

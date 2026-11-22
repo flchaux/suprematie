@@ -620,6 +620,9 @@ export class GameScene {
     this.stats.shadowSize = half * 2;
   }
 
+  /** partie en pause : unités, tourelles et effets figés (la caméra, l'eau et les repères continuent) */
+  paused = false;
+
   render(frame: Frame | null, alpha: number, me: number, myTeam: number, selected: Set<number>, dt: number, spectator: boolean, fog = true): void {
     const t0 = performance.now();
     this.time += dt;
@@ -635,8 +638,9 @@ export class GameScene {
       else if (this.distance < LOD_NEAR) this.lodLo = false;
       this.entities.setDetail(this.lodLo);
       const iconScale = Math.max(1, this.distance / 160);
-      this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, view);
-      if (this.data) this.terreau?.update(frame, this.data, dt);
+      const simDt = this.paused ? 0 : dt;
+      this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, simDt, spectator, view);
+      if (this.data) this.terreau?.update(frame, this.data, simDt);
       // les roches hautes d'un gisement disparaissent sous le bâtiment qui le recouvre
       this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }
