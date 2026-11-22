@@ -14,6 +14,7 @@ pub mod logistics;
 pub mod map;
 pub mod nature;
 pub mod orders;
+pub mod ponte;
 pub mod races;
 pub mod render;
 pub mod rng;
@@ -355,6 +356,15 @@ pub extern "C" fn anciens_demo() -> u32 {
     h
 }
 
+/// Démo de la ponte de la Souche : couveuses qui pondent en boucle (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn ponte_demo() -> u32 {
+    let w = stress::ponte_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des déplacements en formation orientée (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn formation_demo() -> u32 {
@@ -407,6 +417,8 @@ mod drones_tests;
 mod pickup_tests;
 #[cfg(test)]
 mod races_tests;
+#[cfg(test)]
+mod ponte_tests;
 #[cfg(test)]
 mod zone_eco_tests;
 pub mod stress;

@@ -396,13 +396,14 @@ fn regen_building(w: &mut World, b: usize) {
     }
 }
 
-/// Couveuse : prend dans son réseau le coût de l'unité en tête de file, d'un coup, quand le réseau a
-/// tout ce qui manque.
+/// Couveuse : prend dans son réseau le coût de la portée en tête de file (voir ponte.rs), d'un coup,
+/// quand le réseau a tout ce qui manque.
 pub fn feed_factory(w: &mut World, b: usize) {
     let Some(&(kind, _)) = w.buildings[b].queue.first() else { return };
     let net = w.buildings[b].net;
     let cost = udef(kind).cost;
-    let missing: Vec<(u8, i32)> = cost.iter().map(|&(it, n)| (it, n as i32 - buildings::factory_has(&w.buildings[b], it) as i32)).filter(|m| m.1 > 0).collect();
+    let litter = batch(kind) as i32;
+    let missing: Vec<(u8, i32)> = cost.iter().map(|&(it, n)| (it, n as i32 * litter - buildings::factory_has(&w.buildings[b], it) as i32)).filter(|m| m.1 > 0).collect();
     if missing.is_empty() || !missing.iter().all(|&(it, n)| pool_of(w, net, it) >= n) {
         return;
     }

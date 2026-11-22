@@ -1202,8 +1202,8 @@ pub fn flow_max(w: &World, b: usize) -> u32 {
             let lvl = EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)].speed as u64;
             tenths(12_000 * w.players[owner].res_mult.max(0) as u64 * lvl * purity_of(bb) as u64 * clock_of(bb) as u64, 30 * 100 * 100 * 100 * 100)
         }
-        // une unité : build * 20 * RECIPE_SCALE de progrès, 1024 * build_mult par tick
-        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64, udef(q.0).build as u64 * 20 * 100)),
+        // une unité (ou une portée) : factory_ticks * RECIPE_SCALE de progrès, 1024 * build_mult par tick
+        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64 * batch(q.0) as u64, factory_ticks(q.0) as u64 * 100)),
         // un cycle de recherche : time secondes
         BClass::Lab => {
             let t = if bb.working { bb.tech } else { w.players[owner].research };
@@ -1228,9 +1228,10 @@ pub fn factory_has(bb: &Building, item: u8) -> u16 {
     bb.stash.get(item as usize).copied().unwrap_or(0)
 }
 
-/// Plafond de la réserve de l'usine pour `item` : deux fois le plus gros besoin d'une unité de la file.
+/// Plafond de la réserve de l'usine pour `item` : deux fois le plus gros besoin d'une entrée de la file
+/// (une unité, ou une portée de la Souche).
 fn factory_limit(bb: &Building, item: u8) -> u16 {
-    bb.queue.iter().map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1)).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
+    bb.queue.iter().map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1 * batch(q.0))).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
 }
 
 /// Place encore libre dans la réserve de l'usine pour `item`.
@@ -1447,7 +1448,7 @@ fn share_inputs(w: &mut World, b: usize, twins: &[usize]) {
                 let tier = if t == 0 { 0 } else { TECHS[t as usize].tier as usize };
                 (0..6).map(|j| (j, PACK1 + j as u8, (j < tier) as u16)).collect()
             }
-            BClass::Factory => udef(bb.queue[0].0).cost.iter().map(|c| (c.0 as usize, c.0, c.1)).collect(),
+            BClass::Factory => udef(bb.queue[0].0).cost.iter().map(|c| (c.0 as usize, c.0, c.1 * batch(bb.queue[0].0))).collect(),
             _ => return,
         }
     };
@@ -2521,9 +2522,11 @@ fn tick_factory(w: &mut World, b: usize) {
     }
     share_with_twins(w, b);
     let def = udef(kind);
+    // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche (voir ponte.rs)
+    let n = batch(kind);
     if !w.buildings[b].working {
-        let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1).map(|c| c.0);
-        if missing.is_some() || w.players[owner].unit_count >= UNIT_CAP {
+        let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1 * n).map(|c| c.0);
+        if missing.is_some() || w.players[owner].unit_count + n as u32 > UNIT_CAP {
             // en panne de composants depuis FACTORY_ALERT_DELAY : une alerte pour son joueur (une seule par attente)
             let bb = &mut w.buildings[b];
             // `target` : NONE hors attente, tick du début de l'attente, puis FACTORY_ALERTED une fois l'alerte donnée
@@ -2541,8 +2544,8 @@ fn tick_factory(w: &mut World, b: usize) {
             return;
         }
         for c in def.cost {
-            w.buildings[b].stash[c.0 as usize] -= c.1;
-            w.players[owner].consumed[c.0 as usize] += c.1 as u32;
+            w.buildings[b].stash[c.0 as usize] -= c.1 * n;
+            w.players[owner].consumed[c.0 as usize] += (c.1 * n) as u32;
         }
         w.buildings[b].target = NONE;
         w.buildings[b].working = true;
@@ -2556,25 +2559,30 @@ fn tick_factory(w: &mut World, b: usize) {
         mult = mult * crate::souche::brood_speed(w, owner as u8) / 100;
     }
     w.buildings[b].progress += s as u32 * mult;
-    if w.buildings[b].progress >= def.build as u32 * 20 * RECIPE_SCALE {
+    if w.buildings[b].progress >= factory_ticks(kind) * RECIPE_SCALE {
         w.buildings[b].working = false;
-        // sortie de l'unité
-        let bb = &w.buildings[b];
-        let (bw, bh) = bb.size();
-        let (fx, fy) = front_tile(bb.x, bb.y, bw, bh, bb.dir);
-        let (mut sx, mut sy) = (fx * TILE + TILE / 2, fy * TILE + TILE / 2);
-        if def.layer == Layer::Air {
-            let c = bb.center();
-            sx = c.0;
-            sy = c.1;
-        }
-        let rally = bb.rally;
         let tick = w.tick;
-        flow_add(&mut w.buildings[b], tick, 1);
-        let id = w.spawn_unit(kind, owner as u8, sx, sy);
-        let s = slot_of(id);
-        w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
-        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
+        flow_add(&mut w.buildings[b], tick, n);
+        if def.litter > 0 {
+            // couveuse : la portée est pondue devant elle, ses œufs éclosent plus tard
+            crate::ponte::lay(w, b, kind);
+        } else {
+            // sortie de l'unité
+            let bb = &w.buildings[b];
+            let (bw, bh) = bb.size();
+            let (fx, fy) = front_tile(bb.x, bb.y, bw, bh, bb.dir);
+            let (mut sx, mut sy) = (fx * TILE + TILE / 2, fy * TILE + TILE / 2);
+            if def.layer == Layer::Air {
+                let c = bb.center();
+                sx = c.0;
+                sy = c.1;
+            }
+            let rally = bb.rally;
+            let id = w.spawn_unit(kind, owner as u8, sx, sy);
+            let s = slot_of(id);
+            w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
+            w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
+        }
         let bb = &mut w.buildings[b];
         if let Some(q) = bb.queue.first_mut() {
             q.1 = q.1.saturating_sub(1);

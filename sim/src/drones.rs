@@ -843,7 +843,7 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
     } else if bb.def().class == BClass::Factory {
         if let Some(&(k, _)) = bb.queue.first() {
             for &(it, n) in udef(k).cost {
-                let miss = (n as u32).saturating_sub(crate::buildings::factory_has(bb, it) as u32);
+                let miss = (n as u32 * batch(k) as u32).saturating_sub(crate::buildings::factory_has(bb, it) as u32);
                 if miss > 0 {
                     out.push((it, miss, near_amount(w, bb.owner, x, y, FACTORY_SUPPLY * TILE, it)));
                 }

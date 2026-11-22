@@ -64,6 +64,10 @@ export const UNIT_DESCS: Record<string, string> = {
   shell: "Carapace : char vivant, très résistant, mord fort au corps-à-corps. Guérit sur le terreau.",
   vine: "Liane : enlace une unité au sol à 7 cases et l'immobilise 2,5 s. Contre les chenillards et les unités rapides.",
   membrane: "Planeur à membranes : organisme volant qui lâche des spores sur le sol, avec des dégâts de zone.",
+  // œufs pondus par les couveuses (voir sim/src/ponte.rs)
+  egg_s: "Œuf : pondu par une couveuse avec le reste de sa portée, il éclot 15 s plus tard en l'organisme qu'il porte. Immobile, sans défense et sans ordres : l'ennemi peut le détruire avant l'éclosion. Un œuf blessé donne un organisme blessé d'autant.",
+  egg_m: "Œuf : pondu par une couveuse avec le reste de sa portée, il éclot 15 s plus tard en l'organisme qu'il porte. Immobile, sans défense et sans ordres : l'ennemi peut le détruire avant l'éclosion. Un œuf blessé donne un organisme blessé d'autant.",
+  egg_l: "Gros œuf cuirassé : il porte une carapace et éclot 15 s après la ponte. Immobile, sans défense et sans ordres : l'ennemi peut le détruire avant l'éclosion. Un œuf blessé donne un organisme blessé d'autant.",
   // ----- Transhumants -----
   ark: "L'Arche, unité de commandement des Transhumants : immense chenillard lent, canon et défense antiaérienne, elle répare. Sa destruction élimine le joueur.",
   ch_drill: "Chariot foreuse : la foreuse repliée sur son chariot. Clic droit sur un gisement libre : il s'y rend et s'y déploie (15 s) ; ou « Déployer » pour choisir l'emplacement et le sens (R). Les stabilisateurs se posent, le mât se relève, la tige descend dans le sol. Déployée, la foreuse donne son minerai à tous ses voisins collés, sur ses quatre faces.",

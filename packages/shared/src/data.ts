@@ -29,6 +29,10 @@ export interface UnitDef {
   race: number; commander: boolean; bio: boolean;
   /** chenillard des Transhumants : bâtiment qu'il devient une fois déployé (-1 : aucun) */
   deploys: number;
+  /** organisme de la Souche : taille de la portée pondue par la couveuse pour une entrée de file (0 : une unité à la fois) */
+  litter: number;
+  /** œuf de la Souche : unité immobile qui éclot en un organisme (voir sim/src/ponte.rs) */
+  egg: boolean;
 }
 export interface GameData {
   races: RaceDef[];

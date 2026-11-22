@@ -80,9 +80,10 @@ impl Cur<'_> {
     }
 }
 
+/// Unité du joueur `p` qui peut recevoir un ordre (un œuf de la Souche n'en reçoit pas).
 fn own_unit(w: &World, p: u8, id: i32) -> Option<usize> {
     let s = w.unit(id as u32)?;
-    if w.units.owner[s] == p {
+    if w.units.owner[s] == p && !crate::ponte::is_egg(w.units.kind[s]) {
         Some(s)
     } else {
         None
@@ -282,9 +283,10 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if front_before != front_after && bb.working {
                 bb.working = false;
                 bb.progress = 0;
-                // unité en cours abandonnée : ses composants reviennent dans la réserve de l'usine
+                // unité (ou portée) en cours abandonnée : ses composants reviennent dans la réserve de l'usine
                 if let Some(k) = front_before {
                     for &(it, n) in udef(k).cost {
+                        let n = n * batch(k);
                         crate::buildings::factory_put(&mut w.buildings[b], it, n);
                         let c = &mut w.players[p as usize].consumed[it as usize];
                         *c = c.saturating_sub(n as u32);

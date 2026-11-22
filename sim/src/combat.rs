@@ -1036,7 +1036,10 @@ fn kill_unit(w: &mut World, s: usize) {
     let (x, y) = (w.units.x[s], w.units.y[s]);
     let def = udef(kind);
     w.ev(EV_UNIT_DIED, x, y, kind as i32, owner as i32);
-    w.ev(EV_EXPLOSION, x, y, def.radius * 2, if def.tier == 6 { 2 } else { 0 });
+    // un œuf de la Souche crève sans exploser
+    if !crate::ponte::is_egg(kind) {
+        w.ev(EV_EXPLOSION, x, y, def.radius * 2, if def.tier == 6 { 2 } else { 0 });
+    }
     // passagers
     let cargo = std::mem::take(&mut w.units.cold[s].cargo);
     for c in cargo {

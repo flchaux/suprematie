@@ -575,6 +575,59 @@ pub fn showcase_demo() -> World {
     w
 }
 
+/// Démo de la ponte de la Souche (?demo=ponte) : le joueur 0 (Souche) a quatre couveuses autour de sa
+/// graine-mère, qui pondent en boucle (rongeurs, cracheurs, carapaces, planeurs à membranes) grâce à une
+/// réserve sans fond ; des chars adverses viennent tirer sur la première portée. Le client y joue le
+/// joueur 0 en local : on peut cliquer sur une couveuse, un œuf, et changer les files.
+pub fn ponte_demo() -> World {
+    let mut w = World::new(&[19, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 1, RACE_SOUCHE as i32, RACE_INDUS as i32]);
+    let (sx, sy) = w.map.starts[0];
+    flat(&mut w, sx - 40, sy - 40, sx + 40, sy + 40);
+    w.place_start_buildings();
+    for t in [T_S_SPITTERS, T_S_SHELLS, T_S_VINES, T_S_MEMBRANES] {
+        w.players[0].set_tech(t);
+    }
+    let heart = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == 0 && w.buildings[b].kind == B_SEED_HEART);
+    let Some(heart) = heart else { return w };
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    // une couveuse de chaque côté de la graine-mère, sortie vers l'extérieur
+    let mut broods = Vec::new();
+    for (dx, dy, dir, kind) in [(4, 0, 0u8, U_GNAWER), (0, 4, 1, U_SPITTER), (-4, 0, 2, U_SHELL), (0, -4, 3, U_MEMBRANE)] {
+        if let Some(b) = place_building(&mut w, 0, B_BROOD, hx + dx, hy + dy, dir) {
+            complete_building(&mut w, b);
+            broods.push((b, kind));
+        }
+    }
+    // le réseau se forme, puis reçoit une réserve sans fond
+    for _ in 0..10 {
+        w.step(&[]);
+    }
+    for &(b, kind) in &broods {
+        let net = w.buildings[b].net as usize;
+        if net != 0 {
+            w.nets[net].seve = 1_000_000;
+            w.nets[net].sels = 1_000_000;
+        }
+        w.buildings[b].queue.push((kind, 1));
+        w.buildings[b].repeat = true;
+        w.buildings[b].wake = 0;
+        // ralliement à l'écart, pour que les œufs suivants aient la place
+        let (cx, cy) = w.buildings[b].center();
+        let (rx, ry) = w.buildings[b].rally;
+        w.buildings[b].rally = (cx + (rx - cx) * 3, cy + (ry - cy) * 3);
+    }
+    // quatre chars adverses viennent de l'est : ils tirent sur la première portée de rongeurs
+    let (cx, cy) = w.buildings[heart].center();
+    for k in 0..4 {
+        let id = w.spawn_unit(U_LIGHT_TANK, 1, cx + 44 * TILE, cy + (k - 2) * 2 * TILE);
+        if let Some(s) = w.unit(id) {
+            let (tx, ty) = (cx + 9 * TILE, cy);
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
+        }
+    }
+    w
+}
+
 /// Démo des déplacements en formation orientée : une armée mêlée du joueur 0 (motos, chars,
 /// artilleries, marcheurs, robots, glisseurs), en bloc tourné vers l'est, sur un grand terrain plat
 /// autour du départ du joueur 0.

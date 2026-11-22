@@ -9,6 +9,7 @@ type In =
   | { type: "view"; x0: number; y0: number; x1: number; y1: number; detail: number; player: number }
   | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "twinPreview" | "wreckAt" | "orders" | "planned" | "researchQueue" | "powerZones" | "zoneEconomy" | "beltPath"; a: number[] }
   | { type: "replay"; speed: number }
+  | { type: "replayEnd"; tick: number }
   | { type: "pause"; paused: boolean }
   | { type: "demoCmd"; cmd: number[] };
 
@@ -133,6 +134,10 @@ onmessage = async (e: MessageEvent<In>) => {
     case "replay":
       replaySpeed = Math.max(0, Math.min(16, m.speed));
       break;
+    case "replayEnd":
+      // replay ou démo : arrêt au tick donné (voir client.stopReplayAt)
+      if (replayOrders) replayEnd = Math.max(0, m.tick);
+      break;
     case "pause":
       paused = m.paused;
       break;
@@ -152,6 +157,7 @@ addEventListener("message", async (e: MessageEvent) => {
   else if (m.scene === "vitrine") sim.showcaseDemo();
   else if (m.scene === "formation") sim.formationDemo();
   else if (m.scene === "anciens") sim.anciensDemo();
+  else if (m.scene === "ponte") sim.ponteDemo();
   else if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;

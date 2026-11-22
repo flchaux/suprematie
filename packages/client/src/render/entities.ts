@@ -6,6 +6,7 @@ import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
+import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -321,7 +322,12 @@ export class Entities {
   screen: UnitScreen[] = [];
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
   /** dist : cases parcourues (chenilles) ; pack, packTick : déploiement (1) ou repli (2) d'un chenillard, et son tick de début */
-  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number }>();
+  /** born : temps de simulation (s) où l'organisme est sorti de son œuf (il grandit pendant BIRTH_TIME) */
+  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number; born?: number }>();
+  /** éclosions récentes (t0 : temps de simulation, s) : l'organisme qui apparaît là sort de son œuf */
+  private hatches: { x: number; z: number; t0: number }[] = [];
+  /** coques vides des œufs éclos : elles se fanent puis rentrent dans le sol (voir eggAnim.ts) */
+  private husks: { kind: number; owner: number; x: number; z: number; facing: number; t0: number }[] = [];
   /** unités qui viennent de disparaître (porte, anneaux, téléportation) : elles s'effacent sur place */
   private ghosts: { kind: number; col: THREE.Color; x: number; y: number; z: number; facing: number; t0: number; fwd: number }[] = [];
   animFrame = 0;
@@ -353,7 +359,8 @@ export class Entities {
     map.spots.forEach((sp, i) => this.spotAt.set(sp.y * map.w + sp.x, i));
     // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
-      const target = Math.max(0.7, (u.radius * 2.3) / TILE);
+      // un œuf garde la taille de son rayon (les autres unités : 0,7 case au moins)
+      const target = u.egg ? (u.radius * 2.2) / TILE : Math.max(0.7, (u.radius * 2.3) / TILE);
       const scaleOf = (built: Built) => target / Math.max(built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z, 0.01);
       this.unitMeshes.push(new KindMesh(this.group, () => buildModel(UNIT_MODELS[u.key] ?? fallbackModel(0.5)), scaleOf, TEX_PER_TILE_UNIT));
     }
@@ -553,6 +560,16 @@ export class Entities {
     this.group.add(this.ghostGroup);
   }
 
+  /**
+   * Éclosion d'un œuf (type d'unité `kind`, joueur `owner`) en (x, z) au tick `tick` : sa coque vide reste
+   * là un instant, et l'organisme qui apparaît à cet endroit en sort en grandissant.
+   */
+  addHatch(x: number, z: number, kind: number, owner: number, facing: number, tick: number): void {
+    const t0 = tick / 20;
+    this.hatches.push({ x, z, t0 });
+    if (this.husks.length < 400 && this.unitMeshes[kind]) this.husks.push({ kind, owner, x, z, facing, t0 });
+  }
+
   unitHeight(kind: number, x: number, z: number): number {
     const u = this.data.units[kind];
     const g = groundHeight(this.map, x, z);
@@ -638,6 +655,8 @@ export class Entities {
     let nd = 0;
     let nr = 0;
     const now = performance.now();
+    // temps de la simulation à l'image affichée (s) : il rythme les œufs, leurs coques vides et les naissances
+    const simT = (f.tick - 1 + alpha) / 20;
     const camQ = this.camera?.quaternion ?? tmpQ.identity();
     for (const ic of this.icons) ic.count = 0;
     let rings = 0;
@@ -704,7 +723,12 @@ export class Entities {
       if (def.layer === Layer.Air || def.layer === Layer.Hover) bob = Math.sin(performance.now() / 400 + id) * 0.06;
       // marche : la phase avance avec la distance parcourue, l'amplitude suit la vitesse
       let st = this.anim.get(id);
-      if (!st) this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+      if (!st) {
+        this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+        // apparu là où un œuf vient d'éclore : il en sort en grandissant
+        const h = def.egg ? undefined : this.hatches.find((h) => Math.abs(h.x - x) < 0.4 && Math.abs(h.z - z) < 0.4);
+        if (h) st.born = h.t0;
+      }
       // saut de plus de 3 cases d'une image à l'autre (porte, anneaux, téléportation) : l'unité s'efface
       // là où elle était et émerge là où elle arrive
       if (st.lx !== undefined && st.seen === this.animFrame - 1 && Math.hypot(x - st.lx, z - (st.lz ?? z)) > 3) {
@@ -736,10 +760,26 @@ export class Entities {
       }
       const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
       // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
-      const depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
+      let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
-      const sc = km.scale * (0.05 + 0.95 * emerge);
+      // œuf de la Souche : il respire, s'agite avant d'éclore, puis ouvre ses lèvres (le temps restant tient
+      // la place de l'angle de tourelle) ; organisme qui vient d'en sortir : il grandit
+      let grow = 1;
+      if (def.egg) {
+        const pose = eggPose(((buf[o + 6] >>> 16) & 0xffff) + 1 - alpha, simT, id % 97);
+        depP = pose.dep;
+        grow = pose.scale;
+        bob += pose.lift * km.height;
+        if (pose.tilt !== 0) tmpQ.premultiply(tmpQ2.setFromAxisAngle(tmpV2.set(Math.cos(pose.axis), 0, Math.sin(pose.axis)), pose.tilt));
+      } else if (st.born !== undefined) {
+        const age = Math.max(0, simT - st.born) / BIRTH_TIME;
+        if (age >= 1) st.born = undefined;
+        else grow = birthScale(age);
+      }
+      const sc = km.scale * (0.05 + 0.95 * emerge) * grow;
+      // les origines des pivots sont à l'échelle du modèle : elles suivent l'unité quand elle grandit
+      const og = sc / km.scale;
       tmpM.compose(tmpV.set(x, y + bob, z), tmpQ, tmpS.set(sc, sc, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       setTeamColor(km.body!, km.n, emerge < 1 ? tmpC.copy(col).lerp(new THREE.Color(0xa8e8ff), 1 - emerge) : col);
@@ -750,7 +790,7 @@ export class Entities {
       st.torso += dA;
       for (const p of km.pivots) {
         // la tourelle tourne vers sa cible ; les rotors tournent en continu ; les jambes se balancent
-        tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z);
+        tmpM2.makeTranslation(p.origin.x * og, p.origin.y * og, p.origin.z * og);
         if (p.wave !== 0) {
           // ondulation : chaque anneau se décale sur le côté et s'oriente le long de la vague, avec un retard
           // croissant vers la queue (la tête, anneau 1, bouge à peine)
@@ -853,6 +893,35 @@ export class Entities {
         setTeamColor(p.tm, km.n, c);
       }
       km.n++;
+    }
+    // ----- coques vides des œufs éclos : les lèvres s'affaissent, le cœur s'éteint, elles rentrent dans le sol -----
+    // (une entrée datée de plus d'une seconde dans le futur vient d'une partie précédente)
+    this.hatches = this.hatches.filter((h) => simT - h.t0 < 1 && simT - h.t0 > -1);
+    this.husks = this.husks.filter((h) => simT - h.t0 < HUSK_LIFE && simT - h.t0 > -1);
+    if (!strategic) {
+      for (const h of this.husks) {
+        if (h.x < vx0 - 4 || h.x > vx1 + 4 || h.z < vz0 - 4 || h.z > vz1 + 4) continue;
+        const pose = huskPose(Math.max(0, simT - h.t0));
+        const km = this.unitMeshes[h.kind];
+        km.ensure(km.n + 1);
+        const sc = km.scale * pose.scale;
+        const col = this.teamColors[cslot(h.owner)];
+        tmpQ.setFromAxisAngle(UP, Math.PI / 2 - h.facing);
+        tmpM.compose(tmpV.set(h.x, this.unitHeight(h.kind, h.x, h.z) - pose.sink * km.height, h.z), tmpQ, tmpS.set(sc, sc, sc));
+        km.body!.mesh.setMatrixAt(km.n, tmpM);
+        setTeamColor(km.body!, km.n, col);
+        for (const p of km.pivots) {
+          tmpM2.makeTranslation(p.origin.x * pose.scale, p.origin.y * pose.scale, p.origin.z * pose.scale);
+          if (p.dep) tmpM2.multiply(depMatrix(p.dep, pose.dep, sc));
+          tmpM2.scale(tmpS.set(sc, sc, sc));
+          const base = tmpM.clone();
+          base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
+          base.multiply(tmpM2);
+          p.tm.mesh.setMatrixAt(km.n, base);
+          setTeamColor(p.tm, km.n, col);
+        }
+        km.n++;
+      }
     }
     // ----- bâtiments -----
     let nvortex = 0;

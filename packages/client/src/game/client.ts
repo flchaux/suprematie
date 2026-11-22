@@ -275,7 +275,8 @@ export class GameClient {
     const water = scene === "eau";
     if (scene === "logistique") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
-    this.demoOrders = scene === "formation" || scene === "anciens";
+    // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -283,6 +284,11 @@ export class GameClient {
   setReplaySpeed(s: number): void {
     ui.replaySpeed = s;
     this.worker?.postMessage({ type: "replay", speed: s });
+  }
+
+  /** Arrête un replay ou une démo au tick donné (vérifications automatiques : une image à un instant précis). */
+  stopReplayAt(tick: number): void {
+    this.worker?.postMessage({ type: "replayEnd", tick });
   }
 
   private async onWorker(m: { type: string; [k: string]: unknown }): Promise<void> {
@@ -321,9 +327,12 @@ export class GameClient {
           f.visW = this.frame!.visW;
         }
         if (f.vis !== prevVis && f.vis && this.scene?.terrain) this.scene.terrain.updateFog(f.vis);
-        this.handleEvents(f);
+        // simulation arrêtée (fin d'un replay, démo arrêtée à un tick) : la même image revient, pour suivre la
+        // caméra ; ses événements ont déjà été joués, et l'interpolation ne repart pas
+        const again = this.frame !== null && f.tick === this.frame.tick;
+        if (!again) this.handleEvents(f);
         this.frame = f;
-        this.frameTime = performance.now();
+        if (!again) this.frameTime = performance.now();
         this.lastTick = f.tick;
         if (this.autoSelect && ui.me >= 0 && f.players[ui.me]) {
           this.autoSelect = false;
@@ -635,11 +644,24 @@ export class GameClient {
         case EV.ELIMINATED:
           pushMessage(`${ui.names[a] ?? "Joueur"} est éliminé`, a === ui.me ? "alert" : "info");
           break;
+        case EV.HATCH: {
+          // éclosion d'un œuf de la Souche : sa coque vide se fane sur place, l'organisme en sort
+          const x = a / TILE, z = c / TILE;
+          const egg = d & 0xff;
+          if (seen(x, z)) {
+            sc.entities?.addHatch(x, z, egg, e & 0xff, (((e >> 8) & 0xffff) * Math.PI * 2) / 65536, f.tick);
+            fx?.hatch(x, groundHeight(this.map!, x, z), z, Math.max(0.7, (this.data!.units[egg]?.radius ?? 60) / 60));
+            sfx.hatch(near(x, z), pan(x, z));
+          }
+          break;
+        }
         case EV.UNIT_DIED: {
           const owner = e;
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.units[d];
-            if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(ownerColor(owner, this.frame?.players)), false);
+            // un œuf de la Souche crève : la sève gicle, pas de débris
+            if (def?.egg) fx?.hatch(a / TILE, groundHeight(this.map!, a / TILE, c / TILE), c / TILE, Math.max(0.7, def.radius / 60), true);
+            else if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(ownerColor(owner, this.frame?.players)), false);
           }
           void owner;
           break;
@@ -1589,13 +1611,18 @@ export class GameClient {
     if (!add) this.selected.clear();
     const p = { x: 0, y: 0 };
     let n = 0;
+    const hits: number[][] = [];
     for (const u of sc.entities.screen) {
       if (u.owner !== ui.me) continue;
       if (!sc.project(u.x, u.y + 0.3, u.z, p)) continue;
-      if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) {
-        this.selected.add(u.id);
-        n++;
-      }
+      if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hits.push([u.id, u.kind]);
+    }
+    // les œufs de la Souche ne reçoivent pas d'ordres : le cadre ne les prend que s'il n'y a qu'eux
+    const eggsOnly = hits.every(([, kind]) => this.data!.units[kind].egg);
+    for (const [id, kind] of hits) {
+      if (!eggsOnly && this.data!.units[kind].egg) continue;
+      this.selected.add(id);
+      n++;
     }
     if (n) {
       for (const id of [...this.selected]) if (Ord.isBuildingRef(id)) this.selected.delete(id);

@@ -151,7 +151,8 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
         w.units.y[s],
         w.units.px[s],
         w.units.py[s],
-        w.units.facing[s] as i32 | (c.turret as i32) << 16,
+        // œuf de la Souche : les ticks avant l'éclosion tiennent la place de l'angle de tourelle
+        w.units.facing[s] as i32 | (if crate::ponte::is_egg(w.units.kind[s]) { crate::ponte::hatch_left(w, s) as i32 } else { c.turret as i32 }) << 16,
         w.units.hp[s],
         aux,
     ]);
@@ -223,7 +224,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             let total: i32 = bb.queue.iter().map(|q| q.1 as i32).sum();
             let pr = if let Some(&(k, _)) = bb.queue.first() {
                 if bb.working {
-                    (bb.progress as u64 * 1000 / (udef(k).build as u64 * 20 * crate::buildings::RECIPE_SCALE as u64).max(1)) as i32
+                    (bb.progress as u64 * 1000 / (factory_ticks(k) as u64 * crate::buildings::RECIPE_SCALE as u64).max(1)) as i32
                 } else {
                     0
                 }
@@ -624,7 +625,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"egg\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -647,7 +648,9 @@ pub fn info_unit(w: &World, id: u32) -> String {
         c.pack,
         if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 },
         pickup_info(w, s),
-        deliver_info(w, s)
+        deliver_info(w, s),
+        // œuf de la Souche : {kind (espèce portée), left (ticks avant l'éclosion), total (incubation)} ou null
+        crate::ponte::content(w, s).map_or("null".into(), |k| format!("{{\"kind\":{},\"left\":{},\"total\":{}}}", k, crate::ponte::hatch_left(w, s), c.timer))
     )
 }
 

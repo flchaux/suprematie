@@ -59,7 +59,7 @@ export const BUILDING_DESCS: Record<string, string> = {
   leaves: "Frondaison : produit 1 sève par seconde dans son réseau, sans gisement. Deux frondaisons à moins de 4 cases se font de l'ombre : chacune perd un quart de sa production par voisine (un quart au moins reste). Étalez-les.",
   taproot: "Racine-puits : se pose sur un gisement. Sur l'hydrocarbure, 3 sève par seconde ; sur le fer, le cuivre ou le silicium, 1 sel par seconde ; sur le cristal, 2 sels. Multiplié par la pureté du gisement.",
   bulb: "Bulbe : réserve de 1 000 sève et 1 000 sels de plus pour son réseau.",
-  brood: "Couveuse : fait naître les organismes de la Souche. Elle prend le coût de chaque unité dans la réserve de son réseau ; isolée de tout réseau, elle ne pond pas.",
+  brood: "Couveuse : pond les organismes de la Souche par portées de 3 à 6 œufs selon l'espèce. Elle prend le coût de la portée entière dans la réserve de son réseau, la porte, puis pond ses œufs devant elle ; ils éclosent 15 s plus tard, et l'ennemi peut les détruire avant. Isolée de tout réseau, elle ne pond pas.",
   matrix: "Matrice : laboratoire de la Souche. Chaque unité de recherche coûte autant d'ADN que son palier ; à défaut d'ADN, la matrice en tire de la sève de son réseau (20 sève pour 1 ADN, toutes les 2 s). L'ADN vient surtout des ennemis et des bêtes qui meurent sur votre terreau.",
   thorn: "Épine : défense de la Souche, crache des épines contre le sol et l'air (22 cases).",
   bloom: "Floraison : grande fleur qui voit loin et détecte au radar (55 cases).",

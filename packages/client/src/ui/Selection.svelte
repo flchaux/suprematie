@@ -103,8 +103,11 @@
     if (bdef.cls === BClass.Extractor && info.out >= 5) return { text: "Sortie bloquée : le minerai n'est pas emporté", kind: "warn" };
     if (bdef.cls === BClass.Factory && info.queue.length && !info.working) {
       const u = d.units[info.queue[0][0]];
-      const lack = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n);
-      const miss = lack.map(([it, n]) => `${n - (info.stash[it] ?? 0)} ${d.items[it].name}`);
+      // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche
+      const k = Math.max(1, u.litter ?? 0);
+      const lack = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n * k);
+      const miss = lack.map(([it, n]) => `${n * k - (info.stash[it] ?? 0)} ${d.items[it].name}`);
+      if (u.litter && miss.length) return { text: `En attente de : ${miss.join(", ")} (la réserve du réseau paie la portée entière d'un coup)`, kind: "warn" };
       // ce que les dépôts à portée des drones de l'usine ont encore (voir drones::site_missing)
       const near = new Map(((info.missing ?? []) as number[][]).map(([it, , n]) => [it, n]));
       const empty = lack.some(([it]) => (near.get(it) ?? 0) <= 0);
@@ -421,11 +424,13 @@
               <button class="ub" class:locked={!ok} disabled={!ok} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
                 {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
+                {#if u.litter}<span class="lit num">×{u.litter}</span>{/if}
                 {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
-                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.build} s</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}<Cost cost={u.cost} /></div>
+                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `${(u.build * u.litter) / 2} s de gestation` : `${u.build} s`}</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}
+                {#if u.litter}<span class="good">Portée de {u.litter} œufs, qui éclosent 15 s après la ponte</span><br /><span class="dim">La portée :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} />{/if}</div>
             </div>
           {/each}
         </div>
@@ -435,13 +440,18 @@
         </div>
         {#if info.queue.length}
           {@const cur = d.units[info.queue[0][0]]}
-          <div class="row"><span class="kicker">En cours · {cur.name}</span>{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}</div>
+          <div class="row"><span class="kicker">En cours · {cur.name}{cur.litter ? ` (portée de ${cur.litter})` : ""}</span>{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n * Math.max(1, cur.litter ?? 0)} size={16} />{/each}</div>
         {/if}
         {#if (info.missing ?? []).length}
           <div class="row wrap"><span class="kicker">Manque</span>{#each info.missing as [it, n, near]}<span class="miss"><Item id={it} n={n} size={16} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span></span>{/each}</div>
         {/if}
-        <span class="dim small"><Icon name="logistics" size={12} />
-          Ses {d.depot?.factoryDrones ?? 4} drones ({info.drones ?? 0} en vol) vont chercher les composants dans vos dépôts à moins de {d.depot?.factorySupply ?? 30} cases. Elle garde d'avance les composants de 2 unités.</span>
+        {#if (bdef.race ?? 0) === 1}
+          <span class="dim small"><Icon name="logistics" size={12} />
+            Elle prend le coût de la portée entière dans la réserve de son réseau, la porte, puis pond tous ses œufs devant elle. Ils éclosent 15 s plus tard ; l'ennemi peut les détruire avant.</span>
+        {:else}
+          <span class="dim small"><Icon name="logistics" size={12} />
+            Ses {d.depot?.factoryDrones ?? 4} drones ({info.drones ?? 0} en vol) vont chercher les composants dans vos dépôts à moins de {d.depot?.factorySupply ?? 30} cases. Elle garde d'avance les composants de 2 unités.</span>
+        {/if}
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
         <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}</button></div>
@@ -680,6 +690,12 @@
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / total) * 100}%"></span></div>
       {/if}
+      {#if ui.unitInfo.egg}
+        <!-- œuf de la Souche : l'organisme qu'il porte, et le temps avant l'éclosion -->
+        {@const eg = ui.unitInfo.egg}
+        <div class="row small"><span class="kicker">Éclosion</span> <b>{d.units[eg.kind]?.name}</b> <span class="num">dans {Math.ceil(eg.left / 20)} s</span></div>
+        <div class="upbar"><span style="width: {100 - (eg.left / Math.max(1, eg.total)) * 100}%"></span></div>
+      {/if}
       {#if ui.unitInfo.harvest}
         <!-- récolte du commandant : gisement -> fonderie intégrée -> stock -->
         {@const h = ui.unitInfo.harvest}
@@ -755,7 +771,8 @@
         </button>
       {/each}
     </div>
-    {#if ui.me >= 0}
+    <!-- des œufs de la Souche seuls : ils ne reçoivent pas d'ordres -->
+    {#if ui.me >= 0 && !ui.selUnits.every((g) => d.units[g.kind].egg)}
       <div class="cmds">
         <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">{keyOf("stop")}</span></button>
         <button class="cmd" onclick={() => client.setMode("attackMove")} title="Attaque en mouvement"><Icon name="attack" size={17} /><span class="key">{keyOf("attackMove")}</span></button>
@@ -880,6 +897,7 @@
   .ub.locked img { filter: grayscale(1) brightness(0.5); }
   .qn { position: absolute; right: 3px; bottom: 2px; font-size: 11px; color: var(--accent-ink); background: var(--accent); padding: 0 3px; font-weight: 600; }
   .lk { position: absolute; left: 3px; top: 3px; color: var(--amber); }
+  .lit { position: absolute; left: 3px; bottom: 2px; font-size: 10px; line-height: 12px; padding: 0 3px; color: var(--amber); background: rgba(4, 7, 12, 0.75); font-weight: 600; }
   .ub .hk { position: absolute; right: 2px; top: 2px; font-size: 8.5px; line-height: 11px; padding: 0 2px; background: rgba(4, 7, 12, 0.7); }
   .rep { display: inline-flex; align-items: center; gap: 6px; }
   .uhead { display: flex; align-items: baseline; gap: 8px; }

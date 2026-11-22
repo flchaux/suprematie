@@ -345,6 +345,10 @@ function voice(buf: AudioBuffer, near: number, pan: number, level: number, wet: 
   src.start(c.currentTime + 0.004 + delay);
 }
 
+/** Son de l'éclosion : celui d'un petit crachat (voir sfx.hatch). */
+const HATCH_SOUND: WeaponSound = { proj: 13, dmg: 20, aoe: 0, cooldown: 30, salvo: 1, sustain: 0 };
+let hatchVoice = 0;
+
 export const sfx = {
   /**
    * Tir d'une arme. near = 0..1 (proximité de la caméra), pan = -1..1 (gauche-droite à l'écran). Une
@@ -364,6 +368,19 @@ export const sfx = {
       if (!r) return;
       voice(r.buf, near, pan, r.gain, m.wet, i * gap * (0.8 + 0.4 * Math.random()), 0.96 + 0.08 * Math.random());
     }
+  },
+  /**
+   * Éclosion d'un œuf de la Souche : le bruit mouillé du crachat, plus aigu et plus doux. Une portée
+   * éclot d'un coup : trois voix au plus, un peu décalées.
+   */
+  hatch(near: number, pan = 0): void {
+    if (near <= 0.04 || volume <= 0) return;
+    if (!throttle("hatch" + (hatchVoice++ % 3), 90)) return;
+    const spec = shotSpec(HATCH_SOUND);
+    const m = shotMix(spec);
+    const r = take("s" + specKey(spec), m, { kind: "shot", spec });
+    if (!r) return;
+    voice(r.buf, near * 0.8, pan, r.gain * 0.6, m.wet, Math.random() * 0.2, 1.25 + 0.3 * Math.random());
   },
   /** Explosion de rayon `radius` (cases) ; kind : 2 pour une unité expérimentale, 3 pour une arme nucléaire. */
   explosion(radius: number, kind: number, near: number, pan = 0): void {

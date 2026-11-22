@@ -255,10 +255,11 @@ fn brood_pays_units_from_the_network() {
     steps(&mut w, 6);
     let r = w.building_ref(brood) as i32;
     let before = net_of(&w, heart).seve;
-    order(&mut w, 0, O_FACTORY_QUEUE, &[r, U_GNAWER as i32, 2]);
-    steps(&mut w, 400);
+    // une entrée de file : une portée de six rongeurs, pondue en œufs qui éclosent (voir ponte_tests.rs)
+    order(&mut w, 0, O_FACTORY_QUEUE, &[r, U_GNAWER as i32, 1]);
+    steps(&mut w, 700);
     let n = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_GNAWER && w.units.owner[s] == 0).count();
-    assert_eq!(n, 2, "deux rongeurs");
+    assert_eq!(n, 6, "une portée de six rongeurs");
     assert!(net_of(&w, heart).seve < before, "payés par le réseau");
 }
 
