@@ -41,6 +41,12 @@ fn stock_totals(w: &World) -> (Vec<[i32; NUM_ITEMS]>, Vec<i32>, Vec<[i32; NUM_IT
             dst[i] += n as i32;
         }
     }
+    // la soute d'un commandant compte comme un dépôt
+    for (p, c) in cap.iter_mut().enumerate() {
+        if crate::drones::commander_store(w, p as u8).is_some() {
+            *c += crate::drones::COMMANDER_CAP as i32;
+        }
+    }
     for s in 0..w.units.alive.len() {
         let h = &w.units.cold[s].hold;
         if w.units.alive[s] && !h.is_empty() {
@@ -614,7 +620,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let c = &w.units.cold[s];
     // constructeur : ce qui est disponible à sa portée (dépôts utilisables), drones en vol
     let d = udef(w.units.kind[s]);
-    let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE).iter()) } else { "[]".into() };
+    let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id).count();
     format!(
         "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{}}}",
@@ -636,7 +642,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
         js_list(c.hold.iter()),
         reach,
         drones,
-        w.building(c.supply_at).is_some(),
+        crate::drones::Store::resolve(w, c.supply_at).is_some(),
         c.pack,
         if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 }
     )

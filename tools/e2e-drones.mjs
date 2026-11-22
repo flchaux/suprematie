@@ -1,7 +1,7 @@
-// Test de jeu : dépôts à stock propre et drones de ravitaillement. Partie contre une IA ; le commandant
-// reçoit deux chantiers (un près du dépôt de départ, un loin de tout dépôt). Vérifie que des drones volent
-// (genre 3 dans le tampon de rendu), capture la scène, puis les fiches du dépôt de départ, d'un chantier
-// et du commandant (soute, à portée, ce qui manque).
+// Test de jeu : soute du commandant comptée comme un dépôt. Partie contre une IA : on commence sans dépôt,
+// les ressources de départ dans la soute du commandant (barre du haut, fiche « Soute (dépôt) ») ; le
+// commandant construit deux générateurs avec ce qu'il porte, sans appeler aucun drone ; un troisième ordre
+// annulé ne coûte rien. Capture la fiche du commandant avant et après.
 //   node tools/e2e-drones.mjs [url]   (WEBGPU=1 sous xvfb-run : Chromium avec fenêtre, rendu WebGPU)
 import { launchBrowser } from "./browser.mjs";
 const gpu = !!process.env.WEBGPU;
@@ -27,7 +27,7 @@ await page.evaluate(() => { const { client } = window.__game; client.centerOnCom
 await page.bringToFront();
 await page.mouse.move(640, 250);
 // le Worker ne rend que la zone vue : attendre que les bâtiments de départ y soient
-await page.waitForFunction(() => window.__game.client.frame.nBuildings >= 2, null, { timeout: 120000 });
+await page.waitForFunction(() => window.__game.client.frame.nBuildings >= 1, null, { timeout: 120000 });
 await page.waitForTimeout(1000);
 
 // bâtiments du joueur (tampon de rendu) et drones en vol
@@ -49,92 +49,57 @@ const state = () => page.evaluate(() => {
   return { tick: f.tick, me: ui.me, nb: f.nBuildings, bs, drones, cmd, stock: Array.from(ui.stock) };
 });
 let s = await state();
-const depot = s.bs.find((b) => b.key === "depot");
-console.log("bâtiments visibles :", s.bs.map((b) => b.key).join(","), "n", s.nb);
-console.log("dépôt de départ :", JSON.stringify(depot), "stock total fer/cuivre :", s.stock[6], s.stock[7]);
-// deux chantiers : un générateur près du commandant, un relais à ~40 cases (hors de portée de tout dépôt)
+const fail = [];
+console.log("bâtiments visibles :", s.bs.map((b) => b.key).join(","), "stock fer/cuivre :", s.stock[6], s.stock[7]);
+if (s.bs.some((b) => b.key === "depot")) fail.push("un dépôt au départ");
+const cmdText = async (name) => {
+  await page.evaluate((id) => { const { client } = window.__game; client.selectIds([id]); client.centerOnCommander(); client.scene.distance = 30; }, s.cmd.id);
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: `${out}/e2e-${name}.png` });
+  const info = await page.evaluate(() => ({ hold: window.__game.ui.unitInfo?.hold ?? [], text: document.querySelector(".selection, .panel.sel, aside")?.textContent ?? "" }));
+  console.log(name, ": soute fer", info.hold[6], "cuivre", info.hold[7], "|", info.text.replace(/\s+/g, " ").match(/Soute.{0,80}/)?.[0]);
+  return info;
+};
+const before = await cmdText("commandant-depart");
+if (!before.text.includes("Soute (dépôt)")) fail.push("fiche sans « Soute (dépôt) »");
 const gen = await page.evaluate(() => window.__game.ui.data.buildings.findIndex((b) => b.key === "generator"));
-// second générateur principal : 40 acier, le dépôt de départ n'en a que 20 (chantier à l'arrêt à mi-course)
-const portal = await page.evaluate(() => window.__game.ui.data.buildings.findIndex((b) => b.key === "main_generator"));
+const genIron = await page.evaluate((g) => window.__game.ui.data.buildings[g].cost.find((c) => c[0] === 6)?.[1] ?? 0, gen);
 const cx = Math.floor(s.cmd.x), cy = Math.floor(s.cmd.y);
-// chantier à ~22 cases du dépôt (dans son rayon de 30) : de longs vols de drones ; demi-vitesse
 const cands = [];
 for (let k = 0; k < 32; k++) {
   const a = (k / 32) * 2 * Math.PI;
-  cands.push([Math.round(depot.x + 21 * Math.cos(a)), Math.round(depot.y + 21 * Math.sin(a))]);
+  cands.push([Math.round(cx + 7 * Math.cos(a)), Math.round(cy + 7 * Math.sin(a))]);
 }
 const ok = await page.evaluate(async ([kind, cands]) => {
   const { client, ui } = window.__game;
   return await client.query("canPlaceMany", [ui.me, kind, ...cands.flatMap(([x, y]) => [x, y, 0])]);
 }, [gen, cands]);
-const i0 = Math.max(0, ok.findIndex((v) => v));
-const spot = cands[i0];
-const i1 = ok.findIndex((v, i) => v && i > i0 + 2);
-const spot2 = cands[i1 < 0 ? i0 : i1];
-console.log("chantier en", spot.join(","), "(posable :", ok.filter((v) => v).length, "sur", cands.length, ")");
-await page.evaluate(([id, gen, portal, gx, gy, px, py]) => {
+const free = cands.filter((_, i) => ok[i]);
+const spots = [free[0], free.find((p) => Math.hypot(p[0] - free[0][0], p[1] - free[0][1]) > 4)];
+console.log("chantiers en", spots.map((p) => p.join(",")).join(" ; "));
+await page.evaluate(([id, gen, a, b]) => {
   const { client } = window.__game;
-  client.stepSpeed(-1);
-  client.cmd([3, 0, gen, gx, gy, 0, 1, id]);
-  client.cmd([3, 1, portal, px, py, 0, 1, id]);
-  client.selectIds([]);
-  client.scene.target.x = gx;
-  client.scene.target.z = gy;
-  client.scene.distance = 30;
-}, [s.cmd.id, gen, portal, spot[0], spot[1], spot2[0], spot2[1]]);
-// drones en vol
-let seen = 0, loadedSeen = 0, shot = false, siteShot = false;
-for (let k = 0; k < 60; k++) {
+  client.cmd([3, 0, gen, a[0], a[1], 0, 1, id]);
+  client.cmd([3, 1, gen, b[0], b[1], 0, 1, id]);
+}, [s.cmd.id, gen, spots[0], spots[1]]);
+let drones = 0, done = 0;
+for (let k = 0; k < 80 && done < 2; k++) {
   await page.waitForTimeout(500);
   s = await state();
-  seen = Math.max(seen, s.drones.length);
-  loadedSeen = Math.max(loadedSeen, s.drones.filter((d) => d.loaded).length);
-  // chantier en cours : sa fiche (ce qui manque, ce qui est à portée)
-  const site0 = s.bs.find((b) => b.key === "generator" && b.build < 65536);
-  if (site0 && !siteShot) {
-    await page.evaluate((b) => window.__game.client.selectIds([b.ref]), site0);
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: `${out}/e2e-drones-chantier.png` });
-    const info = await page.evaluate(() => JSON.stringify({ build: window.__game.ui.buildingInfo?.build, missing: window.__game.ui.buildingInfo?.missing }));
-    console.log("chantier en cours :", info);
-    await page.evaluate(() => window.__game.client.selectIds([]));
-    siteShot = true;
-  }
-  // un drone loin de ses deux bouts : en plein vol
-  if (!shot && s.drones.some((d) => Math.hypot(d.x - depot.x, d.y - depot.y) > 6 && Math.hypot(d.x - spot[0], d.y - spot[1]) > 6)) {
-    await page.evaluate(([x, y]) => { const { client } = window.__game; client.selectIds([]); const sc = client.scene; sc.target.x = x; sc.target.z = y; sc.distance = 26; }, [(s.drones[0].x + spot[0]) / 2, (s.drones[0].y + spot[1]) / 2]);
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: `${out}/e2e-drones-vol.png` });
-    shot = true;
-  }
+  drones = Math.max(drones, s.drones.length);
+  done = s.bs.filter((b) => b.key === "generator" && b.build >= 65536).length;
 }
-console.log("drones en vol (au plus) :", seen, "chargés :", loadedSeen);
-// fiche du commandant (soute, à portée, chargement)
-await page.evaluate((id) => { const { client } = window.__game; client.selectIds([id]); client.centerOnCommander(); client.scene.distance = 30; }, s.cmd.id);
-await page.waitForTimeout(1500);
-await page.screenshot({ path: `${out}/e2e-drones-commandant.png` });
-const unitInfo = await page.evaluate(() => JSON.stringify({ hold: window.__game.ui.unitInfo?.hold, reach: window.__game.ui.unitInfo?.reach, loading: window.__game.ui.unitInfo?.loading, drones: window.__game.ui.unitInfo?.drones }));
-console.log("fiche du commandant :", unitInfo);
-// fiche du dépôt de départ
-await page.evaluate((d) => { const { client } = window.__game; client.selectIds([d.ref]); client.scene.target.x = d.x + 1; client.scene.target.z = d.y + 1; client.scene.distance = 25; }, depot);
-await page.waitForTimeout(1500);
-await page.screenshot({ path: `${out}/e2e-drones-depot.png` });
-const depotText = await page.evaluate(() => document.querySelector(".selection, .panel.sel, aside")?.textContent?.slice(0, 400) ?? "");
-console.log("fiche du dépôt :", depotText.replace(/\s+/g, " "));
-// un chantier en cours (le relais lointain, s'il est posé, sinon le générateur)
-s = await state();
-await page.evaluate(([x, y]) => { const sc = window.__game.client.scene; sc.target.x = x; sc.target.z = y; sc.distance = 30; }, spot2);
-await page.waitForTimeout(2000);
-s = await state();
-const site = s.bs.find((b) => b.build < 65536) ?? s.bs.find((b) => b.key === "generator");
-if (site) {
-  await page.evaluate((b) => { const { client } = window.__game; client.selectIds([b.ref]); client.scene.target.x = b.x + 1; client.scene.target.z = b.y + 1; }, site);
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: `${out}/e2e-drones-chantier-fin.png` });
-  const info = await page.evaluate(() => JSON.stringify({ build: window.__game.ui.buildingInfo?.build, missing: window.__game.ui.buildingInfo?.missing }));
-  console.log("chantier :", site.key, info);
+console.log("générateurs terminés :", done, "drones en vol (au plus) :", drones);
+if (done < 2) fail.push("générateurs pas terminés");
+if (drones > 0) fail.push("des drones ont volé alors que le commandant avait tout");
+// troisième ordre, aussitôt annulé : rien de perdu
+const spot3 = free.find((p) => spots.every((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) > 4));
+if (spot3) {
+  await page.evaluate(([id, gen, c]) => { const { client } = window.__game; client.cmd([3, 0, gen, c[0], c[1], 0, 1, id]); client.cmd([6, 1, id]); }, [s.cmd.id, gen, spot3]);
+  await page.waitForTimeout(2000);
 }
-console.log("bâtiments :", s.bs.map((b) => `${b.key}${b.build < 65536 ? "(chantier)" : ""}`).join(", "));
-console.log("erreurs :", errors.slice(0, 8));
+const after = await cmdText("commandant-apres");
+if (after.hold[6] !== before.hold[6] - 2 * genIron) fail.push(`soute fer ${after.hold[6]}, attendu ${before.hold[6] - 2 * genIron}`);
+console.log("erreurs :", errors.slice(0, 8), "échecs :", fail);
 await browser.close();
-process.exit(seen > 0 ? 0 : 1);
+process.exit(fail.length ? 1 : 0);
