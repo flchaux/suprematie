@@ -1,5 +1,5 @@
 // État partagé entre le contrôleur de partie et l'interface Svelte (rafraîchi quelques fois par seconde).
-import type { GameData, LobbyState, StatSample } from "@supreme/shared";
+import type { GameData, LobbyState, StatSample, ZoneEconomy } from "@supreme/shared";
 import { DEFAULT_GFX, type GfxSettings } from "../render/gfx.ts";
 
 export interface SelUnitGroup { kind: number; count: number; ids: number[]; /** vétérance la plus haute du groupe */ lvl?: number }
@@ -98,6 +98,9 @@ export const ui = $state({
   /** vue électrique (touche maintenue) */
   powerView: false,
   /** réseaux électriques de l'équipe (légende de la vue électrique) */
+  /** économie de la zone électrique au centre de l'écran (barre des ressources ; null : pas encore reçue) ;
+   * `color` : couleur de la zone dans la vue électrique ; `at` : case demandée */
+  zone: null as (ZoneEconomy & { color: number; at: [number, number] }) | null,
   powerNets: [] as { id: number; color: number; prod: number; demand: number; cap: number; sat: number; autonomy: number; dead: boolean; roots?: boolean }[],
   chatOpen: false,
   volume: 0.5,
