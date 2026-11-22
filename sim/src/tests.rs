@@ -209,10 +209,10 @@ fn battle_1000_vs_1000_deterministic() {
     assert!(deaths > 200, "pas assez de combat ({deaths})");
 }
 
-/// Le commandant construit avec le dépôt de départ (posé, rempli, à côté du générateur principal) : ses
-/// drones y prennent les plaques. Sans aucun dépôt, le chantier reste à l'arrêt.
+/// Le commandant construit avec les ressources de départ, qu'il porte dans sa soute (elle compte comme un
+/// dépôt). Sans rien dans sa soute ni aucun dépôt, le chantier reste à l'arrêt.
 #[test]
-fn commander_builds_from_the_start_depot() {
+fn commander_builds_from_the_start_resources() {
     for with_depot in [true, false] {
         let mut w = World::new(&params(1, 512));
         w.infinite_grid = true;
@@ -230,10 +230,10 @@ fn commander_builds_from_the_start_depot() {
             w.step(&[]);
         }
         let built = w.buildings.iter().any(|b| b.alive && b.kind == B_GENERATOR && b.complete());
-        assert_eq!(built, with_depot, "le commandant construit avec le dépôt de départ, pas sans");
+        assert_eq!(built, with_depot, "le commandant construit avec les ressources de départ, pas sans");
         if with_depot {
             let iron = bdef(B_GENERATOR).cost.iter().find(|c| c.0 == IRON_PLATE).map_or(0, |c| c.1 as i32);
-            assert_eq!(w.stock(0, IRON_PLATE), iron0 - iron, "payé par le dépôt de départ");
+            assert_eq!(w.stock(0, IRON_PLATE), iron0 - iron, "payé par la soute du commandant");
         } else {
             assert!(w.buildings.iter().any(|b| b.alive && b.kind == B_GENERATOR && b.stalled), "chantier à l'arrêt");
         }

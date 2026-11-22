@@ -2,7 +2,7 @@
 
 use crate::buildings::{complete_building, place_building};
 use crate::data::*;
-use crate::drones::{has, DRONE};
+use crate::drones::{has, Store, DRONE};
 use crate::fixed::TILE;
 use crate::world::*;
 
@@ -190,11 +190,11 @@ fn nearest_usable_depot_is_chosen() {
     let far = depot(&mut w, 0, 100, 118, &[(IRON_PLATE, 100)]);
     let ally = depot(&mut w, 1, 96, 100, &[(IRON_PLATE, 100)]);
     let list = crate::drones::stores_near(&w, 0, 100 * TILE, 100 * TILE, 30 * TILE);
-    let order: Vec<usize> = list.iter().map(|&(_, b)| b).collect();
-    assert_eq!(order, vec![near, far], "du plus proche au plus loin, sans le dépôt de l'allié");
+    let order: Vec<Store> = list.iter().map(|&(_, st)| st).filter(|st| matches!(st, Store::B(_))).collect();
+    assert_eq!(order, vec![Store::B(near), Store::B(far)], "du plus proche au plus loin, sans le dépôt de l'allié");
     let wh = place_building(&mut w, 1, B_WAREHOUSE, 94, 104, 0).unwrap();
     complete_building(&mut w, wh);
-    assert!(crate::drones::stores_near(&w, 0, 100 * TILE, 100 * TILE, 30 * TILE).iter().any(|&(_, b)| b == wh), "entrepôt d'équipe utilisable");
+    assert!(crate::drones::stores_near(&w, 0, 100 * TILE, 100 * TILE, 30 * TILE).iter().any(|&(_, st)| st == Store::B(wh)), "entrepôt d'équipe utilisable");
     assert!(crate::drones::usable(&w, 1, ally) && !crate::drones::usable(&w, 0, ally));
 }
 
@@ -223,21 +223,19 @@ fn drone_returns_cargo_when_its_builder_dies() {
     assert_eq!(total, total0, "rien de perdu : le chargement est revenu au dépôt");
 }
 
-/// Ressources de départ : un dépôt rempli à côté du générateur principal.
+/// Ressources de départ : dans la soute du commandant, qui compte comme un dépôt ; aucun dépôt au départ.
 #[test]
-fn start_depot_is_placed_next_to_the_main_generator() {
+fn start_resources_are_in_the_commander_hold() {
     let mut w = World::new(&[77, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
     w.place_start_buildings();
     for p in 0..2u8 {
-        let g = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == p && w.buildings[b].kind == B_MAIN_GENERATOR).unwrap();
-        let d = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == p && w.buildings[b].kind == B_DEPOT).expect("dépôt de départ");
-        assert!(w.buildings[d].complete());
-        let (gx, gy) = w.buildings[g].center();
-        let (dx, dy) = w.buildings[d].center();
-        assert!(crate::fixed::dist(gx, gy, dx, dy) < 8 * TILE, "à côté du générateur principal");
+        assert!(!(0..w.buildings.len()).any(|b| w.buildings[b].alive && w.buildings[b].owner == p && w.buildings[b].kind == B_DEPOT), "pas de dépôt de départ");
+        let s = w.unit(w.players[p as usize].commander).unwrap();
         for &(it, n) in START_ITEMS {
-            assert_eq!(has(&w.buildings[d].stash, it), n);
+            assert_eq!(has(&w.units.cold[s].hold, it), n);
         }
+        let (x, y) = (w.units.x[s], w.units.y[s]);
+        assert_eq!(crate::drones::stores_near(&w, p, x, y, TILE), vec![(0, Store::U(s))], "sa soute est un stock");
     }
 }
 
@@ -360,4 +358,139 @@ fn unversioned_save_is_read_as_v2_and_converted() {
     let a = crate::save::restore(&bytes).expect("sauvegarde sans numéro lue");
     let d = (0..a.buildings.len()).find(|&k| a.buildings[k].alive && a.buildings[k].kind == B_DEPOT).expect("dépôt converti");
     assert_eq!(has(&a.buildings[d].stash, STEEL), 77);
+}
+
+/// Fer pris au dépôt (et pas encore rendu) : soute, drones en vol et chantiers payés.
+fn iron_out(w: &World, d: usize) -> (u16, u16) {
+    (200 - has(&w.buildings[d].stash, IRON_PLATE), cost_of(B_GENERATOR, IRON_PLATE))
+}
+
+/// File de trois chantiers : les drones vont chercher le coût de toute la file, pas seulement celui du
+/// chantier en cours : avant que le premier soit terminé, le dépôt a déjà donné le fer des trois.
+#[test]
+fn drones_fetch_for_the_whole_queue() {
+    let mut w = world(1);
+    let d = depot(&mut w, 0, 100, 110, &[(IRON_PLATE, 200), (COPPER_PLATE, 100), (GEAR, 50), (CIRCUIT, 50)]);
+    let (id, _) = engineer(&mut w, 100, 100);
+    for k in 0..3 {
+        build(&mut w, id, B_GENERATOR, 104 + 4 * k, 100);
+    }
+    let mut all_fetched = false;
+    for _ in 0..3000 {
+        w.step(&[]);
+        let (out, cost) = iron_out(&w, d);
+        if out >= 3 * cost {
+            all_fetched = true;
+            break;
+        }
+        if site(&w, B_GENERATOR, 104, 100).is_some_and(|g| w.buildings[g].complete()) {
+            break;
+        }
+    }
+    assert!(all_fetched, "le fer des trois chantiers est parti avant la fin du premier");
+    for _ in 0..3000 {
+        w.step(&[]);
+    }
+    for k in 0..3 {
+        let g = site(&w, B_GENERATOR, 104 + 4 * k, 100).expect("chantier posé");
+        assert!(w.buildings[g].complete(), "générateur {k} construit");
+    }
+    let (out, cost) = iron_out(&w, d);
+    assert_eq!(out, 3 * cost, "le dépôt a perdu exactement le coût des trois");
+}
+
+/// Annulation (arrêt) : les prises encore en route rendent leur chargement au dépôt et reviennent à vide,
+/// la soute repart au dépôt : rien n'est perdu.
+#[test]
+fn cancelled_orders_send_resources_back() {
+    let mut w = world(1);
+    let d = depot(&mut w, 0, 100, 112, &[(IRON_PLATE, 200), (COPPER_PLATE, 100), (GEAR, 50), (CIRCUIT, 50)]);
+    // chantiers loin du dépôt : l'ingénieur charge d'abord, rien n'est posé tout de suite
+    let (id, s) = engineer(&mut w, 100, 100);
+    w.units.cold[s].orders.push(Order::Build { kind: B_GENERATOR, x: 150, y: 100, dir: 0, bid: 0 });
+    w.units.cold[s].orders.push(Order::Build { kind: B_GENERATOR, x: 154, y: 100, dir: 0, bid: 0 });
+    let mut pickup_seen = false;
+    for _ in 0..400 {
+        w.step(&[]);
+        pickup_seen = w.carriers.iter().any(|c| c.alive && c.kind == DRONE && c.a == id && c.state == 1 && !c.ready && c.load > 0);
+        let s = w.unit(id).unwrap();
+        if pickup_seen && crate::drones::total(&w.units.cold[s].hold) > 0 {
+            break;
+        }
+    }
+    assert!(pickup_seen, "une prise est en route vers le dépôt");
+    assert!(site(&w, B_GENERATOR, 150, 100).is_none(), "rien n'est encore posé");
+    w.step(&[4, crate::orders::O_STOP, 0, 1, id as i32]);
+    // à la décision suivante, les prises en route rendent leur chargement réservé
+    for _ in 0..crate::drones::PLAN_PERIOD {
+        w.step(&[]);
+    }
+    assert!(
+        !w.carriers.iter().any(|c| c.alive && c.kind == DRONE && c.a == id && c.state == 1 && !c.ready && c.load > 0),
+        "plus aucune prise en route"
+    );
+    for _ in 0..1200 {
+        w.step(&[]);
+    }
+    let s = w.unit(id).unwrap();
+    assert_eq!(crate::drones::total(&w.units.cold[s].hold), 0, "soute rapatriée");
+    assert_eq!(drones_of(&w, id), 0, "drones rentrés");
+    for (it, n) in [(IRON_PLATE, 200), (COPPER_PLATE, 100), (GEAR, 50), (CIRCUIT, 50)] {
+        assert_eq!(has(&w.buildings[d].stash, it), n, "{} revenu au dépôt", ITEMS[it as usize].key);
+    }
+}
+
+/// Sans aucun dépôt, un ingénieur près du commandant construit avec ce que porte le commandant : ses drones
+/// puisent dans la soute du commandant comme dans un dépôt.
+#[test]
+fn engineer_fetches_from_the_commander_hold() {
+    let mut w = world(1);
+    let c = w.unit(w.players[0].commander).unwrap();
+    w.units.x[c] = 100 * TILE;
+    w.units.y[c] = 110 * TILE;
+    w.units.px[c] = 100 * TILE;
+    w.units.py[c] = 110 * TILE;
+    for &(it, n) in &[(IRON_PLATE, 200), (COPPER_PLATE, 100), (GEAR, 50), (CIRCUIT, 50)] {
+        crate::drones::put(&mut w.units.cold[c].hold, it, n);
+    }
+    let (id, _) = engineer(&mut w, 100, 100);
+    build(&mut w, id, B_GENERATOR, 104, 100);
+    let mut from_cmd = false;
+    for _ in 0..1500 {
+        w.step(&[]);
+        let cref = w.players[0].commander;
+        from_cmd |= w.carriers.iter().any(|k| k.alive && k.kind == DRONE && k.a == id && k.b == cref);
+    }
+    assert!(from_cmd, "un drone de l'ingénieur est allé au commandant");
+    let g = site(&w, B_GENERATOR, 104, 100).expect("chantier posé");
+    assert!(w.buildings[g].complete(), "construit avec la soute du commandant");
+    let c = w.unit(w.players[0].commander).unwrap();
+    assert_eq!(has(&w.units.cold[c].hold, IRON_PLATE), 200 - cost_of(B_GENERATOR, IRON_PLATE));
+}
+
+/// Le commandant qui a les ressources sur lui n'appelle pas le dépôt ; ses drones ne vont chercher que ce
+/// qui manque à sa soute pour toute sa file.
+#[test]
+fn commander_uses_his_hold_before_calling_a_depot() {
+    let mut w = world(1);
+    let c = w.unit(w.players[0].commander).unwrap();
+    let id = w.players[0].commander;
+    let (x, y) = (w.units.x[c] / TILE, w.units.y[c] / TILE);
+    let d = depot(&mut w, 0, x, y + 10, &[(IRON_PLATE, 200), (COPPER_PLATE, 100), (GEAR, 50), (CIRCUIT, 50)]);
+    w.units.cold[c].hold = Vec::new();
+    for &(it, n) in bdef(B_GENERATOR).cost {
+        crate::drones::put(&mut w.units.cold[c].hold, it, n);
+    }
+    w.units.cold[c].orders.push(Order::Build { kind: B_GENERATOR, x: x + 4, y, dir: 0, bid: 0 });
+    for _ in 0..300 {
+        w.step(&[]);
+        assert_eq!(drones_of(&w, id), 0, "il a tout sur lui : aucun drone");
+    }
+    // deux chantiers de plus : il ne va chercher que ce qui manque
+    let s = w.unit(id).unwrap();
+    w.units.cold[s].orders.push(Order::Build { kind: B_GENERATOR, x: x + 8, y, dir: 0, bid: 0 });
+    for _ in 0..2000 {
+        w.step(&[]);
+    }
+    assert_eq!(has(&w.buildings[d].stash, IRON_PLATE), 200 - cost_of(B_GENERATOR, IRON_PLATE), "le dépôt n'a donné que le second");
 }
