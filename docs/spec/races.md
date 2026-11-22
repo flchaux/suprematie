@@ -17,11 +17,13 @@ La Souche et les Transhumants sont livrés en version réduite : économie, rech
 - **Objets ajoutés** : sève (27), sels (28), ADN (29), relevés (30). Les tableaux d'objets des sauvegardes d'avant (format 2 et moins, 27 objets) se lisent avec des zéros pour les nouveaux (`ser.rs`).
 - **Sauvegardes** : format 3 (race, recherches 64 à 127, réserves des réseaux, chenillards repliés, usure des gisements).
 - **Rendu** : le bloc joueur ajoute race, recherches 64 à 127 et réserves de la Souche (`PLAYER_WORDS` = 13 + 4 × objets + 9). Fiche d'un bâtiment : `souche` (réseau, réserve, production) ou `transh` (chenillard, usure) ; fiche d'une unité : `pack`, `packLeft`.
-- **Interface** : menu de construction par race (`buildCats`), panneau d'usine filtré par race, panneau de recherche avec l'arbre de la race et son coût (lots, ADN, relevés), barre du haut par race, bouton « Replier » des modules, message `EV_DEPLOY_FAILED` (45).
+- **Interface** : menu de construction par race (`buildCats`), panneau d'usine filtré par race, panneau de recherche avec l'arbre de la race et son coût (lots, ADN, relevés), barre du haut par race, bouton « Replier » des modules, message `EV_DEPLOY_FAILED` (45). Souche : la vue électrique (K) devient la vue des racines (une couleur par réseau, sa réserve ; un réseau sans sève est hachuré, `power_zones` marque ces réseaux d'un 1 en neuvième valeur), et le terreau s'affiche pendant la pose de tout organe.
+- **Bots** : ils jouent les Industriels ; leurs estimations traitent les commandants des trois races comme des commandants (`UnitDef::commander`).
+- **Essai en jeu** : `tools/e2e-races.mjs` (une race par partie, contre une IA).
 
 ## Souche
 
-Code : `sim/src/souche.rs`. Tests : `sim/src/races_tests.rs`.
+Code : `sim/src/souche.rs`. Tests : `sim/src/races_tests.rs`. Modèles : `assets/models/souche.ts`.
 
 - **Départ** : la Reine, une graine-mère poussée (réserve de 400 sève et 150 sels dans son réseau) et un semeur. Pas de réserve commune ni de générateur.
 - **Réseau de racines** : racines (1 × 1, zone de 3 cases) et graines-mères (3 × 3, zone de 6) sont des poteaux du calcul des zones électriques (`rebuild_power`) ; deux poteaux de la Souche sont reliés quand leurs zones (le **terreau**) se touchent (`zones_touch`). Chaque réseau a sa réserve de sève et de sels (`Net::seve`, `Net::sels`), plafonnée à 300 + 600 par graine-mère + 1 000 par bulbe (`Net::store`). Quand le réseau change, chaque bâtiment de la Souche apporte à son nouveau réseau sa part de la réserve de l'ancien, au prorata des bâtiments ; le reste de la division va au premier (`old_pools`, `split_pools`). Les bâtiments de la Souche rejoignent le réseau de leur terreau même sans électricité.
@@ -37,7 +39,7 @@ Code : `sim/src/souche.rs`. Tests : `sim/src/races_tests.rs`.
 
 ## Transhumants
 
-Code : `sim/src/transhumants.rs`. Tests : `sim/src/races_tests.rs`.
+Code : `sim/src/transhumants.rs`. Tests : `sim/src/races_tests.rs`. Modèles : `assets/models/transhumants.ts`.
 
 - **Départ** : l'Arche et sept chenillards repliés autour d'elle (générateur avec 20 hydrocarbures, deux foreuses, fonderie, soute, assembleur, atelier), le stock de départ des Industriels et 20 relevés.
 - **Chenillards** : unités qui portent un module (`UnitDef::deploys`). Ordre « Déployer » (`O_DEPLOY`) : immobile 15 s, il devient le bâtiment du module, posé à la place libre la plus proche (3 cases au plus ; une foreuse doit couvrir un gisement) ; un ordre de déplacement l'annule ; sans place, il reste chenillard (`EV_DEPLOY_FAILED`). Ordre « Replier » (`O_PACK` = 48, références de bâtiments) : le module redevient un chenillard immobile 10 s ; son contenu retourne à la réserve (remboursement), sa recette et le combustible du générateur restent à bord ; les PV suivent dans les deux sens. Fin du déploiement ou du repli : `UnitCold::ready_tick`.

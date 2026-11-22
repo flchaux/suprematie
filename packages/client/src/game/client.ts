@@ -379,7 +379,8 @@ export class GameClient {
     const pv = keymap.held("powerView", this.keys);
     if (pv !== ui.powerView) ui.powerView = pv;
     const placing = ui.mode === "build" && ui.buildKind >= 0 ? this.data?.buildings[ui.buildKind] : undefined;
-    const placingPower = !!placing && (placing.supply > 0 || placing.powerUse > 0);
+    // Souche : tout organe se pose sur le terreau, montré comme les zones électriques
+    const placingPower = !!placing && (placing.supply > 0 || placing.powerUse > 0 || (placing.race ?? 0) === 1);
     const showZones = pv || placingPower;
     // les zones servent aussi à la mini-carte et aux jauges : requête toutes les 2 s, toutes les 0,4 s affichées
     if (this.frame && ui.me >= 0 && now - this.lastZonesQuery > (showZones ? 400 : 2000)) {
