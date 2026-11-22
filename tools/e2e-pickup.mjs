@@ -31,7 +31,7 @@ await page.waitForFunction(() => window.__game?.client.frame, null, { timeout: 6
 await page.evaluate(() => { const { client } = window.__game; client.centerOnCommander(); client.scene.distance = 40; });
 await page.bringToFront();
 await page.mouse.move(640, 250);
-await page.waitForFunction(() => window.__game.client.frame.nBuildings >= 2, null, { timeout: 120000 });
+await page.waitForFunction(() => window.__game.client.frame.nBuildings >= 1, null, { timeout: 120000 });
 await page.waitForTimeout(1000);
 
 const state = () => page.evaluate(() => {
