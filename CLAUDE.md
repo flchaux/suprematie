@@ -1,6 +1,6 @@
 # Règles du projet
 
-Lire docs/SPEC.md avant toute tâche qui touche à l'architecture, au réseau ou à la simulation.
+Lire docs/SPEC.md (index), puis les fichiers de docs/spec/ utiles à la tâche, avant toute tâche qui touche à l'architecture, au réseau ou à la simulation. Une règle nouvelle va dans le fichier de son thème.
 Rust est installé par apt : `/usr/lib/rust-1.97/bin` (les scripts tools/*.mjs l'ajoutent au PATH).
 
 ## Simulation (dossier sim/)

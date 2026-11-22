@@ -1,0 +1,57 @@
+# Rendu, interface, modèles 3D
+
+> Partie de la spécification. Index et liste des fichiers : [docs/SPEC.md](../SPEC.md).
+
+## Rendu et interface
+
+Le jeu cible Chrome uniquement. Le rendu utilise Three.js avec son moteur WebGPU, qui bascule automatiquement sur WebGL2 sur les machines où Chrome n'a pas WebGPU.
+
+- Chaque type d'unité, de bâtiment et d'objet sur tapis est dessiné en un seul appel au GPU (InstancedMesh). Chaque pièce mobile (tourelle, canon) est un mesh instancié séparé, pour tourner indépendamment.
+- La caméra est en vue de dessus inclinable, avec un zoom continu de l'unité à la carte entière. Au-delà d'une distance réglable, les modèles sont remplacés par des icônes stratégiques.
+- L'affichage tourne à 60 images par seconde et interpole les positions entre les deux derniers ticks reçus du Worker.
+- Le Worker envoie le tampon de rendu à chaque tick en transfert sans copie (ArrayBuffer transférable). Le thread principal ne fait aucun calcul de simulation.
+- L'interface est en HTML et CSS avec Svelte, par-dessus le canvas : barre de construction, minicarte, infobulles, statistiques de production. Les valeurs affichées sont rafraîchies quelques fois par seconde, pas à chaque image.
+- Gisements (`render/deposits.ts`) : rien n'est aligné sur les cases, un gisement n'a pas de bord net.
+  - Au sol, une tache de minerai fondue dans le terrain : la végétation cède peu à peu à la terre nue, puis à un lit de gravier et de roche teinté par le minerai, en deux nuances mêlées. Une carte des taches (`depositMask` : une valeur par case, teinte et poids, lue en bilinéaire) donne à chaque gisement son ovale à lobes ; le sol décale sa lecture d'un bruit d'environ une case et suit le relief des textures (`groundColor` dans `ground.ts`). Chaque passage s'étale sur une case au moins. Sans les textures du sol, la tache est une teinte aux mêmes bords.
+  - Dessus, un amas tiré d'après la position du gisement (toujours le même) : une à trois grosses roches à la couleur du minerai, des moyennes de nuances mêlées (rouille sur le fer, vert-de-gris sur le cuivre, quartz sur le silicium), des éclats plats sur 2 cases autour. Roches à facettes, une clarté par facette, grain de la texture de roche. Le cristal est un bouquet de prismes lumineux ; le geyser, une margelle de concrétions autour de l'évent.
+  - Pureté : un gisement impur tire sur le gris et compte moins de roches, un gisement pur est plus vif et en compte plus.
+  - Les roches hautes restent dans l'emprise de 2 × 2 cases et disparaissent sous le bâtiment qui recouvre le gisement (`Deposits.setCovered`, d'après les bâtiments de l'image) ; la tache et les éclats plats restent autour de lui. La clairière sans décor autour d'un gisement est ronde.
+  - Les gisements sont rangés par morceaux de carte de 128 cases : seuls ceux des morceaux vus sont dessinés. Test : `packages/client/test/deposits.test.ts`.
+- Sons : tous synthétisés, sans fichier audio. Interface et alertes : oscillateurs WebAudio joués en direct (`audio/sound.ts`). Combat : chaque son est calculé une fois, échantillon par échantillon, par `audio/synth.ts` (module pur, sans WebAudio, qui tourne aussi sous Node), dans un Worker (`audio/synthWorker.ts`), puis rejoué comme un tampon.
+  - Recettes : une détonation est un bruit découpé en bandes dont les aigus meurent avant les graves, avec une onde de bouche, un coup grave dont la hauteur chute, les résonances du tube et une saturation ; un blaster est une impulsion dispersée par une chaîne de filtres passe-tout (les aigus sortent d'abord, comme un câble tendu que l'on frappe) ; un rayon prolongé (laser, souffle de feu) dure le temps du rayon ; une explosion ajoute débris, grondement et répliques. Chaque famille de projectiles a sa recette (`renderShot`), réglée par la taille de l'arme (`weaponSize`, d'après dégâts et rayon d'effet), sa cadence (arme rapide : son plus sec) et la durée de son rayon. Les explosions ont 7 classes (`boomClass` : impact sans souffle, quatre tailles d'après le rayon, unité expérimentale, nucléaire). Le rayon instantané du canon orbital a son propre son (`renderOrbital`).
+  - Variantes : 1 à 4 par son (graine), calculées à la demande ; un tir ne rejoue pas la variante précédente et sa vitesse de lecture varie de ±4 %. Une salve joue jusqu'à 5 coups échelonnés. Les sons de toutes les armes sont préparés en tâche de fond dès le chargement (`sfx.warm`) ; un tir dont le son n'est pas encore calculé reste muet.
+  - Niveaux : le Worker mesure le niveau perçu de chaque tampon (`loudness`, pondération proche de la courbe A sur 125 ms) et la lecture l'amène au niveau visé par famille et par taille (`shotMix`, `BOOM_MIX`) : pas de table de gains écrite à la main.
+  - Lecture : voix spatialisée (gauche-droite selon la position à l'écran ; au loin ou vu de haut, le son direct faiblit et s'assourdit), part envoyée dans l'écho d'un terrain ouvert (convolution avec une réponse calculée, `outdoorImpulse` : échos francs puis traîne diffuse) qui baisse moins vite que le son direct, puis bus compressé et écrêté en douceur. Au plus 32 voix de combat (44 pour les sons tout proches).
+  - Écoute hors du jeu : `node tools/sounds/render.ts <dossier>` écrit chaque son en WAV, leurs niveaux, et un montage mixé comme en jeu (`montage.wav`, repères dans `montage.txt`). En jeu, `?demo=projectiles` fait tirer chaque arme. Test : `packages/client/test/synth.test.ts`.
+
+## Modèles 3D
+
+Les modèles sont décrits en données à partir d'un kit de formes simples, et un générateur TypeScript les construit au chargement. Claude n'écrit jamais de sommets ni de fichiers OBJ ou glTF.
+
+- Le générateur prend une liste de pièces, les place, les colore avec la palette commune et les fusionne en un seul mesh. Formes : bloc, bloc chanfreiné, cylindre (chanfreiné ou non), cône, biseau, sphère, profil tourné (`lathe` : cuves, dômes, canons, tuyères), contour extrudé (`extrude` : caisses profilées, voûtes, flancs), tuyau à coudes arrondis (`tube`) et anneau (`torus` : brides, carènes).
+- Les pièces plates gardent leurs facettes. Les pièces rondes (profils tournés, tuyaux, anneaux, cylindres de 10 côtés ou plus) sont lissées : les facettes de moins de 40° se fondent.
+- Matières : blindage peint, métal, métal sombre, peinture de danger, verre, lumineux, plus cuivre, acier clair, caoutchouc et béton. Chacune a sa texture triplanaire (le béton a la sienne), sa rugosité et son aspect métallique.
+- Niveau de détail : le générateur construit aussi une version allégée de chaque modèle détaillé, sans les pièces marquées `fine` (boulons, rambardes, échelles, petits tuyaux), avec des formes rondes à moitié moins de côtés et sans chanfrein. Le jeu passe à cette version quand la caméra s'éloigne (au-delà de 95, retour en deçà de 85) en échangeant seulement les géométries des maillages instanciés.
+- Les éléments fréquents sont des sous-ensembles réutilisables : chenilles, tourelles, canons, réacteurs, socles de bâtiments.
+- Les pièces mobiles sont marquées `pivot`, et les pièces qu'elles portent sont marquées `parent`. Le jeu les fait tourner lui-même, sans animation par squelette.
+- La palette compte 6 à 8 couleurs communes plus une couleur par joueur, soit 8 couleurs de joueur. Avec une seule faction, toutes les unités partagent le même kit.
+- Trappes : les bâtiments qui reçoivent des objets (fabricants, laboratoires, dépôts, usines, générateurs, silos, entrepôts, gares, héliports) portent une trappe fermée (sous-ensemble `trappe` du kit) sur chaque case de bord de chaque côté. Le générateur la pose sur la paroi du modèle (`withHatches`), trouvée au rayon à 0,3 case du sol ; une case sans paroi proche n'a pas de trappe. Ses descriptions ne dessinent donc pas de trappe. En jeu, une trappe ouverte allume le pourtour de son volet (cyan : entrée, ambre : sortie, vert : machines jumelles) et creuse l'ouverture, au même endroit.
+- Budget : une unité compte au plus 2 500 triangles de près et 1 000 de loin ; un bâtiment au plus 4 000 de près et 1 600 de loin, plus ses trappes (96 triangles de près et 24 de loin chacune). La plupart des unités anciennes comptent 300 à 500 triangles.
+- Mesure de novembre 2026 (mode démo, 8 000 unités) : 60 à 80 appels de dessin et 1 à 1,9 million de triangles par image, ombres comprises. Des modèles cinq fois plus lourds portent ce total à 2,5 à 6,3 millions, sans changer le temps processeur : la limite est la carte graphique, d'où la version allégée au loin.
+
+Exemple de description d'une unité :
+
+```ts
+export const charLeger: UnitModel = {
+  parts: [
+    { use: "chenille", pos: [0.9, 0, 0], mirror: true },
+    { shape: "box", size: [1.6, 0.4, 2.2], pos: [0, 0.35, 0], color: "faction" },
+    { shape: "cylinder", sides: 6, radius: 0.55, height: 0.35, pos: [0, 0.75, -0.1], color: "faction", pivot: "tourelle" },
+    { shape: "cylinder", sides: 5, radius: 0.08, height: 1.4, pos: [0, 0.8, 0.8], rot: [90, 0, 0], color: "metal", parent: "tourelle" },
+  ],
+};
+```
+
+Une page de visualisation (`tools/viewer`) affiche toutes les unités côte à côte, avec l'angle et la distance de la caméra du jeu (`&zoom=2` pour s'approcher, `&lo` pour la version allégée, `&rot=180` pour voir les modèles de dos ; variables `ZOOM`, `LO`, `ROT` de `npm run viewer:capture`). En jeu, `?demo=vitrine` pose un exemplaire de chaque bâtiment et de chaque unité. Playwright en fait une capture d'environ 800 pixels de large, que Claude regarde pour vérifier son travail.
+
+Pour tester le gameplay avant d'avoir les vrais modèles, les packs gratuits sous licence CC0 de Kenney et Quaternius peuvent servir. Si le kit paraît trop simple plus tard, Blender piloté par des scripts Python écrits par Claude permettra des pièces plus travaillées, exportées en .glb.
