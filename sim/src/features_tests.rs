@@ -2157,6 +2157,40 @@ fn showcase_demo_places_every_land_building_and_unit() {
     assert!(units >= UNITS.len(), "{units} unités");
 }
 
+/// Démo des chantiers : chaque chantier (tapis compris, et organes de la Souche) donne son avancement dans
+/// le tampon de rendu (mot 4 d'un bâtiment, sur BUILD_FULL), de quoi dessiner sa barre de progression ;
+/// sans constructeur, ils restent figés.
+#[test]
+fn chantiers_demo_frame_carries_site_progress() {
+    let mut w = crate::stress::chantiers_demo();
+    for _ in 0..20 {
+        w.step(&[]);
+    }
+    let sites: Vec<usize> = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].owner == 0 && !w.buildings[b].complete()).collect();
+    let kinds = |k: u16| sites.iter().filter(|&&b| w.buildings[b].kind == k).count();
+    assert!(kinds(B_BELT1) >= 30 && kinds(B_BELT3) >= 12 && kinds(B_RAIL) >= 5 && kinds(B_SPLITTER) == 1, "{} chantiers", sites.len());
+    assert!(kinds(B_ROOT) >= 6 && kinds(B_THORN) == 1);
+    let buf = crate::render::render(&w, 0, 0, w.map.w, w.map.h, 2, 0, false);
+    let np = buf[2] as usize;
+    let off = crate::render::HEADER + np * crate::render::PLAYER_WORDS + buf[3] as usize * crate::render::UNIT_WORDS;
+    let mut belts = Vec::new();
+    for i in 0..buf[4] as usize {
+        let o = off + i * crate::render::BUILDING_WORDS;
+        let r = buf[o] as u32;
+        let b = sites.iter().copied().find(|&b| w.building_ref(b) == r);
+        if let Some(b) = b {
+            assert_eq!(buf[o + 4] as u32, w.buildings[b].build);
+            if w.buildings[b].kind == B_BELT1 {
+                belts.push((w.buildings[b].x, buf[o + 4]));
+            }
+        }
+    }
+    // la file de tapis : avancement croissant d'un bout à l'autre, jamais complet
+    belts.sort();
+    assert_eq!(belts.len(), 30);
+    assert!(belts.windows(2).all(|p| p[0].1 < p[1].1) && belts[29].1 < BUILD_FULL as i32);
+}
+
 /// Partie sans brouillard de guerre (paramètre après la faune) : toute la carte est vue par chaque
 /// équipe, les unités furtives sont visibles et ciblées ; le réglage survit à la sauvegarde.
 #[test]

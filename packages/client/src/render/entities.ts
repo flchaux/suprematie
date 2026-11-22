@@ -8,6 +8,7 @@ import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttr
 import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
 import { FLOOR_H, liftDash, liftOut, liftUp } from "./liftAnim.ts";
+import { barInView, siteBarOf, siteBarSize, type SiteBar } from "./siteBars.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -134,6 +135,12 @@ const FITTED_GLOW = new THREE.Vector3(0.46 / 0.64, 0.28 / 0.44, 0.1);
 const FITTED_HOLE = new THREE.Vector3(0.38 / 0.5, 0.2 / 0.3, 0.1);
 /** teinte d'un bâtiment en cours d'amélioration (chantier ambre) */
 const UPGRADE_TINT = new THREE.Color(0xffc266);
+/** barres de chantier : 3 instances au plus par chantier (fond, part faite, part perdue) */
+const SITE_BARS_MAX = 16384;
+const SITE_BACK = new THREE.Color(0.08, 0.1, 0.12);
+const SITE_DONE = new THREE.Color(0.35, 0.85, 1);
+const SITE_LOST = new THREE.Color(0.9, 0.2, 0.15);
+const SITE_UPGRADE = new THREE.Color(1, 0.72, 0.25);
 const CRAFTER_ASSEMBLER = 1;
 
 const tmpM = new THREE.Matrix4();
@@ -335,6 +342,10 @@ export class Entities {
   private wreckMat: THREE.MeshStandardNodeMaterial | null = null;
   rings: THREE.InstancedMesh;
   bars: THREE.InstancedMesh;
+  /** barres de progression des chantiers et des améliorations (fond, part faite, part perdue) */
+  siteBars: THREE.InstancedMesh;
+  /** taille d'une case du monde en pixels à l'écran, inversée (fixée par la scène à chaque image) */
+  pxWorld = 0.02;
   icons: THREE.InstancedMesh[];
   beams: THREE.LineSegments;
   beamPos: Float32Array;
@@ -562,6 +573,12 @@ export class Entities {
     this.bars.frustumCulled = false;
     this.bars.setColorAt(0, new THREE.Color());
     this.group.add(this.bars);
+    this.siteBars = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), basic({ depthTest: false }), SITE_BARS_MAX);
+    this.siteBars.renderOrder = 6;
+    this.siteBars.count = 0;
+    this.siteBars.frustumCulled = false;
+    this.siteBars.setColorAt(0, new THREE.Color());
+    this.group.add(this.siteBars);
     // icônes stratégiques : carré (terre), triangle (air), losange (mer), petit carré (bâtiment)
     const shapes = [
       new THREE.PlaneGeometry(1, 1),
@@ -657,6 +674,36 @@ export class Entities {
     for (const k of all) k?.setLod(lo);
   }
 
+  /**
+   * Barre de progression d'un chantier ou d'une amélioration, à plat au-dessus du bâtiment de `w` × `h` cases
+   * centré en (cx, cz), au sol à la hauteur `y` : fond sombre, part faite (cyan, ambre pour une amélioration),
+   * part perdue en dégâts (rouge). Taille selon le zoom (`siteBarSize`). Rend le nouveau nombre d'instances.
+   */
+  private pushSiteBar(n: number, sb: SiteBar, cx: number, y: number, cz: number, w: number, h: number): number {
+    const { width, thick, lift } = siteBarSize(w, h, w === 1 && h === 1, this.pxWorld);
+    const z = cz + h / 2 - thick / 2 - 0.05;
+    const yy = y + lift;
+    const m = this.siteBars;
+    tmpM.compose(tmpV.set(cx, yy, z), tmpQ.identity(), tmpS.set(width, 1, thick));
+    m.setMatrixAt(n, tmpM);
+    m.setColorAt(n++, SITE_BACK);
+    // la part pleine laisse un liseré du fond tout autour
+    const pad = thick * 0.18;
+    const inner = width - 2 * pad;
+    const x0 = cx - inner / 2;
+    if (sb.done > 0.002) {
+      tmpM.compose(tmpV.set(x0 + (inner * sb.done) / 2, yy + 0.02, z), tmpQ, tmpS.set(inner * sb.done, 1, thick - 2 * pad));
+      m.setMatrixAt(n, tmpM);
+      m.setColorAt(n++, sb.upgrade ? SITE_UPGRADE : SITE_DONE);
+    }
+    if (sb.lost > 0.01) {
+      tmpM.compose(tmpV.set(x0 + inner * (sb.done + sb.lost / 2), yy + 0.02, z), tmpQ, tmpS.set(inner * sb.lost, 1, thick - 2 * pad));
+      m.setMatrixAt(n, tmpM);
+      m.setColorAt(n++, SITE_LOST);
+    }
+    return n;
+  }
+
   update(f: Frame, alpha: number, me: number, myTeam: number, selected: Set<number>, strategic: boolean, iconScale: number, dt: number, spectator: boolean, viewRect: [number, number, number, number]): void {
     // nettoyage de l'état d'animation des unités disparues ou longtemps hors de vue
     if (++this.animFrame % 600 === 0) for (const [k, v] of this.anim) if (this.animFrame - v.seen > 600) this.anim.delete(k);
@@ -699,6 +746,7 @@ export class Entities {
     for (const ic of this.icons) ic.count = 0;
     let rings = 0;
     let bars = 0;
+    let siteBars = 0;
     this.screen.length = 0;
     const [vx0, vz0, vx1, vz1] = viewRect;
     const fx = this.effects;
@@ -1261,43 +1309,10 @@ export class Entities {
       if (frac < 0.6 && build >= 1 && def.cls !== BClass.Belt && def.cls !== BClass.Inserter && (!enemy || seen(cx, cz, 1))) {
         fx.burning(cx, y + km.height * 0.85, cz, (0.6 - frac) / 0.6, Math.max(def.w, def.h) * 0.45, dt);
       }
-      if (build < 1 && def.cls !== BClass.Belt && bars < 5900) {
-        // chantier : barre toujours visible ; avancement en cyan, points de vie perdus (dégâts) en rouge
-        // (la simulation fait monter les points de vie avec l'avancement)
-        const wdt = def.w * 0.8;
-        const z = cz + def.h / 2;
-        const lift = y + 2.2;
-        const hpf = Math.min(build, frac);
-        tmpM.compose(tmpV.set(cx, lift, z), tmpQ.identity(), tmpS.set(wdt + 0.12, 1, 2.4));
-        this.bars.setMatrixAt(bars, tmpM);
-        this.bars.setColorAt(bars, tmpC.setRGB(0.08, 0.1, 0.12));
-        bars++;
-        if (hpf > 0.002) {
-          tmpM.compose(tmpV.set(cx - (wdt * (1 - hpf)) / 2, lift + 0.02, z), tmpQ.identity(), tmpS.set(wdt * hpf, 1, 1.6));
-          this.bars.setMatrixAt(bars, tmpM);
-          this.bars.setColorAt(bars, tmpC.setRGB(0.35, 0.85, 1));
-          bars++;
-        }
-        if (build - hpf > 0.01) {
-          const mid = hpf + (build - hpf) / 2;
-          tmpM.compose(tmpV.set(cx - wdt / 2 + wdt * mid, lift + 0.02, z), tmpQ.identity(), tmpS.set(wdt * (build - hpf), 1, 1.6));
-          this.bars.setMatrixAt(bars, tmpM);
-          this.bars.setColorAt(bars, tmpC.setRGB(0.9, 0.2, 0.15));
-          bars++;
-        }
-      } else if (upg > 0 && bars < 5900) {
-        // amélioration : barre toujours visible, avancement en ambre
-        const wdt = def.w * 0.8;
-        const z = cz + def.h / 2;
-        const lift = y + 2.2;
-        tmpM.compose(tmpV.set(cx, lift, z), tmpQ.identity(), tmpS.set(wdt + 0.12, 1, 2.4));
-        this.bars.setMatrixAt(bars, tmpM);
-        this.bars.setColorAt(bars, tmpC.setRGB(0.08, 0.1, 0.12));
-        bars++;
-        tmpM.compose(tmpV.set(cx - (wdt * (1 - upg)) / 2, lift + 0.02, z), tmpQ.identity(), tmpS.set(wdt * upg, 1, 1.6));
-        this.bars.setMatrixAt(bars, tmpM);
-        this.bars.setColorAt(bars, tmpC.setRGB(1, 0.72, 0.25));
-        bars++;
+      // chantier (tapis compris) ou amélioration : barre de progression, dans la zone vue seulement
+      const sb = siteBarOf(buf, o, def.hp, def.cls === BClass.Belt);
+      if (sb) {
+        if (siteBars + 3 <= SITE_BARS_MAX && barInView(cx, cz, viewRect)) siteBars = this.pushSiteBar(siteBars, sb, cx, y, cz, def.w, def.h);
       } else if ((frac < 0.999 || selected.has(ref)) && def.cls !== BClass.Belt && bars < 5900) {
         const wdt = def.w * 0.8;
         tmpM.compose(tmpV.set(cx, y + 2.2, cz + def.h / 2), tmpQ.identity(), tmpS.set(wdt, 1, 1));
@@ -1416,6 +1431,20 @@ export class Entities {
     this.bars.count = bars;
     this.bars.instanceMatrix.needsUpdate = true;
     if (this.bars.instanceColor) this.bars.instanceColor.needsUpdate = true;
+    // barres des chantiers : n'envoyer à la carte graphique que les instances utilisées
+    if (siteBars || this.siteBars.count) {
+      this.siteBars.count = siteBars;
+      const m = this.siteBars.instanceMatrix;
+      m.clearUpdateRanges();
+      m.addUpdateRange(0, Math.max(1, siteBars) * 16);
+      m.needsUpdate = true;
+      const c = this.siteBars.instanceColor;
+      if (c) {
+        c.clearUpdateRanges();
+        c.addUpdateRange(0, Math.max(1, siteBars) * 3);
+        c.needsUpdate = true;
+      }
+    }
     // ----- objets sur les tapis : petit modèle par type, teinté de la couleur de l'objet -----
     let ni = 0;
     for (const km of this.itemMeshes) km?.begin();

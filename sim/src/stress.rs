@@ -818,3 +818,64 @@ pub fn projectiles_demo() -> World {
     w.spawn_unit(27, 1, (x0 + 4) * TILE, (y0 + 100) * TILE);
     w
 }
+
+/// Démo des chantiers (?demo=chantiers) : chantiers du joueur 0 à tous les avancements, sans
+/// constructeur (ils restent figés) — bâtiments des Industriels, organes et racines de la Souche, files de
+/// tapis (avancement croissant le long de la file), rails, répartiteurs, bras, murs ; un chantier endommagé.
+/// Sert à vérifier les barres de progression des chantiers.
+pub fn chantiers_demo() -> World {
+    let mut w = World::new(&[23, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+        pl.researched2 = u64::MAX;
+    }
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx + 4).clamp(8, w.map.w - 60), (sy - 12).clamp(8, w.map.h - 40));
+    flat(&mut w, x0 - 4, y0 - 4, x0 + 50, y0 + 30);
+    // chantier à l'avancement f (sur 1000), points de vie montés avec lui (comme sur un vrai chantier)
+    let site = |w: &mut World, kind: u16, x: i32, y: i32, dir: u8, f: u32| -> Option<usize> {
+        let b = place_building(w, 0, kind, x, y, dir)?;
+        let bb = &mut w.buildings[b];
+        bb.build = (BUILD_FULL as u64 * f as u64 / 1000) as u32;
+        bb.hp = ((bb.def().hp as i64 * f as i64 / 1000) as i32).max(1);
+        Some(b)
+    };
+    // bâtiments des Industriels, puis organes de la Souche
+    let mut x = x0;
+    for (k, kind) in [B_ASSEMBLER1, B_FURNACE, B_LAB, B_DEPOT, B_LIGHT_TURRET, B_LAND_FACTORY].into_iter().enumerate() {
+        site(&mut w, kind, x, y0, 0, 120 + 150 * k as u32);
+        x += bdef(kind).size.0 as i32 + 2;
+    }
+    let mut x = x0;
+    for (k, kind) in [B_LEAVES, B_BULB, B_MATRIX, B_THORN, B_BLOOM].into_iter().enumerate() {
+        let b = site(&mut w, kind, x, y0 + 7, 0, 200 + 170 * k as u32);
+        // l'épine a reçu des coups : moins de points de vie que son avancement
+        if kind == B_THORN {
+            if let Some(b) = b {
+                w.buildings[b].hp /= 3;
+            }
+        }
+        x += bdef(kind).size.0 as i32 + 2;
+    }
+    for k in 0..6 {
+        site(&mut w, B_ROOT, x + k, y0 + 7, 0, 150 * (k as u32 + 1));
+    }
+    // files de tapis : l'avancement croît le long de la file
+    for (row, kind, n) in [(12, B_BELT1, 30), (13, B_BELT2, 20), (14, B_BELT3, 12)] {
+        for k in 0..n {
+            site(&mut w, kind, x0 + k, y0 + row, 0, (1000 * (k as u32 + 1)) / (n as u32 + 1));
+        }
+    }
+    // rails, répartiteurs et trieur, bras, murs, relais
+    for k in 0..10 {
+        site(&mut w, B_RAIL, x0 + 2 * k, y0 + 17, 0, 90 * (k as u32 + 1));
+    }
+    for (k, kind) in [B_SPLITTER, B_SORTER, B_OVERFLOW, B_INSERTER, B_LONG_INSERTER, B_PYLON].into_iter().enumerate() {
+        site(&mut w, kind, x0 + 3 * k as i32, y0 + 21, 0, 140 * (k as u32 + 1));
+    }
+    for k in 0..8 {
+        site(&mut w, B_WALL, x0 + 20 + k, y0 + 21, 0, 110 * (k as u32 + 1));
+    }
+    w
+}

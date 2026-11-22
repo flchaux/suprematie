@@ -36,6 +36,7 @@ export interface SimExports {
   anciens_demo(): number;
   ponte_demo(): number;
   lifts_demo(): number;
+  chantiers_demo(): number;
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
   research_queue(player: number): number;
@@ -196,6 +197,9 @@ export class Sim {
   /** Démo des ascenseurs de tapis (files qui changent de niveau). */
   liftsDemo(): number {
     return this.ex.lifts_demo() >>> 0;
+  }
+  chantiersDemo(): number {
+    return this.ex.chantiers_demo() >>> 0;
   }
   benchReference(): number {
     return this.ex.bench_reference() >>> 0;

@@ -394,7 +394,8 @@ export class GameClient {
     (window as unknown as { __sfx?: unknown }).__sfx = sfx;
     const water = scene === "eau";
     // ?demo=ascenseurs : files de tapis qui changent de niveau par des ascenseurs (vu comme le joueur 0)
-    if (scene === "logistique" || scene === "ascenseurs") ui.me = 0;
+    // ?demo=chantiers : chantiers figés à tous les avancements, pour juger leurs barres de progression
+    if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
     this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte";

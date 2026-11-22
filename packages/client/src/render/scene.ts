@@ -18,6 +18,7 @@ import { teamInstancedMesh, setTeamColor } from "./materials.ts";
 import { CommandOverlay } from "./overlay.ts";
 import { PowerCoverage } from "./power.ts";
 import { TerreauCover } from "./terreau.ts";
+import { worldPerPixel } from "./siteBars.ts";
 
 const PAD_OK = new THREE.Color(0.2, 0.75, 0.35);
 const PAD_BAD = new THREE.Color(1.6, 0.12, 0.1);
@@ -638,6 +639,8 @@ export class GameScene {
       else if (this.distance < LOD_NEAR) this.lodLo = false;
       this.entities.setDetail(this.lodLo);
       const iconScale = Math.max(1, this.distance / 160);
+      // barres des chantiers : épaisseur minimale en pixels, quelle que soit la distance
+      this.entities.pxWorld = worldPerPixel(this.distance, this.camera.fov, this.canvasParent.clientHeight || innerHeight);
       const simDt = this.paused ? 0 : dt;
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, simDt, spectator, view);
       if (this.data) this.terreau?.update(frame, this.data, simDt);

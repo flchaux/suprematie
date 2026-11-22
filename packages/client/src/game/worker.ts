@@ -158,6 +158,7 @@ addEventListener("message", async (e: MessageEvent) => {
   else if (m.scene === "anciens") sim.anciensDemo();
   else if (m.scene === "ponte") sim.ponteDemo();
   else if (m.scene === "ascenseurs") sim.liftsDemo();
+  else if (m.scene === "chantiers") sim.chantiersDemo();
   else if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;
