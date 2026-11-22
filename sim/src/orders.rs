@@ -60,6 +60,9 @@ pub const O_HARVEST: i32 = 26;
 pub const O_PACK: i32 = 48;
 /// Chenillards : rouler jusqu'au point et s'y déployer : [drapeaux (1 : en file), x, y (sous-unités), n, unités…].
 pub const O_DEPLOY_AT: i32 = 49;
+/// Reine de la Souche : apprivoiser un nid de mordeurs sauvage : [drapeaux (1 : en file), réf. du nid, n, unités…]
+/// (voir souche::tame).
+pub const O_TAME: i32 = 50;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -519,6 +522,18 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                         // un déploiement en cours s'arrête : le chenillard repart vers le point
                         w.units.cold[s].pack = 0;
                         give(w, s, q, Order::DeployAt { x, y });
+                    }
+                }
+            }
+        }
+        O_TAME => {
+            let q = c.next() & 1 != 0;
+            let target = c.next() as u32;
+            let ok = crate::souche::tameable(w, p, target);
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && w.units.kind[s] == crate::data::U_QUEEN {
+                        give(w, s, q, Order::Tame { target });
                     }
                 }
             }

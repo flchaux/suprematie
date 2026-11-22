@@ -205,8 +205,20 @@
     </div>
     {#if BUILDING_DESCS[bdef.key]}<p class="udesc small">{BUILDING_DESCS[bdef.key]}</p>{/if}
     {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
-    {#if nest && nest.length}
-      {@const [home, max, need, age, evo, press, chance] = nest}
+    {#if nest && nest.length && nest[0] === -1}
+      <!-- nid greffé (apprivoisé par une Reine de la Souche) -->
+      {@const [, brood, cap, next, have, lim] = nest}
+      <div class="sgrid small nest">
+        <span class="dim">Mordeurs du nid</span><span class="num">{brood}</span>
+        <span class="dim">Prochaine naissance</span><span class="num">{brood >= cap ? `aucune (${cap} mordeurs au plus)` : `${next} s`}</span>
+        <span class="dim">Nids greffés</span><span class="num">{have} / {lim}</span>
+      </div>
+      <div class="status good"><span class="led"></span>Nid greffé : il fait naître des mordeurs sans coût. Clic droit au sol : point de ralliement</div>
+    {:else if nest && nest.length}
+      {@const [home, max, need, age, evo, press, chance, tamer = -1, tame = 0] = nest}
+      {#if tamer >= 0}
+        <div class="status {tamer === ui.me ? 'good' : 'warn'}"><span class="led"></span>Apprivoisé par {tamer === ui.me ? "votre Reine" : `la Reine de ${ui.names[tamer] ?? "un adversaire"}`} : {Math.floor(tame / 10)} %</div>
+      {/if}
       <div class="sgrid small nest">
         <span class="dim">Horde au nid</span><span class="num">{home} / {max}</span>
         <span class="dim">Attaque dès</span><span class="num">{need} bêtes</span>

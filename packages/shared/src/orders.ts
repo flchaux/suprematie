@@ -42,6 +42,8 @@ export const O = {
   PACK: 48,
   /** chenillards : rouler jusqu'au point et s'y déployer : [drapeaux, x, y (sous-unités), n, unités…] */
   DEPLOY_AT: 49,
+  /** Reine de la Souche : apprivoiser un nid de mordeurs sauvage : [drapeaux, réf. du nid, n, unités…] */
+  TAME: 50,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -206,6 +208,10 @@ export function deploy(ids: number[]): Cmd {
 /** Transhumants : chenillards qui roulent jusqu'au point (x, y) (sous-unités) et s'y déploient. */
 export function deployAt(ids: number[], x: number, y: number, queue = false): Cmd {
   return point(O.DEPLOY_AT, ids, x, y, queue);
+}
+/** Souche : la Reine apprivoise le nid de mordeurs sauvage `nest` (référence de bâtiment). */
+export function tame(ids: number[], nest: number, queue = false): Cmd {
+  return target(O.TAME, ids, nest, queue);
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {

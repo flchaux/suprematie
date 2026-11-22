@@ -18,6 +18,7 @@ export interface SimExports {
   power_zones(player: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
+  can_place_line(nWords: number): number;
   tile_info(x: number, y: number): number;
   building_at(x: number, y: number): number;
   tile_pass(x: number, y: number): number;
@@ -135,6 +136,10 @@ export class Sim {
    */
   twinPreview(args: number[]): Int32Array {
     return this.outI32(this.ex.twin_preview(this.writeI32(args)));
+  }
+  /** Aperçu de pose d'une file : `args` = [joueur, type, puis (x, y, dir)…] ; posable ou non, par emplacement. */
+  canPlaceLine(args: number[]): boolean[] {
+    return Array.from(this.outI32(this.ex.can_place_line(this.writeI32(args))), (v) => v !== 0);
   }
   tileInfo(x: number, y: number): number {
     return this.ex.tile_info(x, y);

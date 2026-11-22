@@ -158,6 +158,11 @@ fn unit_target_ok(w: &World, team: u8, wi: usize, t: usize, x: i32, y: i32) -> b
     if w.team_of(w.units.owner[t]) == team {
         return false;
     }
+    // bête calmée par une Reine de notre équipe (nid qu'elle apprivoise) : on l'épargne
+    let calm = w.units.cold[t].calm;
+    if calm != 0 && w.team_of(calm - 1) == team {
+        return false;
+    }
     let wd = &WEAPONS[wi];
     let lm = layer_mask(w, t);
     if wd.mask & lm == 0 {
@@ -183,6 +188,10 @@ fn building_target_ok(w: &World, team: u8, wi: usize, b: usize, x: i32, y: i32) 
     let bb = &w.buildings[b];
     // une ruine des Anciens ne se vise pas (indestructible)
     if !bb.alive || bb.hp <= 0 || w.team_of(bb.owner) == team || bb.kind == B_RUIN {
+        return false;
+    }
+    // nid qu'une Reine de notre équipe apprivoise : on l'épargne
+    if bb.kind == B_NEST && crate::nature::tamed_by_team(w, b, team) {
         return false;
     }
     let wd = &WEAPONS[wi];
@@ -444,15 +453,34 @@ fn armor(w: &World, s: usize, dmg: i32) -> i32 {
     }
 }
 
+/// La cible `t` appartient-elle au joueur que la bête épargne (`calm` : joueur + 1) ?
+fn calmed(w: &World, t: u32, calm: u8) -> bool {
+    let o = if let Some(u) = w.unit(t) {
+        w.units.owner[u]
+    } else if let Some(b) = w.building(t) {
+        w.buildings[b].owner
+    } else {
+        return false;
+    };
+    o.wrapping_add(1) == calm
+}
+
 pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
     let kind = w.units.kind[s];
     let def = udef(kind);
     if def.weapons.is_empty() {
         return;
     }
+    // Reine qui apprivoise un nid : elle retient son tir
+    if matches!(w.units.cold[s].orders.first(), Some(Order::Tame { .. })) {
+        w.units.cold[s].wtarget = [NONE; 2];
+        return;
+    }
     let owner = w.units.owner[s];
     let team = w.team_of(owner);
     let (x, y) = (w.units.x[s], w.units.y[s]);
+    // bête calmée par une Reine : elle ne s'en prend pas à ce joueur
+    let calm = w.units.cold[s].calm;
     let p = &w.players[owner as usize];
     let upgraded = kind == U_COMMANDER && p.has_tech(T_CMD_CANNON);
     for i in 0..def.weapons.len().min(2) {
@@ -472,6 +500,9 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
             t = cur;
         } else if (w.tick + s as u32).is_multiple_of(5) || cur != NONE {
             t = find_target(w, team, wi, x, y);
+        }
+        if calm != 0 && t != NONE && calmed(w, t, calm) {
+            t = NONE;
         }
         w.units.cold[s].wtarget[i] = t;
         if t == NONE {

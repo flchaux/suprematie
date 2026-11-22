@@ -127,6 +127,8 @@ pub enum Order {
     /// chenillard des Transhumants : rouler jusqu'au point (x, y) (sous-unités) et s'y déployer (clic droit
     /// d'un chenillard foreuse sur un gisement ; voir transhumants::deploy_at)
     DeployAt { x: i32, y: i32 },
+    /// Reine de la Souche : apprivoiser un nid de mordeurs sauvage (référence du nid ; voir souche::tame)
+    Tame { target: u32 },
 }
 
 impl Order {
@@ -149,6 +151,7 @@ impl Order {
             Order::Collect { .. } => 15,
             Order::Harvest { .. } => 16,
             Order::DeployAt { .. } => 17,
+            Order::Tame { .. } => 18,
         }
     }
 }
@@ -170,7 +173,7 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Tame { target } => target.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::Face { a } => a.ser(w),
             Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } | Order::DeployAt { x, y } => {
@@ -207,6 +210,7 @@ impl Ser for Order {
             15 => Order::Collect { target: u(r) },
             16 => Order::Harvest { x: i(r), y: i(r) },
             17 => Order::DeployAt { x: i(r), y: i(r) },
+            18 => Order::Tame { target: u(r) },
             _ => Order::Enter { target: u(r) },
         }
     }
@@ -272,8 +276,11 @@ pub struct UnitCold {
     pub hold: Vec<u16>,
     /// constructeur : dépôt où charger d'abord sa soute avant d'aller construire (NONE : aucun)
     pub supply_at: u32,
+    /// bête d'un nid qu'une Reine de la Souche apprivoise : joueur + 1 qu'elle n'attaque pas (0 : aucun ;
+    /// voir nature::taming)
+    pub calm: u8,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;

@@ -891,6 +891,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             crate::transhumants::deploy_at(w, s, x, y);
             NONE
         }
+        Order::Tame { target } => {
+            crate::souche::tame_step(w, s, target);
+            NONE
+        }
         Order::Harvest { x, y } => {
             // commandant : extraire le minerai du gisement et le fondre dans sa fonderie intégrée
             let Some(r) = (if kind == U_COMMANDER { harvest_recipe(w, owner, x, y) } else { None }) else {

@@ -5,7 +5,7 @@
 use crate::buildings::{complete_building, place_building, remove_building};
 use crate::data::*;
 use crate::fixed::TILE;
-use crate::orders::{O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_RESEARCH, O_RESEARCH_QUEUE};
+use crate::orders::{O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_RESEARCH, O_RESEARCH_QUEUE, O_TAME};
 use crate::world::*;
 
 /// Paramètres d'une partie à deux joueurs (équipes 0 et 1), sans faune, avec brouillard, et leurs races.
@@ -202,9 +202,9 @@ fn a_line_of_roots_grows_step_by_step() {
     let mut w = game(RACE_SOUCHE, RACE_INDUS);
     let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
     let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
-    flatten(&mut w, hx - 30, hy - 4, hx - 3, hy + 6);
-    // une file plantée d'un coup, au-delà du terreau actuel
-    let roots: Vec<usize> = (0..6).map(|k| place_building(&mut w, 0, B_ROOT, hx - 5 - 3 * k, hy + 1, 0).expect("racine sur le terreau à venir")).collect();
+    flatten(&mut w, hx - 30, hy - 4, hx, hy + 6);
+    // une file continue plantée d'un coup (glisser-déposer), au-delà du terreau actuel
+    let roots: Vec<usize> = (0..18).map(|k| place_building(&mut w, 0, B_ROOT, hx - 1 - k, hy + 1, 2).expect("racine sur le terreau à venir")).collect();
     assert!(place_building(&mut w, 0, B_ROOT, hx - 40, hy + 1, 0).is_none(), "loin de tout : refusée");
     steps(&mut w, 1200);
     for &r in &roots {
@@ -214,19 +214,48 @@ fn a_line_of_roots_grows_step_by_step() {
 }
 
 #[test]
+fn roots_link_only_by_contact() {
+    let mut w = game(RACE_SOUCHE, RACE_INDUS);
+    let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    flatten(&mut w, hx - 12, hy - 4, hx, hy + 6);
+    let put = |w: &mut World, x: i32, y: i32| {
+        let b = place_building(w, 0, B_ROOT, x, y, 0).expect("racine sur le terreau");
+        complete_building(w, b);
+        b
+    };
+    // collée à la graine-mère par un côté : même réseau
+    let a = put(&mut w, hx - 1, hy + 1);
+    // à deux cases (terreaux qui se recouvrent, mais pas de contact) : réseau à part
+    let b = put(&mut w, hx - 3, hy + 1);
+    // en diagonale de `a` (un coin seulement) : à part aussi
+    let c = put(&mut w, hx - 2, hy + 2);
+    crate::buildings::rebuild_power(&mut w);
+    assert_eq!(w.buildings[a].net, w.buildings[heart].net, "racine collée");
+    assert_ne!(w.buildings[b].net, w.buildings[heart].net, "racine sans contact");
+    assert_ne!(w.buildings[c].net, w.buildings[heart].net, "racine en diagonale");
+    // la case qui manque est posée : tout se relie
+    let d = put(&mut w, hx - 2, hy + 1);
+    crate::buildings::rebuild_power(&mut w);
+    for r in [b, c, d] {
+        assert_eq!(w.buildings[r].net, w.buildings[heart].net);
+    }
+}
+
+#[test]
 fn a_cut_root_splits_the_network_and_its_reserve() {
     let mut w = game(RACE_SOUCHE, RACE_INDUS);
     let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
     let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
-    flatten(&mut w, hx - 30, hy - 4, hx - 3, hy + 6);
-    // une file de racines vers l'ouest, puis un bulbe au bout
+    flatten(&mut w, hx - 30, hy - 4, hx, hy + 6);
+    // une file continue de racines vers l'ouest, puis un bulbe au bout
     let mut roots = Vec::new();
-    let mut x = hx - 6;
-    while x > hx - 22 {
-        let b = place_building(&mut w, 0, B_ROOT, x, hy + 1, 0).expect("racine sur le terreau");
+    let mut x = hx - 1;
+    while x > hx - 16 {
+        let b = place_building(&mut w, 0, B_ROOT, x, hy + 1, 2).expect("racine sur le terreau");
         complete_building(&mut w, b);
         roots.push(b);
-        x -= 3;
+        x -= 1;
         crate::buildings::rebuild_power(&mut w);
     }
     let bulb = place_building(&mut w, 0, B_BULB, x - 1, hy + 1, 0).expect("bulbe au bout");
@@ -234,10 +263,8 @@ fn a_cut_root_splits_the_network_and_its_reserve() {
     crate::buildings::rebuild_power(&mut w);
     assert_eq!(w.buildings[bulb].net, w.buildings[heart].net, "un seul réseau");
     let total = net_of(&w, heart).seve;
-    // deux racines du milieu meurent (les terreaux voisins se recouvrent) : deux réseaux, la réserve
-    // partagée sans perte
-    remove_building(&mut w, roots[1], false);
-    remove_building(&mut w, roots[2], false);
+    // une seule racine du milieu meurt : deux réseaux, la réserve partagée sans perte
+    remove_building(&mut w, roots[7], false);
     crate::buildings::rebuild_power(&mut w);
     assert_ne!(w.buildings[bulb].net, w.buildings[heart].net, "réseau coupé");
     let (a, b) = (net_of(&w, heart).seve, net_of(&w, bulb).seve);
@@ -293,6 +320,103 @@ fn organisms_regenerate_on_terreau() {
     // le feu fait 50 % de plus aux organismes
     assert_eq!(crate::races::family_mult(41, true), 1500);
     assert_eq!(crate::races::family_mult(41, false), 1000);
+}
+
+// ---------- Apprivoisement de la faune ----------
+
+/// Souche (joueur 0) contre les Industriels, faune normale, et un nid de mordeurs sauvage (3 bêtes) posé
+/// à une douzaine de cases de la Reine. Renvoie le monde, la Reine et la référence du nid.
+fn with_wild_nest() -> (World, usize, u32) {
+    let mut p = params(RACE_SOUCHE, RACE_INDUS);
+    p[12] = crate::nature::FAUNA_NORMAL as i32;
+    let mut w = World::new(&p);
+    w.place_start_buildings();
+    let q = w.unit(w.players[0].commander).unwrap();
+    let (qx, qy) = (w.units.x[q] / TILE, w.units.y[q] / TILE);
+    flatten(&mut w, qx - 4, qy - 4, qx + 26, qy + 8);
+    let i = crate::nature::found_nest(&mut w, qx + 14, qy - 1).expect("nid");
+    for _ in 0..3 {
+        crate::nature::spawn_beast(&mut w, i, U_BEAST_S);
+    }
+    let r = w.nature.nests[i].b;
+    (w, q, r)
+}
+
+#[test]
+fn the_queen_tames_a_wild_nest_and_its_horde() {
+    let (mut w, q, nest) = with_wild_nest();
+    let qid = w.unit_id(q) as i32;
+    let b = w.building(nest).unwrap();
+    // seule la Reine apprivoise, et seulement un nid sauvage
+    assert!(crate::souche::tameable(&w, 0, nest));
+    assert!(!crate::souche::tameable(&w, 1, nest), "pas un joueur de la Souche");
+    // une escorte de rongeurs postée près du nid : elle épargne le nid et sa horde calmée
+    let (cx, cy) = w.buildings[b].center();
+    for k in 0..3 {
+        w.spawn_unit(U_GNAWER, 0, cx - 7 * TILE, cy + (k - 1) * TILE);
+    }
+    order(&mut w, 0, O_TAME, &[0, nest as i32, 1, qid]);
+    // elle s'approche, puis reste 30 s ; la horde calmée ne la mord pas
+    let mut started = false;
+    for _ in 0..1200 {
+        w.step(&[]);
+        if let Some(i) = crate::nature::wild_nest(&w, nest) {
+            started |= w.nature.nests[i].tame > 0;
+        } else {
+            break;
+        }
+    }
+    assert!(started, "l'apprivoisement a avancé");
+    assert!(crate::nature::wild_nest(&w, nest).is_none(), "le nid n'est plus sauvage");
+    assert_eq!(w.buildings[b].owner, 0, "le nid est à la Souche");
+    assert_eq!(crate::nature::dens_of(&w, 0), 1);
+    assert!(w.units.hp[q] > 9500, "la horde calmée a épargné la Reine : {}", w.units.hp[q]);
+    let beasts = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && crate::souche::is_beast(w.units.kind[s])).count();
+    assert!(beasts >= 3, "la horde suit son nid : {beasts}");
+    assert!(w.units.cold[q].orders.is_empty(), "l'ordre est terminé");
+    // le nid greffé fait naître des mordeurs pour son maître, sans coût
+    steps(&mut w, crate::nature::DEN_PERIOD + 40);
+    let after = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && crate::souche::is_beast(w.units.kind[s])).count();
+    assert!(after > beasts, "naissance au nid greffé : {beasts} → {after}");
+    // sauvegarde : le nid greffé et ses bêtes survivent
+    let snap = crate::save::snapshot(&w);
+    let mut r = crate::save::restore(&snap).expect("restauration");
+    assert_eq!(r.hash(), w.hash());
+    assert_eq!(r.nature.dens.len(), 1);
+    for _ in 0..200 {
+        assert_eq!(r.step(&[]), w.step(&[]));
+    }
+}
+
+#[test]
+fn taming_needs_room_and_a_calm_hand() {
+    let (mut w, q, nest) = with_wild_nest();
+    let qid = w.unit_id(q) as i32;
+    // limite : un nid greffé par stade d'évolution (1 + mutations) ; un faux nid greffé occupe la place
+    w.nature.dens.push(crate::nature::Den { b: NONE, owner: 0, spawn: 1_000_000, brood: Vec::new() });
+    assert_eq!(crate::souche::den_limit(&w, 0), 1);
+    assert!(!crate::souche::den_room(&w, 0));
+    order(&mut w, 0, O_TAME, &[0, nest as i32, 1, qid]);
+    // (le faux nid disparaît à sa première mise à jour : on le remet à chaque pas)
+    for _ in 0..900 {
+        if crate::nature::dens_of(&w, 0) == 0 {
+            w.nature.dens.push(crate::nature::Den { b: NONE, owner: 0, spawn: 1_000_000, brood: Vec::new() });
+        }
+        w.step(&[]);
+    }
+    let i = crate::nature::wild_nest(&w, nest).expect("toujours sauvage");
+    assert_eq!(w.nature.nests[i].tame, 0, "pas de place : rien n'avance");
+    // une mutation acquise ouvre une place de plus
+    w.players[0].set_tech(T_S_SCALES);
+    assert_eq!(crate::souche::den_limit(&w, 0), 2);
+    steps(&mut w, 200);
+    let i = crate::nature::wild_nest(&w, nest).expect("encore sauvage");
+    let t = w.nature.nests[i].tame;
+    assert!(t > 0, "l'apprivoisement avance");
+    // frapper le nid qu'on apprivoise : l'avancement repart de zéro
+    let (cx, cy) = w.buildings[w.building(nest).unwrap()].center();
+    crate::nature::on_hit(&mut w, cx, cy, nest, 0);
+    assert_eq!(w.nature.nests[i].tame, 0);
 }
 
 // ---------- Transhumants ----------

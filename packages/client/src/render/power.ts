@@ -149,7 +149,8 @@ export class PowerCoverage {
     const cz = (p: number[]) => p[1] + p[3] / 2;
     for (let i = 0; i < z.poles.length; i++) {
       const a = z.poles[i];
-      if (!alive(a[5])) continue;
+      // réseau de racines : les racines se relient par contact et se dessinent jointives (pas de trait)
+      if (!alive(a[5]) || nets.get(a[5])?.roots) continue;
       for (let j = i + 1; j < z.poles.length; j++) {
         const q = z.poles[j];
         if (q[5] !== a[5]) continue;

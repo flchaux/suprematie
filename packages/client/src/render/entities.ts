@@ -245,6 +245,8 @@ export class Entities {
   railCurves = new Map<number, KindMesh>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
   wallSeg: KindMesh | null = null;
+  /** Souche : tronçon de racine, du centre de la case vers un voisin relié (comme les pans de mur) */
+  rootSeg: KindMesh | null = null;
   /** goulottes entre les sorties d'un extracteur et les tapis devant lui */
   chute: KindMesh | null = null;
   /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
@@ -388,6 +390,7 @@ export class Entities {
       if (rv) this.railCurves.set(this.buildingMeshes.length - 1, new KindMesh(this.group, () => buildModel(rv), () => km.scale, TEX_PER_TILE_BUILDING));
       // segment de mur : à l'échelle du poteau (construits ensemble, à la demande)
       if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.wall_seg), () => km.scale, TEX_PER_TILE_BUILDING);
+      if (b.key === "root" && !this.rootSeg && BUILDING_MODELS.root_seg) this.rootSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.root_seg), () => km.scale, TEX_PER_TILE_BUILDING);
       if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
@@ -584,6 +587,7 @@ export class Entities {
     const all: KindMesh[] = [...this.unitMeshes, ...this.buildingMeshes];
     for (const l of this.levelMeshes.values()) all.push(...l);
     if (this.wallSeg) all.push(this.wallSeg);
+    if (this.rootSeg) all.push(this.rootSeg);
     let i = 0;
     const idle: (cb: (d?: { timeRemaining(): number }) => void) => void =
       typeof requestIdleCallback === "function" ? (cb) => requestIdleCallback(cb, { timeout: 2000 }) : (cb) => setTimeout(cb, 30);
@@ -600,7 +604,7 @@ export class Entities {
 
   /** Niveau de détail réduit pour tous les modèles (pièces fines retirées), selon la distance de la caméra. */
   setDetail(lo: boolean): void {
-    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.chute];
+    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.rootSeg, this.chute];
     for (const l of this.levelMeshes.values()) all.push(...l);
     for (const l of this.beltCurves.values()) all.push(...l);
     for (const l of this.beltJunctions.values()) all.push(...l);
@@ -633,6 +637,7 @@ export class Entities {
     for (const l of this.beltJunctions.values()) for (const m of l) m.begin();
     for (const m of this.railCurves.values()) m.begin();
     this.wallSeg?.begin();
+    this.rootSeg?.begin();
     this.chute?.begin();
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
@@ -879,6 +884,8 @@ export class Entities {
     };
     // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
     const walls = new Map<number, number>();
+    // racines : case -> joueur + 1, pour relier chaque racine aux racines et graines-mères collées
+    const rootCells = new Map<number, number>();
     // tapis du sol terminés : case -> direction (goulottes des extracteurs)
     const groundBelts = new Map<number, number>();
     // répartiteurs terminés : case -> sorties (masque de directions), comptés comme des tapis pour les jonctions
@@ -888,6 +895,12 @@ export class Entities {
       const bd = this.data.buildings[buf[o + 1] & 0xff];
       const cls = bd?.cls;
       if (cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
+      // Souche : cases des racines et des graines-mères (poteaux du réseau) -> joueur + 1
+      else if (bd && bd.race === 1 && bd.supply > 0) {
+        const bx = buf[o + 2] & 0xffff;
+        const bz = (buf[o + 2] >>> 16) & 0xffff;
+        for (let dz = 0; dz < bd.h; dz++) for (let dx = 0; dx < bd.w; dx++) rootCells.set(((bx + dx) | ((bz + dz) << 16)) >>> 0, ((buf[o + 1] >> 8) & 0xff) + 1);
+      }
       else if (cls === BClass.Belt && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0) groundBelts.set(buf[o + 2] >>> 0, (buf[o + 1] >> 16) & 3);
       else if (bd?.key === "splitter" && buf[o + 4] >= 65536) splitterOutsAt.set(buf[o + 2] >>> 0, splitterOuts((buf[o + 1] >> 16) & 3, (buf[o + 5] >>> 24) & 3));
       // gisement (2 × 2 cases) recouvert par un bâtiment : ses roches hautes seront cachées
@@ -1034,6 +1047,22 @@ export class Entities {
       }
       // extracteur : une goulotte de chaque case de sortie (face avant) vers le tapis qui s'y trouve
       if (def.cls === BClass.Extractor && build >= 1 && this.chute) this.drawChutes(this.chute, bx, bz, dir, def.w, def.h, groundBelts);
+      // racine : un tronçon vers chaque voisin (est, sud, ouest, nord) qui est une racine ou une graine-mère
+      // du même joueur : la file forme un câble continu, comme le réseau qu'elle relie
+      const rseg = this.rootSeg;
+      if (def.key === "root" && rseg) {
+        for (let d = 0; d < 4; d++) {
+          const nx = bx + [1, 0, -1, 0][d];
+          const nz = bz + [0, 1, 0, -1][d];
+          if (nx < 0 || nz < 0 || rootCells.get((nx | (nz << 16)) >>> 0) !== owner + 1) continue;
+          rseg.ensure(rseg.n + 1);
+          tmpQ2.setFromAxisAngle(UP, (-d * Math.PI) / 2);
+          tmpM2.compose(tmpV.set(cx, y, cz), tmpQ2, tmpS.set(rseg.scale, sy * (rseg.scale / sc), rseg.scale));
+          rseg.body!.mesh.setMatrixAt(rseg.n, tmpM2);
+          setTeamColor(rseg.body!, rseg.n, c);
+          rseg.n++;
+        }
+      }
       const seg = this.wallSeg;
       if (def.cls === BClass.Wall && seg) {
         // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
@@ -1243,6 +1272,7 @@ export class Entities {
     for (const l of this.beltJunctions.values()) for (const m of l) m.end();
     for (const m of this.railCurves.values()) m.end();
     this.wallSeg?.end();
+    this.rootSeg?.end();
     this.chute?.end();
     this.levelPips.count = npip;
     this.levelPips.instanceMatrix.needsUpdate = true;

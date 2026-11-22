@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -566,6 +566,13 @@ export class GameClient {
             pushMessage("EPPZ capturé ! Posez un socle à EPPZ (Énergie) : 25 000 kW sans combustible", "good");
             sfx.research();
           } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a capturé un EPPZ`, "alert");
+          break;
+        case EV.TAMED:
+          // nid de mordeurs apprivoisé par une Reine de la Souche
+          if (a === ui.me) {
+            pushMessage("Nid apprivoisé : il est greffé à votre essaim et fait naître des mordeurs pour vous", "good");
+            sfx.research();
+          } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a apprivoisé un nid de mordeurs`, "alert");
           break;
         case EV.DEPLOY_FAILED:
           // chenillard des Transhumants qui n'a pas trouvé la place de se déployer
@@ -1715,13 +1722,15 @@ export class GameClient {
     const units = playing ? this.selectedUnits() : [];
     if (!units.length) {
       // rien de sélectionné (ou spectateur) : ce qui peut être sélectionné sous la souris
-      if (playing && ui.selBuilding && mine(ui.selBuilding.owner) && this.data.buildings[ui.selBuilding.kind]?.cls === BClass.Factory) return "rally";
+      if (playing && ui.selBuilding && mine(ui.selBuilding.owner) && (this.data.buildings[ui.selBuilding.kind]?.cls === BClass.Factory || this.data.buildings[ui.selBuilding.kind]?.key === "nest")) return "rally";
       if (unit && (mine(unit.owner) || !playing)) return "select";
       if (tb && (mine(tb.owner) || !playing)) return "select";
       return "default";
     }
     const ids = units.map((u) => u.id);
     if (unit && enemy(unit.owner)) return "attack";
+    // Reine de la Souche sur un nid de mordeurs sauvage : elle l'apprivoise
+    if (tb && this.wildNest(tb) && units.some((u) => this.data!.units[u.kind].key === "queen")) return "load";
     if (tb && enemy(tb.owner)) return "attack";
     const engs = units.some((u) => this.data!.units[u.kind].buildPower > 0);
     if (unit && mine(unit.owner) && !ids.includes(unit.id)) return this.data.units[unit.kind].carry > 0 ? "load" : "assist";
@@ -1760,7 +1769,7 @@ export class GameClient {
     if (!units.length) {
       if (ui.selBuilding && ui.selBuilding.owner === ui.me) {
         const def = this.data.buildings[ui.selBuilding.kind];
-        if (def.cls === BClass.Factory) {
+        if (def.cls === BClass.Factory || def.key === "nest") {
           this.cmd(Ord.rally(ui.selBuilding.ref, gx, gy));
           this.scene?.addMarker(g.x, g.z, 0x7dff9a);
           sfx.confirm();
@@ -1779,6 +1788,8 @@ export class GameClient {
     const tb = this.buildingAtTile(Math.floor(g.x), Math.floor(g.z));
     const engs = units.filter((u) => this.data!.units[u.kind].buildPower > 0).map((u) => u.id);
     const others = units.filter((u) => this.data!.units[u.kind].buildPower === 0);
+    // Reine sur un nid de mordeurs sauvage : elle l'apprivoise (les autres unités restent à l'écart)
+    if (tb && this.wildNest(tb) && this.tameNest(units, tb.ref, queue)) return;
     if (tb && this.teamOf(tb.owner) !== this.teamOf(ui.me)) {
       this.cmd(Ord.target(O.ATTACK, ids, tb.ref, queue));
       this.scene?.addMarker(g.x, g.z, 0xff5050);
@@ -1878,6 +1889,38 @@ export class GameClient {
     if (rest.length) this.cmd(Ord.move(rest, Math.round(x * TILE), Math.round(z * TILE), queue, false));
     this.scene?.addMarker(spot.x + 1, spot.y + 1, 0xff9a3c);
     pushMessage(`Chariot foreuse : il se rend sur le gisement de ${this.data!.items[spot.kind]?.name.toLowerCase() ?? "minerai"} et s'y déploie`, "info");
+    sfx.confirm();
+    return true;
+  }
+
+  /** Nid de mordeurs de la faune (pas une ruche) : apprivoisable par la Reine de la Souche. */
+  private wildNest(tb: { kind: number; owner: number }): boolean {
+    return this.data?.buildings[tb.kind]?.key === "nest" && this.frame?.players[tb.owner]?.team === NATURE_TEAM;
+  }
+
+  /** Nids greffés au plus : un, plus un par mutation acquise (souche::den_limit). */
+  private denLimit(): { have: number; max: number } {
+    const me = this.frame?.players[ui.me];
+    let max = 1;
+    if (me && this.data) for (let t = 0; t < this.data.techs.length; t++) if (this.data.techs[t].race === 1 && this.data.techs[t].excl && hasTech(me, t)) max++;
+    let have = 0;
+    const f = this.frame;
+    if (f) for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) if (((f.buf[o + 1] >> 8) & 0xff) === ui.me && this.data?.buildings[f.buf[o + 1] & 0xff]?.key === "nest") have++;
+    return { have, max };
+  }
+
+  /** Ordre « Apprivoiser » pour les Reines de la sélection ; faux s'il n'y en a pas. */
+  private tameNest(units: { id: number; kind: number }[], nest: number, queue: boolean): boolean {
+    const queens = units.filter((u) => this.data!.units[u.kind].key === "queen").map((u) => u.id);
+    if (!queens.length) return false;
+    const { have, max } = this.denLimit();
+    if (have >= max) {
+      pushMessage(`Nids greffés : ${have} / ${max}. Chaque mutation acquise permet d'en greffer un de plus`, "alert");
+      sfx.error();
+      return true;
+    }
+    this.cmd(Ord.tame(queens, nest, queue));
+    pushMessage("La Reine apprivoise le nid : 30 s à moins de 6 cases. Sa horde est calmée envers vous ; frapper le nid ou ses bêtes fait tout reprendre à zéro", "info");
     sfx.confirm();
     return true;
   }
@@ -2048,7 +2091,10 @@ export class GameClient {
   /** File en L de `a` à `b` : premier tronçon horizontal si `horizFirst` (axe choisi par le geste, Belts.lockAxis). */
   private lineCells(a: { x: number; y: number }, b: { x: number; y: number }, horizFirst: boolean): { x: number; y: number; dir: number }[] {
     const def = this.data!.buildings[ui.buildKind];
-    const step = def.cls === BClass.Pylon ? 7 : def.w;
+    // racines de la Souche : une file continue, case par case, orientée dans le sens du tracé (comme un
+    // tapis) ; elles se relient par contact
+    const isRoot = def.key === "root";
+    const step = def.cls === BClass.Pylon && !isRoot ? 7 : def.w;
     const out: { x: number; y: number; dir: number }[] = [];
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -2060,7 +2106,7 @@ export class GameClient {
     // rails : orientés dans le sens de leur segment (la voie se relie par simple contact ; la direction
     // ne sert qu'au modèle : direction 0, rails selon x ; direction 1, rails selon z)
     const isRail = def.cls === BClass.Rail;
-    const along = (dir: number, horiz: boolean) => (isBelt ? dir : isRail ? (horiz ? 0 : 1) : ui.buildDir);
+    const along = (dir: number, horiz: boolean) => (isBelt || isRoot ? dir : isRail ? (horiz ? 0 : 1) : ui.buildDir);
     if (horizFirst) {
       for (let i = 0; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: a.y, dir: along(dy !== 0 && i === Math.abs(dx) ? vdir : hdir, dx !== 0 || dy === 0) });
       for (let j = step; j <= Math.abs(dy); j += step) out.push({ x: b.x, y: a.y + j * sy, dir: along(vdir, false) });
