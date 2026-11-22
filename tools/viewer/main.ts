@@ -1,5 +1,5 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
-// ?set=units|buildings|items|decor  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
+// ?set=units|buildings|items|decor|vehicles  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
 import * as THREE from "three/webgpu";
 import { buildModel, fallbackModel, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
 import { RECEIVER_CLASSES } from "../../packages/shared/src/data.ts";
@@ -9,6 +9,7 @@ import { UNIT_MODELS } from "../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../assets/models/buildings.ts";
 import { ITEM_MODELS } from "../../assets/models/items.ts";
 import { DECOR_MODELS } from "../../assets/models/decor.ts";
+import { VEHICLE_MODELS } from "../../assets/models/vehicles.ts";
 import { DECOR_KINDS, decorBatch, decorGeometry, decorMaterial, type DecorKind } from "../../packages/client/src/render/decor.ts";
 import data from "./data.json";
 import { NATURE_COLOR } from "../../packages/shared/src/data.ts";
@@ -19,12 +20,14 @@ const only = params.get("only")?.split(",");
 const defs: { key: string; name: string; size: number; w: number; h: number; cls?: number }[] =
   set === "decor"
     ? Object.keys(DECOR_MODELS).map((k) => ({ key: k, name: k, size: DECOR_KINDS[k as DecorKind]?.size[1] ?? 1, w: 0, h: 0 }))
+    : set === "vehicles"
+    ? Object.keys(VEHICLE_MODELS).map((k) => ({ key: k, name: k, size: k === "train" ? 2.6 : k === "cargo_drone" ? 1.1 : 0.8, w: 0, h: 0 }))
     : set === "units"
     ? data.units.map((u: { key: string; name: string; radius: number }) => ({ key: u.key, name: u.name, size: Math.max(0.6, (u.radius * 2.4) / 256), w: 0, h: 0 }))
     : set === "items"
       ? data.items.slice(1).map((it: { key: string; name: string }) => ({ key: it.key, name: it.name, size: 1, w: 0, h: 0 }))
       : data.buildings.map((b: { key: string; name: string; w: number; h: number; reach?: number; cls: number }) => ({ key: b.key, name: b.name, size: Math.max(b.w, b.h) * Math.max(1, b.reach ?? 1), w: b.w, h: b.h, cls: b.cls }));
-const models = set === "decor" ? DECOR_MODELS : set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
+const models = set === "decor" ? DECOR_MODELS : set === "vehicles" ? VEHICLE_MODELS : set === "units" ? UNIT_MODELS : set === "items" ? ITEM_MODELS : BUILDING_MODELS;
 // variantes de modèles sans définition propre (virages des tapis…) : affichées si demandées par leur clé
 // (un modèle de niveau amélioré, clé_n2…, prend la taille de son bâtiment)
 const variants = (only ?? [])
@@ -53,7 +56,7 @@ sun.position.set(-3, 6, 4);
 scene.add(sun);
 
 const cols = Math.min(list.length, Math.ceil(Math.sqrt(list.length * 1.6)));
-const cell = set === "units" ? 3.2 : set === "items" ? 1.6 : set === "decor" ? 3 : 8;
+const cell = set === "vehicles" ? 3.2 : set === "units" ? 3.2 : set === "items" ? 1.6 : set === "decor" ? 3 : 8;
 const labels = document.getElementById("labels")!;
 let tris = 0;
 const placed: { pos: THREE.Vector3; name: string; tri: number }[] = [];

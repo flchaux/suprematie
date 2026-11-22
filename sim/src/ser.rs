@@ -2,6 +2,9 @@
 
 pub struct W {
     pub buf: Vec<u8>,
+    /// version du format écrit (voir save.rs) : les champs ajoutés après elle ne sont pas écrits (tests
+    /// des anciennes sauvegardes)
+    pub version: u32,
 }
 pub struct R<'a> {
     pub buf: &'a [u8],
@@ -12,7 +15,7 @@ pub struct R<'a> {
 
 impl W {
     pub fn new() -> W {
-        W { buf: Vec::with_capacity(1 << 20) }
+        W { buf: Vec::with_capacity(1 << 20), version: crate::save::VERSION }
     }
     #[inline]
     pub fn u8(&mut self, v: u8) {
@@ -140,7 +143,9 @@ impl<T: Ser> Ser for Option<T> {
 
 impl<T: Ser + Copy + Default, const N: usize> Ser for [T; N] {
     fn ser(&self, w: &mut W) {
-        for x in self {
+        // écriture d'un format d'avant les races (tests des anciennes sauvegardes) : objets d'alors
+        let n = if N == crate::data::NUM_ITEMS && w.version < 3 { crate::data::NUM_ITEMS_V2 } else { N };
+        for x in self.iter().take(n) {
             x.ser(w);
         }
     }
@@ -212,12 +217,13 @@ macro_rules! ser_struct {
             fn de(r: &mut $crate::ser::R) -> Self { $t { $( $f: $crate::ser::Ser::de(r), )* } }
         }
     };
-    // champs ajoutés à la version `v` du format : absents des sauvegardes plus anciennes (valeur par défaut)
-    ($t:ident { $($f:ident),* ; since $v:literal : $($n:ident),* $(,)? }) => {
+    // champs ajoutés à la version `v` du format : absents des sauvegardes plus anciennes (valeur par
+    // défaut) ; plusieurs groupes « since N » se suivent, par version croissante
+    ($t:ident { $($f:ident),* $(; since $v:literal : $($n:ident),*)+ $(,)? }) => {
         impl $crate::ser::Ser for $t {
-            fn ser(&self, w: &mut $crate::ser::W) { $( $crate::ser::Ser::ser(&self.$f, w); )* $( $crate::ser::Ser::ser(&self.$n, w); )* }
+            fn ser(&self, w: &mut $crate::ser::W) { $( $crate::ser::Ser::ser(&self.$f, w); )* $( $( if w.version >= $v { $crate::ser::Ser::ser(&self.$n, w); } )* )+ }
             fn de(r: &mut $crate::ser::R) -> Self {
-                $t { $( $f: $crate::ser::Ser::de(r), )* $( $n: if r.version >= $v { $crate::ser::Ser::de(r) } else { Default::default() }, )* }
+                $t { $( $f: $crate::ser::Ser::de(r), )* $( $( $n: if r.version >= $v { $crate::ser::Ser::de(r) } else { Default::default() }, )* )+ }
             }
         }
     };

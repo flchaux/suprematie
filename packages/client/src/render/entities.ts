@@ -445,7 +445,8 @@ export class Entities {
     this.group.add(this.logiPads);
     this.effects = new Effects(map);
     this.group.add(this.effects.group);
-    for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6]] as const) {
+    // genres de véhicules (Carrier::kind) 0 à 3, puis le drone de ravitaillement chargé (4)
+    for (const [key, len] of [["train", 2.6], ["cargo_drone", 1.1], ["logistic_robot", 0.6], ["supply_drone", 0.9], ["supply_drone_loaded", 0.9]] as const) {
       const built = buildModel(VEHICLE_MODELS[key] ?? fallbackModel(0.5));
       const size = new THREE.Vector3();
       built.box.getSize(size);
@@ -1193,19 +1194,25 @@ export class Entities {
         const kind = buf[o + 3] & 0xff;
         const owner = (buf[o + 3] >> 8) & 0xff;
         const moving = (buf[o + 3] >> 16) & 1;
+        const loaded = (buf[o + 3] >> 17) & 1;
         const cur = this.carCur.get(idx) ?? [buf[o + 1], buf[o + 2]];
-        const prev = this.carPrev.get(idx) ?? cur;
+        // une place de véhicule libérée est reprise par un autre (drones de ravitaillement) : pas d'interpolation
+        // entre deux véhicules différents (saut de plus de 4 cases en un tick)
+        const p0 = this.carPrev.get(idx);
+        const prev = p0 && Math.abs(p0[0] - cur[0]) + Math.abs(p0[1] - cur[1]) < 4 * TILE ? p0 : cur;
         const x = (prev[0] + (cur[0] - prev[0]) * alpha) / TILE;
         const z = (prev[1] + (cur[1] - prev[1]) * alpha) / TILE;
         if (teamOf(owner) !== myTeam && !seen(x, z, 1)) continue;
-        const km = this.vehicleMeshes[kind];
+        // drone de ravitaillement : modèle avec caisse quand il porte sa charge
+        const km = this.vehicleMeshes[kind === 3 && loaded ? 4 : kind];
         if (!km) continue;
         km.ensure(km.n + 1);
         const g = groundHeight(this.map, x, z);
         let y = g + 0.05;
         if (kind >= 1) {
-          // drone : vol à 5 cases au-dessus du sol (ou de l'eau), posé sur l'héliport à l'arrêt ; robot : 3 cases
-          const target = moving ? Math.max(g, this.map.waterLevel * HSCALE) + (kind === 2 ? 3 : 5) : g + 0.45;
+          // drone : vol à 5 cases au-dessus du sol (ou de l'eau), posé sur l'héliport à l'arrêt ; robot : 3 cases ;
+          // drone de ravitaillement : 2,5 cases
+          const target = moving ? Math.max(g, this.map.waterLevel * HSCALE) + (kind === 2 ? 3 : kind === 3 ? 2.5 : 5) : g + 0.45;
           const a = this.carAlt.get(idx) ?? target;
           const na = a + (target - a) * Math.min(1, dt * 2.5);
           this.carAlt.set(idx, na);
@@ -1530,9 +1537,9 @@ export class Entities {
       // fabricant sans recette : seul un extracteur l'amorce (fonderie, raffinerie…)
       return this.data.buildings[buf[s + 1] & 0xff].cls === BClass.Extractor && td.crafter !== CRAFTER_ASSEMBLER && recipes.some((x) => x.crafter === td.crafter && x.inputs.some((y) => y[0] === it));
     };
-    /** dépôt `s` collé à l'usine `t` du même joueur : il l'alimente depuis la réserve */
+    /** dépôt `s` collé au générateur `t` du même joueur : il l'alimente en combustible depuis son stock */
     const feeds = (s: number, t: number): boolean =>
-      this.data.buildings[buf[s + 1] & 0xff].cls === BClass.Depot && this.data.buildings[buf[t + 1] & 0xff].cls === BClass.Factory && ((buf[s + 1] >> 8) & 0xff) === ((buf[t + 1] >> 8) & 0xff);
+      this.data.buildings[buf[s + 1] & 0xff].cls === BClass.Depot && this.data.buildings[buf[t + 1] & 0xff].cls === BClass.Power && ((buf[s + 1] >> 8) & 0xff) === ((buf[t + 1] >> 8) & 0xff);
     const inCol = new THREE.Color(0.5, 2.2, 2.6);
     const outCol = new THREE.Color(2.8, 1.7, 0.35);
     const q = new THREE.Quaternion();
@@ -1854,7 +1861,7 @@ export class Entities {
         if (it !== undefined) keys.push("items/" + this.data.items[it].key);
       } else if (cls === BClass.Factory && aux > 0) keys.push("units/" + this.data.units[aux - 1]?.key);
       else if (cls === BClass.Depot) {
-        // dépôt amélioré : objets filtrés sur le toit
+        // dépôt : objets filtrés sur le toit (sans filtre, tout sort : pas d'icône)
         const w5 = buf[o + 5];
         for (const it of [w5 & 0xff, (w5 >>> 8) & 0xff, (w5 >>> 16) & 0xff, buf[o + 6] & 0xff]) if (it > 0 && this.data.items[it]) keys.push("items/" + this.data.items[it].key);
       } else if (cls === BClass.Lab && aux > 0) {

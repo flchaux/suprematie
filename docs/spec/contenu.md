@@ -143,7 +143,7 @@ Les bâtiments de production viennent de Factorio, les bâtiments militaires de 
 | Raffinerie | Transforme l'hydrocarbure et le cristal | 2 |
 | Usine chimique | Fabrique les composites | 3 |
 | Laboratoire | Consomme les lots de recherche | 0 |
-| Dépôt | Alimente le stock commun utilisé par les ingénieurs, dont il agrandit le plafond ; amélioré, rend des objets filtrés | 0 |
+| Dépôt | Stocke les objets (600 par objet, 2 000 amélioré) où les drones des constructeurs viennent puiser ; ressort ses objets (filtrés ou non) sur les tapis et les bras | 0 |
 | Générateur principal | Générateur de départ : grande zone, brûle de l'hydrocarbure | 0 |
 | Générateur | Crée une zone électrique, brûle de l'hydrocarbure ou du carburant | 0 |
 | Relais | Étend une zone électrique (petite zone) et relie les zones | 0 |

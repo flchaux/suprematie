@@ -20,6 +20,9 @@ fn world() -> World {
         }
     }
     w.map.spots.retain(|s| !(s.x >= 48 && s.x < 170 && s.y >= 48 && s.y < 170));
+    // dépôt des tests (paiements immédiats : dépôts à moins de 30 cases du générateur en (100, 100))
+    let d = place_building(&mut w, 0, B_DEPOT, 95, 106, 0).unwrap();
+    complete_building(&mut w, d);
     w
 }
 
@@ -40,7 +43,7 @@ fn run(w: &mut World, n: u32) {
 
 fn give_cost(w: &mut World) {
     for &(it, n) in MAIN_GENERATOR_LEVELS[1].cost {
-        w.players[0].stock[it as usize] = n as i32;
+        w.set_stock(0, it, n as i32);
     }
 }
 
@@ -81,7 +84,7 @@ fn main_generator_upgrade_extends_zone() {
     w.step(&[3, O_UPGRADE, 0, r]);
     assert_eq!(w.buildings[g].upgrade, 0, "recherche électronique requise");
     w.players[0].researched = u64::MAX;
-    w.players[0].stock[ENGINE as usize] -= 1;
+    w.set_stock(0, ENGINE, w.stock(0, ENGINE) - 1);
     w.step(&[3, O_UPGRADE, 0, r]);
     assert_eq!(w.buildings[g].upgrade, 0, "coût incomplet");
 
@@ -90,7 +93,7 @@ fn main_generator_upgrade_extends_zone() {
     w.step(&[3, O_UPGRADE, 0, r]);
     assert!(w.buildings[g].upgrade > 0);
     for &(it, _) in MAIN_GENERATOR_LEVELS[1].cost {
-        assert_eq!(w.players[0].stock[it as usize], 0, "payé aussitôt");
+        assert_eq!(w.stock(0, it), 0, "payé aussitôt");
     }
     run(&mut w, 20);
     assert_eq!(w.players[0].power_prod, bdef(B_MAIN_GENERATOR).power_prod, "en service pendant le chantier");
@@ -110,7 +113,7 @@ fn main_generator_upgrade_extends_zone() {
     give_cost(&mut w);
     w.step(&[3, O_UPGRADE, 0, r]);
     assert_eq!(w.buildings[g].upgrade, 0);
-    assert_eq!(w.players[0].stock[STEEL as usize], MAIN_GENERATOR_LEVELS[1].cost[0].1 as i32);
+    assert_eq!(w.stock(0, STEEL), MAIN_GENERATOR_LEVELS[1].cost[0].1 as i32);
 
     // un bâtiment à 30 cases reste hors zone
     let far = put(&mut w, B_FURNACE, 100 - 30 - 2, 100);
@@ -132,7 +135,7 @@ fn main_generator_upgrade_cancel_refunds() {
     assert_eq!(w.buildings[g].upgrade, 0);
     assert_eq!(w.buildings[g].level, 0);
     for &(it, n) in MAIN_GENERATOR_LEVELS[1].cost {
-        assert_eq!(w.players[0].stock[it as usize], n as i32, "remboursé");
+        assert_eq!(w.stock(0, it), n as i32, "remboursé");
     }
 }
 

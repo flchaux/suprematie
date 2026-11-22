@@ -1,5 +1,6 @@
-// Véhicules de transport (logistique) : train et drone de fret. Avant vers +z, échelle libre :
-// le jeu les redimensionne (train ≈ 2,6 cases de long, drone ≈ 1 case).
+// Véhicules de transport (logistique) : train, drone de fret, robot logistique, drone de ravitaillement
+// des constructeurs (vide et chargé). Avant vers +z, échelle libre : le jeu les redimensionne (train
+// ≈ 2,6 cases de long, drone de fret ≈ 1 case, robot ≈ 0,6, drone de ravitaillement ≈ 0,9).
 import type { Model, Part } from "./types.ts";
 
 /** Bogie de train centré en z : longerons sombres (côté droit, mirror) et deux roues d'acier (pièces fines). */
@@ -26,6 +27,32 @@ function wagon(z: number, toit: Part["color"]): Part[] {
     { shape: "box", size: [0.02,0.03,1.3], pos: [0.395,0.86,z], color: "glow", mirror: true },
     ...bogie(z + 0.5),
     ...bogie(z - 0.5),
+  ];
+}
+
+/** Drone de ravitaillement : quadrirotor, avec ou sans caisse sous le ventre. */
+function supplyDrone(loaded: boolean): Part[] {
+  const rotors = [[0.38, 0.38], [0.38, -0.38]].flatMap(([x, z]): Part[] => [
+    { shape: "box", size: [0.46,0.04,0.06], pos: [x / 2,0.62,z / 2], rot: [0, x * z > 0 ? -45 : 45, 0], color: "steel", mirror: true },
+    { shape: "cylinder", sides: 6, radius: 0.06, height: 0.1, pos: [x,0.64,z], color: "dark", mirror: true, fine: true },
+    { shape: "cylinder", sides: 10, radius: 0.2, height: 0.012, pos: [x,0.7,z], color: "light", mirror: true },
+    { shape: "lathe", sides: 10, profile: [[0.21,0],[0.185,0]], pos: [x,0.708,z], color: "glow", mirror: true, fine: true },
+  ]);
+  return [
+    { shape: "extrude", profile: [[-0.14,-0.22],[0.14,-0.22],[0.2,-0.12],[0.2,0.14],[0.12,0.24],[-0.12,0.24],[-0.2,0.14],[-0.2,-0.12]], depth: 0.16, bevel: 0.03, pos: [0,0.6,0], rot: [90,0,0], color: "faction" },
+    { shape: "bevel", size: [0.26,0.05,0.32], pos: [0,0.69,-0.01], bevel: 0.02, color: "light" },
+    { shape: "box", size: [0.12,0.04,0.03], pos: [0,0.6,0.245], color: "glow" },
+    { shape: "box", size: [0.3,0.05,0.36], pos: [0,0.5,0], color: "dark" },
+    ...rotors,
+    // pinces
+    { shape: "box", size: [0.03,0.14,0.03], pos: [0.12,0.42,0], color: "metal", mirror: true, fine: true },
+    ...(loaded
+      ? ([
+          { shape: "bevel", size: [0.26,0.2,0.26], pos: [0,0.27,0], bevel: 0.02, color: "hazard" },
+          { shape: "box", size: [0.27,0.21,0.03], pos: [0,0.27,0.06], color: "dark", fine: true },
+          { shape: "box", size: [0.04,0.03,0.04], pos: [0,0.385,0], color: "amber", fine: true },
+        ] as Part[])
+      : ([{ shape: "box", size: [0.2,0.03,0.03], pos: [0,0.35,0], color: "metal", fine: true }] as Part[])),
   ];
 }
 
@@ -94,6 +121,11 @@ export const VEHICLE_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.06,0.03,0.06], pos: [0,0.44,0], color: "amber", fine: true },
     ],
   },
+  // drone de ravitaillement (constructeurs) : quadrirotor compact, croix de bras d'acier, coque d'équipe à
+  // dos clair, quatre rotors à anneau cyan, œil cyan à l'avant, pinces repliées sous le ventre
+  supply_drone: { parts: supplyDrone(false) },
+  // le même, chargé : une caisse de danger tenue par les pinces
+  supply_drone_loaded: { parts: supplyDrone(true) },
   // robot logistique : petit corps clair à dessus d'équipe et visière cyan, deux propulseurs latéraux à tuyère
   // lumineuse, caisse de danger pincée sous le ventre
   logistic_robot: {

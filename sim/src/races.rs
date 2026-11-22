@@ -21,19 +21,20 @@ pub fn is_commander(kind: u16) -> bool {
     udef(kind).commander
 }
 
-/// Stock de départ selon la race (celui des Industriels est déjà posé par World::new).
+/// Bourse de départ selon la race (monnaies de race ; les objets de départ sont dans un dépôt des
+/// Industriels ou la soute repliée des Transhumants ; ceux de la Souche, dans son réseau).
 pub fn start_stock(p: &mut Player) {
-    match p.race {
-        RACE_SOUCHE => {
-            // la Souche n'a pas de réserve commune : sève et sels sont dans son réseau (graine-mère)
-            p.stock = [0; NUM_ITEMS];
-        }
-        RACE_TRANSH => {
-            // les Transhumants recherchent par relevés : quelques-uns pour lancer la première étude
-            p.stock[RELEVES as usize] = 20;
-        }
-        _ => {}
+    p.purse = [0; NUM_ITEMS];
+    if p.race == RACE_TRANSH {
+        // les Transhumants recherchent par relevés : quelques-uns pour lancer la première étude
+        p.purse[RELEVES as usize] = 20;
     }
+}
+
+/// Monnaie de race (ADN, relevés) : un compte du joueur (`Player::purse`), pas un objet en dépôt.
+#[inline]
+pub fn is_currency(it: u8) -> bool {
+    it == ADN || it == RELEVES
 }
 
 /// Bâtiments et unités de départ d'une race autre que les Industriels. Renvoie vrai si la race a

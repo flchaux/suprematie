@@ -19,12 +19,22 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 ///   ruines et naissances de réplicateurs.
 /// - 3 : races (race du joueur, recherches au-delà de 64, objets de la Souche et des Transhumants,
 ///   réserves des réseaux de racines, chenillards repliés, usure des gisements).
-pub const VERSION: u32 = 3;
+/// - 4 : plus de réserve commune (stock de chaque dépôt, soute et dépôt de chargement des constructeurs,
+///   drones) ; le stock commun des équipes n'est plus écrit. Une sauvegarde plus ancienne est convertie
+///   à la lecture (`convert_reserve`) ; la réserve du joueur ne garde que les monnaies de race (`purse`).
+pub const VERSION: u32 = 4;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
+    write(w, VERSION, &[])
+}
+
+/// Écrit l'état au format `version` (VERSION en jeu ; plus ancien pour tester la lecture des anciennes
+/// sauvegardes, avec le stock commun des équipes des versions < 4).
+pub fn write(w: &World, version: u32, team_stock: &[[i32; crate::data::NUM_ITEMS]]) -> Vec<u8> {
     let mut o = W::new();
+    o.version = version;
     MAGIC.ser(&mut o);
-    VERSION.ser(&mut o);
+    version.ser(&mut o);
     w.params.ser(&mut o);
     w.tick.ser(&mut o);
     w.rng.state.ser(&mut o);
@@ -42,11 +52,17 @@ pub fn snapshot(w: &World) -> Vec<u8> {
     w.infinite_grid.ser(&mut o);
     w.winner.ser(&mut o);
     w.vis.ser(&mut o);
-    w.team_stock.ser(&mut o);
+    if version < 4 {
+        let mut ts = team_stock.to_vec();
+        ts.resize(8, [0; crate::data::NUM_ITEMS]);
+        ts.ser(&mut o);
+    }
     w.carriers.ser(&mut o);
     w.ghosts.ser(&mut o);
     w.nature.ser(&mut o);
-    w.wear.ser(&mut o);
+    if version >= 3 {
+        w.wear.ser(&mut o);
+    }
     o.buf
 }
 
@@ -61,9 +77,11 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
                 let mut r = R::new(bytes);
                 r.pos = start;
                 r.version = v;
-                if let Some(w) = read_world(&mut r) {
+                if let Some((w, team_stock)) = read_world(&mut r) {
                     if r.pos == bytes.len() {
-                        return Some(rebuild(w));
+                        let mut w = rebuild(w);
+                        convert_reserve(&mut w, &team_stock);
+                        return Some(w);
                     }
                 }
             }
@@ -74,14 +92,20 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
             if r.version == 0 || r.version > VERSION {
                 return None;
             }
-            read_world(&mut r).map(rebuild)
+            let (w, team_stock) = read_world(&mut r)?;
+            let mut w = rebuild(w);
+            if r.version < 4 {
+                convert_reserve(&mut w, &team_stock);
+            }
+            Some(w)
         }
         _ => None,
     }
 }
 
-/// Lit l'état sauvegardé (sans les données dérivées) au format `r.version`.
-fn read_world(r: &mut R) -> Option<World> {
+/// Lit l'état sauvegardé (sans les données dérivées) au format `r.version`, et le stock commun des
+/// équipes des versions < 4 (vide ensuite).
+fn read_world(r: &mut R) -> Option<(World, Vec<[i32; crate::data::NUM_ITEMS]>)> {
     let params: Vec<i32> = Ser::de(r);
     if params.len() < 4 {
         return None;
@@ -103,14 +127,70 @@ fn read_world(r: &mut R) -> Option<World> {
     w.infinite_grid = Ser::de(r);
     w.winner = Ser::de(r);
     w.vis = Ser::de(r);
-    w.team_stock = Ser::de(r);
+    let team_stock = if r.version < 4 { Ser::de(r) } else { Vec::new() };
     w.carriers = Ser::de(r);
     w.ghosts = Ser::de(r);
     w.nature = Ser::de(r);
     if r.version >= 3 {
         w.wear = Ser::de(r);
     }
-    Some(w)
+    Some((w, team_stock))
+}
+
+/// Sauvegarde de version < 4 : la réserve de chaque joueur (sauf les monnaies de race, ADN et relevés,
+/// qui restent dans sa bourse) devient un dépôt rempli, posé au plus près de son générateur principal (ou
+/// de son point de départ) ; le stock commun d'une équipe va dans son premier entrepôt d'équipe, sinon
+/// dans le dépôt converti de son premier joueur (perdu s'il n'y en a aucun).
+fn convert_reserve(w: &mut World, team_stock: &[[i32; crate::data::NUM_ITEMS]]) {
+    use crate::data::*;
+    let mut converted: Vec<Option<usize>> = vec![None; w.players.len()];
+    for p in 0..w.map.starts.len().min(w.players.len()) {
+        let mut items = [0i32; NUM_ITEMS];
+        for (it, n) in w.players[p].purse.iter_mut().enumerate() {
+            if !crate::races::is_currency(it as u8) {
+                items[it] = std::mem::take(n);
+            }
+        }
+        w.players[p].old_stock_cap = 0;
+        if !w.players[p].alive || !items.iter().any(|&n| n > 0) {
+            continue;
+        }
+        match w.players[p].race {
+            // Transhumants : dans leur soute (déployée, sinon à bord de son chenillard, sinon de l'Arche)
+            RACE_TRANSH => {
+                let soute = w.stores.iter().map(|&b| b as usize).find(|&b| w.buildings[b].owner as usize == p && w.buildings[b].def().class == BClass::Depot);
+                if let Some(b) = soute {
+                    for (it, &n) in items.iter().enumerate() {
+                        crate::drones::put(&mut w.buildings[b].stash, it as u8, n.clamp(0, u16::MAX as i32) as u16);
+                    }
+                    converted[p] = Some(b);
+                } else {
+                    let unit = (0..w.units.alive.len()).find(|&s| w.units.alive[s] && w.units.owner[s] as usize == p && w.units.kind[s] == U_CH_HOLD);
+                    let unit = unit.or_else(|| w.unit(w.players[p].commander));
+                    if let Some(s) = unit {
+                        for (it, &n) in items.iter().enumerate() {
+                            crate::drones::put(&mut w.units.cold[s].hold, it as u8, n.clamp(0, u16::MAX as i32) as u16);
+                        }
+                    }
+                }
+            }
+            // la Souche n'a pas de réserve d'objets (sève et sels sont dans ses réseaux)
+            RACE_SOUCHE => {}
+            _ => converted[p] = crate::drones::place_filled_depot(w, p as u8, &items),
+        }
+    }
+    for (t, items) in team_stock.iter().enumerate() {
+        if !items.iter().any(|&n| n > 0) {
+            continue;
+        }
+        let wh = w.stores.iter().map(|&b| b as usize).find(|&b| w.buildings[b].def().class == BClass::Warehouse && w.team_of(w.buildings[b].owner) as usize == t);
+        let dest = wh.or_else(|| (0..w.players.len()).filter(|&p| w.players[p].team as usize == t).find_map(|p| converted[p]));
+        if let Some(b) = dest {
+            for (it, &n) in items.iter().enumerate() {
+                crate::drones::put(&mut w.buildings[b].stash, it as u8, n.clamp(0, u16::MAX as i32) as u16);
+            }
+        }
+    }
 }
 
 /// Reconstruit les données dérivées d'un état lu : occupation, passabilité, grilles, navigation.
@@ -160,5 +240,6 @@ fn rebuild(mut w: World) -> World {
     }
     w.nav = Nav::new(&w.map);
     crate::flow::rebuild_goal_refs(&mut w);
+    crate::drones::rebuild_stores(&mut w);
     w
 }

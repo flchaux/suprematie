@@ -51,28 +51,40 @@ fn run(w: &mut World, ticks: u32) {
 
 const N: usize = NUM_ITEMS;
 
+/// Dépôt du joueur `owner` en (x, y), avec de quoi acheter des véhicules (paiement par les dépôts proches).
+fn fund(w: &mut World, owner: u8, x: i32, y: i32) -> usize {
+    let d = put(w, owner, B_DEPOT, x, y);
+    for it in [GEAR, IRON_PLATE, STEEL, CIRCUIT] {
+        crate::drones::put(&mut w.buildings[d].stash, it, 100);
+    }
+    d
+}
+
 #[test]
-fn warehouse_feeds_team_stock_used_by_allies() {
-    let mut w = allies();
+fn warehouse_is_a_depot_shared_by_the_team() {
+    use crate::drones::has;
+    let mut w = World::new(&[4242, 512, 0, 3, 0, 0, 100, 100, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
     flatten(&mut w, 100, 100, 130, 130);
     let wh = put(&mut w, 0, B_WAREHOUSE, 110, 110);
     for _ in 0..50 {
         insert_item(&mut w, wh, IRON_PLATE);
     }
-    assert_eq!(w.team_stock[0][IRON_PLATE as usize], 50);
-    // l'allié (joueur 1) peut payer avec : son stock d'abord, puis celui de l'équipe
-    let own = w.players[1].stock[IRON_PLATE as usize];
-    assert_eq!(w.avail(1, IRON_PLATE), own + 50);
-    w.pay(1, IRON_PLATE, own + 20);
-    assert_eq!(w.players[1].stock[IRON_PLATE as usize], 0);
-    assert_eq!(w.team_stock[0][IRON_PLATE as usize], 30);
+    assert_eq!(has(&w.buildings[wh].stash, IRON_PLATE), 50);
+    // l'allié (joueur 1) peut y puiser, pas l'adversaire (joueur 2)
+    assert!(crate::drones::usable(&w, 1, wh));
+    assert!(!crate::drones::usable(&w, 2, wh));
+    let (x, y) = w.buildings[wh].center();
+    assert!(!crate::drones::pay_near(&mut w, 2, x, y, &[(IRON_PLATE, 20)]), "l'adversaire ne paie pas avec");
+    assert!(crate::drones::pay_near(&mut w, 1, x, y, &[(IRON_PLATE, 20)]));
+    assert_eq!(has(&w.buildings[wh].stash, IRON_PLATE), 30);
     // sortie physique : un bras ne prend que l'objet choisi
     let mut want = [true; N];
     want[0] = false;
     assert_eq!(crate::logistics::take(&mut w, wh, &want), 0, "aucun objet choisi : rien ne sort");
     w.buildings[wh].recipe = IRON_PLATE;
     assert_eq!(crate::logistics::take(&mut w, wh, &want), IRON_PLATE);
-    assert_eq!(w.team_stock[0][IRON_PLATE as usize], 29);
+    assert_eq!(has(&w.buildings[wh].stash, IRON_PLATE), 29);
 }
 
 /// Deux gares reliées par 69 cases de rail ; 500 plaques à livrer (capacité du train : 400).
@@ -86,9 +98,7 @@ fn rail_world() -> (World, usize, usize) {
     }
     run(&mut w, 10); // réseaux électriques
     w.buildings[a].stash[IRON_PLATE as usize] = 500;
-    w.players[0].stock[GEAR as usize] = 100;
-    w.players[0].stock[IRON_PLATE as usize] = 100;
-    w.players[0].stock[STEEL as usize] = 100;
+    fund(&mut w, 0, 34, 96);
     let rb = w.building_ref(b);
     crate::logistics::link(&mut w, 0, a, rb);
     assert_eq!(w.carriers.len(), 1, "le train est acheté");
@@ -129,8 +139,7 @@ fn cargo_drones_fly_straight_with_small_loads() {
     let b = station(&mut w, 0, B_CARGO_PAD, 150, 100);
     run(&mut w, 10);
     w.buildings[a].stash[CIRCUIT as usize] = 60;
-    w.players[0].stock[STEEL as usize] = 100;
-    w.players[0].stock[CIRCUIT as usize] = 100;
+    fund(&mut w, 0, 34, 96);
     let rb = w.building_ref(b);
     crate::logistics::link(&mut w, 0, a, rb);
     // un aller : 120 cases à 24 cases/s = 5 s ; chaque vol emporte 25 objets au plus
@@ -189,34 +198,35 @@ fn train_trip_size_is_configurable() {
     assert_eq!(w.buildings[b].lot, 0, "la gare de l'allié n'est pas à nous");
 }
 
-/// Vider une gare ou un héliport : « à envoyer » et « reçus » retournent au stock du propriétaire, sans
-/// plafond ; seulement pour ses propres bâtiments.
+/// Vider une gare ou un héliport : « à envoyer » et « reçus » sont remboursés au dépôt le plus proche du
+/// propriétaire, sans plafond ; seulement pour ses propres bâtiments.
 #[test]
 fn emptying_a_station_returns_its_contents_to_stock() {
     use crate::orders::O_EMPTY_STASH;
     let (mut w, a, b) = rail_world();
     let pad = station(&mut w, 0, B_CARGO_PAD, 30, 80);
     run(&mut w, 5);
-    let cap = w.players[0].stock_cap;
-    w.players[0].stock[IRON_PLATE as usize] = cap;
-    w.players[0].stock[CIRCUIT as usize] = 0;
+    let cap = DEPOT_CAP[0];
+    let d = w.map.occ[w.map.idx(34, 96)] as usize - 1;
+    w.buildings[d].stash[IRON_PLATE as usize] = cap as u16;
+    w.buildings[d].stash[CIRCUIT as usize] = 0;
     w.buildings[a].stash[IRON_PLATE as usize] = 30;
     w.buildings[a].stash[N + IRON_PLATE as usize] = 12;
     w.buildings[a].stash[N + CIRCUIT as usize] = 7;
     w.buildings[pad].stash[CIRCUIT as usize] = 5;
     w.buildings[pad].stash[N + CIRCUIT as usize] = 3;
     w.buildings[b].stash[COPPER_PLATE as usize] = 9;
-    let copper = w.players[0].stock[COPPER_PLATE as usize];
+    let copper = w.stock(0, COPPER_PLATE);
     let (ra, rp, rb) = (w.building_ref(a) as i32, w.building_ref(pad) as i32, w.building_ref(b) as i32);
     // la gare de l'allié n'est pas à nous : rien ne bouge
     w.step(&[3, O_EMPTY_STASH, 0, rb]);
     assert_eq!(w.buildings[b].stash[COPPER_PLATE as usize], 9);
-    assert_eq!(w.players[0].stock[COPPER_PLATE as usize], copper);
+    assert_eq!(w.stock(0, COPPER_PLATE), copper);
     w.step(&[3, O_EMPTY_STASH, 0, ra, 3, O_EMPTY_STASH, 0, rp]);
     assert!(w.buildings[a].stash.iter().all(|&n| n == 0), "gare vide");
     assert!(w.buildings[pad].stash.iter().all(|&n| n == 0), "héliport vide");
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], cap + 42, "rendu au-delà du plafond");
-    assert_eq!(w.players[0].stock[CIRCUIT as usize], 15);
+    assert_eq!(w.stock(0, IRON_PLATE), cap + 42, "rendu au-delà du plafond");
+    assert_eq!(w.stock(0, CIRCUIT), 15);
 }
 
 /// Gares sans électricité : une gare dans une zone sous-alimentée (ou éteinte) reçoit quand même le train
@@ -235,9 +245,7 @@ fn stations_work_in_an_underpowered_zone() {
     put(&mut w, 0, B_ORBITAL, 104, 92);
     run(&mut w, 40);
     w.buildings[a].stash[HYDROCARBON as usize] = 100;
-    w.players[0].stock[GEAR as usize] = 100;
-    w.players[0].stock[IRON_PLATE as usize] = 100;
-    w.players[0].stock[STEEL as usize] = 100;
+    fund(&mut w, 0, 34, 96);
     let rb = w.building_ref(b);
     crate::logistics::link(&mut w, 0, a, rb);
     run(&mut w, 3000);
@@ -297,9 +305,7 @@ fn train_follows_rail_curve() {
     // en jeu : le train passe par le virage et livre
     run(&mut w, 10);
     w.buildings[a].stash[IRON_PLATE as usize] = 300;
-    w.players[0].stock[GEAR as usize] = 100;
-    w.players[0].stock[IRON_PLATE as usize] = 100;
-    w.players[0].stock[STEEL as usize] = 100;
+    fund(&mut w, 0, 34, 96);
     let rb = w.building_ref(b);
     crate::logistics::link(&mut w, 0, a, rb);
     let mut on_arc = 0;

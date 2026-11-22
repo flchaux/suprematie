@@ -7,7 +7,8 @@
 //!   pendant FOLD_TICKS ; le contenu du module retourne à la réserve, sa recette et le combustible du
 //!   générateur restent dans le chenillard.
 //! - Pas de tapis ni de bras : les modules collés se passent les objets (transfert direct, machines
-//!   jumelles) ; la soute (un dépôt) alimente aussi les fabricants collés depuis la réserve.
+//!   jumelles) ; la soute (un dépôt, avec son propre stock) alimente aussi les fabricants collés. Repliée,
+//!   la soute garde son stock à bord (`UnitCold::hold` du chenillard).
 //! - Raclage : la foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement
 //!   (`World::wear`, ‰) : +2 ‰ toutes les 5 s de forage, jusqu'à 600 ‰ ; il se reconstitue au même
 //!   rythme quand aucune foreuse nomade n'y travaille.
@@ -62,9 +63,15 @@ pub fn place_start(w: &mut World, p: usize) {
     for (kind, dx, dy) in kit {
         let (x, y) = crate::races::start_spot(w, p, dx, dy, land);
         let id = w.spawn_unit(kind, p as u8, x, y);
-        if kind == U_CH_GENERATOR {
-            if let Some(s) = w.unit(id) {
+        if let Some(s) = w.unit(id) {
+            if kind == U_CH_GENERATOR {
                 w.units.cold[s].pack_fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
+            }
+            // stock de départ des Industriels, à bord de la soute repliée (il n'y a pas de réserve commune)
+            if kind == U_CH_HOLD {
+                for &(it, n) in START_ITEMS {
+                    crate::drones::put(&mut w.units.cold[s].hold, it, n);
+                }
             }
         }
     }
@@ -166,6 +173,8 @@ fn deploy(w: &mut World, s: usize) {
     };
     let (hp, max) = (w.units.hp[s], w.max_hp(s).max(1));
     let (recipe, fuel) = (w.units.cold[s].pack_recipe, w.units.cold[s].pack_fuel);
+    // soute : son stock replié redevient le stock du dépôt
+    let stock = std::mem::take(&mut w.units.cold[s].hold);
     vanish(w, s);
     buildings::complete_building(w, b);
     let def = bdef(bkind);
@@ -177,6 +186,9 @@ fn deploy(w: &mut World, s: usize) {
     if def.class == BClass::Power {
         bb.fuel = fuel;
         w.power_dirty = true;
+    }
+    if def.class == BClass::Depot {
+        bb.stash = stock;
     }
     if def.class == BClass::Extractor {
         let (bw, bh) = buildings::dims(bkind, 0);
@@ -204,7 +216,8 @@ pub fn fold(w: &mut World, b: usize) {
     let ratio = (bb.hp as i64 * 1000 / def.hp.max(1) as i64) as i32;
     let recipe = if def.class == BClass::Crafter { bb.recipe } else { RECIPE_NONE };
     let fuel = if def.class == BClass::Power { bb.fuel } else { 0 };
-    // le contenu du module retourne à la réserve (remboursement : sans plafond)
+    // le contenu du module est remboursé (dépôt le plus proche, sans plafond) ; le stock d'une soute
+    // reste à bord du chenillard
     let mut refund: Vec<(u8, i32)> = Vec::new();
     if def.class == BClass::Crafter && recipe != RECIPE_NONE {
         let r = &RECIPES[recipe as usize];
@@ -216,17 +229,18 @@ pub fn fold(w: &mut World, b: usize) {
     if def.class == BClass::Extractor && bb.recipe != 0 && bb.recipe != RECIPE_NONE {
         refund.push((bb.recipe, bb.out as i32));
     }
-    for (it, n) in bb.stash.iter().enumerate() {
+    let aboard = if def.class == BClass::Depot { std::mem::take(&mut w.buildings[b].stash) } else { Vec::new() };
+    for (it, n) in w.buildings[b].stash.iter().enumerate() {
         if *n > 0 {
             refund.push((it as u8, *n as i32));
         }
     }
+    buildings::remove_building(w, b, false);
     for (it, n) in refund {
         if n > 0 && (it as usize) < NUM_ITEMS {
-            w.players[owner].stock[it as usize] += n;
+            crate::drones::refund(w, owner as u8, cx, cy, it, n as u32);
         }
     }
-    buildings::remove_building(w, b, false);
     let m = crate::units::pass_mask(Layer::Land);
     let (x, y) = buildings::free_spot_near(w, cx, cy, m);
     let id = w.spawn_unit(ukind, owner as u8, x, y);
@@ -237,6 +251,7 @@ pub fn fold(w: &mut World, b: usize) {
         c.ready_tick = w.tick + FOLD_TICKS as u32;
         c.pack_recipe = recipe;
         c.pack_fuel = fuel;
+        c.hold = aboard;
         w.units.hp[s] = ((max as i64 * ratio as i64 / 1000) as i32).clamp(1, max);
     }
 }
@@ -274,12 +289,12 @@ pub fn update(w: &mut World) {
 pub fn lab_start(w: &mut World, b: usize, t: u8) -> bool {
     let owner = w.buildings[b].owner as usize;
     let need = RELEVES_PER_TIER * TECHS[t as usize].tier.max(1) as i32;
-    if w.players[owner].stock[RELEVES as usize] >= need {
-        w.players[owner].stock[RELEVES as usize] -= need;
+    if w.players[owner].purse[RELEVES as usize] >= need {
+        w.players[owner].purse[RELEVES as usize] -= need;
         w.players[owner].consumed[RELEVES as usize] += need as u32;
         return true;
     }
-    w.players[owner].stock[RELEVES as usize] += 1;
+    w.players[owner].purse[RELEVES as usize] += 1;
     w.players[owner].produced[RELEVES as usize] += 1;
     w.buildings[b].wake = w.tick + LAB_TRICKLE;
     false
@@ -292,7 +307,7 @@ pub fn explored(w: &mut World, team: usize, n: u32) {
     }
     for p in w.players.iter_mut() {
         if p.race == RACE_TRANSH && p.alive && p.team as usize == team {
-            p.stock[RELEVES as usize] += n as i32;
+            p.purse[RELEVES as usize] += n as i32;
             p.produced[RELEVES as usize] += n;
         }
     }
@@ -303,14 +318,14 @@ pub fn kill_credit(w: &mut World, killer: u8, tier: u8) {
     if let Some(p) = w.players.get_mut(killer as usize) {
         if p.race == RACE_TRANSH {
             let n = RELEVES_PER_KILL_TIER * tier.max(1) as i32;
-            p.stock[RELEVES as usize] += n;
+            p.purse[RELEVES as usize] += n;
             p.produced[RELEVES as usize] += n as u32;
         }
     }
 }
 
-/// Soute d'un Transhumant : elle alimente depuis la réserve les fabricants collés à ses faces (un objet
-/// par fabricant et par passage), comme un dépôt alimente une usine.
+/// Soute d'un Transhumant : elle alimente depuis son stock les fabricants collés à ses faces (un objet
+/// par fabricant et par passage).
 pub fn feed_crafters(w: &mut World, b: usize) {
     let bb = &w.buildings[b];
     let owner = bb.owner;
@@ -338,8 +353,8 @@ pub fn feed_crafters(w: &mut World, b: usize) {
     for o in near {
         let r = &RECIPES[w.buildings[o].recipe as usize];
         for &(it, _) in r.inputs {
-            if w.avail(owner as usize, it) > 0 && buildings::accepts(w, o, it) {
-                w.pay(owner as usize, it, 1);
+            if crate::drones::has(&w.buildings[b].stash, it) > 0 && buildings::accepts(w, o, it) {
+                crate::drones::take(&mut w.buildings[b].stash, it, 1);
                 buildings::insert_item(w, o, it);
             }
         }

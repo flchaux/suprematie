@@ -75,13 +75,12 @@ fn steps(w: &mut World, n: u32) {
     }
 }
 
-/// Le commandant va au gisement, puis chaque cycle de récolte transforme un minerai en sa plaque, versée
-/// au stock ; le minerai brut n'entre jamais au stock. Seul le commandant accepte l'ordre.
+/// Le commandant va au gisement, puis chaque cycle de récolte transforme un minerai en sa plaque, mise
+/// dans sa soute ; le minerai brut n'est jamais gardé. Seul le commandant accepte l'ordre.
 #[test]
 fn commander_harvests_and_smelts_ore() {
     let (mut w, cmd) = world(1);
     let robot = w.spawn_unit(U_LINE_ROBOT, 0, 91 * TILE, 90 * TILE);
-    let st0 = w.players[0].stock;
     harvest(&mut w, &[cmd, robot], 100, 100, false);
     assert!(w.units.cold[w.unit(robot).unwrap()].orders.is_empty(), "seul le commandant récolte");
     assert_eq!(first(&w, cmd), Some(Order::Harvest { x: 100, y: 100 }));
@@ -102,11 +101,11 @@ fn commander_harvests_and_smelts_ore() {
     // débit : un cycle de 80 ticks par plaque (2 fois la recette de la fonderie)
     let cycle = harvest_cycle(RECIPES.iter().position(|r| r.key == "iron_plate").unwrap());
     assert_eq!(cycle, 80);
-    let p0 = w.players[0].stock[IRON_PLATE as usize];
+    let p0 = w.stock(0, IRON_PLATE);
     steps(&mut w, cycle * 10);
-    let got = w.players[0].stock[IRON_PLATE as usize] - p0;
+    let got = w.stock(0, IRON_PLATE) - p0;
     assert!((9..=10).contains(&got), "10 cycles doivent donner 10 plaques : {got}");
-    assert_eq!(w.players[0].stock[IRON_ORE as usize], st0[IRON_ORE as usize], "le minerai est fondu, pas stocké");
+    assert_eq!(w.stock(0, IRON_ORE), 0, "le minerai est fondu, pas stocké");
     assert!(w.players[0].produced[IRON_PLATE as usize] >= got as u32, "comptée dans la production");
     // l'ordre ne se termine pas seul
     assert_eq!(first(&w, cmd), Some(Order::Harvest { x: 100, y: 100 }));
@@ -115,11 +114,11 @@ fn commander_harvests_and_smelts_ore() {
     assert!(w.units.cold[s].flags & UF_WORKING != 0);
 
     // cuivre : plaque de cuivre
-    let c0 = w.players[0].stock[COPPER_PLATE as usize];
+    let c0 = w.stock(0, COPPER_PLATE);
     harvest(&mut w, &[cmd], 110, 100, false);
     steps(&mut w, 600);
-    assert!(w.players[0].stock[COPPER_PLATE as usize] - c0 >= 4, "le cuivre donne des plaques de cuivre");
-    assert_eq!(w.players[0].stock[COPPER_ORE as usize], st0[COPPER_ORE as usize]);
+    assert!(w.stock(0, COPPER_PLATE) - c0 >= 4, "le cuivre donne des plaques de cuivre");
+    assert_eq!(w.stock(0, COPPER_ORE), 0);
 }
 
 /// Seuls les gisements qu'une fonderie sait fondre se récoltent : le silicium attend la recette de la
@@ -137,9 +136,9 @@ fn harvest_needs_a_smeltable_deposit() {
     assert_eq!(smelt_recipe(SILICON), Some(r));
     harvest(&mut w, &[cmd], 100, 110, false);
     assert_eq!(first(&w, cmd), Some(Order::Harvest { x: 100, y: 110 }));
-    let w0 = w.players[0].stock[WAFER as usize];
+    let w0 = w.stock(0, WAFER);
     steps(&mut w, 1200);
-    let got = w.players[0].stock[WAFER as usize] - w0;
+    let got = w.stock(0, WAFER) - w0;
     assert!(got >= 3, "le silicium donne des plaquettes : {got}");
     assert_eq!(harvest_cycle(r), 120);
 }
@@ -155,22 +154,22 @@ fn new_order_interrupts_harvest() {
     w.step(&[9, O_MOVE, 0, 0, 80 * TILE, 80 * TILE, 1, cmd as i32, 80 * TILE, 80 * TILE]);
     assert!(matches!(first(&w, cmd), Some(Order::Move { .. })));
     assert_eq!(w.units.cold[w.unit(cmd).unwrap()].orders.len(), 1);
-    let p0 = w.players[0].stock[IRON_PLATE as usize];
+    let p0 = w.stock(0, IRON_PLATE);
     steps(&mut w, 300);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], p0, "plus de récolte après un nouvel ordre");
+    assert_eq!(w.stock(0, IRON_PLATE), p0, "plus de récolte après un nouvel ordre");
     // récolte en file derrière un déplacement : il récolte une fois arrivé
     w.step(&[9, O_MOVE, 0, 0, 75 * TILE, 75 * TILE, 1, cmd as i32, 75 * TILE, 75 * TILE]);
     harvest(&mut w, &[cmd], 100, 100, true);
     assert_eq!(w.units.cold[w.unit(cmd).unwrap()].orders.len(), 2);
     steps(&mut w, 1000);
     assert_eq!(first(&w, cmd), Some(Order::Harvest { x: 100, y: 100 }));
-    assert!(w.players[0].stock[IRON_PLATE as usize] > p0);
+    assert!(w.stock(0, IRON_PLATE) > p0);
     // arrêt
     w.step(&[4, O_STOP, 0, 1, cmd as i32]);
     assert_eq!(first(&w, cmd), None);
-    let p1 = w.players[0].stock[IRON_PLATE as usize];
+    let p1 = w.stock(0, IRON_PLATE);
     steps(&mut w, 200);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], p1);
+    assert_eq!(w.stock(0, IRON_PLATE), p1);
 }
 
 /// Combat : tant que le canon du commandant a une cible, la fonderie s'arrête ; l'ordre reste et la
@@ -189,10 +188,10 @@ fn combat_pauses_harvest() {
     w.units.hp[fs] = 1_000_000_000;
     steps(&mut w, 20);
     assert_eq!(state(&w, cmd), HV_COMBAT, "le commandant combat");
-    let p0 = w.players[0].stock[IRON_PLATE as usize];
+    let p0 = w.stock(0, IRON_PLATE);
     let work = w.units.cold[w.unit(cmd).unwrap()].work;
     steps(&mut w, 300);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], p0, "pas de récolte pendant le combat");
+    assert_eq!(w.stock(0, IRON_PLATE), p0, "pas de récolte pendant le combat");
     assert_eq!(w.units.cold[w.unit(cmd).unwrap()].work, work, "le cycle en cours est gelé");
     assert_eq!(first(&w, cmd), Some(Order::Harvest { x: 100, y: 100 }), "l'ordre reste");
     // l'ennemi s'en va loin : la récolte reprend
@@ -204,24 +203,46 @@ fn combat_pauses_harvest() {
     w.units.py[fs] = 300 * TILE;
     steps(&mut w, 300);
     assert_eq!(state(&w, cmd), HV_WORKING);
-    assert!(w.players[0].stock[IRON_PLATE as usize] > p0, "la récolte a repris");
+    assert!(w.stock(0, IRON_PLATE) > p0, "la récolte a repris");
 }
 
-/// Réserve pleine pour le produit fondu : la récolte attend, sans rien perdre, et reprend quand il y a de la place.
+/// Soute pleine (sans dépôt à portée pour la vider) : la récolte attend, sans rien perdre, et reprend
+/// quand il y a de la place.
 #[test]
-fn full_stock_pauses_harvest() {
+fn full_hold_pauses_harvest() {
     let (mut w, cmd) = world(1);
     harvest(&mut w, &[cmd], 100, 100, false);
     steps(&mut w, 400);
-    let cap = w.players[0].stock_cap;
-    w.players[0].stock[IRON_PLATE as usize] = cap;
+    let cap = udef(U_COMMANDER).hold;
+    let s = w.unit(cmd).unwrap();
+    w.units.cold[s].hold = vec![0; NUM_ITEMS];
+    w.units.cold[s].hold[IRON_PLATE as usize] = cap;
     steps(&mut w, 200);
     assert_eq!(state(&w, cmd), HV_FULL);
-    assert_eq!(w.players[0].stock[IRON_PLATE as usize], cap, "jamais au-delà du plafond");
-    w.players[0].stock[IRON_PLATE as usize] = cap - 50;
+    assert_eq!(w.stock(0, IRON_PLATE), cap as i32, "jamais au-delà du plafond de la soute");
+    w.units.cold[s].hold[IRON_PLATE as usize] = cap - 50;
     steps(&mut w, 200);
     assert_eq!(state(&w, cmd), HV_WORKING);
-    assert!(w.players[0].stock[IRON_PLATE as usize] > cap - 50);
+    assert!(w.stock(0, IRON_PLATE) > cap as i32 - 50);
+}
+
+/// Un dépôt à portée du commandant (30 cases) : ses drones y rapportent la récolte, la soute reste vide.
+#[test]
+fn harvest_goes_to_nearby_depot_by_drone() {
+    let (mut w, cmd) = world(1);
+    let d = crate::buildings::place_building(&mut w, 0, B_DEPOT, 92, 96, 0).unwrap();
+    crate::buildings::complete_building(&mut w, d);
+    harvest(&mut w, &[cmd], 100, 100, false);
+    let mut seen = false;
+    for _ in 0..1200 {
+        w.step(&[]);
+        seen |= w.carriers.iter().any(|c| c.alive && c.kind == crate::drones::DRONE && c.ready && c.load > 0);
+    }
+    assert!(seen, "un drone chargé a volé vers le dépôt");
+    let s = w.unit(cmd).unwrap();
+    let in_depot = crate::drones::has(&w.buildings[d].stash, IRON_PLATE);
+    assert!(in_depot >= 8, "la récolte est au dépôt : {in_depot}");
+    assert!(crate::drones::has(&w.units.cold[s].hold, IRON_PLATE) <= 2, "la soute est vidée");
 }
 
 /// La récolte en cours survit à une sauvegarde : mêmes hash après restore (carte générée, gisement naturel).
@@ -242,5 +263,7 @@ fn harvest_survives_snapshot() {
     for _ in 0..300 {
         assert_eq!(w.step(&[]), c.step(&[]), "snapshot/restore diverge pendant la récolte");
     }
-    assert_eq!(w.players[0].stock, c.players[0].stock);
+    for it in 0..NUM_ITEMS as u8 {
+        assert_eq!(w.stock(0, it), c.stock(0, it));
+    }
 }

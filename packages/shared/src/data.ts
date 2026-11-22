@@ -24,7 +24,7 @@ export interface BuildingDef {
 }
 export interface UnitDef {
   key: string; name: string; layer: number; hp: number; speed: number; radius: number; weapons: number[]; vision: number; radar: number;
-  cost: [number, number][]; build: number; tech: number; factory: number; buildPower: number; carry: number; shieldR: number; tier: number; altitude: number;
+  cost: [number, number][]; build: number; tech: number; factory: number; buildPower: number; carry: number; drones: number; supply: number; hold: number; shieldR: number; tier: number; altitude: number;
   /** race qui la produit ; unité de commandement ; organisme vivant (Souche) */
   race: number; commander: boolean; bio: boolean;
   /** chenillard des Transhumants : bâtiment qu'il devient une fois déployé (-1 : aucun) */
@@ -37,8 +37,9 @@ export interface GameData {
   /** niveaux d'un extracteur : vitesse et consommation en % du niveau 0, coût et recherche du passage à ce niveau */
   /** combustible des générateurs : énergie par unité (kW × ticks) et taille du réservoir (unités) */
   fuel?: { hydrocarbon: number; refined: number; cell: number; tankUnits: number };
-  /** dépôts : réserve de base, capacité par niveau, amélioration (sorties filtrées) */
-  depot?: { base: number; cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number };
+  /** dépôts : plafond par objet et par niveau, amélioration, filtres de sortie ; drones de ravitaillement
+   * (objets par voyage, vitesse), drones et rayon des usines, rayon « à portée » (paiements immédiats, affichage) */
+  depot?: { cap: number[]; upgradeCost: [number, number][]; upgradeTech: number; upgradeTime: number; maxFilters: number; droneCap: number; droneSpeed: number; factoryDrones: number; factorySupply: number; near: number };
   extractorLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; /** durée de l'amélioration vers ce niveau (s) */ time?: number }[];
   /** niveaux de la fonderie (amélioration sur place) : vitesse et énergie en %, coût, recherche, durée (s) */
   furnaceLevels?: { speed: number; power: number; cost: [number, number][]; tech: number; time: number }[];

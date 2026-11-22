@@ -426,14 +426,14 @@ pub fn refund(w: &mut World, net: u16, item: u8, n: i32) {
 pub fn lab_start(w: &mut World, b: usize, t: u8) -> bool {
     let owner = w.buildings[b].owner as usize;
     let need = TECHS[t as usize].tier.max(1) as i32;
-    if w.players[owner].stock[ADN as usize] >= need {
-        w.players[owner].stock[ADN as usize] -= need;
+    if w.players[owner].purse[ADN as usize] >= need {
+        w.players[owner].purse[ADN as usize] -= need;
         w.players[owner].consumed[ADN as usize] += need as u32;
         return true;
     }
     let net = w.buildings[b].net;
     if take_pool(w, net, SEVE, ADN_SEVE) {
-        w.players[owner].stock[ADN as usize] += 1;
+        w.players[owner].purse[ADN as usize] += 1;
         w.players[owner].produced[ADN as usize] += 1;
         w.players[owner].consumed[SEVE as usize] += ADN_SEVE as u32;
     }
@@ -459,7 +459,7 @@ pub fn digest(w: &mut World, x: i32, y: i32, victim_owner: u8, tier: u8) {
         let k = tier as i32 + 1;
         add_pool(w, net, 10 * k, 3 * k);
         if w.team_of(victim_owner) != w.team_of(p as u8) {
-            w.players[p].stock[ADN as usize] += k;
+            w.players[p].purse[ADN as usize] += k;
             w.players[p].produced[ADN as usize] += k as u32;
         }
         return;

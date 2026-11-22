@@ -275,7 +275,7 @@ fn matrix_researches_with_adn_and_digestion_feeds_it() {
     let fs = w.unit(foe).unwrap();
     crate::combat::damage_unit(&mut w, fs, 100_000, 0);
     w.step(&[]);
-    assert!(w.players[0].stock[ADN as usize] >= 2, "digestion : {}", w.players[0].stock[ADN as usize]);
+    assert!(w.players[0].purse[ADN as usize] >= 2, "digestion : {}", w.players[0].purse[ADN as usize]);
     // recherche : l'ADN puis la sève convertie
     order(&mut w, 0, O_RESEARCH, &[T_S_SPITTERS as i32]);
     steps(&mut w, 2500);
@@ -315,7 +315,7 @@ fn transhumants_start_with_their_chenillards() {
     }
     let g = find_unit(&w, 0, U_CH_GENERATOR).unwrap();
     assert_eq!(w.units.cold[g].pack_fuel, START_FUEL_UNITS * FUEL_HYDROCARBON);
-    assert_eq!(w.players[0].stock[RELEVES as usize], 20);
+    assert_eq!(w.players[0].purse[RELEVES as usize], 20);
 }
 
 #[test]
@@ -381,12 +381,12 @@ fn deployed_generator_keeps_its_fuel_and_powers_the_drill() {
     // usure : elle augmente quand la foreuse travaille
     let bb = &w.buildings[d];
     let hold = find_building(&w, 0, B_T_HOLD).map(|h| (w.buildings[h].x, w.buildings[h].y));
-    assert!(w.wear[k] > 0, "usure du gisement : foreuse ({}, {}) lien {} travaille {} sortie {} soute {:?} stock {}", bb.x, bb.y, bb.link, bb.working, bb.out, hold, w.players[0].stock[IRON_ORE as usize]);
+    assert!(w.wear[k] > 0, "usure du gisement : foreuse ({}, {}) lien {} travaille {} sortie {} soute {:?} stock {}", bb.x, bb.y, bb.link, bb.working, bb.out, hold, w.stock(0, IRON_ORE));
     assert!(crate::transhumants::drill_speed(&w, d) < 2000);
 }
 
 #[test]
-fn hold_feeds_glued_crafters_from_the_reserve() {
+fn hold_feeds_glued_crafters_from_its_stock() {
     let (mut w, _, _) = nomads();
     let hold = find_unit(&w, 0, U_CH_HOLD).unwrap();
     let fur = find_unit(&w, 0, U_CH_FURNACE).unwrap();
@@ -398,12 +398,13 @@ fn hold_feeds_glued_crafters_from_the_reserve() {
     w.units.x[gen] = x;
     w.units.y[gen] = y + 3 * TILE;
     w.units.cold[fur].pack_recipe = 0; // plaques de fer
-    w.players[0].stock[IRON_ORE as usize] = 50;
+    // minerai dans le stock de la soute repliée (il devient le stock du dépôt au déploiement)
+    crate::drones::put(&mut w.units.cold[hold].hold, IRON_ORE, 50);
     let ids: Vec<i32> = [hold, fur, gen].iter().map(|&s| w.unit_id(s) as i32).collect();
     order(&mut w, 0, O_DEPLOY, &[3, ids[0], ids[1], ids[2]]);
     steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 400);
     assert!(find_building(&w, 0, B_T_HOLD).is_some() && find_building(&w, 0, B_T_FURNACE).is_some());
-    assert!(w.players[0].stock[IRON_ORE as usize] < 50, "la soute nourrit la fonderie");
+    assert!(w.stock(0, IRON_ORE) < 50, "la soute nourrit la fonderie");
     assert!(w.players[0].produced[IRON_PLATE as usize] > 0, "plaques fondues");
 }
 
@@ -411,13 +412,33 @@ fn hold_feeds_glued_crafters_from_the_reserve() {
 fn exploration_and_labs_give_releves() {
     let mut w = game(RACE_TRANSH, RACE_INDUS);
     let ark = w.unit(w.players[0].commander).unwrap();
-    let start = w.players[0].stock[RELEVES as usize];
+    let start = w.players[0].purse[RELEVES as usize];
     let (x, y) = (w.units.x[ark], w.units.y[ark]);
     let tx = if x > 256 * TILE { x - 60 * TILE } else { x + 60 * TILE };
     let id = w.unit_id(ark) as i32;
     order(&mut w, 0, O_MOVE, &[0, tx, y, 1, id, tx, y]);
     steps(&mut w, 600);
-    assert!(w.players[0].stock[RELEVES as usize] > start + 10, "relevés : {start} → {}", w.players[0].stock[RELEVES as usize]);
+    assert!(w.players[0].purse[RELEVES as usize] > start + 10, "relevés : {start} → {}", w.players[0].purse[RELEVES as usize]);
     // un Industriel n'en gagne pas
-    assert_eq!(w.players[1].stock[RELEVES as usize], 0);
+    assert_eq!(w.players[1].purse[RELEVES as usize], 0);
+}
+
+/// Transhumants : le stock de départ est à bord de la soute repliée, et devient le stock de la soute
+/// déployée. Une sauvegarde de version 3 (races, réserve commune) : la réserve va dans la soute, les
+/// relevés restent dans la bourse.
+#[test]
+fn transhumant_start_stock_rides_in_the_hold_and_v3_reserve_converts() {
+    let mut w = game(RACE_TRANSH, RACE_INDUS);
+    let h = find_unit(&w, 0, U_CH_HOLD).unwrap();
+    assert_eq!(crate::drones::has(&w.units.cold[h].hold, IRON_PLATE), 300, "stock de départ à bord");
+    assert_eq!(w.stock(0, IRON_PLATE), 300);
+    // état d'une version 3 : la réserve dans la bourse, soute repliée vide
+    w.units.cold[h].hold.clear();
+    w.players[0].purse[IRON_PLATE as usize] = 123;
+    let bytes = crate::save::write(&w, 3, &[]);
+    let a = crate::save::restore(&bytes).expect("sauvegarde de version 3 lue");
+    let h = find_unit(&a, 0, U_CH_HOLD).unwrap();
+    assert_eq!(crate::drones::has(&a.units.cold[h].hold, IRON_PLATE), 123, "réserve convertie dans la soute");
+    assert_eq!(a.players[0].purse[IRON_PLATE as usize], 0);
+    assert_eq!(a.players[0].purse[RELEVES as usize], 20, "les relevés restent dans la bourse");
 }

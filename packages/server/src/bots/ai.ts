@@ -9,7 +9,9 @@
 //
 // Économie : modules « sushi » (voir layout.ts). Chaque module a un tapis principal qui finit dans
 // un dépôt ; les extracteurs y versent le minerai, les bâtiments de part et d'autre prennent ce dont
-// ils ont besoin et y reposent leurs produits ; le reste alimente le stock commun des ingénieurs.
+// ils ont besoin et y reposent leurs produits ; le reste reste dans le dépôt, où les drones des
+// constructeurs (commandant, ingénieurs, usines) viennent puiser (il n'y a pas de réserve commune :
+// voir Dépôts et drones dans docs/spec/economie.md ; `stock` est le total des dépôts et des soutes).
 import type { Bot, BotContext } from "./types.ts";
 import { serialize, deserialize } from "node:v8";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
@@ -283,6 +285,7 @@ export class SkirmishAI implements Bot {
   sameTeam(p: number): boolean {
     return this.view.players[p]?.team === this.me.team;
   }
+  /** Total d'un objet dans nos dépôts et dans les soutes de nos constructeurs. */
   stock(item: number): number {
     return this.me.stock[item];
   }
@@ -1121,8 +1124,9 @@ export class SkirmishAI implements Bot {
 
   // ---------- Combustible ----------
   // Les générateurs brûlent de l'hydrocarbure : sans combustible, ils ne produisent rien. Chaque
-  // générateur a un dépôt collé qui lui verse l'hydrocarbure de la réserve ; des mines de combustible
-  // (extracteur d'hydrocarbure, qui tourne sans électricité, et dépôt collé) remplissent la réserve.
+  // générateur a un dépôt collé ; des mines de combustible (extracteur d'hydrocarbure, qui tourne sans
+  // électricité, et dépôt collé) remplissent leur dépôt, où le drone de chaque générateur (30 cases) vient
+  // chercher son combustible.
   // Un extracteur de base donne 2 hydrocarbures en 3 s, soit environ 1 000 kW.
 
   /** La réserve d'hydrocarbure est restée presque vide ces 30 dernières secondes. */

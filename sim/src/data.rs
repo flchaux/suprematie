@@ -165,10 +165,21 @@ pub fn smelt_recipe(raw: u8) -> Option<usize> {
     RECIPES.iter().position(|r| r.crafter == Crafter::Furnace && r.inputs.len() == 1 && r.inputs[0].0 == raw)
 }
 
-/// Réserve du joueur : plafond de chaque objet = base + capacité de ses dépôts terminés (par niveau).
-pub const STOCK_BASE: i32 = 400;
+/// Stock d'un dépôt : plafond de chaque objet, par niveau (l'entrepôt d'équipe a celui du niveau 1).
 pub const DEPOT_CAP: [i32; 2] = [600, 2000];
-/// Amélioration d'un dépôt (plus haut, sorties filtrées) : coût, recherche, durée (secondes).
+/// Ressources de départ, dans le dépôt posé à côté du générateur principal.
+pub const START_ITEMS: &[(u8, u16)] = &[(IRON_PLATE, 300), (COPPER_PLATE, 150), (STEEL, 20), (GEAR, 40), (CIRCUIT, 20)];
+/// Drones de ravitaillement (voir drones.rs) : objets par voyage, vitesse (sous-unités par tick).
+pub const DRONE_CAP: u16 = 10;
+pub const DRONE_SPEED: i32 = 16 * 256 / 20;
+/// Usines d'unités : drones et rayon de ravitaillement (cases).
+pub const FACTORY_DRONES: u8 = 4;
+pub const FACTORY_SUPPLY: i32 = 30;
+/// Générateurs à combustible : drones (rayon : NEAR_SUPPLY).
+pub const GENERATOR_DRONES: u8 = 1;
+/// Rayon (cases) des paiements immédiats, du collecteur de surplus et de l'affichage « à portée ».
+pub const NEAR_SUPPLY: i32 = 30;
+/// Amélioration d'un dépôt (plus haut, plus grand) : coût, recherche, durée (secondes).
 pub const DEPOT_UPGRADE_COST: &[(u8, u16)] = &[(STEEL, 20), (GEAR, 10), (CIRCUIT, 6)];
 pub const DEPOT_UPGRADE_TECH: u8 = T_AUTOMATION;
 pub const DEPOT_UPGRADE_TIME: u16 = 20;
@@ -524,7 +535,7 @@ pub enum BClass {
     AntiMissile,
     Beacon,
     Orbital,
-    /// Entrepôt d'équipe : alimente le stock partagé par l'équipe ; peut ressortir un objet choisi.
+    /// Entrepôt d'équipe : dépôt commun à l'équipe (drones de chacun) ; peut ressortir un objet choisi.
     Warehouse,
     /// Rail (voie ferrée) : relie les gares.
     Rail,
@@ -536,7 +547,7 @@ pub enum BClass {
     Router,
     /// Portail de don : les unités d'un allié qui le traversent passent à son propriétaire.
     Portal,
-    /// Base de robots logistiques : alimente les fabricants voisins depuis le stock, évacue les sorties bloquées.
+    /// Base de robots logistiques : alimente les fabricants voisins depuis les dépôts proches, évacue les sorties bloquées.
     Roboport,
     /// Nid de la faune (voir nature.rs) : fait naître des bêtes ; jamais posé par un joueur.
     Nest,
@@ -581,7 +592,7 @@ pub struct BuildingDef {
     pub passable: bool,
     /// bras : distance (cases) de la case de prise et de la case de dépose
     pub reach: u8,
-    /// tapis collecteur de surplus : les objets à l'arrêt sur sa case partent dans le stock
+    /// tapis collecteur de surplus : les objets à l'arrêt sur sa case partent au dépôt le plus proche
     pub collect: bool,
     /// race qui le pose (voir RACES)
     pub race: u8,
@@ -843,6 +854,10 @@ pub struct UnitDef {
     pub factory: FactoryKind,
     pub build_power: i32,
     pub carry: u8,
+    /// constructeur : drones de ravitaillement, rayon de ravitaillement (cases), soute (objets)
+    pub drones: u8,
+    pub supply: i32,
+    pub hold: u16,
     pub shield_r: i32,
     pub shield_hp: i32,
     pub tier: u8,
@@ -873,6 +888,9 @@ const UD: UnitDef = UnitDef {
     factory: FactoryKind::Land,
     build_power: 0,
     carry: 0,
+    drones: 0,
+    supply: 0,
+    hold: 0,
     shield_r: 0,
     shield_hp: 0,
     tier: 1,
@@ -953,10 +971,10 @@ pub const JAM_RADIUS: i32 = 12;
 pub const CARRIER_WING: u16 = 6;
 
 pub const UNITS: [UnitDef; 77] = [
-    UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, tier: 0, commander: true, ..UD },
-    UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, altitude: 160, ..UD },
-    UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, tier: 3, altitude: 170, ..UD },
-    UnitDef { key: "eng5", name: "Drone ingénieur suprême", layer: Layer::Hover, hp: 1400, speed: 50, radius: 120, cost: &[(STEEL, 8), (PROCESSOR, 4), (ENGINE, 4)], build: 14, tech: T_LOGISTICS3, build_power: 50, tier: 5, altitude: 180, ..UD },
+    UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
+    UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
+    UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
+    UnitDef { key: "eng5", name: "Drone ingénieur suprême", layer: Layer::Hover, hp: 1400, speed: 50, radius: 120, cost: &[(STEEL, 8), (PROCESSOR, 4), (ENGINE, 4)], build: 14, tech: T_LOGISTICS3, build_power: 50, drones: 4, supply: 45, hold: 160, tier: 5, altitude: 180, ..UD },
     UnitDef { key: "line_robot", name: "Robot de ligne", hp: 200, speed: 26, radius: 80, weapons: &[2], cost: &[(IRON_PLATE, 4), (GEAR, 1)], build: 3, tech: 2, ..UD },
     UnitDef { key: "moto", name: "Moto-glisseur", hp: 120, speed: 60, radius: 90, weapons: &[3], vision: 30, cost: &[(IRON_PLATE, 5), (GEAR, 2)], build: 3, tech: 2, altitude: 40, ..UD },
     UnitDef { key: "light_tank", name: "Char léger", hp: 550, speed: 30, radius: 130, weapons: &[4], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2)], build: 6, tech: 2, ..UD },
@@ -1021,7 +1039,7 @@ pub const UNITS: [UnitDef; 77] = [
     UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, ..UD },
     UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
-    UnitDef { key: "ark", name: "Arche", hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ark", name: "Arche", hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ch_drill", name: "Chenillard foreuse", hp: 1200, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
     UnitDef { key: "ch_furnace", name: "Chenillard fonderie", hp: 1000, speed: 20, radius: 200, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_FURNACE, ..UD },
     UnitDef { key: "ch_assembler", name: "Chenillard assembleur", hp: 1200, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_ASSEMBLER, ..UD },
@@ -1151,9 +1169,9 @@ pub fn data_json() -> String {
         }
         let ws: Vec<String> = u.weapons.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{}}}",
+            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{}}}",
             js(u.key), js(u.name), u.layer as u8, u.hp, u.speed, u.radius, ws.join(","), u.vision, u.radar, cost_js(u.cost), u.build, u.tech,
-            u.factory as u8, u.build_power, u.carry, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }
+            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }
         ));
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();
@@ -1163,7 +1181,7 @@ pub fn data_json() -> String {
     let mains: Vec<String> = MAIN_GENERATOR_LEVELS.iter().map(|l| format!("{{\"supply\":{},\"connect\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.supply, l.connect, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"base\":{},\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{},\"droneCap\":{},\"droneSpeed\":{},\"factoryDrones\":{},\"factorySupply\":{},\"near\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
@@ -1172,13 +1190,17 @@ pub fn data_json() -> String {
         gens.join(","),
         mains.join(","),
         asm.join(","),
-        STOCK_BASE,
         DEPOT_CAP[0],
         DEPOT_CAP[1],
         cost_js(DEPOT_UPGRADE_COST),
         DEPOT_UPGRADE_TECH,
         DEPOT_UPGRADE_TIME,
         MAX_FILTERS,
+        DRONE_CAP,
+        DRONE_SPEED,
+        FACTORY_DRONES,
+        FACTORY_SUPPLY,
+        NEAR_SUPPLY,
         FUEL_HYDROCARBON,
         FUEL_REFINED,
         FUEL_CELL,

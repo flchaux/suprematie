@@ -1,7 +1,7 @@
 //! Logistique et entraide entre joueurs d'une même équipe.
 //!
-//! - Entrepôt d'équipe : les objets qui y entrent (bras, tapis) vont dans le stock commun de l'équipe,
-//!   utilisable par chacun pour construire (après son propre stock). Un objet choisi peut en ressortir
+//! - Entrepôt d'équipe : un dépôt commun à l'équipe (son stock dans `stash`, voir drones.rs) ; les
+//!   drones de chaque membre de l'équipe peuvent y puiser. Un objet choisi peut en ressortir
 //!   physiquement (bras qui prend dans l'entrepôt) : un allié peut ainsi alimenter vos chaînes.
 //! - Gares et héliports de fret : deux tampons (à envoyer, reçus). Un véhicule fait la navette entre
 //!   deux gares (ou deux héliports), éventuellement chez un allié : à chaque arrêt il décharge dans
@@ -73,7 +73,7 @@ fn buffer_of(b: &Building) -> u32 {
 pub fn accepts(w: &World, b: usize, item: u8) -> bool {
     let bb = &w.buildings[b];
     match bb.def().class {
-        BClass::Warehouse => item != 0,
+        BClass::Warehouse => item != 0 && crate::drones::store_room(bb, item) > 0,
         BClass::Station | BClass::CargoPad => bb.stash.len() >= 2 * N && stash_total(bb, false) < buffer_of(bb),
         _ => false,
     }
@@ -81,12 +81,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
 
 pub fn insert(w: &mut World, b: usize, item: u8) {
     match w.buildings[b].def().class {
-        BClass::Warehouse => {
-            let team = w.team_of(w.buildings[b].owner) as usize;
-            if let Some(ts) = w.team_stock.get_mut(team) {
-                ts[item as usize] += 1;
-            }
-        }
+        BClass::Warehouse => crate::drones::put(&mut w.buildings[b].stash, item, 1),
         BClass::Station | BClass::CargoPad if w.buildings[b].stash.len() >= 2 * N => {
             w.buildings[b].stash[item as usize] += 1;
         }
@@ -94,7 +89,7 @@ pub fn insert(w: &mut World, b: usize, item: u8) {
     }
 }
 
-/// Un bras prend un objet : entrepôt (l'objet choisi, s'il est en stock commun) ou gare (objets reçus).
+/// Un bras prend un objet : entrepôt (l'objet choisi, s'il est en stock) ou gare (objets reçus).
 pub fn take(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
     match w.buildings[b].def().class {
         BClass::Warehouse => {
@@ -102,13 +97,10 @@ pub fn take(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
             if it == 0 || it as usize >= N || !want[it as usize] {
                 return 0;
             }
-            let team = w.team_of(w.buildings[b].owner) as usize;
-            match w.team_stock.get_mut(team) {
-                Some(ts) if ts[it as usize] > 0 => {
-                    ts[it as usize] -= 1;
-                    it
-                }
-                _ => 0,
+            if crate::drones::take(&mut w.buildings[b].stash, it, 1) > 0 {
+                it
+            } else {
+                0
             }
         }
         BClass::Station | BClass::CargoPad => {
@@ -139,17 +131,17 @@ pub fn tick_station(w: &mut World, b: usize) {
 
 // ---------- ordres ----------
 
-/// Ordre « vider » : tout le contenu d'une gare ou d'un héliport (« à envoyer » et « reçus ») retourne
-/// au stock de son propriétaire, sans plafond, comme un remboursement (changement de recette, chantier
-/// annulé). Le chargement des véhicules en route n'est pas touché.
+/// Ordre « vider » : tout le contenu d'une gare ou d'un héliport (« à envoyer » et « reçus ») est
+/// remboursé à son propriétaire (dépôt le plus proche, sans plafond, voir drones::refund). Le chargement
+/// des véhicules en route n'est pas touché.
 pub fn empty_stash(w: &mut World, b: usize) {
     if carrier_kind(w.buildings[b].def().class).is_none() || w.buildings[b].stash.len() < 2 * N {
         return;
     }
-    let owner = w.buildings[b].owner as usize;
+    let owner = w.buildings[b].owner;
     for k in 0..2 * N {
         let n = std::mem::take(&mut w.buildings[b].stash[k]);
-        w.players[owner].stock[k % N] += n as i32;
+        crate::drones::refund_at(w, owner, b, (k % N) as u8, n as u32);
     }
     // des bras attendaient peut-être de la place pour déposer
     w.buildings[b].wake = 0;
@@ -158,7 +150,7 @@ pub fn empty_stash(w: &mut World, b: usize) {
 
 /// Ordre « relier » : la gare `b` (du joueur `p`) reçoit un véhicule qui fera la navette vers `target`
 /// (gare ou héliport de même type, du joueur ou d'un allié). Relier une gare à elle-même retire ses
-/// véhicules. Le véhicule est payé sur le stock du joueur (puis le stock commun de l'équipe).
+/// véhicules. Le véhicule est payé par les dépôts proches de la gare (voir drones::pay_near).
 pub fn link(w: &mut World, p: u8, b: usize, target: u32) {
     let Some(kind) = carrier_kind(w.buildings[b].def().class) else { return };
     let Some(t) = w.building(target) else { return };
@@ -180,14 +172,10 @@ pub fn link(w: &mut World, p: u8, b: usize, target: u32) {
     if n >= def.max_per_station {
         return;
     }
-    if !def.cost.iter().all(|&(it, k)| w.avail(p as usize, it) >= k as i32) {
+    let (x, y) = w.buildings[b].center();
+    if !crate::drones::pay_near(w, p, x, y, def.cost) {
         return;
     }
-    for &(it, k) in def.cost {
-        w.pay(p as usize, it, k as i32);
-        w.players[p as usize].consumed[it as usize] += k as u32;
-    }
-    let (x, y) = w.buildings[b].center();
     let c = Carrier { alive: true, kind, owner: p, a: src, b: target, state: 0, timer: def.dock, ready: true, x, y, ..Carrier::default() };
     // une place libérée est réutilisée (ordre stable)
     if let Some(slot) = w.carriers.iter().position(|c| !c.alive) {
@@ -455,6 +443,10 @@ pub fn update_carriers(w: &mut World) {
             update_robot(w, ci);
             continue;
         }
+        if w.carriers[ci].kind == crate::drones::DRONE {
+            crate::drones::update_drone(w, ci);
+            continue;
+        }
         let (ra, rb) = (w.carriers[ci].a, w.carriers[ci].b);
         let (Some(a), Some(b)) = (w.building(ra), w.building(rb)) else {
             // une extrémité détruite : le véhicule et sa cargaison sont perdus
@@ -611,8 +603,9 @@ pub fn tick_portal(w: &mut World, b: usize) {
 
 // ---------- robots logistiques ----------
 
-/// Objet qui manque à un bâtiment (et la quantité voulue), si un robot peut l'apporter.
-fn need_of(w: &World, b: usize) -> Option<(u8, u16)> {
+/// Objet qui manque à un bâtiment (et la quantité voulue), si un robot de la base en (px, py) peut
+/// l'apporter (dépôts à portée de la base).
+fn need_of(w: &World, b: usize, px: i32, py: i32) -> Option<(u8, u16)> {
     let bb = &w.buildings[b];
     let want: Vec<(u8, u16)> = match bb.def().class {
         BClass::Crafter if bb.recipe != RECIPE_NONE => RECIPES[bb.recipe as usize].inputs.iter().enumerate().map(|(j, &(it, n))| (it, (n as u16 * 2).saturating_sub(bb.inv[j]))).collect(),
@@ -629,13 +622,13 @@ fn need_of(w: &World, b: usize) -> Option<(u8, u16)> {
         BClass::AntiMissile => INTERCEPTOR_COST.iter().enumerate().map(|(j, &(it, n))| (it, n.saturating_sub(bb.inv[j]))).collect(),
         _ => Vec::new(),
     };
-    let owner = bb.owner as usize;
-    want.into_iter().find(|&(it, n)| n > 0 && w.avail(owner, it) > 0 && crate::buildings::accepts(w, b, it))
+    let owner = bb.owner;
+    want.into_iter().find(|&(it, n)| n > 0 && crate::buildings::accepts(w, b, it) && crate::drones::near_amount(w, owner, px, py, ROBOPORT_RANGE * TILE, it) > 0)
 }
 
-/// Sortie bloquée d'un fabricant ou d'un extracteur (que les robots évacuent vers le stock).
-/// Seulement si la réserve du joueur a de la place pour cet objet (plafond des dépôts).
-fn blocked_output(w: &World, b: usize) -> bool {
+/// Sortie bloquée d'un fabricant ou d'un extracteur (que les robots de la base en (px, py) évacuent vers
+/// un dépôt). Seulement si un dépôt à portée de la base a de la place pour cet objet.
+fn blocked_output(w: &World, b: usize, px: i32, py: i32) -> bool {
     let bb = &w.buildings[b];
     let (blocked, it) = match bb.def().class {
         BClass::Crafter if bb.recipe != RECIPE_NONE => {
@@ -646,7 +639,7 @@ fn blocked_output(w: &World, b: usize) -> bool {
         BClass::Extractor => (bb.out >= 5, bb.recipe),
         _ => (false, 0),
     };
-    blocked && w.stock_room(bb.owner as usize, it) > 0
+    blocked && crate::drones::store_with_room(w, bb.owner, px, py, ROBOPORT_RANGE * TILE, it).is_some()
 }
 
 /// Base de robots : énergie à chaque tick, distribution des tâches toutes les 20 ticks.
@@ -702,14 +695,13 @@ pub fn tick_roboport(w: &mut World, b: usize) {
         if busy.binary_search(&oref).is_ok() {
             continue;
         }
-        let job = if let Some((it, n)) = need_of(w, o) {
-            let k = (n.min(cap) as i32).min(w.avail(owner as usize, it)).max(0) as u16;
+        let job = if let Some((it, n)) = need_of(w, o, cx, cy) {
+            let k = crate::drones::take_near(w, owner, cx, cy, r, it, n.min(cap));
             if k == 0 {
                 continue;
             }
-            w.pay(owner as usize, it, k as i32);
             Some((it, k))
-        } else if blocked_output(w, o) {
+        } else if blocked_output(w, o, cx, cy) {
             None
         } else {
             continue;
@@ -741,18 +733,30 @@ fn update_robot(w: &mut World, ci: usize) {
         w.carriers[ci].alive = false;
         return;
     };
-    let owner = w.carriers[ci].owner as usize;
+    let owner = w.carriers[ci].owner;
+    let (px, py) = w.buildings[port].center();
     match w.carriers[ci].state {
         0 => {
             let c = &mut w.carriers[ci];
             c.timer = c.timer.saturating_sub(1);
-            // retour avec des objets (ramassés, ou non livrés) : versés au stock du joueur
+            // retour avec des objets (ramassés, ou non livrés) : au dépôt le plus proche de la base qui
+            // a de la place, sinon remboursés (dépôt le plus proche, sans plafond)
             if c.load > 0 {
                 let cargo = c.cargo;
                 c.cargo = [0; NUM_ITEMS];
                 c.load = 0;
                 for (i, &n) in cargo.iter().enumerate() {
-                    w.players[owner].stock[i] += n as i32;
+                    if n == 0 {
+                        continue;
+                    }
+                    match crate::drones::store_with_room(w, owner, px, py, ROBOPORT_RANGE * TILE, i as u8) {
+                        Some(d) => {
+                            let k = n.min(crate::drones::store_room(&w.buildings[d], i as u8));
+                            crate::drones::put(&mut w.buildings[d].stash, i as u8, k);
+                            crate::drones::refund(w, owner, px, py, i as u8, (n - k) as u32);
+                        }
+                        None => crate::drones::refund(w, owner, px, py, i as u8, n as u32),
+                    }
                 }
             }
             let (x, y) = w.buildings[port].center();
@@ -787,14 +791,14 @@ fn update_robot(w: &mut World, ci: usize) {
                                 w.carriers[ci].load -= 1;
                             }
                         }
-                    } else if blocked_output(w, t) {
+                    } else if blocked_output(w, t, px, py) {
                         // ramassage d'une sortie bloquée
                         let it = match w.buildings[t].def().class {
                             BClass::Crafter => RECIPES[w.buildings[t].recipe as usize].output.0,
                             _ => w.buildings[t].recipe,
                         };
-                        // pas plus que la place dans la réserve (le reste attend dans le bâtiment)
-                        let room = w.stock_room(owner, it).clamp(0, u16::MAX as i32) as u16;
+                        // pas plus que la place du dépôt qui les recevra (le reste attend dans le bâtiment)
+                        let room = crate::drones::store_with_room(w, owner, px, py, ROBOPORT_RANGE * TILE, it).map_or(0, |d| crate::drones::store_room(&w.buildings[d], it));
                         let k = w.buildings[t].out.min(CARRIERS[2].capacity).min(room);
                         w.buildings[t].out -= k;
                         w.carriers[ci].cargo[it as usize] += k;

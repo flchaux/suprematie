@@ -6,6 +6,7 @@ pub mod belts;
 pub mod buildings;
 pub mod combat;
 pub mod data;
+pub mod drones;
 pub mod fixed;
 pub mod flow;
 pub mod grid;
@@ -385,6 +386,8 @@ mod production_tests;
 mod anciens_tests;
 #[cfg(test)]
 mod main_gen_tests;
+#[cfg(test)]
+mod drones_tests;
 #[cfg(test)]
 mod races_tests;
 pub mod stress;
