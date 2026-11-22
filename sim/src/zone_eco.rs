@@ -197,7 +197,8 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
 /// `zone` : 0 aucune, 1 réseau vivant, 2 zone éteinte (générateur à sec), 3 réseau de racines ;
 /// `net` : réseau (1, 3) ; `gen` : référence du générateur à sec (2) ; `stock` : objets par type ; `cap` :
 /// plafond total des dépôts de la zone, soute du commandant comprise s'il y est (Souche : de la réserve) ; `prod`, `cons` : débits maximaux en
-/// centièmes par minute ; `machines` : machines comptées.
+/// centièmes par minute ; `machines` : machines comptées ; `power` : énergie de la zone [production, demande,
+/// puissance installée (kW), satisfaction (0..1024), autonomie en s (-1 : rien ne brûle)].
 pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
     let Some(pl) = (p >= 0).then(|| w.players.get(p as usize)).flatten() else { return "null".into() };
     let p = p as u8;
@@ -265,9 +266,21 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
             machine_rates(w, b, &mut prod, &mut cons);
         }
     }
+    // énergie de la zone : production, demande, puissance installée (kW), satisfaction (0..1024), autonomie (s, -1 :
+    // rien ne brûle) ; mêmes valeurs que power_zones. Zone éteinte : rien, sauf la puissance du générateur à sec.
+    let power = match z {
+        Zone::Live(n) => {
+            let n = &w.nets[n as usize];
+            let fuel: i64 = n.gens.iter().map(|&g| w.buildings[g as usize].fuel.max(0) as i64).sum();
+            let burn = n.demand.min(n.prod) as i64;
+            [n.prod as i64, n.demand as i64, n.cap as i64, n.sat as i64, if burn > 0 { fuel / burn / 20 } else { -1 }]
+        }
+        Zone::Dry(g) => [0, 0, crate::buildings::gen_prod(w, &w.buildings[g]) as i64, 0, -1],
+        _ => [0, 0, 0, 1024, -1],
+    };
     let list = |v: &mut dyn Iterator<Item = String>| v.collect::<Vec<_>>().join(",");
     format!(
-        "{{\"zone\":{},\"net\":{},\"gen\":{},\"stock\":[{}],\"cap\":{},\"prod\":[{}],\"cons\":[{}],\"machines\":{}}}",
+        "{{\"zone\":{},\"net\":{},\"gen\":{},\"stock\":[{}],\"cap\":{},\"prod\":[{}],\"cons\":[{}],\"machines\":{},\"power\":[{}]}}",
         code,
         net,
         gen,
@@ -275,6 +288,7 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         cap,
         list(&mut prod.iter().map(|x| x.to_string())),
         list(&mut cons.iter().map(|x| x.to_string())),
-        machines
+        machines,
+        list(&mut power.iter().map(|x| x.to_string()))
     )
 }

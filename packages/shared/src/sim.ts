@@ -189,7 +189,7 @@ export class Sim {
 /** Économie d'une zone (barre des ressources) : `zone` 0 aucune, 1 zone vivante, 2 zone éteinte (générateur
  * à sec, référence `gen`), 3 réseau de racines (Souche) ; `stock` par objet (dépôts de la zone, soutes des unités
  * qui s'y trouvent, bourse du joueur), `cap` plafond total des dépôts de la zone ; `prod`, `cons` : débits
- * maximaux en centièmes d'objet par minute ; `machines` : machines comptées. */
+ * maximaux en centièmes d'objet par minute ; `machines` : machines comptées ; `power` : énergie de la zone. */
 export interface ZoneEconomy {
   zone: 0 | 1 | 2 | 3;
   net?: number;
@@ -199,6 +199,8 @@ export interface ZoneEconomy {
   prod?: number[];
   cons?: number[];
   machines?: number;
+  /** énergie de la zone : production, demande, puissance installée (kW), satisfaction (0..1024), autonomie (s, -1 : rien ne brûle) */
+  power?: [number, number, number, number, number];
 }
 
 /** Zones électriques : réseaux [id, joueur, production, demande, installé, satisfaction, combustible,

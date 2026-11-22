@@ -18,7 +18,10 @@
   });
   const tech = $derived(ui.data && ui.research ? ui.data.techs[ui.research] : null);
   const power = (kw: number) => (kw >= 1000 ? (kw / 1000).toFixed(1) + " MW" : kw + " kW");
-  const load = $derived(ui.powerProd > 0 ? Math.min(1.2, ui.powerUse / ui.powerProd) : ui.powerUse > 0 ? 1.2 : 0);
+  // énergie de la zone au centre de l'écran (pas d'énergie hors zone) : production, demande, installée, satisfaction, autonomie
+  const zp = $derived(ui.zone && ui.zone.zone !== 0 ? ui.zone.power : undefined);
+  const load = $derived(!zp ? 0 : zp[0] > 0 ? Math.min(1.2, zp[1] / zp[0]) : zp[1] > 0 ? 1.2 : 0);
+  const autonomy = (s: number) => (s >= 120 ? Math.round(s / 60) + " min" : s + " s");
   const time = $derived.by(() => {
     const s = Math.floor(ui.tick / 20);
     return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -26,23 +29,30 @@
 </script>
 
 <div class="top">
-  <div class="panel left" bind:clientHeight={leftH}>
-    {#if ui.me >= 0}
+  {#if ui.me >= 0}
+    <!-- la zone au centre de l'écran : ressources et énergie -->
+    <div class="panel left" bind:clientHeight={leftH}>
       <ZoneBar />
-      <div class="sep"></div>
-    {/if}
-    {#if ui.me >= 0}
-      {#if ui.race !== RACE_SOUCHE}
-      <span class="tip gauge" class:bad={ui.powerUse > ui.powerProd}>
-        <Icon name="power" size={15} />
-        <span class="g">
-          <span class="num">{power(ui.powerUse)}<span class="faint"> / {power(ui.powerProd)}</span></span>
-          <span class="meter"><span style:width={Math.min(100, load * 100) + "%"}></span></span>
+      {#if ui.race !== RACE_SOUCHE && zp}
+        <div class="sep"></div>
+        <span class="tip gauge" class:bad={zp[1] > zp[0]}>
+          <Icon name="power" size={15} />
+          <span class="g">
+            <span class="num">{power(zp[1])}<span class="faint"> / {power(zp[0])}</span></span>
+            <span class="meter"><span style:width={Math.min(100, load * 100) + "%"}></span></span>
+            <span class="auto num" class:warn={zp[4] >= 0 && zp[4] < 60}>{zp[4] < 0 ? (zp[0] > 0 ? "rien ne brûle" : "éteinte") : "autonomie " + autonomy(zp[4])}</span>
+          </span>
+          <span class="tt"><b>Énergie de la zone</b><br />Consommée / produite : <span class="num">{power(zp[1])}</span> / <span class="num">{power(zp[0])}</span>{#if zp[3] < 1024 && zp[1] > 0} <b class="bad">({Math.round((zp[3] / 1024) * 100)} % servis)</b>{/if}<br />Puissance installée : <span class="num">{power(zp[2])}</span>{#if zp[4] >= 0}<br />Autonomie à cette charge : <span class="num">{autonomy(zp[4])}</span>{/if}<br /><span class="dim">Un bâtiment hors réseau ou sous-alimenté ralentit. Total de vos zones : {power(ui.powerUse)} / {power(ui.powerProd)}.</span></span>
         </span>
-        <span class="tt"><b>Énergie</b><br />Consommée / produite. Un bâtiment hors réseau ou sous-alimenté ralentit.</span>
-      </span>
-      <div class="sep"></div>
       {/if}
+    </div>
+  {:else}
+    <div class="panel left" bind:clientHeight={leftH}><span class="spect"><Icon name="eye" size={15} /> Mode spectateur</span></div>
+  {/if}
+  <div class="grow"></div>
+  {#if ui.me >= 0}
+    <!-- ce qui ne dépend pas de la zone : limite d'unités, recherche (à côté du panneau de droite, il ne bouge pas avec la zone) -->
+    <div class="panel mid">
       <span class="tip stat"><Icon name="units" size={15} /><span class="num">{ui.unitCount}<span class="faint">/1000</span></span><span class="tt">Limite de 1 000 unités par joueur</span></span>
       <div class="sep"></div>
       <button class="research" class:idle={!tech} onclick={() => (ui.showResearch = !ui.showResearch)} title={t("Recherche", "research")}>
@@ -55,11 +65,8 @@
           <span class="num dim">{ui.researchProgress}/{tech.count}</span>{#if ui.researchQueue.length}<span class="num qn" title="Recherches en file">+{ui.researchQueue.length}</span>{/if}
         {:else}<Icon name="research" size={15} /> <span>Choisir une recherche</span> {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}{/if}
       </button>
-    {:else}
-      <span class="spect"><Icon name="eye" size={15} /> Mode spectateur</span>
-    {/if}
-  </div>
-  <div class="grow"></div>
+    </div>
+  {/if}
   <div class="panel right">
     <span class="clock num"><Icon name="clock" size={14} /> {time}</span>
     {#if client.isSolo()}
@@ -108,8 +115,11 @@
   .top { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; align-items: stretch; gap: 8px; pointer-events: none; }
   .top > * { pointer-events: auto; }
   .left, .right { display: flex; align-items: center; gap: 10px; padding: 5px 12px; height: 42px; min-width: 0; }
-  .left { flex-shrink: 1; overflow: visible; height: auto; min-height: 42px; }
-  .right { align-self: flex-start; }
+  .left { flex-shrink: 0; overflow: visible; height: auto; min-height: 42px; }
+  .right, .mid { align-self: flex-start; }
+  .mid { display: flex; align-items: center; gap: 10px; padding: 5px 12px; height: 42px; min-width: 0; flex-shrink: 1; }
+  .g .auto { font-size: 10px; color: var(--dim); }
+  .g .auto.warn { color: var(--warn); }
   .grow { flex: 1; }
   .sep { width: 1px; height: 24px; background: linear-gradient(180deg, transparent, var(--line-hi), transparent); flex-shrink: 0; }
   .gauge { display: flex; align-items: center; gap: 7px; color: var(--accent); white-space: nowrap; }
@@ -120,7 +130,7 @@
   .gauge.bad .meter > span { background: var(--bad); box-shadow: 0 0 6px var(--bad); }
   .stat { display: flex; align-items: center; gap: 6px; color: var(--accent); white-space: nowrap; }
   .stat .num { color: var(--text); font-size: 12.5px; }
-  .research { display: flex; align-items: center; gap: 8px; min-width: 120px; max-width: 280px; padding: 4px 10px; text-align: left; flex-shrink: 1; overflow: hidden; }
+  .research { display: flex; align-items: center; gap: 8px; min-width: 120px; max-width: 280px; padding: 4px 10px; text-align: left; flex-shrink: 1; overflow: hidden; white-space: nowrap; }
   .research .qn { color: var(--amber); font-size: 11px; }
   .research.idle { --b-line: rgba(255, 181, 71, 0.6); color: var(--amber); animation: nudge 2.4s ease-in-out infinite; }
   .rt { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }

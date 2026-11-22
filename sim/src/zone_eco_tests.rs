@@ -82,6 +82,9 @@ fn zone_counts_its_machines_depots_and_fuel() {
     let hydro = power_prod_of(&w.buildings[g]) as i64 * 100 * 1200 / FUEL_HYDROCARBON as i64;
     assert_eq!(field(&s, "cons")[HYDROCARBON as usize], hydro);
     assert_eq!(field(&s, "machines"), [2]);
+    // énergie de la zone : celle de son réseau
+    let n = &w.nets[net as usize];
+    assert_eq!(field(&s, "power")[..4], [n.prod as i64, n.demand as i64, n.cap as i64, n.sat as i64]);
     // hors zone : rien
     assert_eq!(zone_economy(&w, 0, 225, 225), "{\"zone\":0}");
 }
@@ -115,6 +118,10 @@ fn dry_generator_keeps_a_dead_zone_with_its_depot() {
     assert_eq!(field(&s, "stock")[HYDROCARBON as usize], 5);
     // le générateur à sec compte encore sa consommation maximale (celle qu'il aurait, ravitaillé)
     assert!(field(&s, "cons")[HYDROCARBON as usize] > 0);
+    // énergie : rien de produit, la puissance du générateur à sec comme puissance installée
+    let pw = field(&s, "power");
+    assert_eq!((pw[0], pw[1], pw[4]), (0, 0, -1));
+    assert!(pw[2] > 0);
 }
 
 /// Export en lecture seule : l'état (hash) ne change pas.

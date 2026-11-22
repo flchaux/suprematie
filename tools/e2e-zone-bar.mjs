@@ -44,7 +44,7 @@ const bar = () => page.evaluate(() => {
   const z = ui.zone;
   if (!z) return null;
   const it = (id) => z.zone ? { stock: z.stock[id], prod: z.prod[id] / 100, cons: z.cons[id] / 100 } : null;
-  return { zone: z.zone, net: z.net, machines: z.machines, label: document.querySelector(".zbar .zn")?.textContent, ironPlate: it(6), ironOre: it(1), hydro: it(4), cols: document.querySelectorAll(".zbar .res").length };
+  return { zone: z.zone, net: z.net, machines: z.machines, label: document.querySelector(".zbar .zn")?.textContent, ironPlate: it(6), ironOre: it(1), hydro: it(4), cols: document.querySelectorAll(".zbar .res").length, power: z.power ?? null, gauge: document.querySelector(".top .left .gauge .g")?.textContent?.replace(/\s+/g, " ").trim() ?? null, mid: !!document.querySelector(".top .mid .research") };
 });
 const look = async (x, y, name) => {
   await page.evaluate(([x, y]) => { const sc = window.__game.client.scene; window.__game.client.selectIds([]); sc.target.x = x; sc.target.z = y; sc.distance = 45; }, [x, y]);
@@ -110,6 +110,9 @@ const off = await look(mg.x, mg.y + (mg.y + 50 < mh ? 45 : -45), "hors-zone");
 const back = await look(mg.x + 1, mg.y + 1, "retour-base");
 console.log("erreurs :", errors.slice(0, 8));
 await browser.close();
-const ok = base?.zone === 1 && back?.zone === 1 && off?.zone === 0 && (!gen || dry?.zone === 2) && errors.length === 0;
+// énergie : celle de la zone (production du générateur principal à la base), pas de jauge hors zone ;
+// recherche et limite d'unités dans leur propre panneau
+const ok = base?.zone === 1 && back?.zone === 1 && off?.zone === 0 && (!gen || dry?.zone === 2) && errors.length === 0
+  && base.power?.[0] > 0 && !!base.gauge && off.gauge === null && (!gen || dry.power?.[0] === 0) && base.mid && off.mid;
 console.log(ok ? "OK" : "ÉCHEC");
 process.exit(ok ? 0 : 1);
