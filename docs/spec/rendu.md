@@ -38,6 +38,7 @@ Le jeu cible Chrome uniquement. Le rendu utilise Three.js avec son moteur WebGPU
   - Niveaux : le Worker mesure le niveau perçu de chaque tampon (`loudness`, pondération proche de la courbe A sur 125 ms) et la lecture l'amène au niveau visé par famille et par taille (`shotMix`, `BOOM_MIX`) : pas de table de gains écrite à la main.
   - Lecture : voix spatialisée (gauche-droite selon la position à l'écran ; au loin ou vu de haut, le son direct faiblit et s'assourdit), part envoyée dans l'écho d'un terrain ouvert (convolution avec une réponse calculée, `outdoorImpulse` : échos francs puis traîne diffuse) qui baisse moins vite que le son direct, puis bus compressé et écrêté en douceur. Au plus 32 voix de combat (44 pour les sons tout proches).
   - Écoute hors du jeu : `node tools/sounds/render.ts <dossier>` écrit chaque son en WAV, leurs niveaux, et un montage mixé comme en jeu (`montage.wav`, repères dans `montage.txt`). En jeu, `?demo=projectiles` fait tirer chaque arme. Test : `packages/client/test/synth.test.ts`.
+- Musique de fond : seule exception aux sons synthétisés avec les annonces vocales, des fichiers générés avec ElevenLabs Music (`src/assets/audio/LISEZMOI.md` : descriptions données, traitement, −18 LUFS). Deux morceaux d'environ 2 min 25 alternent (`theme.mp3`, `theme2.mp3`), enchaînés par un fondu de 6 s ; seul le premier est attendu au démarrage, au premier geste du joueur. Volume dans les Réglages. Code : `audio/music.ts` ; pour en ajouter un, une entrée dans `TRACKS`.
 
 ## Modèles 3D
 
