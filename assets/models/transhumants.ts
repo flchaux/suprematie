@@ -76,9 +76,10 @@ function fut(r: number, l: number): [number, number][] {
 /**
  * Large chenille de caoutchouc (paire symétrique en ±x) : bande en stade, flasque sombre, barbotin et roue folle
  * d'acier, galets et crampons du brin supérieur tous les `pas` (pièces fines ; `pas` = 0 : ni galets ni crampons). Longueur l (z), hauteur h, largeur w,
- * posée à y0, centrée en z.
+ * posée à y0, centrée en z. `roule` (unités) : les crampons forment le pivot « chenille_p<pas> », que le jeu fait
+ * glisser vers l'avant quand l'unité roule (voir render/entities.ts).
  */
-function chenille(x: number, l: number, h: number, w: number, y0 = 0, z = 0, pas = 0.25): Part[] {
+function chenille(x: number, l: number, h: number, w: number, y0 = 0, z = 0, pas = 0.25, roule = false): Part[] {
   const y = q(y0 + h / 2);
   const p: Part[] = [
     { shape: "extrude", profile: stade(l, h, 4), depth: w, bevel: 0.03, pos: [x, y, z], rot: [0, -90, 0], color: "rubber", mirror: true },
@@ -92,11 +93,12 @@ function chenille(x: number, l: number, h: number, w: number, y0 = 0, z = 0, pas
     const zz = q(z - l / 2 + h + ((l - 2 * h) * (i + 0.5)) / n);
     p.push({ shape: "cylinder", sides: 6, radius: q(h * 0.24), height: q(w + 0.04), pos: [x, q(y0 + h * 0.3), zz], rot: [0, 0, 90], color: "metal", mirror: true, fine: true });
   }
-  // crampons du brin supérieur
+  // crampons du brin supérieur (régulièrement espacés : un glissement d'un pas les ramène en place)
   const nc = Math.max(3, Math.round((l - h) / pas));
+  const tag: Partial<Part> = roule ? { pivot: `chenille_p${q((l - h) / nc)}` } : {};
   for (let i = 0; i < nc; i++) {
     const zz = q(z - (l - h) / 2 + ((l - h) * (i + 0.5)) / nc);
-    p.push({ shape: "box", size: [q(w + 0.01), 0.025, 0.05], pos: [x, q(y0 + h + 0.005), zz], color: "dark", mirror: true, fine: true });
+    p.push({ shape: "box", size: [q(w + 0.01), 0.025, 0.05], pos: [x, q(y0 + h + 0.005), zz], color: "dark", mirror: true, fine: true, ...tag });
   }
   return p;
 }
@@ -167,6 +169,27 @@ function socleNomade(w: number, d: number, recul = 0): Part[] {
 }
 
 /**
+ * Stabilisateurs d'un chenillard de longueur l (pivot « stabilisateurs ») : quatre bras rouille sortis de la caisse,
+ * vérin d'acier et patin posé au sol, aux coins. Le jeu ne les montre que pendant le déploiement (ils sortent de
+ * la caisse en 15 s) et le repli (ils rentrent en 10 s) ; déployé, le module a les mêmes sur son socle.
+ */
+function stabilisateurs(l: number): Part[] {
+  const h = l / 2;
+  // ancre du pivot : centre de la caisse (les bras en sortent)
+  const p: Part[] = [{ shape: "box", size: [0.05, 0.05, 0.05], pos: [0, 0.42, 0], color: "dark", pivot: "stabilisateurs" }];
+  for (const sz of [1, -1]) {
+    const z1 = q(sz * (h - 0.3));
+    p.push(
+      { shape: "box", size: [0.78, 0.12, 0.14], pos: [0.81, 0.44, z1], color: "rust", mirror: true, pivot: "stabilisateurs" },
+      { shape: "box", size: [0.3, 0.13, 0.15], pos: [0.95, 0.44, z1], color: "hazard", mirror: true, pivot: "stabilisateurs" },
+      { shape: "cylinder", sides: 6, radius: 0.07, height: 0.44, pos: [1.2, 0.22, z1], color: "steel", mirror: true, pivot: "stabilisateurs" },
+      { shape: "cylinder", sides: 6, radius: 0.2, radiusTop: 0.13, height: 0.07, pos: [1.2, 0.035, z1], color: "dark", mirror: true, pivot: "stabilisateurs" },
+    );
+  }
+  return p;
+}
+
+/**
  * Châssis commun des chenillards (modules repliés) : longueur l (z), deux larges chenilles, garde-chenilles
  * rouille, jupes d'équipe, caisse basse à nez incliné, plateau de planches, cabine basse à toit de bâche,
  * phares ambre, échappement, coffres arrière. Le chargement se pose sur le plateau : x de -0,64 à 0,64,
@@ -175,8 +198,10 @@ function socleNomade(w: number, d: number, recul = 0): Part[] {
 function chenillard(l = 2.6): Part[] {
   const h = l / 2;
   return [
-    ...chenille(0.66, l, 0.5, 0.38),
-    { shape: "bevel", size: [0.44, 0.05, q(l - 0.14)], pos: [0.66, 0.535, 0], bevel: 0.015, color: "metal", mirror: true },
+    ...chenille(0.66, l, 0.5, 0.38, 0, 0, 0.25, true),
+    // garde-chenille étroit côté caisse : le brin supérieur et ses crampons restent visibles
+    { shape: "bevel", size: [0.1, 0.05, q(l - 0.14)], pos: [0.46, 0.535, 0], bevel: 0.015, color: "metal", mirror: true },
+    ...stabilisateurs(l),
     { shape: "box", size: [0.03, 0.16, q(l * 0.74)], pos: [0.875, 0.45, -0.08], color: "faction", mirror: true },
     // caisse basse à nez incliné
     { shape: "extrude", profile: [[-h, 0.18], [q(h - 0.25), 0.18], [h, 0.4], [q(h - 0.08), 0.6], [q(-h + 0.04), 0.6], [-h, 0.48]], depth: 0.9, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
@@ -716,9 +741,9 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
   // cheminées, grue couchée, tourelle antiaérienne arrière à deux fûts (pivot « tourelle_aa »), coffres et mât
   ark: {
     parts: [
-      ...chenille(1.0, 2.1, 0.66, 0.5, 0, 1.18, 0),
-      ...chenille(1.0, 2.1, 0.66, 0.5, 0, -1.18, 0),
-      { shape: "box", size: [0.56, 0.06, 4.6], pos: [1.0, 0.7, 0], color: "rust", mirror: true },
+      ...chenille(1.0, 2.1, 0.66, 0.5, 0, 1.18, 0.3, true),
+      ...chenille(1.0, 2.1, 0.66, 0.5, 0, -1.18, 0.3, true),
+      { shape: "box", size: [0.14, 0.06, 4.6], pos: [0.79, 0.7, 0], color: "rust", mirror: true },
       { shape: "box", size: [0.04, 0.22, 4.1], pos: [1.29, 0.6, 0], color: "faction", mirror: true },
       // caisse longue à proue inclinée, pont
       { shape: "extrude", profile: [[-2.4, 0.24], [2.0, 0.24], [2.45, 0.55], [2.3, 0.92], [-2.3, 0.92], [-2.42, 0.6]], depth: 1.44, bevel: 0.04, rot: [0, -90, 0], color: "dark" },
@@ -806,8 +831,8 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
   // (pivot « tourelle ») à canon moyen et masque de toile, rouleaux de bâche et bidons sur la plage arrière
   rider: {
     parts: [
-      ...chenille(0.62, 2.2, 0.42, 0.36),
-      { shape: "bevel", size: [0.42, 0.04, 2.1], pos: [0.62, 0.45, 0], bevel: 0.015, color: "metal", mirror: true },
+      ...chenille(0.62, 2.2, 0.42, 0.36, 0, 0, 0.25, true),
+      { shape: "bevel", size: [0.1, 0.04, 2.1], pos: [0.43, 0.45, 0], bevel: 0.015, color: "metal", mirror: true },
       { shape: "box", size: [0.03, 0.14, 1.6], pos: [0.83, 0.38, 0], color: "faction", mirror: true },
       { shape: "extrude", profile: [[-1.1, 0.16], [0.8, 0.16], [1.15, 0.36], [0.9, 0.56], [-1.0, 0.58], [-1.12, 0.42]], depth: 0.86, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
       { shape: "bevel", size: [1.2, 0.05, 0.6], pos: [0, 0.58, 0.55], bevel: 0.015, color: "metal" },
@@ -830,8 +855,8 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
   // canons relevés vers le ciel en deux nacelles, jupe de toile, viseur ambre
   harrow: {
     parts: [
-      ...chenille(0.6, 2.0, 0.42, 0.34),
-      { shape: "bevel", size: [0.4, 0.04, 1.9], pos: [0.6, 0.45, 0], bevel: 0.015, color: "metal", mirror: true },
+      ...chenille(0.6, 2.0, 0.42, 0.34, 0, 0, 0.25, true),
+      { shape: "bevel", size: [0.1, 0.04, 1.9], pos: [0.42, 0.45, 0], bevel: 0.015, color: "metal", mirror: true },
       { shape: "box", size: [0.03, 0.14, 1.5], pos: [0.8, 0.38, 0], color: "faction", mirror: true },
       { shape: "extrude", profile: [[-1.0, 0.16], [0.75, 0.16], [1.05, 0.36], [0.85, 0.56], [-0.9, 0.58], [-1.02, 0.42]], depth: 0.82, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
       { shape: "bevel", size: [0.9, 0.24, 0.42], pos: [0, 0.66, 0.6], bevel: 0.03, color: "metal" },
@@ -860,7 +885,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
   towed_gun: {
     parts: [
       // tracteur
-      ...chenille(0.45, 1.0, 0.36, 0.26, 0, 0.75),
+      ...chenille(0.45, 1.0, 0.36, 0.26, 0, 0.75, 0.25, true),
       { shape: "bevel", size: [0.66, 0.3, 1.0], pos: [0, 0.4, 0.75], bevel: 0.04, color: "dark" },
       { shape: "bevel", size: [0.66, 0.24, 0.42], pos: [0, 0.66, 0.92], bevel: 0.03, color: "metal" },
       { shape: "box", size: [0.5, 0.06, 0.03], pos: [0, 0.7, 1.135], color: "glass" },
@@ -894,7 +919,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
   // poste de pilotage bas à fente
   ram: {
     parts: [
-      ...chenille(0.7, 2.3, 0.5, 0.42),
+      ...chenille(0.7, 2.3, 0.5, 0.42, 0, 0, 0.25, true),
       { shape: "bevel", size: [0.48, 0.06, 1.5], pos: [0.7, 0.55, -0.25], bevel: 0.02, color: "rust", mirror: true },
       { shape: "box", size: [0.04, 0.22, 1.4], pos: [0.94, 0.42, -0.25], color: "faction", mirror: true },
       // caisse : flancs inclinés, dos bombé

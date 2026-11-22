@@ -56,8 +56,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     if c.stun > 0 {
         flags |= 8;
     }
-    // déployé ; chenillard des Transhumants en train de se déployer ou de se replier
-    if c.deployed || c.pack != 0 {
+    if c.deployed {
         flags |= 16;
     }
     if c.shield > 0 && c.shield_down == 0 {
@@ -69,8 +68,12 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     if !c.cargo.is_empty() {
         flags |= 128;
     }
-    // bit 27 du mot : camouflé (commando) ; bit 28 : absent des radars ennemis (furtif, brouillé)
-    let stealth = (crate::combat::cloaked(w, s) as i32) << 27 | (crate::combat::radar_stealth(w, s) as i32) << 28;
+    // bit 27 du mot : camouflé (commando) ; bit 28 : absent des radars ennemis (furtif, brouillé) ;
+    // bits 29 et 30 : chenillard des Transhumants qui se déploie, qui se replie (animation des stabilisateurs)
+    let stealth = (crate::combat::cloaked(w, s) as i32) << 27
+        | (crate::combat::radar_stealth(w, s) as i32) << 28
+        | ((c.pack == crate::transhumants::PACK_DEPLOYING) as i32) << 29
+        | ((c.pack == crate::transhumants::PACK_FOLDING) as i32) << 30;
     let aux = match c.orders.first() {
         Some(o) => {
             let (tx, ty) = match *o {

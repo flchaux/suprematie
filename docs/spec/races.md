@@ -48,6 +48,9 @@ Code : `sim/src/transhumants.rs`. Tests : `sim/src/races_tests.rs`. Modèles : `
 - **Recherche par relevés** : une unité de recherche coûte 3 relevés par palier ; un laboratoire nomade sans relevés en tire un toutes les 2 s. Relevés gagnés : une case de vision (4 × 4 cases de carte) découverte par l'équipe en donne un à chacun de ses Transhumants (`update_visibility`) ; un ennemi détruit, 4 par palier (`credit_kill`).
 - **Arbre** : Atelier lourd (canon tracté, bélier), Raffinage nomade, Électronique nomade (donne aussi l'électronique des Industriels : plaquettes, moteurs, processeurs), Bastion, Blindage (+50 % de PV des chenillards et de l'Arche), Cristal nomade (donne aussi le raffinage du cristal).
 - **Unités** : Arche (commandement, canon et défense antiaérienne, répare), chenillards (neuf modules), pisteur (éclaireur rapide à grande vue), cavalier (char rapide), herse (antiaérien), canon tracté (artillerie, se met en batterie à l'arrêt), bélier (éperonne, bonus contre les bâtiments).
+- **Animations** :
+  - Chenilles : les crampons du brin supérieur (pivot `chenille_p<pas>`) glissent vers l'avant d'après la distance réellement parcourue à l'écran, modulo le pas des crampons (`render/entities.ts`). Les garde-chenilles sont étroits pour laisser voir le brin supérieur.
+  - Déploiement et repli : le mot d'unité du tampon de rendu porte le bit 29 (déploiement) ou 30 (repli). Les stabilisateurs du chenillard (pivot `stabilisateurs`) sortent de la caisse pendant les 40 premiers % du déploiement et y rentrent pendant les 40 premiers % du repli ; la fiche montre la barre et les secondes restantes.
 
 ## À faire
 

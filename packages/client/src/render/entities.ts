@@ -30,7 +30,7 @@ type Built = ReturnType<typeof buildModel>;
  */
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number }[] = [];
   cap = 0;
   n = 0;
   private builtV: Built | null;
@@ -98,8 +98,12 @@ class KindMesh {
       const wave = Number(/^ondule(\d+)/.exec(p.name)?.[1] ?? 0);
       // droïde roulant : 1 « boule » (roulé), 2 « deplie… » (déployé), 3 « deplie_tourelle » (déployé, vise) ;
       // 4 « eppz… » : l'EPPZ d'une ruine, visible tant qu'elle le garde (bâtiment en service)
-      const mode = /^boule/.test(p.name) ? 1 : /^deplie_tourelle/.test(p.name) ? 3 : /^deplie/.test(p.name) ? 2 : /^eppz/.test(p.name) ? 4 : 0;
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave, mode };
+      // 5 « stabil… » : stabilisateurs d'un chenillard des Transhumants, qui sortent pendant le déploiement
+      const mode = /^boule/.test(p.name) ? 1 : /^deplie_tourelle/.test(p.name) ? 3 : /^deplie/.test(p.name) ? 2 : /^eppz/.test(p.name) ? 4 : /^stabil/.test(p.name) ? 5 : 0;
+      // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
+      // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
+      const slide = Number(/^chenille_p([\d.]+)/.exec(p.name)?.[1] ?? 0);
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave, mode, slide };
     });
     this.cap = cap;
   }
@@ -317,7 +321,8 @@ export class Entities {
   /** Positions monde interpolées des unités affichées (pour la sélection à la souris). */
   screen: UnitScreen[] = [];
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
-  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number }>();
+  /** dist : cases parcourues (chenilles) ; pack, packTick : déploiement (1) ou repli (2) d'un chenillard, et son tick de début */
+  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number }>();
   /** unités qui viennent de disparaître (porte, anneaux, téléportation) : elles s'effacent sur place */
   private ghosts: { kind: number; col: THREE.Color; x: number; y: number; z: number; facing: number; t0: number; fwd: number }[] = [];
   animFrame = 0;
@@ -706,6 +711,11 @@ export class Entities {
         st.warp = now;
         if (this.ghosts.length < 200) this.ghosts.push({ kind, col: col.clone(), x: st.lx, y, z: st.lz ?? z, facing: (buf[o + 6] & 0xffff) * ANG, t0: now, fwd: this.gateAt(st.lx, st.lz ?? z) ? 1 : 0 });
       }
+      // chenilles : distance réellement parcourue à l'écran (position interpolée d'une image à l'autre)
+      if (st.lx !== undefined && st.seen === this.animFrame - 1) {
+        const moved = Math.hypot(x - st.lx, z - (st.lz ?? z));
+        if (moved < 3) st.dist = (st.dist ?? 0) + moved;
+      }
       st.lx = x;
       st.lz = z;
       st.seen = this.animFrame;
@@ -718,6 +728,15 @@ export class Entities {
       const walk = Math.min(1, (per * 20) / vmax);
       const stride = Math.max(0.4, km.height * 0.7);
       st.phase += ((per * 20 * dt) / stride) * Math.PI;
+      // chenillard des Transhumants : déploiement (15 s) ou repli (10 s) ; stabilisateurs sortis de 0 à 1
+      const packing = (buf[o + 1] >>> 29) & 1 ? 1 : (buf[o + 1] >>> 30) & 1 ? 2 : 0;
+      if (packing !== (st.pack ?? 0)) {
+        st.pack = packing;
+        st.packTick = f.tick;
+      }
+      const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
+      // les bras sortent pendant les 40 premiers % du déploiement (ancrage ensuite), rentrent au début du repli
+      const stab = packing === 1 ? Math.min(1, packT / 0.4) : packing === 2 ? 1 - Math.min(1, packT / 0.4) : 0;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
       const sc = km.scale * (0.05 + 0.95 * emerge);
@@ -745,12 +764,15 @@ export class Entities {
         } else if (p.mode === 1) {
           // boule du droïde : elle roule (un tour par circonférence parcourue)
           tmpM2.multiply(new THREE.Matrix4().makeRotationX(st.phase * 0.9));
-        } else if (p.mode === 2) {
-          // pattes du droïde : elles se déplient depuis le centre
+        } else if (p.mode === 2 || p.mode === 5) {
+          // pattes du droïde, stabilisateurs d'un chenillard : ils se déplient depuis leur point d'attache
+        } else if (p.slide > 0) {
+          // crampons de chenille : ils avancent avec la distance parcourue, d'un pas par période (brin supérieur)
+          tmpM2.multiply(new THREE.Matrix4().makeTranslation(0, 0, ((((st.dist ?? 0) / Math.max(1e-6, sc)) % p.slide) - p.slide / 2) * sc));
         } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
         // droïde : la boule rentre quand il se déploie, les pièces déployées sortent
         const dep = st.dep ?? 0;
-        const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
+        const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : p.mode === 5 ? Math.max(0.001, stab) : 1;
         tmpM2.scale(tmpS.set(sc * vis, sc * vis, sc * vis));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));

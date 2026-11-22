@@ -126,14 +126,23 @@ await b.page.evaluate(([id, x, y]) => {
   client.selectIds([id]);
   const sc = client.scene;
   sc.target.set(x / 256, 0, y / 256);
-  sc.distance = 40;
+  sc.distance = 14;
   sc.updateCamera();
 }, [gen.id, gen.x, gen.y]);
 await b.page.waitForTimeout(800);
 const deployBtn = b.page.locator("button.cmd[title='Déployer']");
 check((await deployBtn.count()) === 1, "bouton Déployer du chenillard");
-await deployBtn.click({ force: true });
+await deployBtn.click({ force: true, timeout: 120000 });
 const t1 = await b.page.evaluate(() => window.__game.client.frame.tick);
+// à mi-déploiement : les stabilisateurs sortent (bit 29 du mot de l'unité)
+await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 150, t1, { timeout: 600000 });
+const mid = await b.page.evaluate((id) => {
+  const f = window.__game.client.frame;
+  for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if (f.buf[o] >>> 0 === id) return (f.buf[o + 1] >>> 29) & 1;
+  return -1;
+}, gen.id);
+check(mid === 1, "chenillard signalé en déploiement (animation des stabilisateurs)");
+await b.page.screenshot({ path: `${outDir}/races-deploiement.png`, timeout: 120000 });
 // déploiement : 15 s de jeu
 await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 340, t1, { timeout: 600000 });
 const deployed = await b.page.evaluate(() => {
@@ -153,7 +162,7 @@ if (deployed) {
   const fold = b.page.locator("button:has-text('Replier')");
   check((await fold.count()) === 1, "bouton Replier du module");
   if (await fold.count()) {
-    await fold.click({ force: true });
+    await fold.click({ force: true, timeout: 120000 });
     const t2 = await b.page.evaluate(() => window.__game.client.frame.tick);
     await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 20, t2, { timeout: 60000 });
     const back = await b.page.evaluate(() => {
@@ -165,6 +174,31 @@ if (deployed) {
     });
     check(back, "le module redevient un chenillard");
   }
+}
+// chenilles : l'Arche roule, la distance parcourue fait glisser ses crampons (render/entities.ts)
+const ark = await b.page.evaluate(() => {
+  const { client, ui } = window.__game;
+  const id = client.frame.players[ui.me].commander;
+  const f = client.frame;
+  for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if (f.buf[o] >>> 0 === id) return { id, x: f.buf[o + 2], y: f.buf[o + 3] };
+  return null;
+});
+if (ark) {
+  const tx = ark.x > 256 * 256 ? ark.x - 20 * 256 : ark.x + 20 * 256;
+  await b.page.evaluate(([id, x, y, tx]) => {
+    const { client } = window.__game;
+    client.selectIds([id]);
+    client.cmd([1, 0, tx, y, 1, id, tx, y]);
+    const sc = client.scene;
+    sc.target.set(x / 256, 0, y / 256);
+    sc.distance = 30;
+    sc.updateCamera();
+  }, [ark.id, ark.x, ark.y, tx]);
+  const t3 = await b.page.evaluate(() => window.__game.client.frame.tick);
+  await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 120, t3, { timeout: 600000 });
+  const dist = await b.page.evaluate((id) => window.__game.client.scene.entities.anim.get(id)?.dist ?? 0, ark.id);
+  check(dist > 2, "chenilles de l'Arche : distance parcourue suivie pour l'animation", dist.toFixed(1) + " cases");
+  await b.page.screenshot({ path: `${outDir}/races-chenilles.png`, timeout: 120000 });
 }
 // recherche : arbre de la race
 await b.page.evaluate(() => (window.__game.ui.showResearch = true));
