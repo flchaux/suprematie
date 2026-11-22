@@ -206,14 +206,14 @@ fn combat_pauses_harvest() {
     assert!(w.stock(0, IRON_PLATE) > p0, "la récolte a repris");
 }
 
-/// Soute pleine (sans dépôt à portée pour la vider) : la récolte attend, sans rien perdre, et reprend
-/// quand il y a de la place.
+/// Soute pleine (elle compte comme un dépôt : plafond par objet) : la récolte attend, sans rien perdre, et
+/// reprend quand il y a de la place.
 #[test]
 fn full_hold_pauses_harvest() {
     let (mut w, cmd) = world(1);
     harvest(&mut w, &[cmd], 100, 100, false);
     steps(&mut w, 400);
-    let cap = udef(U_COMMANDER).hold;
+    let cap = crate::drones::COMMANDER_CAP;
     let s = w.unit(cmd).unwrap();
     w.units.cold[s].hold = vec![0; NUM_ITEMS];
     w.units.cold[s].hold[IRON_PLATE as usize] = cap;
@@ -226,9 +226,10 @@ fn full_hold_pauses_harvest() {
     assert!(w.stock(0, IRON_PLATE) > cap as i32 - 50);
 }
 
-/// Un dépôt à portée du commandant (30 cases) : ses drones y rapportent la récolte, la soute reste vide.
+/// La soute du commandant compte comme un dépôt : même avec un dépôt à portée, la récolte y reste (aucun
+/// drone ne la vide).
 #[test]
-fn harvest_goes_to_nearby_depot_by_drone() {
+fn harvest_stays_in_the_commander_hold() {
     let (mut w, cmd) = world(1);
     let d = crate::buildings::place_building(&mut w, 0, B_DEPOT, 92, 96, 0).unwrap();
     crate::buildings::complete_building(&mut w, d);
@@ -236,13 +237,12 @@ fn harvest_goes_to_nearby_depot_by_drone() {
     let mut seen = false;
     for _ in 0..1200 {
         w.step(&[]);
-        seen |= w.carriers.iter().any(|c| c.alive && c.kind == crate::drones::DRONE && c.ready && c.load > 0);
+        seen |= w.carriers.iter().any(|c| c.alive && c.kind == crate::drones::DRONE);
     }
-    assert!(seen, "un drone chargé a volé vers le dépôt");
+    assert!(!seen, "aucun drone n'a volé");
     let s = w.unit(cmd).unwrap();
-    let in_depot = crate::drones::has(&w.buildings[d].stash, IRON_PLATE);
-    assert!(in_depot >= 8, "la récolte est au dépôt : {in_depot}");
-    assert!(crate::drones::has(&w.units.cold[s].hold, IRON_PLATE) <= 2, "la soute est vidée");
+    assert_eq!(crate::drones::has(&w.buildings[d].stash, IRON_PLATE), 0, "rien au dépôt");
+    assert!(crate::drones::has(&w.units.cold[s].hold, IRON_PLATE) >= 8, "la récolte est dans la soute");
 }
 
 /// La récolte en cours survit à une sauvegarde : mêmes hash après restore (carte générée, gisement naturel).

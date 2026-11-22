@@ -16,6 +16,7 @@ export interface SimExports {
   info_building(r: number): number;
   info_unit(id: number): number;
   power_zones(player: number): number;
+  zone_economy(player: number, tx: number, ty: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
   tile_info(x: number, y: number): number;
@@ -120,6 +121,11 @@ export class Sim {
   powerZones(player: number): PowerZones {
     return JSON.parse(this.outString(this.ex.power_zones(player | 0))) as PowerZones;
   }
+  /** Économie de la zone électrique (ou du réseau de racines) qui couvre la case (tx, ty) : voir
+   * sim/src/zone_eco.rs. */
+  zoneEconomy(player: number, tx: number, ty: number): ZoneEconomy {
+    return JSON.parse(this.outString(this.ex.zone_economy(player | 0, tx | 0, ty | 0))) as ZoneEconomy;
+  }
   infoBuilding(ref: number): unknown {
     return JSON.parse(this.outString(this.ex.info_building(ref >>> 0)));
   }
@@ -178,6 +184,21 @@ export class Sim {
   winner(): number {
     return this.ex.game_winner();
   }
+}
+
+/** Économie d'une zone (barre des ressources) : `zone` 0 aucune, 1 zone vivante, 2 zone éteinte (générateur
+ * à sec, référence `gen`), 3 réseau de racines (Souche) ; `stock` par objet (dépôts de la zone, soutes des unités
+ * qui s'y trouvent, bourse du joueur), `cap` plafond total des dépôts de la zone ; `prod`, `cons` : débits
+ * maximaux en centièmes d'objet par minute ; `machines` : machines comptées. */
+export interface ZoneEconomy {
+  zone: 0 | 1 | 2 | 3;
+  net?: number;
+  gen?: number;
+  stock?: number[];
+  cap?: number;
+  prod?: number[];
+  cons?: number[];
+  machines?: number;
 }
 
 /** Zones électriques : réseaux [id, joueur, production, demande, installé, satisfaction, combustible,
