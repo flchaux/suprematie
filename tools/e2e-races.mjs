@@ -474,11 +474,48 @@ const deployed = await b.page.evaluate(() => {
   const k = ui.data.buildings.findIndex((x) => x.key === "t_generator");
   const f = client.frame;
   for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { ref: f.buf[o] >>> 0 };
+    if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { ref: f.buf[o] >>> 0, x: f.buf[o + 2] & 0xffff, y: f.buf[o + 2] >>> 16 };
   }
   return null;
 });
 check(!!deployed, "générateur nomade déployé");
+// poteaux relais : bouton de la fiche du générateur, fantôme du poteau, clic sur une case libre à portée
+const countPoles = () => b.page.evaluate(() => {
+  const { client, ui } = window.__game;
+  const k = ui.data.buildings.findIndex((d) => d.key === "t_pole");
+  const f = client.frame;
+  let n = 0;
+  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) n++;
+  return n;
+});
+if (deployed) {
+  await b.page.evaluate((ref) => window.__game.client.selectIds([ref]), deployed.ref);
+  await b.page.waitForTimeout(1500);
+  const plant = b.page.locator("button:has-text('Planter un poteau')");
+  check((await plant.count()) === 1, "bouton Planter un poteau du générateur", await b.page.evaluate(() => JSON.stringify(window.__game.ui.buildingInfo?.transh ?? null)));
+  if (await plant.count()) {
+    await plant.click({ force: true, noWaitAfter: true, timeout: 120000 });
+    await b.page.waitForTimeout(800);
+    const pm = await b.page.evaluate(() => ({ mode: window.__game.ui.mode, kind: window.__game.ui.data.buildings[window.__game.ui.buildKind]?.key }));
+    check(pm.mode === "build" && pm.kind === "t_pole", "Planter un poteau : fantôme du poteau", JSON.stringify(pm));
+    let planted = false;
+    for (const [dx, dy] of [[6, 0], [-5, 0], [0, 6], [0, -5], [5, 5], [-4, -4], [8, 2], [2, 8]]) {
+      const sp = await screenAt(b.page, deployed.x + dx + 0.5, deployed.y + dy + 0.5);
+      await b.page.mouse.move(sp.x, sp.y);
+      await b.page.waitForTimeout(600);
+      const ok = await b.page.evaluate(() => window.__game.client.ghostCells[0]?.ok ?? false);
+      if (!ok) continue;
+      await b.page.mouse.click(sp.x, sp.y, { timeout: 120000 });
+      planted = true;
+      break;
+    }
+    const tp = await b.page.evaluate(() => window.__game.client.frame.tick);
+    await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 20, tp, { timeout: 120000 });
+    const n = await countPoles();
+    check(planted && n === 1, "poteau planté par le générateur", `${n} poteau(x)`);
+    await b.page.screenshot({ path: `${outDir}/races-poteau.png`, timeout: 120000 });
+  }
+}
 await b.page.screenshot({ path: `${outDir}/races-transhumants.png`, timeout: 120000 });
 if (deployed) {
   await b.page.evaluate((ref) => window.__game.client.selectIds([ref]), deployed.ref);
@@ -497,6 +534,7 @@ if (deployed) {
       return false;
     });
     check(back, "le module redevient un chenillard");
+    check((await countPoles()) === 0, "le générateur replié rembarque ses poteaux");
   }
 }
 // chenilles : l'Arche roule, la distance parcourue fait glisser ses crampons (render/entities.ts)

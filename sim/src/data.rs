@@ -715,8 +715,10 @@ pub const B_T_HOLD: u16 = 66;
 pub const B_T_LAB: u16 = 67;
 pub const B_T_WORKSHOP: u16 = 68;
 pub const B_T_BASTION: u16 = 69;
+/// poteau relais planté par un générateur nomade (voir transhumants::plant_pole)
+pub const B_T_POLE: u16 = 70;
 
-pub const BUILDINGS: [BuildingDef; 70] = [
+pub const BUILDINGS: [BuildingDef; 71] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -798,6 +800,7 @@ pub const BUILDINGS: [BuildingDef; 70] = [
     BuildingDef { key: "t_lab", name: "Laboratoire nomade", size: (2, 2), hp: 600, power_use: 60, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, class: BClass::Lab, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_workshop", name: "Atelier", size: (3, 3), hp: 5000, power_use: 400, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_bastion", name: "Bastion", size: (2, 2), hp: 4000, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, class: BClass::Turret, weapon: 74, vision: 30, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_pole", name: "Poteau nomade", hp: 200, cost: &[], build: 1, class: BClass::Pylon, supply: 6, connect: 13, vision: 0, race: RACE_TRANSH, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.

@@ -18,7 +18,7 @@
 
 use crate::buildings;
 use crate::data::*;
-use crate::fixed::TILE;
+use crate::fixed::{dist2, TILE};
 use crate::world::*;
 
 pub const PACK_DEPLOYING: u8 = 1;
@@ -39,6 +39,8 @@ pub const RELEVES_PER_KILL_TIER: i32 = 4;
 pub const LAB_TRICKLE: u32 = 40;
 /// Événement : un chenillard n'a pas pu se déployer [joueur, x, y, type d'unité].
 pub const EV_DEPLOY_FAILED: i32 = 45;
+/// Poteaux relais qu'un générateur nomade peut avoir plantés en même temps.
+pub const POLES_PER_GEN: usize = 10;
 
 #[inline]
 pub fn is_transh(w: &World, p: u8) -> bool {
@@ -491,6 +493,47 @@ pub fn fold(w: &mut World, b: usize) {
     }
 }
 
+/// Poteaux relais plantés par le générateur nomade `g` (leur `link` est sa référence), par indice croissant.
+pub fn poles_of(w: &World, g: usize) -> Vec<usize> {
+    let r = w.building_ref(g);
+    (0..w.buildings.len()).filter(|&i| w.buildings[i].alive && w.buildings[i].kind == B_T_POLE && w.buildings[i].link == r).collect()
+}
+
+/// Un poteau sur la case (x, y) serait-il relié au générateur `g` ou à l'un de ses poteaux (portée de
+/// liaison du poteau, de centre à centre) ?
+pub fn pole_in_reach(w: &World, g: usize, x: i32, y: i32) -> bool {
+    let reach = bdef(B_T_POLE).connect as i64 * TILE as i64;
+    let (px, py) = (x * TILE + TILE / 2, y * TILE + TILE / 2);
+    std::iter::once(g).chain(poles_of(w, g)).any(|b| {
+        let (cx, cy) = w.buildings[b].center();
+        dist2(px, py, cx, cy) <= reach * reach
+    })
+}
+
+/// Le générateur nomade `g` plante un poteau relais sur la case (x, y) : tout de suite, sans coût, s'il en a
+/// moins de POLES_PER_GEN, si la case est libre et à portée de lui ou d'un de ses poteaux.
+pub fn plant_pole(w: &mut World, g: usize, x: i32, y: i32) -> bool {
+    let gb = &w.buildings[g];
+    if !gb.alive || gb.kind != B_T_GENERATOR || !gb.complete() {
+        return false;
+    }
+    let owner = gb.owner;
+    if poles_of(w, g).len() >= POLES_PER_GEN || !pole_in_reach(w, g, x, y) {
+        return false;
+    }
+    let Some(b) = buildings::place_building(w, owner, B_T_POLE, x, y, 0) else { return false };
+    buildings::complete_building(w, b);
+    w.buildings[b].link = w.building_ref(g);
+    true
+}
+
+/// Le générateur nomade `g` s'en va (replié, détruit ou démonté) : il rembarque ses poteaux.
+pub fn pull_poles(w: &mut World, g: usize) {
+    for b in poles_of(w, g) {
+        buildings::remove_building(w, b, false);
+    }
+}
+
 /// Vitesse (‰) d'une foreuse nomade : deux fois un extracteur, moins l'usure de son gisement.
 pub fn drill_speed(w: &World, b: usize) -> u32 {
     let spot = w.buildings[b].link;
@@ -610,5 +653,12 @@ pub fn hp_mult(w: &World, owner: u8, kind: u16) -> i32 {
 pub fn info(w: &World, b: usize) -> String {
     let bb = &w.buildings[b];
     let wear = if bb.kind == B_T_DRILL && bb.link != NONE { w.wear.get(bb.link as usize).copied().unwrap_or(0) as i32 } else { -1 };
-    format!(",\"transh\":{{\"unit\":{},\"wear\":{}}}", chenillard_of(bb.kind) as i32, wear)
+    // générateur : ses poteaux (nombre, plafond, cases) pour le bouton « Planter un poteau » et la portée affichée
+    let poles = if bb.kind == B_T_GENERATOR {
+        let at: Vec<String> = poles_of(w, b).iter().map(|&p| format!("[{},{}]", w.buildings[p].x, w.buildings[p].y)).collect();
+        format!(",\"poles\":[{}],\"polesMax\":{},\"poleReach\":{},\"at\":[{},{}]", at.join(","), POLES_PER_GEN, bdef(B_T_POLE).connect, bb.x, bb.y)
+    } else {
+        String::new()
+    };
+    format!(",\"transh\":{{\"unit\":{},\"wear\":{}{}}}", chenillard_of(bb.kind) as i32, wear, poles)
 }

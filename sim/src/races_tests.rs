@@ -5,7 +5,7 @@
 use crate::buildings::{complete_building, place_building, remove_building};
 use crate::data::*;
 use crate::fixed::TILE;
-use crate::orders::{O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_RESEARCH, O_RESEARCH_QUEUE, O_TAME};
+use crate::orders::{O_BUILD, O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_PLANT_POLE, O_RESEARCH, O_RESEARCH_QUEUE, O_TAME};
 use crate::world::*;
 
 /// Paramètres d'une partie à deux joueurs (équipes 0 et 1), sans faune, avec brouillard, et leurs races.
@@ -697,4 +697,93 @@ fn a_drill_feeds_its_neighbours_on_every_side() {
     assert!(w.buildings[fu].recipe != RECIPE_NONE && w.players[0].produced[IRON_PLATE as usize] > 0, "la fonderie, à l'arrière, est servie");
     let in_hold = crate::drones::has(&w.buildings[ho].stash, IRON_ORE);
     assert!(in_hold > 0, "la soute, devant, est servie");
+}
+
+// ---------- Poteaux relais du générateur nomade ----------
+
+/// Générateur nomade déployé sur un terrain plat qui s'étend vers le centre de la carte ; renvoie aussi le
+/// sens de ce terrain (+1 vers l'est, -1 vers l'ouest).
+fn camp() -> (World, usize, i32) {
+    let mut w = game(RACE_TRANSH, RACE_INDUS);
+    let g = find_unit(&w, 0, U_CH_GENERATOR).unwrap();
+    let (tx, ty) = (w.units.x[g] / TILE, w.units.y[g] / TILE);
+    let sx = if tx < w.map.w / 2 { 1 } else { -1 };
+    flatten(&mut w, (tx - 8).min(tx + sx * 45), ty - 12, (tx + 8).max(tx + sx * 45), ty + 12);
+    let id = w.unit_id(g) as i32;
+    order(&mut w, 0, O_DEPLOY, &[1, id]);
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 5);
+    let gb = find_building(&w, 0, B_T_GENERATOR).expect("générateur déployé");
+    (w, gb, sx)
+}
+
+fn poles(w: &World) -> usize {
+    (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].kind == B_T_POLE).count()
+}
+
+#[test]
+fn poles_extend_the_generator_zone_from_pole_to_pole() {
+    let (mut w, g, sx) = camp();
+    let (gx, gy) = (w.buildings[g].x, w.buildings[g].y);
+    // un laboratoire hors de la zone du générateur (9 cases autour de son emprise)
+    let lab = place_building(&mut w, 0, B_T_LAB, gx + sx * 22, gy, 0).expect("laboratoire");
+    complete_building(&mut w, lab);
+    steps(&mut w, 2);
+    assert_ne!(w.buildings[lab].net, w.buildings[g].net, "hors zone sans poteau");
+    let r = w.building_ref(g) as i32;
+    // trop loin du générateur : refusé
+    order(&mut w, 0, O_PLANT_POLE, &[r, gx + sx * 24, gy]);
+    assert_eq!(poles(&w), 0, "poteau hors de portée refusé");
+    // un poteau à portée du générateur, puis un second à portée du premier : la zone s'étend jusqu'au laboratoire
+    order(&mut w, 0, O_PLANT_POLE, &[r, gx + sx * 12, gy]);
+    order(&mut w, 0, O_PLANT_POLE, &[r, gx + sx * 24, gy]);
+    assert_eq!(poles(&w), 2);
+    steps(&mut w, 2);
+    let net = w.buildings[g].net;
+    assert!(net != 0);
+    for p in crate::transhumants::poles_of(&w, g) {
+        assert_eq!(w.buildings[p].net, net, "poteau relié au générateur");
+        assert!(w.buildings[p].complete(), "planté tout de suite");
+    }
+    assert_eq!(w.buildings[lab].net, net, "le laboratoire est dans la zone étendue");
+    assert!(w.nets[net as usize].prod > 0);
+    // pas de poteau par un chantier (ordre de construction) : ils viennent du générateur
+    let ark = (0..w.units.alive.len()).find(|&s| w.units.alive[s] && w.units.owner[s] == 0 && udef(w.units.kind[s]).build_power > 0).expect("constructeur");
+    let id = w.unit_id(ark) as i32;
+    order(&mut w, 0, O_BUILD, &[0, B_T_POLE as i32, gx + sx * 4, gy - 4, 0, 1, id]);
+    steps(&mut w, 200);
+    assert_eq!(poles(&w), 2, "ordre de construction d'un poteau refusé");
+}
+
+#[test]
+fn a_generator_plants_ten_poles_at_most_and_takes_them_back_when_it_folds() {
+    let (mut w, g, _) = camp();
+    let (gx, gy) = (w.buildings[g].x, w.buildings[g].y);
+    let r = w.building_ref(g) as i32;
+    let spots: Vec<(i32, i32)> = [-4, -2, 0, 2, 4, 6].iter().flat_map(|&dx| [(gx + dx, gy - 4), (gx + dx, gy + 5)]).collect();
+    for &(x, y) in &spots {
+        order(&mut w, 0, O_PLANT_POLE, &[r, x, y]);
+    }
+    assert_eq!(poles(&w), crate::transhumants::POLES_PER_GEN, "une dizaine de poteaux par générateur");
+    assert_eq!(crate::transhumants::poles_of(&w, g).len(), crate::transhumants::POLES_PER_GEN);
+    // un poteau détruit libère sa place
+    let p = crate::transhumants::poles_of(&w, g)[3];
+    remove_building(&mut w, p, true);
+    let (x, y) = spots[11];
+    order(&mut w, 0, O_PLANT_POLE, &[r, x, y]);
+    assert_eq!(poles(&w), crate::transhumants::POLES_PER_GEN);
+    // sauvegarde : les poteaux gardent leur générateur
+    let w2 = crate::save::restore(&crate::save::snapshot(&w)).expect("restauration");
+    assert_eq!(w2.hash(), w.hash());
+    assert_eq!(crate::transhumants::poles_of(&w2, g).len(), crate::transhumants::POLES_PER_GEN);
+    // repli : le générateur rembarque ses poteaux
+    order(&mut w, 0, O_PACK, &[1, r]);
+    assert!(find_building(&w, 0, B_T_GENERATOR).is_none());
+    assert_eq!(poles(&w), 0, "poteaux rembarqués au repli");
+    steps(&mut w, 2);
+    // un autre joueur ne plante pas avec notre générateur
+    let (mut w, g, _) = camp();
+    let r = w.building_ref(g) as i32;
+    let (gx, gy) = (w.buildings[g].x, w.buildings[g].y);
+    order(&mut w, 1, O_PLANT_POLE, &[r, gx, gy - 4]);
+    assert_eq!(poles(&w), 0);
 }

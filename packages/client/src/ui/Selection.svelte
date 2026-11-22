@@ -271,7 +271,7 @@
     {#if mine && info}
       {#if info.build < 65536}
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
-      {:else if (bdef.race ?? 0) === 2}
+      {:else if (bdef.race ?? 0) === 2 && bdef.key !== "t_pole"}
         <button class="icon-btn" title="Le module redevient un chenillard (immobile 10 s) ; son contenu retourne à la réserve, sa recette et son combustible restent à bord" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier</button>
       {:else}
         <button class="icon-btn danger" title="Démonté par vos constructeurs les plus proches : les matériaux vont dans leur soute, puis leurs drones les rapportent à un dépôt" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
@@ -287,6 +287,13 @@
         {#if sv.rateSeve || sv.rateSels}
           <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if bdef.key === "leaves"}<span class="dim"> · les frondaisons voisines (4 cases) se font de l'ombre</span>{/if}</div>
         {/if}
+      {/if}
+      {#if info.transh?.poles}
+        {@const tp = info.transh}
+        <div class="row small" title="Chaque poteau planté agrandit la zone électrique du générateur ({tp.poleReach} cases au plus entre deux poteaux). Le générateur les rembarque quand il se replie.">
+          <span class="kicker">Poteaux</span> <b class="num">{tp.poles.length}</b><span class="dim"> / <span class="num">{tp.polesMax}</span></span>
+          {#if tp.poles.length < tp.polesMax}<button class="icon-btn" onclick={() => client.startPole()} title="Planter un poteau relais : à {tp.poleReach} cases au plus du générateur ou d'un de ses poteaux ; Maj+clic pour en planter plusieurs"><Icon name="power" size={14} /> Planter un poteau</button>{/if}
+        </div>
       {/if}
       {#if info.transh && info.transh.wear >= 0}
         <div class="row small" title="La foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement : son débit baisse jusqu'à 60 %. Le gisement se reconstitue quand on le laisse."><span class="kicker">Usure du gisement</span> <b class="num" class:bad={info.transh.wear >= 400}>{Math.round(info.transh.wear / 10)} %</b><span class="dim"> · débit ×<span class="num">{((2000 - 2 * info.transh.wear) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span></div>
