@@ -514,8 +514,9 @@ pub fn update_units(w: &mut World) {
             continue;
         }
         let k = w.units.kind[s];
-        // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe
-        if fixed_wing(k) || (w.tick + s as u32) & 1 == 1 {
+        // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe ni les œufs
+        // (immobiles : ce sont les autres qui s'en écartent)
+        if fixed_wing(k) || crate::ponte::is_egg(k) || (w.tick + s as u32) & 1 == 1 {
             continue;
         }
         let def = udef(k);
@@ -594,6 +595,11 @@ pub fn update_units(w: &mut World) {
             continue;
         }
         w.units.cold[s].flags = 0;
+        // œuf de la Souche : immobile et inerte, il éclot à son heure (voir ponte.rs)
+        if crate::ponte::is_egg(w.units.kind[s]) {
+            crate::ponte::tick_egg(w, s);
+            continue;
+        }
         if w.units.cold[s].stun > 0 {
             w.units.cold[s].stun -= 1;
             continue;
@@ -996,6 +1002,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             if left == 0 {
                 pop_order(w, s);
             }
+            NONE
+        }
+        Order::Tame { target } => {
+            crate::souche::tame_step(w, s, target);
             NONE
         }
         Order::Harvest { x, y } => {

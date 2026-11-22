@@ -5,6 +5,7 @@
   import { ui } from "../game/state.svelte.ts";
   import { SEVE, SELS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import Item from "./Item.svelte";
+  import Icon from "./Icon.svelte";
 
   // ressources de base (plaques, acier, engrenages, câbles, circuits) : seules montrées, barre repliée ;
   // dépliée, s'y ajoutent les minerais et les autres objets qui ont un stock ou un débit dans la zone
@@ -48,9 +49,27 @@
     return v.toFixed(1).replace(".", ",").replace(/,0$/, "");
   };
   const rounded = (c: number) => Math.abs(c) < 5;
+  // lignes des débits (production, consommation, solde) repliables ; le choix est gardé d'une partie à l'autre
+  let open = $state(readOpen());
+  function readOpen() {
+    try {
+      return localStorage.getItem("supreme.zoneRates") !== "0";
+    } catch {
+      return true;
+    }
+  }
+  function toggle() {
+    open = !open;
+    try {
+      localStorage.setItem("supreme.zoneRates", open ? "1" : "0");
+    } catch {
+      /* stockage indisponible : le choix vaut pour cette page */
+    }
+  }
 </script>
 
-<div class="zbar" class:off={!z || z.zone === 0}>
+<div class="zbar" class:off={!z || z.zone === 0} class:shut={!open}>
+  <span class="head">
   <span class="tip lab zone">
     <i class="sw" class:dead style:background={z && z.zone !== 0 ? hex(dead ? 0xff4a3d : z.color) : "transparent"}></i>
     <span class="zn">{label}</span>
@@ -65,9 +84,15 @@
     </span>
   </span>
   {#if z && z.zone !== 0}
-    <span class="lab">Prod. max<span class="faint">/min</span></span>
-    <span class="lab">Conso. max<span class="faint">/min</span></span>
-    <span class="lab">Solde<span class="faint">/min</span></span>
+    <button class="ghost fold" class:shut={!open} onclick={toggle} title={open ? "Replier les débits (production, consommation, solde)" : "Déplier les débits (production, consommation, solde)"} aria-expanded={open}><Icon name="chevron" size={12} /></button>
+  {/if}
+  </span>
+  {#if z && z.zone !== 0}
+    {#if open}
+      <span class="lab">Prod. max<span class="faint">/min</span></span>
+      <span class="lab">Conso. max<span class="faint">/min</span></span>
+      <span class="lab">Solde<span class="faint">/min</span></span>
+    {/if}
     {#each cols as id (id)}
       {@const n = at(z.stock, id)}
       {@const p = at(z.prod, id)}
@@ -95,9 +120,11 @@
           <span class="dim">Toutes les machines de la zone à pleine vitesse (cadence, pureté, niveau compris), sans pénurie ni sortie bloquée ; les chantiers ne comptent pas. En pratique le stock ne monte ni ne descend sans fin : une machine s'arrête quand plus rien ne sort ou que ses ingrédients manquent.</span>
         </span>
       </span>
+      {#if open}
       <span class="r num" class:z={p === 0}>{p === 0 ? "·" : "+" + rate(p)}</span>
       <span class="r num" class:z={c === 0}>{c === 0 ? "·" : "−" + rate(c)}</span>
       <span class="r num s" class:z={rounded(net)} class:good={net > 0 && !rounded(net)} class:bad={net < 0 && !rounded(net)}>{rounded(net) ? "0" : (net < 0 ? "−" : "+") + rate(net)}</span>
+      {/if}
     {/each}
     {#if !souche}
       <button class="tip more" class:open onclick={toggle} aria-expanded={open}>
@@ -113,7 +140,11 @@
 
 <style>
   .zbar { display: grid; grid-template-rows: repeat(4, 17px); grid-auto-flow: column; column-gap: 11px; row-gap: 1px; align-items: center; }
-  .zbar.off { grid-template-rows: 17px; }
+  .zbar.off, .zbar.shut { grid-template-rows: 17px; }
+  .head { display: flex; align-items: center; gap: 4px; }
+  .fold { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; color: var(--dim); }
+  .fold:hover { color: var(--accent); }
+  .fold.shut :global(.ic) { transform: rotate(-90deg); }
   .lab { font-size: 10.5px; color: var(--dim); white-space: nowrap; letter-spacing: 0.02em; }
   .lab .faint { margin-left: 2px; }
   .zone { display: flex; align-items: center; gap: 5px; color: var(--text); font-size: 11.5px; }

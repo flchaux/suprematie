@@ -16,6 +16,7 @@ import { souteNomade } from "./nomades/soute.ts";
 import { laboratoireNomade } from "./nomades/laboratoire.ts";
 import { atelierNomade } from "./nomades/atelier.ts";
 import { bastionNomade } from "./nomades/bastion.ts";
+import { poteauNomade } from "./nomades/poteau.ts";
 
 // ——— Bâtiments ———
 
@@ -39,6 +40,8 @@ export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
   t_workshop: { parts: atelierNomade(false) },
   // t_bastion : voir nomades/bastion.ts (même gréement que le chenillard, pose déployée)
   t_bastion: { parts: bastionNomade(false) },
+  // t_pole : poteau relais planté par le générateur nomade (voir nomades/poteau.ts)
+  t_pole: { parts: poteauNomade() },
 };
 
 // ——— Unités ———

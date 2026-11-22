@@ -123,6 +123,24 @@ function sampleLayer(layer: N, t: V2) {
 const lum = (c: ReturnType<typeof vec3>) => dot(c, vec3(0.3, 0.55, 0.15));
 
 /**
+ * Matières du terreau de la Souche (render/terreau.ts) au point `p2` (en cases) : deux lectures de la
+ * terre nue (répétitions de 4,3 et 2,1 cases, tournées) et une de l'herbe dense (3,4 cases), plus serrées
+ * que sur le reste du sol pour un grain fin. `relief` : clarté relative de la terre autour de 1 (1 tant que
+ * l'atlas n'est pas chargé).
+ */
+export function terreauLayers(p2: V2) {
+  const ra = vec2(p2.x.mul(0.6).add(p2.y.mul(0.8)), p2.y.mul(0.6).sub(p2.x.mul(0.8)));
+  const dirtA = sampleLayer(float(DIRT), ra.div(4.3).add(0.17));
+  const dirtB = sampleLayer(float(DIRT), vec2(p2.y.negate(), p2.x).div(2.1).add(0.53));
+  const lush = sampleLayer(float(LUSH), vec2(p2.x.add(p2.y), p2.y.sub(p2.x)).mul(0.7071).div(3.4).add(0.29));
+  const relA = lum(dirtA).div(LUM[DIRT]);
+  const relB = lum(dirtB).div(LUM[DIRT]);
+  const relief = mix(float(1), relA.mul(0.65).add(relB.mul(0.35)), groundReady) as unknown as N;
+  const moss = mix(float(1), lum(lush).div(LUM[LUSH]), groundReady) as unknown as N;
+  return { dirt: dirtA.mul(0.65).add(dirtB.mul(0.35)), lush, relief, moss, ready: groundReady };
+}
+
+/**
  * Grain de la texture de roche au point courant (projection triplanaire, une répétition toutes les
  * `cells` cases) : une clarté autour de 1, à multiplier par la couleur d'une roche. Vaut 1 tant que
  * l'atlas n'est pas chargé.

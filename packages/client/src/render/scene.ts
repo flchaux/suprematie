@@ -17,6 +17,7 @@ import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { teamInstancedMesh, setTeamColor } from "./materials.ts";
 import { CommandOverlay } from "./overlay.ts";
 import { PowerCoverage } from "./power.ts";
+import { TerreauCover } from "./terreau.ts";
 
 const PAD_OK = new THREE.Color(0.2, 0.75, 0.35);
 const PAD_BAD = new THREE.Color(1.6, 0.12, 0.1);
@@ -56,6 +57,8 @@ export class GameScene {
   ghost: { mesh: THREE.InstancedMesh; kind: number } | null = null;
   /** couverture électrique (surimpression pendant la pose d'un bâtiment électrique) */
   power: PowerCoverage | null = null;
+  /** terreau de la Souche au sol */
+  terreau: TerreauCover | null = null;
   /** constructions prévues et ordres affichés avec Maj */
   overlay: CommandOverlay | null = null;
   showOrders = false;
@@ -217,6 +220,7 @@ export class GameScene {
     this.scene.add(this.decor.mesh);
     if (this.power) this.power.dispose();
     this.power = new PowerCoverage(map.w, map.h, this.scene);
+    this.terreau = new TerreauCover(map.w, map.h);
     if (this.overlay) this.scene.remove(this.overlay.group);
     this.overlay = new CommandOverlay(data, map);
     this.scene.add(this.overlay.group);
@@ -616,6 +620,9 @@ export class GameScene {
     this.stats.shadowSize = half * 2;
   }
 
+  /** partie en pause : unités, tourelles et effets figés (la caméra, l'eau et les repères continuent) */
+  paused = false;
+
   render(frame: Frame | null, alpha: number, me: number, myTeam: number, selected: Set<number>, dt: number, spectator: boolean, fog = true): void {
     const t0 = performance.now();
     this.time += dt;
@@ -631,7 +638,9 @@ export class GameScene {
       else if (this.distance < LOD_NEAR) this.lodLo = false;
       this.entities.setDetail(this.lodLo);
       const iconScale = Math.max(1, this.distance / 160);
-      this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, view);
+      const simDt = this.paused ? 0 : dt;
+      this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, simDt, spectator, view);
+      if (this.data) this.terreau?.update(frame, this.data, simDt);
       // les roches hautes d'un gisement disparaissent sous le bâtiment qui le recouvre
       this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }

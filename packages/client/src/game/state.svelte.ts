@@ -67,7 +67,7 @@ export const ui = $state({
   /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
   selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
-  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pickup?: PickupInfo | null; deliver?: DeliverInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number },
+  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pickup?: PickupInfo | null; deliver?: DeliverInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number; /** œuf de la Souche : espèce portée, ticks avant l'éclosion, durée de l'incubation */ egg?: { kind: number; left: number; total: number } | null },
   buildingInfo: null as null | Record<string, unknown>,
   canBuild: false,
   mode: "" as string,
@@ -113,8 +113,18 @@ export const ui = $state({
   /** brouillard de guerre de la partie en cours (réglage du salon, lu dans les paramètres de la simulation) */
   fog: true,
   ping: 0,
-  /** vitesse de jeu (multiplicateur, partie solo seulement) */
+  /** vitesse de jeu (multiplicateur, partie solo seulement) ; 0 : partie en pause (solo ou hôte) */
   speed: 1,
+  /** vitesse reprise à la fin de la pause */
+  resumeSpeed: 1,
+  /** joueur qui a mis la partie en pause */
+  pausedBy: "",
+  /** menu de partie (Échap) ouvert */
+  menuOpen: false,
+  /** dernière sauvegarde annoncée par le serveur (nom, heure locale) */
+  lastSaved: null as { name: string; at: number } | null,
+  /** retour au salon pour charger une sauvegarde : le salon ouvre la liste des sauvegardes */
+  lobbySaves: false,
   gfx: loadGfx(),
   showGfx: false,
   showPerf: false,

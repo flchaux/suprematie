@@ -9,7 +9,7 @@
   const RACE_DESC = [
     "Tapis, bras, fonderies et assembleurs ; électricité par zones ; recherche par lots en laboratoire",
     "Base vivante : racines qui mettent en commun sève et sels, organes qui poussent seuls ; recherche par l'ADN des cadavres digérés",
-    "Industrie montée sur des chenillards qui se déploient et se replient ; recherche par l'exploration",
+    "Industrie montée sur des chenillards qui se déploient et se replient ; recherche par l'exploration ; pillent un quart de ce qu'ils détruisent",
   ];
   const FAUNA_DESC: Record<Fauna, string> = {
     none: "Pas de nids sur la carte",
@@ -51,6 +51,15 @@
     showReplays = false;
     if (showSaves) void refreshSaves();
   }
+  // retour du menu de partie par « Charger une partie » : la liste des sauvegardes s'ouvre
+  $effect(() => {
+    if (ui.lobbySaves && ui.screen === "lobby") {
+      ui.lobbySaves = false;
+      showSaves = true;
+      showReplays = false;
+      void refreshSaves();
+    }
+  });
   function loadSave(id: string) {
     client.lobbyAction("loadSave", { id });
     showSaves = false;

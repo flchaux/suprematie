@@ -16,12 +16,18 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 77 unités (55 des Industriels et de la faune, 7 de la Souche, 15 des Transhumants), 70 bâtiments (52, 9, 9) et 64 recherches (48, 10, 6)", () => {
-    expect(data.units.length).toBe(77);
-    expect(data.buildings.length).toBe(70);
+  it("contient 80 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 15 des Transhumants), 71 bâtiments (52, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
+    expect(data.units.length).toBe(80);
+    expect(data.buildings.length).toBe(71);
+    expect(data.buildings.filter((b) => b.race === 2).length).toBe(10);
     expect(data.techs.length).toBe(64);
     expect(data.races.map((r) => r.key)).toEqual(["industriels", "souche", "transhumants"]);
-    expect(data.units.filter((u) => u.race === 1).length).toBe(7);
+    expect(data.units.filter((u) => u.race === 1).length).toBe(10);
+    // Souche : les organismes naissent par portées de 3 à 6 œufs ; un œuf ne sort d'aucune usine
+    const eggs = data.units.filter((u) => u.egg);
+    expect(eggs.map((u) => u.key)).toEqual(["egg_s", "egg_m", "egg_l"]);
+    for (const u of eggs) expect([u.factory, u.litter, u.speed, u.weapons.length]).toEqual([0, 0, 0, 0]);
+    expect(data.units.filter((u) => u.litter > 0).map((u) => [u.key, u.litter])).toEqual([["sower", 3], ["gnawer", 6], ["spitter", 4], ["shell", 3], ["vine", 4], ["membrane", 3]]);
     expect(data.units.filter((u) => u.race === 2).length).toBe(15);
     // une unité de commandement par race
     expect(data.units.filter((u) => u.commander).map((u) => u.key)).toEqual(["commander", "queen", "ark"]);

@@ -67,6 +67,12 @@ pub const O_PICKUP: i32 = 50;
 /// Commandant ou ingénieur : porter un objet de sa soute (0 : tout) au dépôt le plus proche qui a de la
 /// place : [drapeaux (1 : en file), objet, n, unités…].
 pub const O_DELIVER: i32 = 51;
+/// Reine de la Souche : apprivoiser un nid de mordeurs sauvage : [drapeaux (1 : en file), réf. du nid, n, unités…]
+/// (voir souche::tame).
+pub const O_TAME: i32 = 52;
+/// Générateur nomade des Transhumants : planter un poteau relais : [réf. du générateur, x, y (cases, case du
+/// poteau)] (voir transhumants::plant_pole).
+pub const O_PLANT_POLE: i32 = 53;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -80,9 +86,10 @@ impl Cur<'_> {
     }
 }
 
+/// Unité du joueur `p` qui peut recevoir un ordre (un œuf de la Souche n'en reçoit pas).
 fn own_unit(w: &World, p: u8, id: i32) -> Option<usize> {
     let s = w.unit(id as u32)?;
-    if w.units.owner[s] == p {
+    if w.units.owner[s] == p && !crate::ponte::is_egg(w.units.kind[s]) {
         Some(s)
     } else {
         None
@@ -226,6 +233,10 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if kind < 0 || kind as usize >= BUILDINGS.len() || !w.players[p as usize].has_tech(bdef(kind as u16).tech) || !crate::races::building_ok(w, p, kind as u16) {
                 return;
             }
+            // Transhumants : les modules viennent des chenillards et les poteaux des générateurs, jamais d'un chantier
+            if bdef(kind as u16).race == crate::data::RACE_TRANSH {
+                return;
+            }
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
                     if udef(w.units.kind[s]).build_power > 0 {
@@ -282,9 +293,10 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if front_before != front_after && bb.working {
                 bb.working = false;
                 bb.progress = 0;
-                // unité en cours abandonnée : ses composants reviennent dans la réserve de l'usine
+                // unité (ou portée) en cours abandonnée : ses composants reviennent dans la réserve de l'usine
                 if let Some(k) = front_before {
                     for &(it, n) in udef(k).cost {
+                        let n = n * batch(k);
                         crate::buildings::factory_put(&mut w.buildings[b], it, n);
                         let c = &mut w.players[p as usize].consumed[it as usize];
                         *c = c.saturating_sub(n as u32);
@@ -553,6 +565,24 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                         give(w, s, q, Order::DeployAt { x, y, dir });
                     }
                 }
+            }
+        }
+        O_TAME => {
+            let q = c.next() & 1 != 0;
+            let target = c.next() as u32;
+            let ok = crate::souche::tameable(w, p, target);
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && w.units.kind[s] == crate::data::U_QUEEN {
+                        give(w, s, q, Order::Tame { target });
+                    }
+                }
+            }
+        }
+        O_PLANT_POLE => {
+            let (r, x, y) = (c.next(), c.next(), c.next());
+            if let Some(b) = own_building(w, p, r) {
+                crate::transhumants::plant_pole(w, b, x, y);
             }
         }
         O_PACK => {

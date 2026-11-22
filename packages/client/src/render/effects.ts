@@ -392,6 +392,24 @@ export class Effects {
     if (Math.random() < 0.5 * this.quality) this.smoke.spawn({ x, y, z, vy: 0.4, life: rnd(0.3, 0.6), s0: 0.15 * big, s1: 0.5 * big, c0: [0.35, 0.27, 0.2], a: 0.45, drag: 1.5 });
   }
 
+  /**
+   * Œuf de la Souche qui s'ouvre (éclosion) ou qui crève (`burst`) : gouttes de sève projetées, bouffée
+   * de brume ; `size` : taille de l'œuf (1 : petit).
+   */
+  hatch(x: number, y: number, z: number, size: number, burst = false): void {
+    if (!this.inView(x, z, 2)) return;
+    // sève vert acide ; plus jaune et plus vive quand l'œuf crève
+    const sap: [number, number, number] = burst ? [2.2, 2.4, 0.3] : [1.2, 2.4, 0.45];
+    this.fire.spawn({ x, y: y + 0.3 * size, z, life: burst ? 0.16 : 0.12, s0: 0.3 * size, s1: (burst ? 1.1 : 0.7) * size, c0: sap, c1: [0.2, 0.5, 0.05] });
+    const v = burst ? 4.5 : 3;
+    for (let i = 0, n = this.n(burst ? 10 : 6); i < n; i++) {
+      this.fire.spawn({ x, y: y + 0.35 * size, z, vx: rnd(-v, v) * 0.6, vy: rnd(1.5, v + 1), vz: rnd(-v, v) * 0.6, life: rnd(0.3, 0.6), s0: 0.12 * size, s1: 0.04, c0: sap, grav: -14 });
+    }
+    for (let i = 0, n = this.n(burst ? 3 : 2); i < n; i++) {
+      this.smoke.spawn({ x: x + rnd(-0.1, 0.1), y: y + 0.3 * size, z: z + rnd(-0.1, 0.1), vx: rnd(-0.4, 0.4), vy: rnd(0.3, 0.8), vz: rnd(-0.4, 0.4), life: rnd(0.6, 1.1), s0: 0.3 * size, s1: 0.9 * size, c0: [0.42, 0.46, 0.22], a: 0.4, drag: 1.4 });
+    }
+  }
+
   /** Éclair de départ d'un tir. */
   muzzle(x: number, y: number, z: number, proj: number, big: number): void {
     if (!this.inView(x, z, 2)) return;

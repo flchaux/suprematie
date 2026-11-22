@@ -1,6 +1,7 @@
 // Races en jeu réel : un joueur choisit sa race dans le salon et joue contre une IA. Contrôles : race
-// reçue par la simulation, barre du haut et menu de construction de la race ; Souche : une frondaison
-// plantée par la Reine qui pousse sur le terreau ; Transhumants : un chenillard qui se déploie puis se
+// reçue par la simulation, barre du haut et menu de construction de la race ; Souche (affichage et
+// interactions seulement, la logique est testée en Rust) : file de racines tracée au glissé depuis la
+// graine-mère, terreau au sol ; Transhumants : un chenillard qui se déploie puis se
 // replie, l'arbre de recherche de la race ; aucune erreur dans la page. Captures dans le dossier donné.
 // Une partie par race (le serveur n'en héberge qu'une) : relancer le serveur entre les deux.
 // Usage : node tools/e2e-races.mjs http://127.0.0.1:3083 souche|transhumants [dossier des captures]
@@ -61,7 +62,8 @@ const raceName = which === "souche" ? "Souche" : "Transhumants";
 await me.page.waitForSelector("select:has(option:has-text('Transhumants'))");
 await me.page.locator(".player.me, .player", { hasText: which === "souche" ? "Racine" : "Nomade" }).first().locator("select:has(option:has-text('Souche'))").selectOption({ label: raceName });
 await me.page.waitForTimeout(800);
-const lobbyRaces = await me.page.evaluate(() => window.__game.ui.lobby.players.map((p) => p.race ?? 0));
+const myName = which === "souche" ? "Racine" : "Nomade";
+const lobbyRaces = await me.page.evaluate((n) => window.__game.ui.lobby.players.filter((p) => p.name === n).map((p) => p.race ?? 0), myName);
 check(lobbyRaces[0] === (which === "souche" ? 1 : 2), "race choisie dans le salon", JSON.stringify(lobbyRaces));
 await me.page.screenshot({ path: `${outDir}/races-salon-${which}.png` });
 await me.page.click("button:has-text('Tortue')");
@@ -89,38 +91,87 @@ await a.page.evaluate(() => {
 await a.page.waitForTimeout(800);
 const cats = await a.page.evaluate(() => [...document.querySelectorAll(".build .tabs > .tab")].map((e) => e.getAttribute("title")));
 check(cats.join(",") === "Réseau,Organes,Défense", "menu de construction de la Souche", cats.join(","));
-// planter une frondaison sur le terreau, à côté de la graine-mère (par l'ordre, comme le fait l'interface)
-const planted = await a.page.evaluate(() => {
+await a.page.screenshot({ path: `${outDir}/races-souche.png`, timeout: 120000 });
+
+// ---------- racines tracées en glissant : une file continue, orientée, collée à la graine-mère ----------
+const heartAt = await a.page.evaluate(() => {
   const { client, ui } = window.__game;
-  const d = ui.data;
-  const leaves = d.buildings.findIndex((x) => x.key === "leaves");
-  const heart = d.buildings.findIndex((x) => x.key === "seed_heart");
-  const f = client.frame;
-  let hb = null;
-  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) === heart && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) hb = { x: f.buf[o + 2] & 0xffff, y: f.buf[o + 2] >>> 16 };
-  }
-  if (!hb) return null;
-  // à droite de la graine-mère (3 × 3), sur son terreau ; ordre BUILD : [type, file, genre, x, y, dir, n, unités…]
-  const x = hb.x + 4, y = hb.y;
-  client.cmd([3, 0, leaves, x, y, 0, 1, client.frame.players[ui.me].commander]);
-  return { x, y };
-});
-check(!!planted, "ordre de plantation envoyé");
-const t0 = await a.page.evaluate(() => window.__game.client.frame.tick);
-// la Reine marche jusqu'au chantier, plante, puis la frondaison pousse (12 s) : on attend 25 s de jeu
-await a.page.waitForFunction((t) => window.__game.client.frame.tick > t + 500, t0, { timeout: 600000 });
-const grown = await a.page.evaluate(() => {
-  const { client, ui } = window.__game;
-  const leaves = ui.data.buildings.findIndex((x) => x.key === "leaves");
+  const heart = ui.data.buildings.findIndex((x) => x.key === "seed_heart");
   const f = client.frame;
   for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) === leaves && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { build: f.buf[o + 4] };
+    if ((f.buf[o + 1] & 0xff) === heart && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { x: f.buf[o + 2] & 0xffff, y: f.buf[o + 2] >>> 16, ref: f.buf[o] >>> 0 };
   }
   return null;
 });
-check(!!grown, "frondaison plantée", JSON.stringify(grown));
-await a.page.screenshot({ path: `${outDir}/races-souche.png`, timeout: 120000 });
+const aimAt = (x, z, distance = 40) => a.page.evaluate(([x, z, distance]) => {
+  const sc = window.__game.client.scene;
+  sc.target.set(x, 0, z);
+  sc.distance = distance;
+  sc.yaw = 0;
+  sc.updateCamera();
+  sc.camera.updateMatrixWorld();
+}, [x, z, distance]);
+const screenOf = (x, z) => a.page.evaluate(([x, z]) => {
+  const { client } = window.__game;
+  const p = { x: 0, y: 0 };
+  let h = client.scene.target.y;
+  for (let i = 0; i < 3; i++) {
+    client.scene.project(x, h, z, p);
+    const q = client.groundAt(p.x, p.y);
+    if (!q) break;
+    h = q.y;
+  }
+  return p;
+}, [x, z]);
+// la ligne de racines part vers le côté le plus dégagé (est ou ouest) de la graine-mère
+const lineSide = await a.page.evaluate(async ([hx, hy]) => {
+  const { client, ui } = window.__game;
+  const root = ui.data.buildings.findIndex((x) => x.key === "root");
+  const tryLine = async (sx) => {
+    const args = [ui.me, root];
+    for (let k = 0; k < 8; k++) args.push(sx > 0 ? hx + 3 + k : hx - 1 - k, hy + 1, 0);
+    const ok = await client.query("canPlaceMany", args);
+    return (ok ?? []).filter(Boolean).length;
+  };
+  return (await tryLine(1)) >= (await tryLine(-1)) ? 1 : -1;
+}, [heartAt.x, heartAt.y]);
+const x0 = lineSide > 0 ? heartAt.x + 3 : heartAt.x - 1;
+const x1 = lineSide > 0 ? heartAt.x + 10 : heartAt.x - 8;
+await aimAt(heartAt.x + 1.5, heartAt.y + 1.5, 45);
+await a.page.evaluate(() => {
+  const { client, ui } = window.__game;
+  const f = client.frame;
+  const sower = ui.data.units.findIndex((u) => u.key === "sower");
+  const ids = [f.players[ui.me].commander];
+  for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if ((f.buf[o + 1] & 0xff) === sower && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) ids.push(f.buf[o] >>> 0);
+  client.selectIds(ids);
+  client.startBuild(ui.data.buildings.findIndex((x) => x.key === "root"));
+});
+await a.page.waitForTimeout(300);
+const pa = await screenOf(x0 + 0.5, heartAt.y + 1.5);
+const pb = await screenOf(x1 + 0.5, heartAt.y + 1.5);
+await a.page.mouse.move(pa.x, pa.y);
+await a.page.mouse.down();
+await a.page.mouse.move((pa.x + pb.x) / 2, pa.y, { steps: 5 });
+await a.page.mouse.move(pb.x, pb.y, { steps: 5 });
+await a.page.waitForTimeout(600);
+const ghost = await a.page.evaluate(() => window.__game.client.ghostCells.map((c) => ({ x: c.x, y: c.y, dir: c.dir, ok: c.ok })));
+const n = Math.abs(x1 - x0) + 1;
+console.log("     cases :", ghost.map((c) => `${c.x},${c.y}${c.ok ? "" : "✗"}`).join(" "));
+check(ghost.length === n && ghost.every((c, i) => i === 0 || Math.abs(c.x - ghost[i - 1].x) === 1), "racines : une file continue au glissé", `${ghost.length} cases, attendu ${n}`);
+check(ghost.every((c) => c.dir === (lineSide > 0 ? 0 : 2)), "racines orientées dans le sens du tracé", ghost.map((c) => c.dir).join(""));
+await a.page.mouse.up();
+await a.page.keyboard.press("Escape");
+check(ghost.every((c) => c.ok), "racines : file acceptée, collée à la graine-mère", ghost.map((c) => (c.ok ? "✓" : "✗")).join(""));
+const terreau = await a.page.evaluate(([hx, hy]) => {
+  const t = window.__game.client.scene.terreau;
+  const r = t.res ?? 1;
+  return { here: t.data[(hy + 1) * r * t.w + (hx + 1) * r], far: t.data[(hy + 1) * r * t.w + Math.max(0, hx - 40) * r] };
+}, [heartAt.x, heartAt.y]);
+check(terreau.here === 255 && terreau.far === 0, "terreau au sol autour du réseau", JSON.stringify(terreau));
+await aimAt(heartAt.x + 1.5 + lineSide * 4, heartAt.y + 1.5, 32);
+await a.page.waitForTimeout(1500);
+await a.page.screenshot({ path: `${outDir}/races-souche-racines.png`, timeout: 120000 });
 
 }
 // ---------- Transhumants ----------
@@ -250,11 +301,48 @@ const deployed = await b.page.evaluate(() => {
   const k = ui.data.buildings.findIndex((x) => x.key === "t_generator");
   const f = client.frame;
   for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { ref: f.buf[o] >>> 0 };
+    if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { ref: f.buf[o] >>> 0, x: f.buf[o + 2] & 0xffff, y: f.buf[o + 2] >>> 16 };
   }
   return null;
 });
 check(!!deployed, "générateur nomade déployé");
+// poteaux relais : bouton de la fiche du générateur, fantôme du poteau, clic sur une case libre à portée
+const countPoles = () => b.page.evaluate(() => {
+  const { client, ui } = window.__game;
+  const k = ui.data.buildings.findIndex((d) => d.key === "t_pole");
+  const f = client.frame;
+  let n = 0;
+  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) n++;
+  return n;
+});
+if (deployed) {
+  await b.page.evaluate((ref) => window.__game.client.selectIds([ref]), deployed.ref);
+  await b.page.waitForTimeout(1500);
+  const plant = b.page.locator("button:has-text('Planter un poteau')");
+  check((await plant.count()) === 1, "bouton Planter un poteau du générateur", await b.page.evaluate(() => JSON.stringify(window.__game.ui.buildingInfo?.transh ?? null)));
+  if (await plant.count()) {
+    await plant.click({ force: true, noWaitAfter: true, timeout: 120000 });
+    await b.page.waitForTimeout(800);
+    const pm = await b.page.evaluate(() => ({ mode: window.__game.ui.mode, kind: window.__game.ui.data.buildings[window.__game.ui.buildKind]?.key }));
+    check(pm.mode === "build" && pm.kind === "t_pole", "Planter un poteau : fantôme du poteau", JSON.stringify(pm));
+    let planted = false;
+    for (const [dx, dy] of [[6, 0], [-5, 0], [0, 6], [0, -5], [5, 5], [-4, -4], [8, 2], [2, 8]]) {
+      const sp = await screenAt(b.page, deployed.x + dx + 0.5, deployed.y + dy + 0.5);
+      await b.page.mouse.move(sp.x, sp.y);
+      await b.page.waitForTimeout(600);
+      const ok = await b.page.evaluate(() => window.__game.client.ghostCells[0]?.ok ?? false);
+      if (!ok) continue;
+      await b.page.mouse.click(sp.x, sp.y, { timeout: 120000 });
+      planted = true;
+      break;
+    }
+    const tp = await b.page.evaluate(() => window.__game.client.frame.tick);
+    await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 20, tp, { timeout: 120000 });
+    const n = await countPoles();
+    check(planted && n === 1, "poteau planté par le générateur", `${n} poteau(x)`);
+    await b.page.screenshot({ path: `${outDir}/races-poteau.png`, timeout: 120000 });
+  }
+}
 await b.page.screenshot({ path: `${outDir}/races-transhumants.png`, timeout: 120000 });
 if (deployed) {
   await b.page.evaluate((ref) => window.__game.client.selectIds([ref]), deployed.ref);
@@ -273,6 +361,7 @@ if (deployed) {
       return false;
     });
     check(back, "le module redevient un chenillard");
+    check((await countPoles()) === 0, "le générateur replié rembarque ses poteaux");
   }
 }
 // chenilles : l'Arche roule, la distance parcourue fait glisser ses crampons (render/entities.ts)

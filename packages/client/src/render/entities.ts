@@ -6,9 +6,11 @@ import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
+import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
+import { FLOOR_H, liftDash, liftOut, liftPad, liftUp } from "./liftAnim.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
-import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
+import { ASCENSEUR_MAT, BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
 import { VEHICLE_MODELS } from "../../../../assets/models/vehicles.ts";
 import { ITEM_MODELS } from "../../../../assets/models/items.ts";
 import { groundHeight, HSCALE, type MapData } from "./terrain.ts";
@@ -139,6 +141,29 @@ const tmpM2 = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
 const tmpQ2 = new THREE.Quaternion();
 const tmpQ3 = new THREE.Quaternion();
+/** rotation d'un modèle (avant : +z) vers la direction `dir` de la simulation (0 est, 1 sud, 2 ouest, 3 nord) */
+const dirQuat = (q: THREE.Quaternion, dir: number): THREE.Quaternion => q.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
+/** anneaux lumineux sur le mât d'un ascenseur de tapis, et leur course au-dessus du palier bas (cases) */
+const LIFT_DASHES = 3;
+const LIFT_DASH_Y0 = 0.1;
+const LIFT_DASH_SPAN = FLOOR_H + 0.1;
+/** ascenseur de tapis de l'image : centre de la case, palier bas, orientation du mât, sens, plateau en attente */
+interface Lift {
+  x: number;
+  z: number;
+  /** hauteur du palier bas */
+  y: number;
+  /** orientation du modèle (le mât est en +x) */
+  orient: number;
+  /** vrai s'il monte : le palier d'entrée est le palier bas */
+  up: boolean;
+  /** terminé (pas en chantier) */
+  ready: boolean;
+  /** déploiement du plateau en attente au palier d'entrée (0 à 1 ; -1 : aucun objet dans la case) */
+  parked: number;
+}
+/** le plateau n'a pas de pièce aux couleurs d'une équipe */
+const NO_TEAM = new THREE.Color(1, 1, 1);
 // vue logistique : tapis vide, fluide, chargé, saturé ; bâtiment bloqué, affamé, sans énergie, en marche
 const LOGI_EMPTY = new THREE.Color(0.25, 0.32, 0.45);
 const LOGI_FLOW = new THREE.Color(0.25, 1.1, 0.45);
@@ -148,8 +173,7 @@ const LOGI_BLOCKED = new THREE.Color(1.5, 0.18, 0.12);
 const LOGI_STARVED = new THREE.Color(1.4, 0.75, 0.1);
 const LOGI_POWER = new THREE.Color(0.85, 0.35, 1.5);
 const LOGI_OK = new THREE.Color(0.2, 0.6, 0.3);
-/** hauteur d'un niveau de tapis (cases du monde) : niveau 1 au-dessus des bâtiments bas, niveau 2 encore au-dessus */
-export const FLOOR_H = 1.6;
+export { FLOOR_H };
 const tmpV2 = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
@@ -244,6 +268,8 @@ export class Entities {
   railCurves = new Map<number, KindMesh>();
   /** pans de mur entre deux murs voisins du même camp (à l'échelle du poteau) */
   wallSeg: KindMesh | null = null;
+  /** Souche : tronçon de racine, du centre de la case vers un voisin relié (comme les pans de mur) */
+  rootSeg: KindMesh | null = null;
   /** goulottes entre les sorties d'un extracteur et les tapis devant lui */
   chute: KindMesh | null = null;
   /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
@@ -253,7 +279,19 @@ export class Entities {
   /** combustible des générateurs de l'équipe (référence → fraction du réservoir, autonomie courte) */
   fuelGauges = new Map<number, { f: number; low: boolean }>();
   logiPads: THREE.InstancedMesh;
-  /** tapis surélevés : piliers, et cages d'ascenseur (montants et traverse) là où un tapis change de niveau */
+  /**
+   * Ascenseurs des tapis, là où un tapis change de niveau : le mât (commun à tous les tapis), les plateaux
+   * qui y coulissent (un sous l'objet en course, un en attente au palier d'entrée), et les quais par type
+   * de tapis (un au niveau d'entrée, un au niveau de sortie).
+   */
+  liftMast: KindMesh | null = null;
+  liftTray: KindMesh | null = null;
+  beltQuays = new Map<number, KindMesh>();
+  /** ascenseurs dessinés à cette image : (case × 2 + niveau bas) -> rang dans `lifts` */
+  private liftAt = new Map<number, number>();
+  private lifts: Lift[] = [];
+  private nLifts = 0;
+  /** tapis surélevés : piliers ; ascenseurs : mât prolongé jusqu'au sol quand il est en hauteur, anneaux lumineux du mât */
   supports: THREE.InstancedMesh;
   liftGlow: THREE.InstancedMesh;
   /** couleurs des joueurs, puis (indice 8) celle de la faune */
@@ -321,7 +359,12 @@ export class Entities {
   screen: UnitScreen[] = [];
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
   /** dist : cases parcourues (chenilles) ; pack, packTick : déploiement (1) ou repli (2) d'un chenillard, et son tick de début */
-  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number }>();
+  /** born : temps de simulation (s) où l'organisme est sorti de son œuf (il grandit pendant BIRTH_TIME) */
+  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number; born?: number }>();
+  /** éclosions récentes (t0 : temps de simulation, s) : l'organisme qui apparaît là sort de son œuf */
+  private hatches: { x: number; z: number; t0: number }[] = [];
+  /** coques vides des œufs éclos : elles se fanent puis rentrent dans le sol (voir eggAnim.ts) */
+  private husks: { kind: number; owner: number; x: number; z: number; facing: number; t0: number }[] = [];
   /** unités qui viennent de disparaître (porte, anneaux, téléportation) : elles s'effacent sur place */
   private ghosts: { kind: number; col: THREE.Color; x: number; y: number; z: number; facing: number; t0: number; fwd: number }[] = [];
   animFrame = 0;
@@ -353,7 +396,8 @@ export class Entities {
     map.spots.forEach((sp, i) => this.spotAt.set(sp.y * map.w + sp.x, i));
     // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
-      const target = Math.max(0.7, (u.radius * 2.3) / TILE);
+      // un œuf garde la taille de son rayon (les autres unités : 0,7 case au moins)
+      const target = u.egg ? (u.radius * 2.2) / TILE : Math.max(0.7, (u.radius * 2.3) / TILE);
       const scaleOf = (built: Built) => target / Math.max(built.box.max.x - built.box.min.x, built.box.max.z - built.box.min.z, 0.01);
       this.unitMeshes.push(new KindMesh(this.group, () => buildModel(UNIT_MODELS[u.key] ?? fallbackModel(0.5)), scaleOf, TEX_PER_TILE_UNIT));
     }
@@ -381,12 +425,20 @@ export class Entities {
         if (g && d) this.beltCurves.set(this.buildingMeshes.length - 1, [new KindMesh(this.group, buildModel(g), scale, TEX_PER_TILE_BUILDING), new KindMesh(this.group, buildModel(d), scale, TEX_PER_TILE_BUILDING)]);
         const jn = ["_jonction_g", "_jonction_d", "_jonction_gd"].map((suf) => BUILDING_MODELS[b.key + suf]);
         if (jn.every((m) => m)) this.beltJunctions.set(this.buildingMeshes.length - 1, jn.map((m) => new KindMesh(this.group, buildModel(m!), scale, TEX_PER_TILE_BUILDING)) as [KindMesh, KindMesh, KindMesh]);
+        // ascenseurs : quai aux couleurs du tapis ; mât et plateau communs (construits à la demande)
+        const quay = BUILDING_MODELS[b.key + "_quai"];
+        if (quay) this.beltQuays.set(this.buildingMeshes.length - 1, new KindMesh(this.group, () => buildModel(quay), scale, TEX_PER_TILE_BUILDING));
+        if (!this.liftMast && BUILDING_MODELS.ascenseur && BUILDING_MODELS.ascenseur_plateau) {
+          this.liftMast = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.ascenseur), scale, TEX_PER_TILE_BUILDING);
+          this.liftTray = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.ascenseur_plateau), scale, TEX_PER_TILE_BUILDING, false);
+        }
       }
       // rail : virage (forme 1 à 4 de la simulation), à l'échelle du rail droit
       const rv = b.cls === BClass.Rail ? BUILDING_MODELS[b.key + "_virage"] : undefined;
       if (rv) this.railCurves.set(this.buildingMeshes.length - 1, new KindMesh(this.group, () => buildModel(rv), () => km.scale, TEX_PER_TILE_BUILDING));
       // segment de mur : à l'échelle du poteau (construits ensemble, à la demande)
       if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.wall_seg), () => km.scale, TEX_PER_TILE_BUILDING);
+      if (b.key === "root" && !this.rootSeg && BUILDING_MODELS.root_seg) this.rootSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.root_seg), () => km.scale, TEX_PER_TILE_BUILDING);
       if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
     }
     const basic = (opts: Record<string, unknown>) => new THREE.MeshBasicNodeMaterial(opts);
@@ -430,7 +482,7 @@ export class Entities {
     const post = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     this.supports = new THREE.InstancedMesh(post, new THREE.MeshStandardNodeMaterial({ color: 0x3a4250, roughness: 0.45, metalness: 0.7 }), 8000);
     this.supports.castShadow = true;
-    this.liftGlow = new THREE.InstancedMesh(post, new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0x3ef0ff).multiplyScalar(1.6) }), 2000);
+    this.liftGlow = new THREE.InstancedMesh(post, new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(0x3ef0ff).multiplyScalar(1.6) }), 4000);
     for (const m of [this.supports, this.liftGlow]) {
       m.count = 0;
       m.frustumCulled = false;
@@ -553,6 +605,16 @@ export class Entities {
     this.group.add(this.ghostGroup);
   }
 
+  /**
+   * Éclosion d'un œuf (type d'unité `kind`, joueur `owner`) en (x, z) au tick `tick` : sa coque vide reste
+   * là un instant, et l'organisme qui apparaît à cet endroit en sort en grandissant.
+   */
+  addHatch(x: number, z: number, kind: number, owner: number, facing: number, tick: number): void {
+    const t0 = tick / 20;
+    this.hatches.push({ x, z, t0 });
+    if (this.husks.length < 400 && this.unitMeshes[kind]) this.husks.push({ kind, owner, x, z, facing, t0 });
+  }
+
   unitHeight(kind: number, x: number, z: number): number {
     const u = this.data.units[kind];
     const g = groundHeight(this.map, x, z);
@@ -583,6 +645,8 @@ export class Entities {
     const all: KindMesh[] = [...this.unitMeshes, ...this.buildingMeshes];
     for (const l of this.levelMeshes.values()) all.push(...l);
     if (this.wallSeg) all.push(this.wallSeg);
+    if (this.rootSeg) all.push(this.rootSeg);
+    for (const m of [this.liftMast, this.liftTray, ...this.beltQuays.values()]) if (m) all.push(m);
     let i = 0;
     const idle: (cb: (d?: { timeRemaining(): number }) => void) => void =
       typeof requestIdleCallback === "function" ? (cb) => requestIdleCallback(cb, { timeout: 2000 }) : (cb) => setTimeout(cb, 30);
@@ -599,7 +663,7 @@ export class Entities {
 
   /** Niveau de détail réduit pour tous les modèles (pièces fines retirées), selon la distance de la caméra. */
   setDetail(lo: boolean): void {
-    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.chute];
+    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.rootSeg, this.chute, this.liftMast, this.liftTray, ...this.beltQuays.values()];
     for (const l of this.levelMeshes.values()) all.push(...l);
     for (const l of this.beltCurves.values()) all.push(...l);
     for (const l of this.beltJunctions.values()) all.push(...l);
@@ -632,12 +696,20 @@ export class Entities {
     for (const l of this.beltJunctions.values()) for (const m of l) m.begin();
     for (const m of this.railCurves.values()) m.begin();
     this.wallSeg?.begin();
+    this.rootSeg?.begin();
     this.chute?.begin();
+    this.liftMast?.begin();
+    this.liftTray?.begin();
+    for (const m of this.beltQuays.values()) m.begin();
+    this.liftAt.clear();
+    this.nLifts = 0;
     for (const m of this.vehicleMeshes) m.begin();
     this.frameN++;
     let nd = 0;
     let nr = 0;
     const now = performance.now();
+    // temps de la simulation à l'image affichée (s) : il rythme les œufs, leurs coques vides et les naissances
+    const simT = (f.tick - 1 + alpha) / 20;
     const camQ = this.camera?.quaternion ?? tmpQ.identity();
     for (const ic of this.icons) ic.count = 0;
     let rings = 0;
@@ -704,7 +776,12 @@ export class Entities {
       if (def.layer === Layer.Air || def.layer === Layer.Hover) bob = Math.sin(performance.now() / 400 + id) * 0.06;
       // marche : la phase avance avec la distance parcourue, l'amplitude suit la vitesse
       let st = this.anim.get(id);
-      if (!st) this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+      if (!st) {
+        this.anim.set(id, (st = { phase: (id % 7) * 0.9, torso: 0, seen: 0 }));
+        // apparu là où un œuf vient d'éclore : il en sort en grandissant
+        const h = def.egg ? undefined : this.hatches.find((h) => Math.abs(h.x - x) < 0.4 && Math.abs(h.z - z) < 0.4);
+        if (h) st.born = h.t0;
+      }
       // saut de plus de 3 cases d'une image à l'autre (porte, anneaux, téléportation) : l'unité s'efface
       // là où elle était et émerge là où elle arrive
       if (st.lx !== undefined && st.seen === this.animFrame - 1 && Math.hypot(x - st.lx, z - (st.lz ?? z)) > 3) {
@@ -736,10 +813,26 @@ export class Entities {
       }
       const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
       // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
-      const depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
+      let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
-      const sc = km.scale * (0.05 + 0.95 * emerge);
+      // œuf de la Souche : il respire, s'agite avant d'éclore, puis ouvre ses lèvres (le temps restant tient
+      // la place de l'angle de tourelle) ; organisme qui vient d'en sortir : il grandit
+      let grow = 1;
+      if (def.egg) {
+        const pose = eggPose(((buf[o + 6] >>> 16) & 0xffff) + 1 - alpha, simT, id % 97);
+        depP = pose.dep;
+        grow = pose.scale;
+        bob += pose.lift * km.height;
+        if (pose.tilt !== 0) tmpQ.premultiply(tmpQ2.setFromAxisAngle(tmpV2.set(Math.cos(pose.axis), 0, Math.sin(pose.axis)), pose.tilt));
+      } else if (st.born !== undefined) {
+        const age = Math.max(0, simT - st.born) / BIRTH_TIME;
+        if (age >= 1) st.born = undefined;
+        else grow = birthScale(age);
+      }
+      const sc = km.scale * (0.05 + 0.95 * emerge) * grow;
+      // les origines des pivots sont à l'échelle du modèle : elles suivent l'unité quand elle grandit
+      const og = sc / km.scale;
       tmpM.compose(tmpV.set(x, y + bob, z), tmpQ, tmpS.set(sc, sc, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       setTeamColor(km.body!, km.n, emerge < 1 ? tmpC.copy(col).lerp(new THREE.Color(0xa8e8ff), 1 - emerge) : col);
@@ -750,7 +843,7 @@ export class Entities {
       st.torso += dA;
       for (const p of km.pivots) {
         // la tourelle tourne vers sa cible ; les rotors tournent en continu ; les jambes se balancent
-        tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z);
+        tmpM2.makeTranslation(p.origin.x * og, p.origin.y * og, p.origin.z * og);
         if (p.wave !== 0) {
           // ondulation : chaque anneau se décale sur le côté et s'oriente le long de la vague, avec un retard
           // croissant vers la queue (la tête, anneau 1, bouge à peine)
@@ -854,6 +947,35 @@ export class Entities {
       }
       km.n++;
     }
+    // ----- coques vides des œufs éclos : les lèvres s'affaissent, le cœur s'éteint, elles rentrent dans le sol -----
+    // (une entrée datée de plus d'une seconde dans le futur vient d'une partie précédente)
+    this.hatches = this.hatches.filter((h) => simT - h.t0 < 1 && simT - h.t0 > -1);
+    this.husks = this.husks.filter((h) => simT - h.t0 < HUSK_LIFE && simT - h.t0 > -1);
+    if (!strategic) {
+      for (const h of this.husks) {
+        if (h.x < vx0 - 4 || h.x > vx1 + 4 || h.z < vz0 - 4 || h.z > vz1 + 4) continue;
+        const pose = huskPose(Math.max(0, simT - h.t0));
+        const km = this.unitMeshes[h.kind];
+        km.ensure(km.n + 1);
+        const sc = km.scale * pose.scale;
+        const col = this.teamColors[cslot(h.owner)];
+        tmpQ.setFromAxisAngle(UP, Math.PI / 2 - h.facing);
+        tmpM.compose(tmpV.set(h.x, this.unitHeight(h.kind, h.x, h.z) - pose.sink * km.height, h.z), tmpQ, tmpS.set(sc, sc, sc));
+        km.body!.mesh.setMatrixAt(km.n, tmpM);
+        setTeamColor(km.body!, km.n, col);
+        for (const p of km.pivots) {
+          tmpM2.makeTranslation(p.origin.x * pose.scale, p.origin.y * pose.scale, p.origin.z * pose.scale);
+          if (p.dep) tmpM2.multiply(depMatrix(p.dep, pose.dep, sc));
+          tmpM2.scale(tmpS.set(sc, sc, sc));
+          const base = tmpM.clone();
+          base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
+          base.multiply(tmpM2);
+          p.tm.mesh.setMatrixAt(km.n, base);
+          setTeamColor(p.tm, km.n, col);
+        }
+        km.n++;
+      }
+    }
     // ----- bâtiments -----
     let nvortex = 0;
     let nkawoosh = 0;
@@ -868,7 +990,7 @@ export class Entities {
     const support = (x: number, y0: number, z: number, sx: number, h: number, sz: number, q: THREE.Quaternion, glow = false) => {
       const m = glow ? this.liftGlow : this.supports;
       const n = glow ? nlift : nsup;
-      if (n >= (glow ? 2000 : 8000) || h <= 0) return;
+      if (n >= (glow ? 4000 : 8000) || h <= 0) return;
       tmpM2.compose(tmpV.set(x, y0, z), q, tmpS.set(sx, h, sz));
       m.setMatrixAt(n, tmpM2);
       if (glow) nlift++;
@@ -876,6 +998,8 @@ export class Entities {
     };
     // murs : case -> équipe, pour relier chaque mur à ses voisins du même camp par des pans fins
     const walls = new Map<number, number>();
+    // racines : case -> joueur + 1, pour relier chaque racine aux racines et graines-mères collées
+    const rootCells = new Map<number, number>();
     // tapis du sol terminés : case -> direction (goulottes des extracteurs)
     const groundBelts = new Map<number, number>();
     // répartiteurs terminés : case -> sorties (masque de directions), comptés comme des tapis pour les jonctions
@@ -885,6 +1009,12 @@ export class Entities {
       const bd = this.data.buildings[buf[o + 1] & 0xff];
       const cls = bd?.cls;
       if (cls === BClass.Wall) walls.set(buf[o + 2] >>> 0, teamOf((buf[o + 1] >> 8) & 0xff));
+      // Souche : cases des racines et des graines-mères (poteaux du réseau) -> joueur + 1
+      else if (bd && bd.race === 1 && bd.supply > 0) {
+        const bx = buf[o + 2] & 0xffff;
+        const bz = (buf[o + 2] >>> 16) & 0xffff;
+        for (let dz = 0; dz < bd.h; dz++) for (let dx = 0; dx < bd.w; dx++) rootCells.set(((bx + dx) | ((bz + dz) << 16)) >>> 0, ((buf[o + 1] >> 8) & 0xff) + 1);
+      }
       else if (cls === BClass.Belt && buf[o + 4] >= 65536 && ((buf[o + 1] >>> 28) & 3) === 0) groundBelts.set(buf[o + 2] >>> 0, (buf[o + 1] >> 16) & 3);
       else if (bd?.key === "splitter" && buf[o + 4] >= 65536) splitterOutsAt.set(buf[o + 2] >>> 0, splitterOuts((buf[o + 1] >> 16) & 3, (buf[o + 5] >>> 24) & 3));
       // gisement (2 × 2 cases) recouvert par un bâtiment : ses roches hautes seront cachées
@@ -936,28 +1066,26 @@ export class Entities {
       const railShape = def.cls === BClass.Rail ? buf[o + 5] & 7 : 0;
       const railCurve = railShape >= 1 && railShape <= 4 ? this.railCurves.get(kind) : undefined;
       if (railCurve) dir = (railShape + 2) & 3;
-      const km = railCurve ?? junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
+      // tapis surélevé (bits 28-29) ; montée ou descente vers le niveau des bits 3-4 du mot auxiliaire :
+      // la case est un ascenseur, dessiné par son mât (du palier bas au palier haut) et ses quais à la place du tapis
+      const floor = def.cls === BClass.Belt ? (buf[o + 1] >>> 28) & 3 : 0;
+      const ramp = def.cls === BClass.Belt && (buf[o + 5] & 4) !== 0 ? (buf[o + 5] >> 3) & 3 : -1;
+      const mast = ramp >= 0 ? this.liftMast : null;
+      const km = mast ?? railCurve ?? junction ?? (shape ? (this.beltCurves.get(kind)?.[shape - 1] ?? this.buildingMeshes[kind]) : ((lvl > 0 ? this.levelMeshes.get(kind)?.[lvl - 1] : undefined) ?? this.buildingMeshes[kind]));
       // amélioration en cours (millièmes, 0 : aucune) : chantier, le bâtiment ne travaille pas
       const upg = def.cls !== BClass.Belt ? Math.max(0, buf[o + 7]) / 1000 : 0;
       km.ensure(km.n + 1);
       const build = buf[o + 4] / 65536;
       const ground = groundHeight(this.map, cx, cz);
-      // tapis surélevé (bits 28-29) ; montée ou descente vers le niveau des bits 3-4 du mot auxiliaire
-      const floor = def.cls === BClass.Belt ? (buf[o + 1] >>> 28) & 3 : 0;
-      const ramp = def.cls === BClass.Belt && (buf[o + 5] & 4) !== 0 ? (buf[o + 5] >> 3) & 3 : -1;
-      const y = ground + (ramp >= 0 ? ((floor + ramp) / 2) * FLOOR_H : floor * FLOOR_H);
-      tmpQ.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
+      const low = mast ? Math.min(floor, ramp) : floor;
+      const y = ground + low * FLOOR_H;
+      // le mât d'un ascenseur est à droite du modèle : on le retourne quand la file arrive par ce côté-là (forme 2)
+      const orient = mast && shape === 2 ? (dir + 2) & 3 : dir;
+      dirQuat(tmpQ, orient);
       const sc = km.scale;
-      const sy = build >= 1 ? sc : sc * Math.max(0.08, build);
-      let szz = sc;
-      tmpQ3.copy(tmpQ);
-      if (ramp >= 0) {
-        // rampe : le tapis s'incline vers l'avant (+z du modèle) et s'allonge pour couvrir la case
-        const pitch = Math.atan2((ramp - floor) * FLOOR_H, 1);
-        tmpQ3.multiply(tmpQ2.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitch));
-        szz = sc / Math.cos(pitch);
-      }
-      tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ3, tmpS.set(sc, sy, szz));
+      // les hauteurs du mât sont en cases du monde : seul son plan est à l'échelle du tapis
+      const sy = (mast ? 1 : sc) * (build >= 1 ? 1 : Math.max(0.08, build));
+      tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
@@ -1005,17 +1133,45 @@ export class Entities {
         }
         tmpQ.setFromAxisAngle(UP, Math.PI / 2 - (dir * Math.PI) / 2);
       }
-      // tapis surélevé : pilier sous la case ; rampe : cage d'ascenseur (deux montants, traverse, filets)
-      if (def.cls === BClass.Belt && (floor > 0 || ramp >= 0)) {
-        if (ramp < 0) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
-        else {
-          const top = Math.max(floor, ramp) * FLOOR_H + 0.4;
-          for (const side of [-1, 1]) {
-            tmpV2.set(side * 0.4, 0, 0).applyQuaternion(tmpQ);
-            support(cx + tmpV2.x, ground, cz + tmpV2.z, 0.1, top, 0.1, tmpQ);
-            support(cx + tmpV2.x * 1.12, ground + 0.15, cz + tmpV2.z * 1.12, 0.025, top - 0.3, 0.025, tmpQ, true);
+      // tapis surélevé : pilier sous la case
+      if (def.cls === BClass.Belt && floor > 0 && !mast) support(cx, ground, cz, 0.16, floor * FLOOR_H - 0.02, 0.16, tmpQ);
+      if (mast) {
+        const li = this.nLifts++;
+        const l = (this.lifts[li] ??= { x: 0, z: 0, y: 0, orient: 0, up: false, ready: false, parked: -1 });
+        l.x = cx;
+        l.z = cz;
+        l.y = y;
+        l.orient = orient;
+        l.up = ramp > floor;
+        l.ready = build >= 1;
+        l.parked = -1;
+        this.liftAt.set((bz * this.map.w + bx) * 2 + Math.min(1, low), li);
+        // quais aux couleurs du tapis : l'entrée au niveau du tapis, derrière lui (ou du côté d'où arrive
+        // la file, s'il est pris par le côté : forme 1 ou 2), la sortie devant lui au niveau visé
+        const quay = this.beltQuays.get(kind) ?? this.beltQuays.values().next().value;
+        if (quay) {
+          quay.ensure(quay.n + 2);
+          const qs = quay.scale;
+          const qy = build >= 1 ? qs : qs * Math.max(0.08, build);
+          for (const [at, d] of [[floor, shape === 1 ? dir + 3 : shape === 2 ? dir + 1 : dir], [ramp, dir + 2]]) {
+            tmpM2.compose(tmpV.set(cx, ground + at * FLOOR_H, cz), dirQuat(tmpQ2, d & 3), tmpS.set(qs, qy, qs));
+            quay.body!.mesh.setMatrixAt(quay.n, tmpM2);
+            setTeamColor(quay.body!, quay.n, c);
+            quay.n++;
           }
-          support(cx, ground + top, cz, 0.9, 0.08, 0.12, tmpQ);
+        }
+        tmpV2.set(ASCENSEUR_MAT * sc, 0, 0).applyQuaternion(tmpQ);
+        const mx = cx + tmpV2.x;
+        const mz = cz + tmpV2.z;
+        // ascenseur en hauteur (du niveau 1 au niveau 2) : son mât descend jusqu'au sol
+        if (low > 0) support(mx, ground, mz, 0.05 * sc, low * FLOOR_H + 0.01, 0.07 * sc, tmpQ);
+        // anneaux lumineux sur le mât : ils courent dans le sens de la marche, et se figent quand le
+        // tapis n'a plus d'énergie
+        if (build >= 1) {
+          for (let k = 0; k < LIFT_DASHES; k++) {
+            const h = LIFT_DASH_Y0 + liftDash(k, LIFT_DASHES, simT, ramp > floor, !(bflags & BF.UNPOWERED)) * LIFT_DASH_SPAN;
+            support(mx, y + h, mz, 0.064 * sc, 0.07, 0.084 * sc, tmpQ, true);
+          }
         }
       }
       // extracteur amélioré : barres de niveau sur la façade avant (repère du bâtiment)
@@ -1031,6 +1187,22 @@ export class Entities {
       }
       // extracteur : une goulotte de chaque case de sortie (face avant) vers le tapis qui s'y trouve
       if (def.cls === BClass.Extractor && build >= 1 && this.chute) this.drawChutes(this.chute, bx, bz, dir, def.w, def.h, groundBelts);
+      // racine : un tronçon vers chaque voisin (est, sud, ouest, nord) qui est une racine ou une graine-mère
+      // du même joueur : la file forme un câble continu, comme le réseau qu'elle relie
+      const rseg = this.rootSeg;
+      if (def.key === "root" && rseg) {
+        for (let d = 0; d < 4; d++) {
+          const nx = bx + [1, 0, -1, 0][d];
+          const nz = bz + [0, 1, 0, -1][d];
+          if (nx < 0 || nz < 0 || rootCells.get((nx | (nz << 16)) >>> 0) !== owner + 1) continue;
+          rseg.ensure(rseg.n + 1);
+          tmpQ2.setFromAxisAngle(UP, (-d * Math.PI) / 2);
+          tmpM2.compose(tmpV.set(cx, y, cz), tmpQ2, tmpS.set(rseg.scale, sy * (rseg.scale / sc), rseg.scale));
+          rseg.body!.mesh.setMatrixAt(rseg.n, tmpM2);
+          setTeamColor(rseg.body!, rseg.n, c);
+          rseg.n++;
+        }
+      }
       const seg = this.wallSeg;
       if (def.cls === BClass.Wall && seg) {
         // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
@@ -1240,7 +1412,10 @@ export class Entities {
     for (const l of this.beltJunctions.values()) for (const m of l) m.end();
     for (const m of this.railCurves.values()) m.end();
     this.wallSeg?.end();
+    this.rootSeg?.end();
     this.chute?.end();
+    this.liftMast?.end();
+    for (const m of this.beltQuays.values()) m.end();
     this.levelPips.count = npip;
     this.levelPips.instanceMatrix.needsUpdate = true;
     this.supports.count = nsup;
@@ -1262,6 +1437,20 @@ export class Entities {
     if (this.bars.instanceColor) this.bars.instanceColor.needsUpdate = true;
     // ----- objets sur les tapis : petit modèle par type, teinté de la couleur de l'objet -----
     let ni = 0;
+    /** plateau d'un ascenseur, à `up` niveau (0 à 1) au-dessus du palier bas, déployé de `grow` (0 à 1) depuis le mât */
+    const pad = (l: Lift, up: number, grow: number) => {
+      const tray = this.liftTray;
+      if (!tray || grow <= 0) return;
+      tray.ensure(tray.n + 1);
+      const sc = tray.scale;
+      dirQuat(tmpQ2, l.orient);
+      // il sort du mât : son plan se réduit vers lui
+      tmpV2.set(ASCENSEUR_MAT * sc * (1 - grow), 0, 0).applyQuaternion(tmpQ2);
+      tmpM.compose(tmpV.set(l.x + tmpV2.x, l.y + up * FLOOR_H + 0.09 * sc, l.z + tmpV2.z), tmpQ2, tmpS.set(sc * grow, sc, sc));
+      tray.body!.mesh.setMatrixAt(tray.n, tmpM);
+      setTeamColor(tray.body!, tray.n, NO_TEAM);
+      tray.n++;
+    };
     for (const km of this.itemMeshes) km?.begin();
     if (!strategic) {
       o = f.itemOff;
@@ -1270,10 +1459,38 @@ export class Entities {
         const kind = buf[o + 2] & 0xff;
         const km = this.itemMesh(kind);
         if (!km) continue;
-        const x = buf[o] / TILE;
-        const z = buf[o + 1] / TILE;
-        // élévation sur un tapis surélevé ou dans un ascenseur (1/256 de niveau)
-        const elev = ((buf[o + 2] >> 8) / 256) * FLOOR_H;
+        let x = buf[o] / TILE;
+        let z = buf[o + 1] / TILE;
+        // élévation sur un tapis surélevé (1/256 de niveau) ; une fraction de niveau : l'objet est dans un
+        // ascenseur, il roule sur un quai, monte ou descend à la verticale sur un plateau, sort par l'autre quai
+        const lvl256 = buf[o + 2] >> 8;
+        let elev = (lvl256 / 256) * FLOOR_H;
+        const fr = (lvl256 & 255) / 256;
+        if (fr > 0) {
+          const tx = Math.floor(x);
+          const tz = Math.floor(z);
+          const low = lvl256 >> 8;
+          const out = liftOut(fr);
+          // l'objet reste sur la droite qui joint le centre de la case au point où la simulation le place
+          const dist = Math.hypot(x - tx - 0.5, z - tz - 0.5);
+          const k = dist > 1e-6 ? (out * 0.5) / dist : 0;
+          x = tx + 0.5 + (x - tx - 0.5) * k;
+          z = tz + 0.5 + (z - tz - 0.5) * k;
+          const up = liftUp(fr);
+          elev = (low + up) * FLOOR_H;
+          const li = this.liftAt.get((tz * this.map.w + tx) * 2 + Math.min(1, low));
+          if (li !== undefined) {
+            const l = this.lifts[li];
+            // sur le quai d'entrée : un plateau l'attend au palier ; en course : son plateau le porte ;
+            // sur le quai de sortie : son plateau rentre dans le mât, un autre se déploie au palier d'entrée
+            if (out > 0 && fr < 0.5 === l.up) l.parked = 1;
+            else {
+              const g = out > 0 ? liftPad(out) : 1;
+              pad(l, up, g);
+              l.parked = Math.max(l.parked, 1 - g);
+            }
+          }
+        }
         km.ensure(km.n + 1);
         const s = km.scale;
         tmpM.compose(tmpV.set(x, groundHeight(this.map, x, z) + 0.15 + elev, z), tmpQ, tmpS.set(s, s, s));
@@ -1284,6 +1501,12 @@ export class Entities {
       }
     }
     for (const km of this.itemMeshes) km?.end();
+    // plateau en attente au palier d'entrée de chaque ascenseur
+    for (let i = 0; i < this.nLifts; i++) {
+      const l = this.lifts[i];
+      if (l.ready) pad(l, l.up ? 0 : 1, l.parked < 0 ? 1 : l.parked);
+    }
+    this.liftTray?.end();
     // ----- projectiles -----
     let np = 0;
     let nk = 0;

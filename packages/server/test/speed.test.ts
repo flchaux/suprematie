@@ -30,3 +30,30 @@ describe("vitesse de jeu", () => {
     expect(g.speed).toBe(1);
   });
 });
+
+describe("pause (vitesse 0)", () => {
+  it("solo : pause et reprise à la vitesse d'avant, annoncées", () => {
+    const { g, said } = game(1);
+    g.setSpeed(peer(0), 3);
+    said.length = 0;
+    expect(g.setSpeed(peer(0), 0)).toBe(true);
+    expect(g.speed).toBe(0);
+    expect(said).toEqual([{ t: "speed", speed: 0, by: "p0", resume: 3 }]);
+    expect(g.setSpeed(peer(0), 0)).toBe(true); // déjà en pause : rien de plus
+    expect(said.length).toBe(1);
+    expect(g.setSpeed(peer(0), 3)).toBe(true);
+    expect(g.speed).toBe(3);
+  });
+  it("à plusieurs : l'hôte seul met en pause et reprend, sans changer la vitesse", () => {
+    const { g, said } = game(2);
+    expect(g.setSpeed(peer(1), 0, false)).toBe(false);
+    expect(g.speed).toBe(1);
+    expect(g.setSpeed(peer(0), 0, true)).toBe(true);
+    expect(said).toEqual([{ t: "speed", speed: 0, by: "p0", resume: 1 }]);
+    expect(g.setSpeed(peer(1), 1, false)).toBe(false); // un autre joueur ne reprend pas
+    expect(g.setSpeed(peer(0), 2, true)).toBe(false); // ni l'hôte à une autre vitesse
+    expect(g.setSpeed(peer(0), 1, true)).toBe(true);
+    expect(g.speed).toBe(1);
+    expect(g.setSpeed(peer(0), 2, true)).toBe(false); // hors pause, la vitesse reste solo
+  });
+});

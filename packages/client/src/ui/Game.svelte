@@ -13,6 +13,7 @@
   import Icon from "./Icon.svelte";
   import SplitIcon from "./SplitIcon.svelte";
   import EndReport from "./EndReport.svelte";
+  import GameMenu from "./GameMenu.svelte";
   import { keyOf } from "../game/keys.svelte.ts";
   import Plans from "./Plans.svelte";
   import { plans } from "../game/plans.svelte.ts";
@@ -85,6 +86,10 @@
         <input bind:value={chatText} placeholder="Message à tous (Entrée)" autofocus onkeydown={(e) => e.key === "Escape" && (ui.chatOpen = false)} />
       </form>
     {/if}
+    {#if ui.speed === 0 && !ui.replay && !ui.menuOpen}
+      <div class="pausebar panel"><Icon name="pause" size={14} /> Partie en pause{#if ui.pausedBy}<span class="dim">&nbsp;· par {ui.pausedBy}</span>{/if}{#if client.canPause()}<button class="ghost" onclick={() => client.togglePause()}><Icon name="play" size={12} /> Reprendre{#if keyOf("pause")} <span class="key">{keyOf("pause")}</span>{/if}</button>{/if}</div>
+    {/if}
+    {#if ui.menuOpen}<GameMenu />{/if}
     {#if ui.waiting.length}
       <div class="waiting panel"><span class="dot"></span> En attente de : {ui.waiting.join(", ")}</div>
     {/if}
@@ -187,6 +192,8 @@
   .chatbox { position: absolute; left: 10px; bottom: 238px; padding: 6px 8px; display: flex; align-items: center; gap: 8px; color: var(--amber); }
   .chatbox input { width: 380px; }
   .waiting { position: absolute; top: calc(var(--topbar-h, 48px) + 56px); left: 50%; transform: translateX(-50%); padding: 9px 16px; color: var(--warn); display: flex; align-items: center; gap: 9px; }
+  .pausebar { position: absolute; top: calc(var(--topbar-h, 48px) + 10px); left: 50%; transform: translateX(-50%); padding: 7px 10px 7px 14px; color: var(--amber); display: flex; align-items: center; gap: 8px; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12.5px; z-index: 20; }
+  .pausebar button { margin-left: 8px; display: inline-flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; padding: 3px 9px; }
   .dot { width: 8px; height: 8px; background: var(--amber); box-shadow: 0 0 10px var(--amber); animation: blink 1.2s infinite; }
   .replay { position: absolute; top: 60px; right: 10px; padding: 6px 10px; display: flex; gap: 4px; align-items: center; }
   .replay button { padding: 3px 8px; min-width: 34px; display: inline-flex; justify-content: center; }

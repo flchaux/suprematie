@@ -256,6 +256,34 @@ pub fn floor_of(dir: u8) -> u8 {
 }
 
 pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bool {
+    can_place_with(w, owner, kind, x, y, dir, false)
+}
+
+/// Aperçu d'une file posée d'un coup : chaque emplacement est-il posable ? Une file de racines de la Souche
+/// se plante sur le terreau à venir de ses racines précédentes (elles poussent de proche en proche) : une
+/// case couverte par la zone d'une racine acceptée plus tôt dans la file compte comme du terreau.
+pub fn can_place_line(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> Vec<bool> {
+    let def = bdef(kind);
+    let chain = def.race == RACE_SOUCHE && def.supply > 0 && kind != B_SEED_HEART;
+    let mut done: Vec<(i32, i32)> = Vec::new();
+    cells
+        .iter()
+        .map(|&(x, y, dir)| {
+            let mut ok = can_place(w, owner, kind, x, y, dir);
+            // une racine collée par un côté à la précédente de la file est acceptée (la file pousse de proche en proche)
+            if !ok && chain && done.iter().any(|&(px, py)| (x - px).abs() + (y - py).abs() == 1) {
+                ok = can_place_with(w, owner, kind, x, y, dir, true);
+            }
+            if ok && chain {
+                done.push((x, y));
+            }
+            ok
+        })
+        .collect()
+}
+
+/// `terreau` : pour une racine de la Souche plantée dans une file, le terreau est supposé (voir can_place_line).
+fn can_place_with(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8, terreau: bool) -> bool {
     if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
         return false;
     }
@@ -305,7 +333,7 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
         }
     }
     // Souche : sur le terreau de son réseau (sauf la graine-mère)
-    if def.race == RACE_SOUCHE && !w.infinite_grid && !crate::souche::can_place(w, owner, kind, x, y, bw, bh) {
+    if def.race == RACE_SOUCHE && !w.infinite_grid && !terreau && !crate::souche::can_place(w, owner, kind, x, y, bw, bh) {
         return false;
     }
     if def.deposit != 0 {
@@ -450,6 +478,10 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     let (bw, bh) = w.buildings[b].size();
     let def = bdef(kind);
     let floor = w.buildings[b].floor;
+    // générateur nomade : ses poteaux partent avec lui (replié, détruit ou démonté)
+    if kind == B_T_GENERATOR {
+        crate::transhumants::pull_poles(w, b);
+    }
     crate::drones::store_removed(w, b);
     w.buildings[b].alive = false;
     for ty in y..y + bh {
@@ -639,20 +671,44 @@ pub fn rebuild_power(w: &mut World) {
             }
             r
         }
-        // Souche : deux poteaux sont reliés quand leurs terreaux se touchent
+        // Souche : deux poteaux (racines, graines-mères) sont reliés quand ils se touchent par un côté,
+        // comme les cases d'un tapis ; recherche locale par la grille (un réseau compte des milliers de racines)
         let souche = w.players[owner as usize].race == RACE_SOUCHE;
+        if souche {
+            let mut pole_idx: Vec<u32> = vec![0; w.buildings.len()];
+            for (i, &pb) in poles.iter().enumerate() {
+                pole_idx[pb] = i as u32 + 1;
+            }
+            for i in 0..poles.len() {
+                let a = &w.buildings[poles[i]];
+                let (cx, cy) = a.center();
+                let (aw, ah) = a.size();
+                let mut near: Vec<usize> = Vec::new();
+                w.grid.query_buildings(cx, cy, (aw.max(ah) + 3) * TILE, |p| {
+                    let j = pole_idx[p] as usize;
+                    if j > i + 1 && crate::souche::linked(&w.buildings[poles[i]], &w.buildings[p]) {
+                        near.push(j - 1);
+                    }
+                });
+                for j in near {
+                    let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
+                    if ra != rb {
+                        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                        parent[hi] = lo;
+                    }
+                }
+            }
+        }
         for i in 0..poles.len() {
+            if souche {
+                break;
+            }
             let (ax, ay) = w.buildings[poles[i]].center();
             let ca = connect_of(&w.buildings[poles[i]]);
             for j in (i + 1)..poles.len() {
                 let (bx, by) = w.buildings[poles[j]].center();
                 let r = ca.min(connect_of(&w.buildings[poles[j]])) * TILE;
-                let linked = if souche {
-                    crate::souche::zones_touch(&w.buildings[poles[i]], &w.buildings[poles[j]])
-                } else {
-                    crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64)
-                };
-                if linked {
+                if crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64) {
                     let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
                     if ra != rb {
                         let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
@@ -709,7 +765,14 @@ pub fn rebuild_power(w: &mut World) {
                     best = p;
                 }
             });
-            let net = if best != usize::MAX { pole_net[best] } else { fallback };
+            // une racine de la Souche garde son propre réseau (reliée par contact, pas par le terreau qui la couvre)
+            let net = if souche && pole_net[bi] != 0 {
+                pole_net[bi]
+            } else if best != usize::MAX {
+                pole_net[best]
+            } else {
+                fallback
+            };
             if b.complete() && def.power_prod > 0 && net != 0 && net != fallback {
                 // les générateurs de la zone : leur production dépend de leur combustible (power_tick)
                 let cap = gen_prod(w, b);
@@ -1202,8 +1265,8 @@ pub fn flow_max(w: &World, b: usize) -> u32 {
             let lvl = EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)].speed as u64;
             tenths(12_000 * w.players[owner].res_mult.max(0) as u64 * lvl * purity_of(bb) as u64 * clock_of(bb) as u64, 30 * 100 * 100 * 100 * 100)
         }
-        // une unité : build * 20 * RECIPE_SCALE de progrès, 1024 * build_mult par tick
-        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64, udef(q.0).build as u64 * 20 * 100)),
+        // une unité (ou une portée) : factory_ticks * RECIPE_SCALE de progrès, 1024 * build_mult par tick
+        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64 * batch(q.0) as u64, factory_ticks(q.0) as u64 * 100)),
         // un cycle de recherche : time secondes
         BClass::Lab => {
             let t = if bb.working { bb.tech } else { w.players[owner].research };
@@ -1228,9 +1291,10 @@ pub fn factory_has(bb: &Building, item: u8) -> u16 {
     bb.stash.get(item as usize).copied().unwrap_or(0)
 }
 
-/// Plafond de la réserve de l'usine pour `item` : deux fois le plus gros besoin d'une unité de la file.
+/// Plafond de la réserve de l'usine pour `item` : deux fois le plus gros besoin d'une entrée de la file
+/// (une unité, ou une portée de la Souche).
 fn factory_limit(bb: &Building, item: u8) -> u16 {
-    bb.queue.iter().map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1)).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
+    bb.queue.iter().map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1 * batch(q.0))).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
 }
 
 /// Place encore libre dans la réserve de l'usine pour `item`.
@@ -1447,7 +1511,7 @@ fn share_inputs(w: &mut World, b: usize, twins: &[usize]) {
                 let tier = if t == 0 { 0 } else { TECHS[t as usize].tier as usize };
                 (0..6).map(|j| (j, PACK1 + j as u8, (j < tier) as u16)).collect()
             }
-            BClass::Factory => udef(bb.queue[0].0).cost.iter().map(|c| (c.0 as usize, c.0, c.1)).collect(),
+            BClass::Factory => udef(bb.queue[0].0).cost.iter().map(|c| (c.0 as usize, c.0, c.1 * batch(bb.queue[0].0))).collect(),
             _ => return,
         }
     };
@@ -2521,9 +2585,11 @@ fn tick_factory(w: &mut World, b: usize) {
     }
     share_with_twins(w, b);
     let def = udef(kind);
+    // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche (voir ponte.rs)
+    let n = batch(kind);
     if !w.buildings[b].working {
-        let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1).map(|c| c.0);
-        if missing.is_some() || w.players[owner].unit_count >= UNIT_CAP {
+        let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1 * n).map(|c| c.0);
+        if missing.is_some() || w.players[owner].unit_count + n as u32 > UNIT_CAP {
             // en panne de composants depuis FACTORY_ALERT_DELAY : une alerte pour son joueur (une seule par attente)
             let bb = &mut w.buildings[b];
             // `target` : NONE hors attente, tick du début de l'attente, puis FACTORY_ALERTED une fois l'alerte donnée
@@ -2541,8 +2607,8 @@ fn tick_factory(w: &mut World, b: usize) {
             return;
         }
         for c in def.cost {
-            w.buildings[b].stash[c.0 as usize] -= c.1;
-            w.players[owner].consumed[c.0 as usize] += c.1 as u32;
+            w.buildings[b].stash[c.0 as usize] -= c.1 * n;
+            w.players[owner].consumed[c.0 as usize] += (c.1 * n) as u32;
         }
         w.buildings[b].target = NONE;
         w.buildings[b].working = true;
@@ -2556,25 +2622,30 @@ fn tick_factory(w: &mut World, b: usize) {
         mult = mult * crate::souche::brood_speed(w, owner as u8) / 100;
     }
     w.buildings[b].progress += s as u32 * mult;
-    if w.buildings[b].progress >= def.build as u32 * 20 * RECIPE_SCALE {
+    if w.buildings[b].progress >= factory_ticks(kind) * RECIPE_SCALE {
         w.buildings[b].working = false;
-        // sortie de l'unité
-        let bb = &w.buildings[b];
-        let (bw, bh) = bb.size();
-        let (fx, fy) = front_tile(bb.x, bb.y, bw, bh, bb.dir);
-        let (mut sx, mut sy) = (fx * TILE + TILE / 2, fy * TILE + TILE / 2);
-        if def.layer == Layer::Air {
-            let c = bb.center();
-            sx = c.0;
-            sy = c.1;
-        }
-        let rally = bb.rally;
         let tick = w.tick;
-        flow_add(&mut w.buildings[b], tick, 1);
-        let id = w.spawn_unit(kind, owner as u8, sx, sy);
-        let s = slot_of(id);
-        w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
-        w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
+        flow_add(&mut w.buildings[b], tick, n);
+        if def.litter > 0 {
+            // couveuse : la portée est pondue devant elle, ses œufs éclosent plus tard
+            crate::ponte::lay(w, b, kind);
+        } else {
+            // sortie de l'unité
+            let bb = &w.buildings[b];
+            let (bw, bh) = bb.size();
+            let (fx, fy) = front_tile(bb.x, bb.y, bw, bh, bb.dir);
+            let (mut sx, mut sy) = (fx * TILE + TILE / 2, fy * TILE + TILE / 2);
+            if def.layer == Layer::Air {
+                let c = bb.center();
+                sx = c.0;
+                sy = c.1;
+            }
+            let rally = bb.rally;
+            let id = w.spawn_unit(kind, owner as u8, sx, sy);
+            let s = slot_of(id);
+            w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
+            w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
+        }
         let bb = &mut w.buildings[b];
         if let Some(q) = bb.queue.first_mut() {
             q.1 = q.1.saturating_sub(1);

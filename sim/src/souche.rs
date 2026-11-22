@@ -82,12 +82,17 @@ pub fn endow_start(w: &mut World) {
     }
 }
 
-/// Deux poteaux de la Souche sont reliés quand leurs zones (terreau) se touchent.
-pub fn zones_touch(a: &Building, b: &Building) -> bool {
+/// Deux poteaux de la Souche (racines, graines-mères) sont reliés quand leurs emprises se touchent par
+/// un côté (pas seulement par un coin) : une file de racines est un câble continu, qu'une racine
+/// coupée sépare en deux.
+pub fn linked(a: &Building, b: &Building) -> bool {
     let (aw, ah) = a.size();
     let (bw, bh) = b.size();
-    let (sa, sb) = (supply_of(a), supply_of(b));
-    a.x - sa <= b.x + bw + sb && b.x - sb <= a.x + aw + sa && a.y - sa <= b.y + bh + sb && b.y - sb <= a.y + ah + sa
+    let over_x = a.x < b.x + bw && b.x < a.x + aw;
+    let over_y = a.y < b.y + bh && b.y < a.y + ah;
+    let touch_x = a.x + aw == b.x || b.x + bw == a.x;
+    let touch_y = a.y + ah == b.y || b.y + bh == a.y;
+    (over_x && touch_y) || (over_y && touch_x)
 }
 
 /// Réseau de la Souche (du joueur `owner`) dont le terreau couvre la case (tx, ty), ou 0.
@@ -144,8 +149,29 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32, bh: i
         let n = w.buildings.iter().filter(|b| b.alive && b.owner == owner && b.kind == B_SEED_HEART).count();
         return n < MAX_HEARTS;
     }
-    // les racines (petites) se posent sur le terreau comme le reste : le réseau grandit de proche en proche
+    // une racine se pose collée par un côté à une racine ou à une graine-mère du joueur (même en
+    // croissance) : le câble part toujours d'une graine-mère, jamais de réseau isolé dans un terreau
+    if kind == B_ROOT {
+        return touches_network(w, owner, x, y, bw, bh);
+    }
     on_terreau(w, owner, x, y, bw, bh)
+}
+
+/// L'emprise (x, y, bw, bh) touche par un côté un poteau de la Souche du joueur (racine ou graine-mère).
+pub fn touches_network(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> bool {
+    let probe = Building { x, y, kind: B_ROOT, ..Building::default() };
+    let r = (bw.max(bh) + 4) * TILE;
+    let mut ok = false;
+    w.grid.query_buildings(x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2, r, |p| {
+        if ok {
+            return;
+        }
+        let pb = &w.buildings[p];
+        if pb.alive && pb.owner == owner && pb.def().race == RACE_SOUCHE && pb.def().supply > 0 && linked(&probe, pb) {
+            ok = true;
+        }
+    });
+    ok
 }
 
 /// Réserves des réseaux avant un nouveau calcul : (sève, sels) par ancien réseau, et le nombre de
@@ -396,13 +422,14 @@ fn regen_building(w: &mut World, b: usize) {
     }
 }
 
-/// Couveuse : prend dans son réseau le coût de l'unité en tête de file, d'un coup, quand le réseau a
-/// tout ce qui manque.
+/// Couveuse : prend dans son réseau le coût de la portée en tête de file (voir ponte.rs), d'un coup,
+/// quand le réseau a tout ce qui manque.
 pub fn feed_factory(w: &mut World, b: usize) {
     let Some(&(kind, _)) = w.buildings[b].queue.first() else { return };
     let net = w.buildings[b].net;
     let cost = udef(kind).cost;
-    let missing: Vec<(u8, i32)> = cost.iter().map(|&(it, n)| (it, n as i32 - buildings::factory_has(&w.buildings[b], it) as i32)).filter(|m| m.1 > 0).collect();
+    let litter = batch(kind) as i32;
+    let missing: Vec<(u8, i32)> = cost.iter().map(|&(it, n)| (it, n as i32 * litter - buildings::factory_has(&w.buildings[b], it) as i32)).filter(|m| m.1 > 0).collect();
     if missing.is_empty() || !missing.iter().all(|&(it, n)| pool_of(w, net, it) >= n) {
         return;
     }
@@ -476,7 +503,9 @@ pub fn update_units(w: &mut World) {
             continue;
         }
         let owner = w.units.owner[s];
-        if !udef(w.units.kind[s]).bio || !is_souche(w, owner) {
+        // organismes, et bêtes apprivoisées (nids greffés)
+        let kind = w.units.kind[s];
+        if !(udef(kind).bio || is_beast(kind)) || !is_souche(w, owner) {
             continue;
         }
         let max = w.max_hp(s);
@@ -537,6 +566,46 @@ pub fn brood_speed(w: &World, owner: u8) -> u32 {
     } else {
         100
     }
+}
+
+// ---------- Apprivoisement de la faune ----------
+
+/// Nids greffés au plus : un, plus un par mutation acquise (stade d'évolution).
+pub fn den_limit(w: &World, p: u8) -> usize {
+    let Some(pl) = w.players.get(p as usize) else { return 0 };
+    1 + [T_S_SCALES, T_S_QUICK_SAP, T_S_ACID, T_S_FERTILITY, T_S_DEEP_ROOTS, T_S_BIG_LEAVES].iter().filter(|&&t| pl.has_tech(t)).count()
+}
+
+/// Le joueur peut-il greffer un nid de plus ?
+pub fn den_room(w: &World, p: u8) -> bool {
+    is_souche(w, p) && crate::nature::dens_of(w, p) < den_limit(w, p)
+}
+
+/// Ordre « Apprivoiser » : un joueur de la Souche, un nid de mordeurs sauvage (pas une ruche).
+pub fn tameable(w: &World, p: u8, target: u32) -> bool {
+    is_souche(w, p) && crate::nature::wild_nest(w, target).is_some()
+}
+
+/// Reine qui apprivoise un nid : elle s'en approche à moins de TAME_R − 1 cases et s'y tient (l'avancement
+/// est compté par le nid, voir nature::taming) ; l'ordre tombe quand le nid n'est plus sauvage.
+pub fn tame_step(w: &mut World, s: usize, target: u32) {
+    let Some(b) = w.building(target).filter(|_| crate::nature::wild_nest(w, target).is_some()) else {
+        crate::units::pop_order(w, s);
+        return;
+    };
+    let (cx, cy) = w.buildings[b].center();
+    let stop = (crate::nature::TAME_R - 1) * TILE;
+    if crate::fixed::dist2(w.units.x[s], w.units.y[s], cx, cy) > (stop as i64).pow(2) {
+        crate::units::steer(w, s, cx, cy, cx, cy, stop - TILE);
+    } else {
+        crate::units::clear_goal(w, s);
+    }
+}
+
+/// Bête de la faune (mordeurs), apprivoisable.
+#[inline]
+pub fn is_beast(kind: u16) -> bool {
+    matches!(kind, U_BEAST_S | U_BEAST_M | U_BEAST_L)
 }
 
 /// Fiche d'un bâtiment de la Souche : réserve de son réseau (JSON, champs ajoutés à la fiche).

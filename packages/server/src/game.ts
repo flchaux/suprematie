@@ -48,8 +48,10 @@ export class Game {
   /** horloge des ticks : le tick `clockTick` était dû à `clockAt` (ms), puis un tick toutes les TICK_MS / speed */
   clockAt = Date.now();
   clockTick = 0;
-  /** vitesse de jeu (partie solo seulement, voir setSpeed) */
+  /** vitesse de jeu (partie solo seulement, voir setSpeed) ; 0 : partie en pause */
   speed = 1;
+  /** vitesse reprise à la fin de la pause */
+  resumeSpeed = 1;
   hooks: GameHooks;
   wasmPath: string;
   dataDir: string;
@@ -148,7 +150,11 @@ export class Game {
     const data = Buffer.from(this.sim.snapshot()).toString("base64");
     peer.ackTick = this.tick - 1;
     peer.send({ t: "snapshot", tick: this.tick - 1, data, start: this.startInfo(peer.slot), stats: this.history.map((s) => this.visibleTo(s, peer.slot)) });
-    if (this.speed !== 1) peer.send({ t: "speed", speed: this.speed, by: "" });
+    if (this.speed !== 1) peer.send(this.speedMsg(""));
+  }
+
+  private speedMsg(by: string): unknown {
+    return this.speed === 0 ? { t: "speed", speed: 0, by, resume: this.resumeSpeed } : { t: "speed", speed: this.speed, by };
   }
 
   /** Relevé tel qu'un participant peut le voir : son équipe seulement pendant la partie, tout pour un spectateur. */
@@ -167,7 +173,8 @@ export class Game {
   }
 
   private loop(): void {
-    if (this.ended) return;
+    // en pause, aucun tick n'est produit : tous les clients s'arrêtent sur le même
+    if (this.ended || this.speed === 0) return;
     const due = this.dueAt(this.tick);
     const now = Date.now();
     if (now < due) return;
@@ -204,16 +211,27 @@ export class Game {
   }
 
   /**
-   * Vitesse de jeu demandée par un joueur : accordée seulement en solo, parmi GAME_SPEEDS. L'horloge repart
-   * du tick en cours, sans à-coup. Renvoie false si refusée.
+   * Vitesse de jeu demandée par un joueur : accordée seulement en solo, parmi GAME_SPEEDS. La vitesse 0 met la
+   * partie en pause : en solo, ou par l'hôte (`host`) d'une partie à plusieurs, qui est aussi seul à la reprendre
+   * (à la vitesse d'avant la pause). L'horloge repart du tick en cours, sans à-coup. Renvoie false si refusée.
    */
-  setSpeed(peer: Peer, speed: number): boolean {
-    if (this.ended || peer.slot < 0 || !this.isSolo() || !GAME_SPEEDS.includes(speed)) return false;
-    const now = Date.now();
-    this.clockAt = Math.max(now, this.dueAt(this.tick));
-    this.clockTick = this.tick;
+  setSpeed(peer: Peer, speed: number, host = false): boolean {
+    if (this.ended || peer.slot < 0) return false;
+    const solo = this.isSolo();
+    if (speed === 0) {
+      if (!solo && !host) return false;
+      if (this.speed === 0) return true;
+      this.resumeSpeed = this.speed;
+    } else {
+      if (!GAME_SPEEDS.includes(speed)) return false;
+      // à plusieurs, l'hôte ne fait que reprendre la partie à sa vitesse
+      if (!solo && !(host && this.speed === 0 && speed === this.resumeSpeed)) return false;
+      const now = Date.now();
+      this.clockAt = this.speed === 0 ? now : Math.max(now, this.dueAt(this.tick));
+      this.clockTick = this.tick;
+    }
     this.speed = speed;
-    this.hooks.broadcast({ t: "speed", speed, by: peer.name });
+    this.hooks.broadcast(this.speedMsg(peer.name));
     return true;
   }
 

@@ -19,6 +19,7 @@ export interface SimExports {
   zone_economy(player: number, tx: number, ty: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
+  can_place_line(nWords: number): number;
   tile_info(x: number, y: number): number;
   building_at(x: number, y: number): number;
   tile_pass(x: number, y: number): number;
@@ -33,6 +34,8 @@ export interface SimExports {
   showcase_demo(): number;
   formation_demo(): number;
   anciens_demo(): number;
+  ponte_demo(): number;
+  lifts_demo(): number;
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
   research_queue(player: number): number;
@@ -147,6 +150,10 @@ export class Sim {
   twinPreview(args: number[]): Int32Array {
     return this.outI32(this.ex.twin_preview(this.writeI32(args)));
   }
+  /** Aperçu de pose d'une file : `args` = [joueur, type, puis (x, y, dir)…] ; posable ou non, par emplacement. */
+  canPlaceLine(args: number[]): boolean[] {
+    return Array.from(this.outI32(this.ex.can_place_line(this.writeI32(args))), (v) => v !== 0);
+  }
   tileInfo(x: number, y: number): number {
     return this.ex.tile_info(x, y);
   }
@@ -182,6 +189,13 @@ export class Sim {
   }
   anciensDemo(): number {
     return this.ex.anciens_demo() >>> 0;
+  }
+  ponteDemo(): number {
+    return this.ex.ponte_demo() >>> 0;
+  }
+  /** Démo des ascenseurs de tapis (files qui changent de niveau). */
+  liftsDemo(): number {
+    return this.ex.lifts_demo() >>> 0;
   }
   benchReference(): number {
     return this.ex.bench_reference() >>> 0;

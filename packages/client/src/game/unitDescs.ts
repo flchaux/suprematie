@@ -57,13 +57,17 @@ export const UNIT_DESCS: Record<string, string> = {
   replicator: "Réplicateur : faune mécanique faite de blocs. Les armes à énergie, missiles et bombes ne lui font rien : seuls les armes à feu, les obus, le canon de rail et le disrupteur le blessent. Il dévore les bâtiments, et chaque bâtiment qu'il abat fait naître un autre réplicateur.",
   disruptor: "Disrupteur : fantassin-robot au fusil à bobines, la seule arme à énergie qui défait les réplicateurs et leurs ruches (avec les armes à feu, les obus et le canon de rail). Contre tout le reste, il ne fait qu'un cinquième de ses dégâts.",
   // ----- Souche -----
-  queen: "La Reine, unité de commandement de la Souche : lente et résistante, elle plante les organes comme un semeur et crache de l'acide contre le sol et l'air. Elle guérit sur le terreau ; sa mort élimine le joueur.",
+  queen: "La Reine, unité de commandement de la Souche : lente et résistante, elle plante les organes comme un semeur et crache de l'acide contre le sol et l'air. Elle guérit sur le terreau ; sa mort élimine le joueur. Clic droit sur un nid de mordeurs sauvage : elle l'apprivoise (30 s tout près, sans tirer) ; le nid greffé fait naître des mordeurs pour vous, et sa horde vous suit. Un nid greffé, plus un par mutation acquise.",
   sower: "Semeur : plante les organes sur le terreau (ils poussent ensuite seuls, avec la réserve de leur réseau) et soigne les organes blessés. Sans arme.",
   gnawer: "Rongeur : organisme rapide et bon marché, mord au corps-à-corps ce qui est au sol. Guérit sur le terreau ; le feu lui fait 50 % de plus.",
   spitter: "Cracheur : artillerie vivante, crache de l'acide en cloche avec des dégâts de zone (26 cases).",
   shell: "Carapace : char vivant, très résistant, mord fort au corps-à-corps. Guérit sur le terreau.",
   vine: "Liane : enlace une unité au sol à 7 cases et l'immobilise 2,5 s. Contre les chenillards et les unités rapides.",
   membrane: "Planeur à membranes : organisme volant qui lâche des spores sur le sol, avec des dégâts de zone.",
+  // œufs pondus par les couveuses (voir sim/src/ponte.rs)
+  egg_s: "Œuf : pondu par une couveuse avec le reste de sa portée, il éclot 15 s plus tard en l'organisme qu'il porte. Immobile, sans défense et sans ordres : l'ennemi peut le détruire avant l'éclosion. Un œuf blessé donne un organisme blessé d'autant.",
+  egg_m: "Œuf : pondu par une couveuse avec le reste de sa portée, il éclot 15 s plus tard en l'organisme qu'il porte. Immobile, sans défense et sans ordres : l'ennemi peut le détruire avant l'éclosion. Un œuf blessé donne un organisme blessé d'autant.",
+  egg_l: "Gros œuf cuirassé : il porte une carapace et éclot 15 s après la ponte. Immobile, sans défense et sans ordres : l'ennemi peut le détruire avant l'éclosion. Un œuf blessé donne un organisme blessé d'autant.",
   // ----- Transhumants -----
   ark: "L'Arche, unité de commandement des Transhumants : immense chenillard lent, canon et défense antiaérienne, elle répare. Sa destruction élimine le joueur.",
   ch_drill: "Chariot foreuse : la foreuse repliée sur son chariot. Clic droit sur un gisement libre : il s'y rend et s'y déploie (15 s) ; ou « Déployer » pour choisir l'emplacement et le sens (R). Les stabilisateurs se posent, le mât se relève, la tige descend dans le sol. Déployée, la foreuse donne son minerai à tous ses voisins collés, sur ses quatre faces.",

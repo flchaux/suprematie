@@ -9,6 +9,7 @@ type In =
   | { type: "view"; x0: number; y0: number; x1: number; y1: number; detail: number; player: number }
   | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "twinPreview" | "wreckAt" | "orders" | "planned" | "researchQueue" | "powerZones" | "zoneEconomy" | "beltPath"; a: number[] }
   | { type: "replay"; speed: number }
+  | { type: "replayEnd"; tick: number }
   | { type: "pause"; paused: boolean }
   | { type: "demoCmd"; cmd: number[] };
 
@@ -123,15 +124,18 @@ onmessage = async (e: MessageEvent<In>) => {
       else if (m.q === "twinPreview") result = Array.from(sim.twinPreview(m.a));
       else if (m.q === "canPlaceMany") {
         // a = [joueur, type, puis (x, y, dir)…]
-        const r: boolean[] = [];
-        for (let i = 2; i + 2 < m.a.length; i += 3) r.push(sim.canPlace(m.a[0], m.a[1], m.a[i], m.a[i + 1], m.a[i + 2]));
-        result = r;
+        // (file de racines de la Souche : chaque racine compte sur le terreau des précédentes)
+        result = sim.canPlaceLine(m.a);
       }
       postMessage({ type: "query", reqId: m.reqId, result });
       break;
     }
     case "replay":
       replaySpeed = Math.max(0, Math.min(16, m.speed));
+      break;
+    case "replayEnd":
+      // replay ou démo : arrêt au tick donné (voir client.stopReplayAt)
+      if (replayOrders) replayEnd = Math.max(0, m.tick);
       break;
     case "pause":
       paused = m.paused;
@@ -152,6 +156,8 @@ addEventListener("message", async (e: MessageEvent) => {
   else if (m.scene === "vitrine") sim.showcaseDemo();
   else if (m.scene === "formation") sim.formationDemo();
   else if (m.scene === "anciens") sim.anciensDemo();
+  else if (m.scene === "ponte") sim.ponteDemo();
+  else if (m.scene === "ascenseurs") sim.liftsDemo();
   else if (!m.water) sim.benchReference();
   replayOrders = new Map();
   replayEnd = 1 << 30;

@@ -121,6 +121,57 @@ function tapisVirage(surface: Part["color"], fleche: Part["color"], filet: Part[
   return { parts };
 }
 
+/** Hauteur d'un niveau de tapis surélevé, en cases du monde (le rendu pose les tapis à niveau × cette hauteur). */
+export const NIVEAU_TAPIS = 1.6;
+
+/**
+ * Quai d'un ascenseur de tapis : tronçon de tapis de 3/8 de case, du bord arrière de la case (z = -0,5)
+ * à la colonne de l'ascenseur (z = -0,125), aux couleurs du tapis. Le jeu en pose un au niveau d'entrée
+ * et un au niveau de sortie (tourné vers l'avant) : pas de flèche, il se lit dans les deux sens. Seuil
+ * rayé du côté de la colonne.
+ */
+function tapisQuai(surface: Part["color"], filet: Part["color"]): Model {
+  return {
+    parts: [
+      { shape: "box", size: [0.62, 0.06, 0.375], pos: [0, 0.03, -0.3125], color: "dark" },
+      { shape: "box", size: [0.5, 0.03, 0.375], pos: [0, 0.075, -0.3125], color: surface },
+      { shape: "box", size: [0.06, 0.12, 0.375], pos: [0.28, 0.06, -0.3125], color: "light", mirror: true },
+      { shape: "box", size: [0.03, 0.02, 0.27], pos: [0.28, 0.13, -0.325], color: filet, mirror: true },
+      { shape: "box", size: [0.5, 0.012, 0.03], pos: [0, 0.094, -0.142], color: "hazard" },
+    ],
+  };
+}
+
+/** Écart du mât de l'ascenseur de tapis à l'axe du tapis (le jeu y fait courir ses traits lumineux). */
+export const ASCENSEUR_MAT = 0.39;
+
+/**
+ * Ascenseur de tapis : un mât fin dressé sur le côté du tapis (en +x), au milieu de la case. Les objets
+ * montent ou descendent d'un niveau dans le quart central de la case, sur un plateau d'un quart de case
+ * (ascenseur_plateau) qui coulisse le long du mât ; le reste de la case est du tapis (quais). Les
+ * hauteurs sont en cases du monde (le jeu ne met à l'échelle que le plan) : palier bas à y = 0, palier
+ * haut à NIVEAU_TAPIS. Petite embase, coiffe aux couleurs de l'équipe. Symétrique d'avant en arrière :
+ * le jeu le retourne pour dresser le mât de l'autre côté quand la file arrive par ce côté-ci.
+ */
+function ascenseur(): Model {
+  const h = NIVEAU_TAPIS;
+  const top = Math.round((h + 0.3) * 1000) / 1000;
+  const x = ASCENSEUR_MAT;
+  const r = (k: number) => Math.round(k * 1000) / 1000;
+  return {
+    parts: [
+      { shape: "box", size: [0.05, top, 0.07], pos: [x, r(top / 2), 0], color: "metal" },
+      // embase
+      { shape: "box", size: [0.1, 0.04, 0.14], pos: [x, 0.02, 0], color: "dark" },
+      // coiffe et voyant
+      { shape: "box", size: [0.08, 0.06, 0.1], pos: [x, r(top + 0.03), 0], color: "faction" },
+      { shape: "box", size: [0.04, 0.03, 0.04], pos: [x, r(top + 0.075), 0], color: "amber", fine: true },
+      // glissière du chariot, face au tapis
+      { shape: "box", size: [0.012, r(top - 0.16), 0.03], pos: [r(x - 0.031), r(top / 2), 0], color: "steel", fine: true },
+    ],
+  };
+}
+
 /**
  * Turbine couchée du générateur (axe avant-arrière, hélice vers +z) posée sur le socle, à l'échelle `k`
  * (1 : turbine du générateur de base). 236 triangles.
@@ -807,6 +858,24 @@ export const BUILDING_MODELS: Record<string, Model> = {
   belt3_jonction_g: tapisJonction("dark", "glow", "glow", 0.8, [-1]),
   belt3_jonction_d: tapisJonction("dark", "glow", "glow", 0.8, [1]),
   belt3_jonction_gd: tapisJonction("dark", "glow", "glow", 0.8, [-1, 1]),
+  // ascenseur : mât d'ascenseur de tapis (entre deux niveaux voisins), commun à tous les tapis
+  ascenseur: ascenseur(),
+  // ascenseur_plateau : plateau d'un quart de case qui porte un objet (dessus à y = 0), son bras et son
+  // chariot sur le mât (en +x, à ASCENSEUR_MAT de l'axe)
+  ascenseur_plateau: {
+    parts: [
+      { shape: "box", size: [0.25, 0.03, 0.25], pos: [0, -0.015, 0], color: "light" },
+      { shape: "box", size: [0.25, 0.012, 0.03], pos: [0, 0.004, 0.11], color: "hazard" },
+      { shape: "box", size: [0.25, 0.012, 0.03], pos: [0, 0.004, -0.11], color: "hazard" },
+      { shape: "box", size: [0.26, 0.03, 0.05], pos: [0.24, -0.045, 0], color: "steel" },
+      { shape: "box", size: [0.1, 0.1, 0.12], pos: [ASCENSEUR_MAT, -0.03, 0], color: "dark" },
+    ],
+  },
+  // <tapis>_quai : quai d'ascenseur aux couleurs du tapis (belt1 ambre, belt2 et belt3 cyan, collecteur comme belt1)
+  belt1_quai: tapisQuai("metal", "amber"),
+  belt2_quai: tapisQuai("dark", "glow"),
+  belt3_quai: tapisQuai("dark", "glow"),
+  collector_quai: tapisQuai("metal", "amber"),
   // inserter : petit socle rond à liseré cyan, embase d'équipe à pans coupés, colonne d'acier, bras (pivot) à
   // rotule et pince à deux doigts ; rotule, doigts et voyant en pièces fines
   inserter: {

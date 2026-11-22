@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -19,6 +19,7 @@ import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { buildCats, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
+import { escapeAction, menuPauses, type MenuRole } from "./gameMenu.ts";
 import { isMachine, machineRow } from "./machineRow.ts";
 import * as Belts from "./belts.ts";
 
@@ -119,14 +120,117 @@ export class GameClient {
     return ui.players.length > 0 && ui.players.filter((p) => !p.bot).length === 1 && !ui.spectator;
   }
 
-  /** Vitesse de jeu suivante (+1) ou précédente (-1) parmi GAME_SPEEDS ; le serveur l'applique et l'annonce. */
+  /** Hôte de la partie (le joueur seul d'une partie solo l'est aussi). */
+  isHost(): boolean {
+    return !ui.spectator && ui.me >= 0 && !!ui.lobby?.players.some((p) => p.host && p.slot === ui.me);
+  }
+
+  /** Peut mettre en pause : en solo, l'hôte d'une partie à plusieurs, ou dans un replay. */
+  canPause(): boolean {
+    return ui.replay || this.isSolo() || this.isHost();
+  }
+
+  /** Partie (ou replay) en pause. */
+  paused(): boolean {
+    return ui.replay ? ui.replaySpeed === 0 : ui.speed === 0;
+  }
+
+  /** Met en pause (vitesse 0) ou reprend à la vitesse d'avant ; le serveur l'applique pour tous et l'annonce. */
+  setPaused(on: boolean): void {
+    if (ui.replay) {
+      if (on && ui.replaySpeed !== 0) this.replayResume = ui.replaySpeed;
+      this.setReplaySpeed(on ? 0 : this.replayResume || 1);
+      return;
+    }
+    if (!this.canPause()) {
+      pushMessage("Seul l'hôte peut mettre la partie en pause", "alert");
+      return;
+    }
+    if (on) {
+      if (ui.speed !== 0) this.pauseResume = ui.speed;
+      this.pauseSentAt = performance.now();
+      this.send({ t: "speed", speed: 0 });
+    } else {
+      this.send({ t: "speed", speed: ui.speed === 0 ? ui.resumeSpeed : this.pauseResume });
+    }
+  }
+  private replayResume = 1;
+  private pauseResume = 1;
+  private pauseSentAt = -1e9;
+
+  /** Pause ou reprise ; part de la dernière demande si le serveur n'a pas encore répondu (deux appuis rapides). */
+  togglePause(): void {
+    const now = performance.now();
+    const on = !(now - this.pauseAskedAt < 1000 ? this.pauseAsked : this.paused());
+    this.pauseAsked = on;
+    this.pauseAskedAt = now;
+    this.setPaused(on);
+  }
+  private pauseAsked = false;
+  private pauseAskedAt = -1e9;
+
+  /** Menu de partie (Échap) : le met en pause si on en a le droit ; le refermer reprend la partie si le menu
+   * l'avait mise en pause. */
+  menuRole(): MenuRole {
+    return { solo: this.isSolo(), host: this.isHost(), spectator: ui.spectator, replay: ui.replay, ended: ui.ended };
+  }
+
+  openMenu(): void {
+    if (ui.menuOpen) return;
+    ui.menuOpen = true;
+    ui.showGfx = false;
+    this.menuPaused = menuPauses(this.menuRole()) && !this.paused();
+    if (this.menuPaused) this.setPaused(true);
+  }
+  closeMenu(): void {
+    if (!ui.menuOpen) return;
+    ui.menuOpen = false;
+    // la pause demandée à l'ouverture peut ne pas encore être confirmée par le serveur
+    if (this.menuPaused && (this.paused() || performance.now() - this.pauseSentAt < 2000)) this.setPaused(false);
+    this.menuPaused = false;
+  }
+  private menuPaused = false;
+
+  /** Hôte : arrête la partie pour tous (sauvegarde automatique) et revient au salon ; `load` : y ouvre la liste
+   * des sauvegardes. Replay ou démo : recharge la page. */
+  quitToLobby(load = false): void {
+    if (ui.replay || ui.ended || this.demoOrders || !ui.connected) {
+      location.reload();
+      return;
+    }
+    if (!this.isHost()) return;
+    ui.lobbySaves = load;
+    this.send({ t: "quit" });
+  }
+
+  /** Partie arrêtée par l'hôte : on quitte l'écran de jeu pour le salon. */
+  private leaveGame(): void {
+    this.worker?.terminate();
+    this.worker = null;
+    this.frame = null;
+    this.selected.clear();
+    this.menuPaused = false;
+    ui.menuOpen = ui.chatOpen = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = ui.showGfx = false;
+    plans.show = false;
+    kb.buildStep = "";
+    if (ui.mode) this.cancelMode();
+    ui.speed = ui.resumeSpeed = 1;
+    ui.pausedBy = "";
+    ui.waiting = [];
+    ui.gameOver = null;
+    ui.ended = false;
+    ui.screen = "lobby";
+  }
+
+  /** Vitesse de jeu suivante (+1) ou précédente (-1) parmi GAME_SPEEDS ; le serveur l'applique et l'annonce.
+   * En pause, part de la vitesse de reprise (et reprend la partie). */
   stepSpeed(delta: number): void {
     if (!this.isSolo()) {
       pushMessage("La vitesse ne se règle qu'en partie solo", "alert");
       return;
     }
     // part de la dernière vitesse demandée : plusieurs appuis rapides s'enchaînent avant la réponse du serveur
-    const cur = performance.now() - this.speedAskedAt < 1000 ? this.speedAsked : ui.speed;
+    const cur = performance.now() - this.speedAskedAt < 1000 ? this.speedAsked : ui.speed === 0 ? ui.resumeSpeed : ui.speed;
     const k = GAME_SPEEDS.indexOf(cur);
     const next = GAME_SPEEDS[Math.max(0, Math.min(GAME_SPEEDS.length - 1, (k < 0 ? GAME_SPEEDS.indexOf(1) : k) + delta))];
     if (next === cur) return;
@@ -169,13 +273,15 @@ export class GameClient {
         if (!m.lobby.running && ui.screen !== "game") ui.screen = "lobby";
         break;
       case "start":
-        ui.speed = 1;
+        ui.speed = ui.resumeSpeed = 1;
+        ui.pausedBy = "";
         void this.begin(m.start, null);
         ui.stats = [];
         break;
       case "snapshot":
-        // la vitesse en cours (si elle n'est pas ×1) suit dans un message « speed »
-        ui.speed = 1;
+        // la vitesse en cours (si elle n'est pas ×1, pause comprise) suit dans un message « speed »
+        ui.speed = ui.resumeSpeed = 1;
+        ui.pausedBy = "";
         void this.begin(m.start, { tick: m.tick, data: Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0)) });
         ui.stats = m.stats ?? [];
         break;
@@ -203,14 +309,28 @@ export class GameClient {
         break;
       }
       case "saved":
+        ui.lastSaved = { name: m.name, at: performance.now() };
         pushMessage(m.auto ? `Sauvegarde automatique : ${m.name}` : `Partie sauvegardée par ${m.by} : ${m.name}`, "good");
         break;
       case "pong":
         ui.ping = Math.round(performance.now() - m.time);
         break;
-      case "speed":
+      case "speed": {
+        const was = ui.speed;
         ui.speed = m.speed;
-        if (m.by) pushMessage(`Vitesse de jeu ×${String(m.speed).replace(".", ",")}`, "info");
+        if (m.speed === 0) {
+          ui.resumeSpeed = m.resume ?? 1;
+          ui.pausedBy = m.by;
+          if (m.by) pushMessage(`Partie mise en pause par ${m.by}`, "info");
+        } else {
+          ui.resumeSpeed = m.speed;
+          ui.pausedBy = "";
+          if (m.by) pushMessage(was === 0 ? `Partie reprise par ${m.by}` : `Vitesse de jeu ×${String(m.speed).replace(".", ",")}`, "info");
+        }
+        break;
+      }
+      case "quit":
+        this.leaveGame();
         break;
       case "error":
         ui.error = m.message;
@@ -273,9 +393,11 @@ export class GameClient {
     // état de la synthèse des sons, pour les vérifications automatiques
     (window as unknown as { __sfx?: unknown }).__sfx = sfx;
     const water = scene === "eau";
-    if (scene === "logistique") ui.me = 0;
+    // ?demo=ascenseurs : files de tapis qui changent de niveau par des ascenseurs (vu comme le joueur 0)
+    if (scene === "logistique" || scene === "ascenseurs") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
-    this.demoOrders = scene === "formation" || scene === "anciens";
+    // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -283,6 +405,11 @@ export class GameClient {
   setReplaySpeed(s: number): void {
     ui.replaySpeed = s;
     this.worker?.postMessage({ type: "replay", speed: s });
+  }
+
+  /** Arrête un replay ou une démo au tick donné (vérifications automatiques : une image à un instant précis). */
+  stopReplayAt(tick: number): void {
+    this.worker?.postMessage({ type: "replayEnd", tick });
   }
 
   private async onWorker(m: { type: string; [k: string]: unknown }): Promise<void> {
@@ -321,9 +448,12 @@ export class GameClient {
           f.visW = this.frame!.visW;
         }
         if (f.vis !== prevVis && f.vis && this.scene?.terrain) this.scene.terrain.updateFog(f.vis);
-        this.handleEvents(f);
+        // simulation arrêtée (fin d'un replay, démo arrêtée à un tick) : la même image revient, pour suivre la
+        // caméra ; ses événements ont déjà été joués, et l'interpolation ne repart pas
+        const again = this.frame !== null && f.tick === this.frame.tick;
+        if (!again) this.handleEvents(f);
         this.frame = f;
-        this.frameTime = performance.now();
+        if (!again) this.frameTime = performance.now();
         this.lastTick = f.tick;
         if (this.autoSelect && ui.me >= 0 && f.players[ui.me]) {
           this.autoSelect = false;
@@ -380,7 +510,10 @@ export class GameClient {
     this.fpsTime = now;
     this.fpsCount++;
     this.panCamera(dt);
-    const alpha = this.frame ? Math.min(1, ((performance.now() - this.frameTime) * ui.speed) / 50) : 0;
+    // en pause, l'image reste sur le dernier tick (et les effets se figent)
+    const paused = this.paused();
+    const alpha = !this.frame ? 0 : paused ? 1 : Math.min(1, ((performance.now() - this.frameTime) * ui.speed) / 50);
+    sc.paused = paused;
     const myTeam = this.frame?.players[ui.me]?.team ?? -1;
     if (!NORENDER) sc.render(this.frame, alpha, ui.me, myTeam, this.selected, dt, ui.spectator, ui.fog);
     // zone vue envoyée au Worker
@@ -586,6 +719,13 @@ export class GameClient {
             sfx.research();
           } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a capturé un EPPZ`, "alert");
           break;
+        case EV.TAMED:
+          // nid de mordeurs apprivoisé par une Reine de la Souche
+          if (a === ui.me) {
+            pushMessage("Nid apprivoisé : il est greffé à votre essaim et fait naître des mordeurs pour vous", "good");
+            sfx.research();
+          } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a apprivoisé un nid de mordeurs`, "alert");
+          break;
         case EV.NO_DEPOT:
           // livraison de la soute : aucun de nos dépôts n'a de place pour cet objet
           if (a === ui.me) {
@@ -635,11 +775,24 @@ export class GameClient {
         case EV.ELIMINATED:
           pushMessage(`${ui.names[a] ?? "Joueur"} est éliminé`, a === ui.me ? "alert" : "info");
           break;
+        case EV.HATCH: {
+          // éclosion d'un œuf de la Souche : sa coque vide se fane sur place, l'organisme en sort
+          const x = a / TILE, z = c / TILE;
+          const egg = d & 0xff;
+          if (seen(x, z)) {
+            sc.entities?.addHatch(x, z, egg, e & 0xff, (((e >> 8) & 0xffff) * Math.PI * 2) / 65536, f.tick);
+            fx?.hatch(x, groundHeight(this.map!, x, z), z, Math.max(0.7, (this.data!.units[egg]?.radius ?? 60) / 60));
+            sfx.hatch(near(x, z), pan(x, z));
+          }
+          break;
+        }
         case EV.UNIT_DIED: {
           const owner = e;
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.units[d];
-            if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(ownerColor(owner, this.frame?.players)), false);
+            // un œuf de la Souche crève : la sève gicle, pas de débris
+            if (def?.egg) fx?.hatch(a / TILE, groundHeight(this.map!, a / TILE, c / TILE), c / TILE, Math.max(0.7, def.radius / 60), true);
+            else if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(ownerColor(owner, this.frame?.players)), false);
           }
           void owner;
           break;
@@ -657,6 +810,21 @@ export class GameClient {
           if (e === ui.me && performance.now() - this.lastPromo > 5000) {
             this.lastPromo = performance.now();
             pushMessage(`Unité promue : vétérance ${"★".repeat(d)}`, "good");
+          }
+          break;
+        }
+        case EV.LOOT: {
+          // Transhumants : butin pris sur une victime détruite ; un message toutes les 3 s au plus
+          if (d === ui.me) {
+            sc.addMarker(a / TILE, c / TILE, 0xffc83c);
+            this.loot += e;
+            if (!this.lootTimer) {
+              this.lootTimer = window.setTimeout(() => {
+                pushMessage(`Butin : ${this.loot} objet${this.loot > 1 ? "s" : ""} pris à l'ennemi, rapporté${this.loot > 1 ? "s" : ""} à votre réserve la plus proche`, "good");
+                this.loot = 0;
+                this.lootTimer = 0;
+              }, 3000);
+            }
           }
           break;
         }
@@ -998,6 +1166,7 @@ export class GameClient {
     if (e.button === 0) {
       if (ui.mode === "build") {
         if (this.deployUnits.length) this.placeDeploy(e.shiftKey);
+        else if (this.poleGen) this.placePole(e.shiftKey);
         else this.placeBuildings(e.shiftKey);
         return;
       }
@@ -1106,6 +1275,12 @@ export class GameClient {
     if (ui.screen !== "game" || e.metaKey) return;
     this.keys.add(e.code);
     if (isModifierCode(e.code)) return;
+    // menu de partie ouvert : le clavier ne commande plus le jeu (Échap le referme, la pause reste possible)
+    if (ui.menuOpen) {
+      if (e.code === "Escape") this.closeMenu();
+      else if (keymap.match(e, {})?.id === "pause" && !e.repeat) this.togglePause();
+      return;
+    }
     // menu de construction au clavier : B, puis la catégorie, puis le bâtiment
     if (kb.buildStep) {
       if (this.buildMenuKey(e)) {
@@ -1135,10 +1310,20 @@ export class GameClient {
       return;
     }
     if (e.code === "Escape" && !e.ctrlKey && !e.altKey) {
-      if (kb.buildStep) kb.buildStep = "";
-      else if (ui.mode) this.cancelMode();
-      else if (kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show) kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = false;
-      else {
+      // Échap annonce d'abord ce qui est en cours (menu, outil, panneau, sélection) ; le menu de partie
+      // ne s'ouvre que s'il n'y a plus rien à annuler
+      const act = escapeAction({
+        menuOpen: ui.menuOpen,
+        buildStep: !!kb.buildStep,
+        mode: !!ui.mode,
+        panel: kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show || ui.showGfx,
+        selection: this.selected.size > 0 || !!ui.selDeposit || !!ui.selPlan,
+      });
+      if (act === "closeMenu") this.closeMenu();
+      else if (act === "buildStep") kb.buildStep = "";
+      else if (act === "mode") this.cancelMode();
+      else if (act === "panels") kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = ui.showGfx = false;
+      else if (act === "deselect") {
         this.selected.clear();
         ui.selDeposit = null;
         if (ui.selPlan) {
@@ -1146,7 +1331,7 @@ export class GameClient {
           this.scene?.overlay?.setPlanned(this.planned, null);
         }
         this.updateUi();
-      }
+      } else if (!e.repeat) this.openMenu();
       return;
     }
     const units = ui.me >= 0 && this.selectedUnits().length > 0;
@@ -1283,6 +1468,9 @@ export class GameClient {
       case "speedDown":
         this.stepSpeed(-1);
         break;
+      case "pause":
+        this.togglePause();
+        break;
     }
   }
 
@@ -1406,6 +1594,7 @@ export class GameClient {
   }
   cancelMode(): void {
     this.deployUnits = [];
+    this.poleGen = null;
     ui.mode = "";
     ui.buildKind = -1;
     this.resetLine();
@@ -1589,13 +1778,18 @@ export class GameClient {
     if (!add) this.selected.clear();
     const p = { x: 0, y: 0 };
     let n = 0;
+    const hits: number[][] = [];
     for (const u of sc.entities.screen) {
       if (u.owner !== ui.me) continue;
       if (!sc.project(u.x, u.y + 0.3, u.z, p)) continue;
-      if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) {
-        this.selected.add(u.id);
-        n++;
-      }
+      if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hits.push([u.id, u.kind]);
+    }
+    // les œufs de la Souche ne reçoivent pas d'ordres : le cadre ne les prend que s'il n'y a qu'eux
+    const eggsOnly = hits.every(([, kind]) => this.data!.units[kind].egg);
+    for (const [id, kind] of hits) {
+      if (!eggsOnly && this.data!.units[kind].egg) continue;
+      this.selected.add(id);
+      n++;
     }
     if (n) {
       for (const id of [...this.selected]) if (Ord.isBuildingRef(id)) this.selected.delete(id);
@@ -1753,13 +1947,15 @@ export class GameClient {
     const units = playing ? this.selectedUnits() : [];
     if (!units.length) {
       // rien de sélectionné (ou spectateur) : ce qui peut être sélectionné sous la souris
-      if (playing && ui.selBuilding && mine(ui.selBuilding.owner) && this.data.buildings[ui.selBuilding.kind]?.cls === BClass.Factory) return "rally";
+      if (playing && ui.selBuilding && mine(ui.selBuilding.owner) && (this.data.buildings[ui.selBuilding.kind]?.cls === BClass.Factory || this.data.buildings[ui.selBuilding.kind]?.key === "nest")) return "rally";
       if (unit && (mine(unit.owner) || !playing)) return "select";
       if (tb && (mine(tb.owner) || !playing)) return "select";
       return "default";
     }
     const ids = units.map((u) => u.id);
     if (unit && enemy(unit.owner)) return "attack";
+    // Reine de la Souche sur un nid de mordeurs sauvage : elle l'apprivoise
+    if (tb && this.wildNest(tb) && units.some((u) => this.data!.units[u.kind].key === "queen")) return "load";
     if (tb && enemy(tb.owner)) return "attack";
     const engs = units.some((u) => this.data!.units[u.kind].buildPower > 0);
     if (unit && mine(unit.owner) && !ids.includes(unit.id)) return this.data.units[unit.kind].carry > 0 ? "load" : "assist";
@@ -1799,7 +1995,7 @@ export class GameClient {
     if (!units.length) {
       if (ui.selBuilding && ui.selBuilding.owner === ui.me) {
         const def = this.data.buildings[ui.selBuilding.kind];
-        if (def.cls === BClass.Factory) {
+        if (def.cls === BClass.Factory || def.key === "nest") {
           this.cmd(Ord.rally(ui.selBuilding.ref, gx, gy));
           this.scene?.addMarker(g.x, g.z, 0x7dff9a);
           sfx.confirm();
@@ -1818,6 +2014,8 @@ export class GameClient {
     const tb = this.buildingAtTile(Math.floor(g.x), Math.floor(g.z));
     const engs = units.filter((u) => this.data!.units[u.kind].buildPower > 0).map((u) => u.id);
     const others = units.filter((u) => this.data!.units[u.kind].buildPower === 0);
+    // Reine sur un nid de mordeurs sauvage : elle l'apprivoise (les autres unités restent à l'écart)
+    if (tb && this.wildNest(tb) && this.tameNest(units, tb.ref, queue)) return;
     if (tb && this.teamOf(tb.owner) !== this.teamOf(ui.me)) {
       this.cmd(Ord.target(O.ATTACK, ids, tb.ref, queue));
       this.scene?.addMarker(g.x, g.z, 0xff5050);
@@ -1928,6 +2126,38 @@ export class GameClient {
     if (rest.length) this.cmd(Ord.move(rest, Math.round(x * TILE), Math.round(z * TILE), queue, false));
     this.scene?.addMarker(spot.x + 1, spot.y + 1, 0xff9a3c);
     pushMessage(`Chariot foreuse : il se rend sur le gisement de ${this.data!.items[spot.kind]?.name.toLowerCase() ?? "minerai"} et s'y déploie`, "info");
+    sfx.confirm();
+    return true;
+  }
+
+  /** Nid de mordeurs de la faune (pas une ruche) : apprivoisable par la Reine de la Souche. */
+  private wildNest(tb: { kind: number; owner: number }): boolean {
+    return this.data?.buildings[tb.kind]?.key === "nest" && this.frame?.players[tb.owner]?.team === NATURE_TEAM;
+  }
+
+  /** Nids greffés au plus : un, plus un par mutation acquise (souche::den_limit). */
+  private denLimit(): { have: number; max: number } {
+    const me = this.frame?.players[ui.me];
+    let max = 1;
+    if (me && this.data) for (let t = 0; t < this.data.techs.length; t++) if (this.data.techs[t].race === 1 && this.data.techs[t].excl && hasTech(me, t)) max++;
+    let have = 0;
+    const f = this.frame;
+    if (f) for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) if (((f.buf[o + 1] >> 8) & 0xff) === ui.me && this.data?.buildings[f.buf[o + 1] & 0xff]?.key === "nest") have++;
+    return { have, max };
+  }
+
+  /** Ordre « Apprivoiser » pour les Reines de la sélection ; faux s'il n'y en a pas. */
+  private tameNest(units: { id: number; kind: number }[], nest: number, queue: boolean): boolean {
+    const queens = units.filter((u) => this.data!.units[u.kind].key === "queen").map((u) => u.id);
+    if (!queens.length) return false;
+    const { have, max } = this.denLimit();
+    if (have >= max) {
+      pushMessage(`Nids greffés : ${have} / ${max}. Chaque mutation acquise permet d'en greffer un de plus`, "alert");
+      sfx.error();
+      return true;
+    }
+    this.cmd(Ord.tame(queens, nest, queue));
+    pushMessage("La Reine apprivoise le nid : 30 s à moins de 6 cases. Sa horde est calmée envers vous ; frapper le nid ou ses bêtes fait tout reprendre à zéro", "info");
     sfx.confirm();
     return true;
   }
@@ -2090,6 +2320,7 @@ export class GameClient {
   /** Mode placement du déploiement : le fantôme du module du premier chenillard suit la souris. */
   private startDeploy(list: { id: number; kind: number }[]): void {
     if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
+    this.poleGen = null;
     this.deployUnits = list;
     ui.buildKind = this.data!.units[list[0].kind].deploys;
     ui.mode = "build";
@@ -2121,10 +2352,67 @@ export class GameClient {
     if (shift && rest.length) this.startDeploy(rest);
     else this.cancelMode();
   }
+  /**
+   * générateur nomade qui plante des poteaux (mode placement des poteaux) : sa référence, le centre de son
+   * emprise (cases), ses poteaux (cases), la portée de liaison d'un poteau (cases) et le plafond
+   */
+  poleGen: { ref: number; cx: number; cy: number; poles: [number, number][]; reach: number; max: number } | null = null;
+
+  /** Transhumants : le générateur sélectionné plante ses poteaux relais (fantôme du poteau, clic pour le planter). */
+  startPole(): void {
+    const info = ui.buildingInfo as Record<string, any> | null;
+    const sel = ui.selBuildings.find((b) => b.owner === ui.me && this.data?.buildings[b.kind].key === "t_generator");
+    const kind = this.data?.buildings.findIndex((b) => b.key === "t_pole") ?? -1;
+    if (!sel || !info?.transh?.poles || kind < 0) return;
+    if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
+    this.deployUnits = [];
+    const t = info.transh;
+    this.poleGen = { ref: sel.ref, cx: t.at[0] + 1, cy: t.at[1] + 1, poles: [...t.poles], reach: t.poleReach, max: t.polesMax };
+    if (this.poleGen.poles.length >= this.poleGen.max) {
+      pushMessage(`Ce générateur a déjà planté ses ${this.poleGen.max} poteaux : repliez-en un ou plantez avec un autre générateur`, "alert");
+      sfx.error();
+      this.poleGen = null;
+      return;
+    }
+    ui.buildKind = kind;
+    ui.mode = "build";
+    this.resetLine();
+    this.beltForced = false;
+    sfx.click();
+    this.updateGhost();
+    pushMessage(`Planter un poteau : à ${t.poleReach} cases au plus du générateur ou d'un de ses poteaux (${this.poleGen.max - this.poleGen.poles.length} restants) · Maj+clic : en planter d'autres`, "info");
+  }
+
+  /** case (x, y) à portée du générateur qui plante ou d'un de ses poteaux (règle de transhumants::pole_in_reach) */
+  private poleInReach(x: number, y: number): boolean {
+    const g = this.poleGen;
+    if (!g) return true;
+    const r2 = g.reach * g.reach;
+    const near = (cx: number, cy: number) => (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r2;
+    return near(g.cx, g.cy) || g.poles.some(([px, py]) => near(px + 0.5, py + 0.5));
+  }
+
+  /** Clic en mode placement des poteaux : le générateur plante le poteau du fantôme. */
+  private placePole(shift: boolean): void {
+    const g = this.poleGen;
+    const c = this.ghostCells[0];
+    if (!g || !c || !c.ok) {
+      pushMessage(c && !this.poleInReach(c.x, c.y) ? `Trop loin : un poteau se plante à ${g?.reach ?? 0} cases au plus du générateur ou d'un de ses poteaux` : "Pas la place de planter un poteau ici", "alert");
+      sfx.error();
+      return;
+    }
+    this.cmd(Ord.plantPole(g.ref, c.x, c.y));
+    g.poles.push([c.x, c.y]);
+    this.scene?.addMarker(c.x + 0.5, c.y + 0.5, 0xff9a3c);
+    sfx.confirm();
+    if (shift && g.poles.length < g.max) this.updateGhost();
+    else this.cancelMode();
+  }
+
   /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */
   packSelected(): void {
     if (!this.data) return;
-    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2).map((b) => b.ref);
+    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2 && this.data!.buildings[b.kind].key !== "t_pole").map((b) => b.ref);
     if (refs.length) this.cmd(Ord.fold(refs));
   }
 
@@ -2132,6 +2420,7 @@ export class GameClient {
   startBuild(kind: number): void {
     if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
     this.deployUnits = [];
+    this.poleGen = null;
     ui.buildKind = kind;
     ui.mode = "build";
     this.resetLine();
@@ -2167,7 +2456,10 @@ export class GameClient {
   /** File en L de `a` à `b` : premier tronçon horizontal si `horizFirst` (axe choisi par le geste, Belts.lockAxis). */
   private lineCells(a: { x: number; y: number }, b: { x: number; y: number }, horizFirst: boolean): { x: number; y: number; dir: number }[] {
     const def = this.data!.buildings[ui.buildKind];
-    const step = def.cls === BClass.Pylon ? 7 : def.w;
+    // racines de la Souche : une file continue, case par case, orientée dans le sens du tracé (comme un
+    // tapis) ; elles se relient par contact
+    const isRoot = def.key === "root";
+    const step = def.cls === BClass.Pylon && !isRoot ? 7 : def.w;
     const out: { x: number; y: number; dir: number }[] = [];
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -2179,7 +2471,7 @@ export class GameClient {
     // rails : orientés dans le sens de leur segment (la voie se relie par simple contact ; la direction
     // ne sert qu'au modèle : direction 0, rails selon x ; direction 1, rails selon z)
     const isRail = def.cls === BClass.Rail;
-    const along = (dir: number, horiz: boolean) => (isBelt ? dir : isRail ? (horiz ? 0 : 1) : ui.buildDir);
+    const along = (dir: number, horiz: boolean) => (isBelt || isRoot ? dir : isRail ? (horiz ? 0 : 1) : ui.buildDir);
     if (horizFirst) {
       for (let i = 0; i <= Math.abs(dx); i += step) out.push({ x: a.x + i * sx, y: a.y, dir: along(dy !== 0 && i === Math.abs(dx) ? vdir : hdir, dx !== 0 || dy === 0) });
       for (let j = step; j <= Math.abs(dy); j += step) out.push({ x: b.x, y: a.y + j * sy, dir: along(vdir, false) });
@@ -2286,7 +2578,7 @@ export class GameClient {
     // machines qui peuvent se jumeler : une rangée se pose en glissant
     const machine = isMachine(def.cls);
     // placement d'un module de chenillard : un seul fantôme, pas de file
-    const lineable = !this.deployUnits.length && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine);
+    const lineable = !this.deployUnits.length && !this.poleGen && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine);
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const splitters = isBelt ? this.splitterTiles() : new Map<number, { dir: number; outs: number; owner: number }>();
@@ -2356,6 +2648,8 @@ export class GameClient {
     }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     this.scene.ghostLift = 0;
+    // poteaux d'un générateur nomade : à portée de lui ou d'un de ses poteaux
+    if (this.poleGen) okAt = okAt.map((ok, i) => ok && this.poleInReach(cells[i].x, cells[i].y));
     this.ghostCells = cells.map((c, i) => ({ ...c, ok: !!okAt[i], floor: isBelt ? floors[i] : 0, twins: twins[i] ?? 0 }));
     // aperçu des virages : forme d'après les tapis existants et les autres tapis en cours de pose
     if (isBelt && this.map) {
@@ -2717,6 +3011,9 @@ export class GameClient {
   lastPlannedQuery = 0;
   gifts = new Map<string, number>();
   giftTimer = 0;
+  /** butin des Transhumants pas encore annoncé (objets) */
+  loot = 0;
+  lootTimer = 0;
 
   /** Gare ou héliport sélectionné : retire ses véhicules (relier le bâtiment à lui-même). */
   removeCarriers(): void {

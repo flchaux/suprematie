@@ -154,9 +154,9 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
                 return;
             }
             let d = udef(kind);
-            let ticks = (d.build as u64 * 20 * RECIPE_SCALE as u64).div_ceil(1024 * mult);
+            let ticks = (factory_ticks(kind) as u64 * RECIPE_SCALE as u64).div_ceil(1024 * mult);
             for &(it, n) in d.cost {
-                cons[it as usize] += per_cycle(n as u64, ticks);
+                cons[it as usize] += per_cycle(n as u64 * batch(kind) as u64, ticks);
             }
         }
         // une unité de recherche : time secondes ; lots (Industriels), ADN (Souche), relevés (Transhumants)

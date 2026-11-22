@@ -610,7 +610,7 @@ fn need_of(w: &World, b: usize, px: i32, py: i32) -> Option<(u8, u16)> {
     let want: Vec<(u8, u16)> = match bb.def().class {
         BClass::Crafter if bb.recipe != RECIPE_NONE => RECIPES[bb.recipe as usize].inputs.iter().enumerate().map(|(j, &(it, n))| (it, (n as u16 * 2).saturating_sub(bb.inv[j]))).collect(),
         BClass::Factory => match bb.queue.first() {
-            Some(&(k, _)) => udef(k).cost.iter().map(|&(it, n)| (it, n.saturating_sub(crate::buildings::factory_has(bb, it)))).collect(),
+            Some(&(k, _)) => udef(k).cost.iter().map(|&(it, n)| (it, (n * batch(k)).saturating_sub(crate::buildings::factory_has(bb, it)))).collect(),
             None => Vec::new(),
         },
         BClass::Lab => {

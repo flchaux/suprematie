@@ -575,6 +575,119 @@ pub fn showcase_demo() -> World {
     w
 }
 
+/// Démo de la ponte de la Souche (?demo=ponte) : le joueur 0 (Souche) a quatre couveuses autour de sa
+/// graine-mère, qui pondent en boucle (rongeurs, cracheurs, carapaces, planeurs à membranes) grâce à une
+/// réserve sans fond ; des chars adverses viennent tirer sur la première portée. Le client y joue le
+/// joueur 0 en local : on peut cliquer sur une couveuse, un œuf, et changer les files.
+pub fn ponte_demo() -> World {
+    let mut w = World::new(&[19, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 1, RACE_SOUCHE as i32, RACE_INDUS as i32]);
+    let (sx, sy) = w.map.starts[0];
+    flat(&mut w, sx - 40, sy - 40, sx + 40, sy + 40);
+    w.place_start_buildings();
+    for t in [T_S_SPITTERS, T_S_SHELLS, T_S_VINES, T_S_MEMBRANES] {
+        w.players[0].set_tech(t);
+    }
+    let heart = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == 0 && w.buildings[b].kind == B_SEED_HEART);
+    let Some(heart) = heart else { return w };
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    // une couveuse de chaque côté de la graine-mère, sortie vers l'extérieur
+    let mut broods = Vec::new();
+    for (dx, dy, dir, kind) in [(4, 0, 0u8, U_GNAWER), (0, 4, 1, U_SPITTER), (-4, 0, 2, U_SHELL), (0, -4, 3, U_MEMBRANE)] {
+        if let Some(b) = place_building(&mut w, 0, B_BROOD, hx + dx, hy + dy, dir) {
+            complete_building(&mut w, b);
+            broods.push((b, kind));
+        }
+    }
+    // le réseau se forme, puis reçoit une réserve sans fond
+    for _ in 0..10 {
+        w.step(&[]);
+    }
+    for &(b, kind) in &broods {
+        let net = w.buildings[b].net as usize;
+        if net != 0 {
+            w.nets[net].seve = 1_000_000;
+            w.nets[net].sels = 1_000_000;
+        }
+        w.buildings[b].queue.push((kind, 1));
+        w.buildings[b].repeat = true;
+        w.buildings[b].wake = 0;
+        // ralliement à l'écart, pour que les œufs suivants aient la place
+        let (cx, cy) = w.buildings[b].center();
+        let (rx, ry) = w.buildings[b].rally;
+        w.buildings[b].rally = (cx + (rx - cx) * 3, cy + (ry - cy) * 3);
+    }
+    // quatre chars adverses viennent de l'est : ils tirent sur la première portée de rongeurs
+    let (cx, cy) = w.buildings[heart].center();
+    for k in 0..4 {
+        let id = w.spawn_unit(U_LIGHT_TANK, 1, cx + 44 * TILE, cy + (k - 2) * 2 * TILE);
+        if let Some(s) = w.unit(id) {
+            let (tx, ty) = (cx + 9 * TILE, cy);
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
+        }
+    }
+    w
+}
+
+/// Démo des ascenseurs de tapis (?demo=ascenseurs) : deux extracteurs du joueur 0 alimentent quatre files
+/// qui changent de niveau. Tapis roulant : sol, étage 1, étage 2, puis retour au sol. Tapis rapide : une
+/// montée suivie aussitôt d'une descente, puis un ascenseur pris par le côté (virage). Tapis express :
+/// les deux étages à la suite. Tapis roulant vers le sud : montée et descente dans l'autre axe.
+pub fn lifts_demo() -> World {
+    let mut w = World::new(&[7, 512, 0, 2, 0, 0, 100, 100, 0, 0, 100, 100]);
+    w.infinite_grid = true;
+    for pl in w.players.iter_mut() {
+        pl.researched = u64::MAX;
+    }
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx + 4).clamp(8, w.map.w - 40), (sy - 8).clamp(8, w.map.h - 40));
+    flat(&mut w, x0 - 6, y0 - 6, x0 + 30, y0 + 26);
+    let put = |w: &mut World, kind: u16, x: i32, y: i32, dir: u8, floor: u8| {
+        if let Some(b) = place_building(w, 0, kind, x, y, dir | floor << 3) {
+            complete_building(w, b);
+        }
+    };
+    let mine = |w: &mut World, x: i32, y: i32, ore: u8| {
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.map.idx(x + dx, y + dy);
+                w.map.deposit[i] = ore;
+            }
+        }
+        w.map.spots.push(crate::map::Spot { kind: ore, x, y, purity: 0 });
+        put(w, B_EXTRACTOR, x, y, 0, 0);
+    };
+    // file vers l'est : (première case, dernière case, niveau)
+    let east = |w: &mut World, kind: u16, y: i32, runs: &[(i32, i32, u8)]| {
+        for &(a, b, floor) in runs {
+            for x in a..=b {
+                put(w, kind, x0 + x, y, 0, floor);
+            }
+        }
+    };
+    mine(&mut w, x0, y0, IRON_ORE);
+    // tapis roulant : sol, étage 1, étage 2, étage 1, sol, dépôt
+    east(&mut w, B_BELT1, y0, &[(2, 5, 0), (6, 9, 1), (10, 13, 2), (14, 16, 1), (17, 19, 0)]);
+    put(&mut w, B_DEPOT, x0 + 20, y0, 0, 0);
+    // tapis rapide : montée et descente collées, virage vers le sud, puis ascenseur pris par le côté
+    east(&mut w, B_BELT2, y0 + 1, &[(2, 3, 0), (4, 4, 1), (5, 7, 0)]);
+    for y in y0 + 1..y0 + 5 {
+        put(&mut w, B_BELT2, x0 + 8, y, 1, 0);
+    }
+    east(&mut w, B_BELT2, y0 + 5, &[(8, 8, 0), (9, 13, 1), (14, 16, 0)]);
+    put(&mut w, B_DEPOT, x0 + 17, y0 + 5, 0, 0);
+    mine(&mut w, x0, y0 + 10, COPPER_ORE);
+    // tapis express : les deux étages à la suite, puis retour au sol
+    east(&mut w, B_BELT3, y0 + 10, &[(2, 4, 0), (5, 6, 1), (7, 9, 2), (10, 10, 1), (11, 13, 0)]);
+    put(&mut w, B_DEPOT, x0 + 14, y0 + 10, 0, 0);
+    // tapis roulant vers le sud : montée, étage 1, descente
+    east(&mut w, B_BELT1, y0 + 11, &[(2, 4, 0)]);
+    for (y, floor) in [(11, 0u8), (12, 0), (13, 1), (14, 1), (15, 1), (16, 1), (17, 0), (18, 0)] {
+        put(&mut w, B_BELT1, x0 + 5, y0 + y, 1, floor);
+    }
+    put(&mut w, B_DEPOT, x0 + 5, y0 + 19, 0, 0);
+    w
+}
+
 /// Démo des déplacements en formation orientée : une armée mêlée du joueur 0 (motos, chars,
 /// artilleries, marcheurs, robots, glisseurs), en bloc tourné vers l'est, sur un grand terrain plat
 /// autour du départ du joueur 0.

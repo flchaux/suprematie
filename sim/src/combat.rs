@@ -158,6 +158,11 @@ fn unit_target_ok(w: &World, team: u8, wi: usize, t: usize, x: i32, y: i32) -> b
     if w.team_of(w.units.owner[t]) == team {
         return false;
     }
+    // bête calmée par une Reine de notre équipe (nid qu'elle apprivoise) : on l'épargne
+    let calm = w.units.cold[t].calm;
+    if calm != 0 && w.team_of(calm - 1) == team {
+        return false;
+    }
     let wd = &WEAPONS[wi];
     let lm = layer_mask(w, t);
     if wd.mask & lm == 0 {
@@ -183,6 +188,10 @@ fn building_target_ok(w: &World, team: u8, wi: usize, b: usize, x: i32, y: i32) 
     let bb = &w.buildings[b];
     // une ruine des Anciens ne se vise pas (indestructible)
     if !bb.alive || bb.hp <= 0 || w.team_of(bb.owner) == team || bb.kind == B_RUIN {
+        return false;
+    }
+    // nid qu'une Reine de notre équipe apprivoise : on l'épargne
+    if bb.kind == B_NEST && crate::nature::tamed_by_team(w, b, team) {
         return false;
     }
     let wd = &WEAPONS[wi];
@@ -444,15 +453,34 @@ fn armor(w: &World, s: usize, dmg: i32) -> i32 {
     }
 }
 
+/// La cible `t` appartient-elle au joueur que la bête épargne (`calm` : joueur + 1) ?
+fn calmed(w: &World, t: u32, calm: u8) -> bool {
+    let o = if let Some(u) = w.unit(t) {
+        w.units.owner[u]
+    } else if let Some(b) = w.building(t) {
+        w.buildings[b].owner
+    } else {
+        return false;
+    };
+    o.wrapping_add(1) == calm
+}
+
 pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
     let kind = w.units.kind[s];
     let def = udef(kind);
     if def.weapons.is_empty() {
         return;
     }
+    // Reine qui apprivoise un nid : elle retient son tir
+    if matches!(w.units.cold[s].orders.first(), Some(Order::Tame { .. })) {
+        w.units.cold[s].wtarget = [NONE; 2];
+        return;
+    }
     let owner = w.units.owner[s];
     let team = w.team_of(owner);
     let (x, y) = (w.units.x[s], w.units.y[s]);
+    // bête calmée par une Reine : elle ne s'en prend pas à ce joueur
+    let calm = w.units.cold[s].calm;
     let p = &w.players[owner as usize];
     let upgraded = kind == U_COMMANDER && p.has_tech(T_CMD_CANNON);
     for i in 0..def.weapons.len().min(2) {
@@ -472,6 +500,9 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
             t = cur;
         } else if (w.tick + s as u32).is_multiple_of(5) || cur != NONE {
             t = find_target(w, team, wi, x, y);
+        }
+        if calm != 0 && t != NONE && calmed(w, t, calm) {
+            t = NONE;
         }
         w.units.cold[s].wtarget[i] = t;
         if t == NONE {
@@ -986,6 +1017,8 @@ pub fn cleanup_dead(w: &mut World) {
             let owner = w.buildings[b].owner;
             let (bw, bh) = w.buildings[b].size();
             w.ev(EV_BUILDING_DIED, cx, cy, kind as i32, owner as i32);
+            // Transhumants : butin pour le pillard le plus proche
+            crate::transhumants::loot_building(w, b);
             w.ev(EV_EXPLOSION, cx, cy, bw.max(bh) * TILE / 2, 0);
             // bâtiment terminé d'un joueur encore en jeu : fantôme à reconstruire par ses ingénieurs
             // (un nid de la faune ne se reconstruit pas et ne laisse pas d'épave)
@@ -1016,6 +1049,7 @@ fn credit_kill(w: &mut World, victim: usize) {
     // Transhumants : un ennemi détruit donne des relevés
     let (killer, tier) = (w.units.owner[k], udef(w.units.kind[victim]).tier);
     crate::transhumants::kill_credit(w, killer, tier);
+    crate::transhumants::loot_unit(w, killer, victim);
     let c = &mut w.units.cold[k];
     c.xp = c.xp.saturating_add(gain);
     let lvl = ((c.xp / (2 * own)) as u8).min(MAX_LVL);
@@ -1036,7 +1070,10 @@ fn kill_unit(w: &mut World, s: usize) {
     let (x, y) = (w.units.x[s], w.units.y[s]);
     let def = udef(kind);
     w.ev(EV_UNIT_DIED, x, y, kind as i32, owner as i32);
-    w.ev(EV_EXPLOSION, x, y, def.radius * 2, if def.tier == 6 { 2 } else { 0 });
+    // un œuf de la Souche crève sans exploser
+    if !crate::ponte::is_egg(kind) {
+        w.ev(EV_EXPLOSION, x, y, def.radius * 2, if def.tier == 6 { 2 } else { 0 });
+    }
     // passagers
     let cargo = std::mem::take(&mut w.units.cold[s].cargo);
     for c in cargo {

@@ -95,7 +95,7 @@ pub struct RaceDef {
 pub const RACES: [RaceDef; NUM_RACES] = [
     RaceDef { key: "industriels", name: "Industriels", desc: "Tapis, bras, fonderies et assembleurs, électricité par zones, laboratoires et lots de recherche." },
     RaceDef { key: "souche", name: "Souche", desc: "Base vivante : un réseau de racines met en commun sève et sels, les organes poussent seuls, la race évolue en digérant les cadavres." },
-    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration." },
+    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration ; butin : un quart de ce qu'ils détruisent." },
 ];
 
 // ---------- Recettes ----------
@@ -427,7 +427,7 @@ pub const T_LOGISTICS3: u8 = 31;
 
 pub const TECHS: [TechDef; 64] = [
     t!("none", "Base", 0, 0, 0, [], ""),
-    t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur, collecteur de surplus ; améliorations : extracteur, générateur et dépôt"),
+    t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
     t!("light_defense", "Défense légère", 1, 10, 5, [], "Tourelle légère, mur, radar"),
     t!("electronics", "Électronique", 2, 20, 8, [1], "Usine aérienne, avion éclaireur, intercepteur, planeur d'attaque, transport, héliport de fret ; extracteur et générateur niveau 3, zone du générateur principal +50 %"),
@@ -715,8 +715,10 @@ pub const B_T_HOLD: u16 = 66;
 pub const B_T_LAB: u16 = 67;
 pub const B_T_WORKSHOP: u16 = 68;
 pub const B_T_BASTION: u16 = 69;
+/// poteau relais planté par un générateur nomade (voir transhumants::plant_pole)
+pub const B_T_POLE: u16 = 70;
 
-pub const BUILDINGS: [BuildingDef; 70] = [
+pub const BUILDINGS: [BuildingDef; 71] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -779,7 +781,7 @@ pub const BUILDINGS: [BuildingDef; 70] = [
     // socle à EPPZ : demande un EPPZ capturé (Player::eppz), produit sans combustible
     BuildingDef { key: "eppz_socket", name: "Socle à EPPZ", size: (2, 2), hp: 3000, power_prod: 25000, cost: &[(STEEL, 20), (CIRCUIT, 10)], build: 15, class: BClass::Power, supply: 14, connect: 30, ..BD },
     // ----- Souche : organes, posés sur le terreau d'un réseau de racines, qui poussent seuls -----
-    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 4000, build: 90, class: BClass::Organ, supply: 6, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 4000, build: 90, class: BClass::Organ, supply: 2, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "root", name: "Racine", hp: 150, cost: &[(SEVE, 4)], build: 2, class: BClass::Pylon, supply: 3, connect: 5, passable: true, vision: 0, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "leaves", name: "Frondaison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 10)], build: 8, class: BClass::Organ, vision: 6, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "taproot", name: "Racine-puits", size: (2, 2), hp: 600, cost: &[(SEVE, 60)], build: 10, class: BClass::Organ, deposit: 255, race: RACE_SOUCHE, ..BD },
@@ -798,6 +800,7 @@ pub const BUILDINGS: [BuildingDef; 70] = [
     BuildingDef { key: "t_lab", name: "Laboratoire nomade", size: (2, 2), hp: 600, power_use: 60, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, class: BClass::Lab, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_workshop", name: "Atelier", size: (3, 3), hp: 5000, power_use: 400, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_bastion", name: "Bastion", size: (2, 2), hp: 4000, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, class: BClass::Turret, weapon: 74, vision: 30, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_pole", name: "Poteau nomade", hp: 200, cost: &[], build: 1, class: BClass::Pylon, supply: 6, connect: 13, vision: 0, race: RACE_TRANSH, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -870,6 +873,9 @@ pub struct UnitDef {
     pub bio: bool,
     /// chenillard des Transhumants : bâtiment qu'il devient une fois déployé (NO_KIND : aucun)
     pub deploys: u16,
+    /// organisme de la Souche : taille de la portée pondue par la couveuse pour une entrée de file
+    /// (0 : unité fabriquée une par une ; voir ponte.rs)
+    pub litter: u8,
 }
 
 const UD: UnitDef = UnitDef {
@@ -899,6 +905,7 @@ const UD: UnitDef = UnitDef {
     commander: false,
     bio: false,
     deploys: NO_KIND,
+    litter: 0,
 };
 /// Pas de type (bâtiment ou unité).
 pub const NO_KIND: u16 = u16::MAX;
@@ -965,12 +972,16 @@ pub const U_RIDER: u16 = 73;
 pub const U_HARROW: u16 = 74;
 pub const U_TOWED_GUN: u16 = 75;
 pub const U_RAM: u16 = 76;
+// œufs de la Souche (petit, moyen, gros : voir ponte.rs)
+pub const U_EGG_S: u16 = 77;
+pub const U_EGG_M: u16 = 78;
+pub const U_EGG_L: u16 = 79;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 77] = [
+pub const UNITS: [UnitDef; 80] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1032,12 +1043,12 @@ pub const UNITS: [UnitDef; 77] = [
     UnitDef { key: "disruptor", name: "Disrupteur", hp: 450, speed: 32, radius: 120, weapons: &[61], cost: &[(IRON_PLATE, 8), (GEAR, 2), (CIRCUIT, 3)], build: 6, tech: 2, tier: 1, ..UD },
     // ----- Souche : organismes vivants, nés dans les couveuses (voir souche.rs) -----
     UnitDef { key: "queen", name: "Reine", hp: 10000, speed: 18, radius: 220, weapons: &[62], vision: 26, factory: FactoryKind::None, build_power: 15, tier: 0, commander: true, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "sower", name: "Semeur", hp: 250, speed: 34, radius: 90, cost: &[(SEVE, 30), (SELS, 5)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "gnawer", name: "Rongeur", hp: 260, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 25), (SELS, 4)], build: 4, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "spitter", name: "Cracheur", hp: 320, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 50), (SELS, 20)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "shell", name: "Carapace", hp: 2200, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 120), (SELS, 40)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "sower", name: "Semeur", hp: 250, speed: 34, radius: 90, cost: &[(SEVE, 30), (SELS, 5)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "gnawer", name: "Rongeur", hp: 260, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 25), (SELS, 4)], build: 4, bio: true, race: RACE_SOUCHE, litter: 6, ..UD },
+    UnitDef { key: "spitter", name: "Cracheur", hp: 320, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 50), (SELS, 20)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "shell", name: "Carapace", hp: 2200, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 120), (SELS, 40)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
     UnitDef { key: "ark", name: "Arche", hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ch_drill", name: "Chariot foreuse", hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
@@ -1054,12 +1065,35 @@ pub const UNITS: [UnitDef; 77] = [
     UnitDef { key: "harrow", name: "Herse", hp: 400, speed: 32, radius: 130, weapons: &[6], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2), (AMMO, 2)], build: 7, race: RACE_TRANSH, ..UD },
     UnitDef { key: "towed_gun", name: "Canon tracté", hp: 420, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 5), (GEAR, 3), (AMMO, 3)], build: 9, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ram", name: "Bélier", hp: 2800, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 10), (GEAR, 6), (CIRCUIT, 2)], build: 12, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
+    // ----- Souche : œufs pondus par les couveuses (voir ponte.rs). Immobiles, sans arme, ils éclosent
+    // en l'organisme qu'ils portent ; l'œuf d'une espèce est choisi d'après sa taille (ponte::egg_of) -----
+    UnitDef { key: "egg_s", name: "Œuf", hp: 100, speed: 0, radius: 60, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "egg_m", name: "Œuf", hp: 180, speed: 0, radius: 85, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "egg_l", name: "Gros œuf", hp: 600, speed: 0, radius: 140, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.
 #[inline]
 pub fn unit_speed(kind: u16) -> i32 {
     UNITS[kind as usize].speed * TILE / 200
+}
+
+/// Unités qu'une entrée de file d'usine fait naître : la portée d'un organisme de la Souche, sinon une.
+#[inline]
+pub fn batch(kind: u16) -> u16 {
+    UNITS[kind as usize].litter.max(1) as u16
+}
+
+/// Durée d'une entrée de file d'usine, en ticks à puissance nominale : le temps de fabrication de
+/// l'unité, ou la gestation d'une portée (la moitié du temps cumulé de ses organismes).
+#[inline]
+pub fn factory_ticks(kind: u16) -> u32 {
+    let d = &UNITS[kind as usize];
+    if d.litter > 0 {
+        d.build as u32 * 10 * d.litter as u32
+    } else {
+        d.build as u32 * 20
+    }
 }
 
 #[inline]
@@ -1169,9 +1203,9 @@ pub fn data_json() -> String {
         }
         let ws: Vec<String> = u.weapons.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{}}}",
+            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{},\"litter\":{},\"egg\":{}}}",
             js(u.key), js(u.name), u.layer as u8, u.hp, u.speed, u.radius, ws.join(","), u.vision, u.radar, cost_js(u.cost), u.build, u.tech,
-            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }
+            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }, u.litter, matches!(i as u16, U_EGG_S | U_EGG_M | U_EGG_L)
         ));
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();

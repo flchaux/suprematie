@@ -100,8 +100,36 @@ pub struct Nest {
     pub burst: u32,
     /// espèce : 0 mordeurs (nid), 1 réplicateurs (ruche)
     pub species: u8,
+    /// apprivoisement par une Reine de la Souche : joueur + 1 (0 : personne) et avancement (ticks)
+    pub tamer: u8,
+    pub tame: u16,
 }
-crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try; since 2: foe, counter, struck, burst, species });
+crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try; since 2: foe, counter, struck, burst, species; since 5: tamer, tame });
+
+/// Nid greffé : un nid de mordeurs apprivoisé par une Reine de la Souche. Il appartient au joueur et fait
+/// naître pour lui des mordeurs, sans coût mais lentement (voir `update_den`).
+#[derive(Clone, Default)]
+pub struct Den {
+    /// bâtiment (référence)
+    pub b: u32,
+    pub owner: u8,
+    /// ticks avant la prochaine naissance
+    pub spawn: u32,
+    /// bêtes nées du nid (ou apprivoisées avec lui) encore en vie
+    pub brood: Vec<u32>,
+}
+crate::ser_struct!(Den { b, owner, spawn, brood });
+
+/// Apprivoisement : la Reine doit rester à moins de TAME_R cases du nid pendant TAME_TICKS (30 s).
+pub const TAME_R: i32 = 6;
+pub const TAME_TICKS: u16 = 600;
+/// Nid greffé : une portée de DEN_LITTER œufs toutes les DEN_PERIOD × DEN_LITTER ticks (une bête par
+/// 20 s), tant que moins de DEN_BROOD bêtes du nid sont en vie (œufs compris).
+pub const DEN_PERIOD: u32 = 400;
+pub const DEN_BROOD: usize = 6;
+pub const DEN_LITTER: usize = 3;
+/// Événement : un nid a été apprivoisé (joueur, x, y).
+pub const EV_TAMED: i32 = 47;
 
 /// Espèces de la faune.
 pub const SPECIES_BEASTS: u8 = 0;
@@ -165,6 +193,8 @@ pub struct Nature {
     pub ruins: Vec<Ruin>,
     /// bâtiments abattus par un réplicateur : un réplicateur naît sur place (x, y, réplicateur auteur)
     pub breed: Vec<Breed>,
+    /// nids greffés (apprivoisés par la Souche)
+    pub dens: Vec<Den>,
 }
 
 /// Réplicateur à faire naître (bâtiment dévoré) : position et réplicateur auteur.
@@ -175,7 +205,7 @@ pub struct Breed {
     pub author: u32,
 }
 crate::ser_struct!(Breed { x, y, author });
-crate::ser_struct!(Nature { level, owner, nests, raids, next_expand, max_nests, max_beasts; since 2: ruins, breed });
+crate::ser_struct!(Nature { level, owner, nests, raids, next_expand, max_nests, max_beasts; since 2: ruins, breed; since 5: dens });
 
 impl Nature {
     pub fn new(level: u8, owner: u8, map_w: i32) -> Nature {
@@ -354,12 +384,13 @@ fn building_d2(bb: &Building, x: i32, y: i32) -> i64 {
 
 /// Ennemi le plus proche de (x, y) dans `r` cases : unité au sol ou bâtiment d'un joueur. `walls` :
 /// les murs et les relais comptent aussi (bête bloquée qui ronge l'obstacle) ; sinon ils sont ignorés.
-fn nearest_enemy(w: &World, x: i32, y: i32, r: i32, walls: bool) -> u32 {
+/// `calm` : joueur + 1 dont rien ne compte (nid qu'une Reine apprivoise ; 0 : aucun).
+fn nearest_enemy(w: &World, x: i32, y: i32, r: i32, walls: bool, calm: u8) -> u32 {
     let rr = r * TILE;
     let r2 = (rr as i64) * (rr as i64);
     let mut best = (i64::MAX, NONE);
     w.grid.coarse.query_teams(x, y, rr, PLAYERS_MASK, |o| {
-        if w.team_of(w.units.owner[o]) == NATURE_TEAM || !biteable_unit(w, o) {
+        if w.team_of(w.units.owner[o]) == NATURE_TEAM || !biteable_unit(w, o) || w.units.owner[o].wrapping_add(1) == calm {
             return;
         }
         let d = dist2(x, y, w.units.x[o], w.units.y[o]);
@@ -371,7 +402,7 @@ fn nearest_enemy(w: &World, x: i32, y: i32, r: i32, walls: bool) -> u32 {
     let mut bbest = (i64::MAX, u32::MAX);
     w.grid.query_buildings_teams(x, y, rr + 2 * TILE, PLAYERS_MASK, |b| {
         let bb = &w.buildings[b];
-        if !bb.alive || bb.hp <= 0 || bb.def().water || w.team_of(bb.owner) == NATURE_TEAM {
+        if !bb.alive || bb.hp <= 0 || bb.def().water || w.team_of(bb.owner) == NATURE_TEAM || bb.owner.wrapping_add(1) == calm {
             return;
         }
         if !walls && matches!(bb.def().class, BClass::Wall | BClass::Pylon) {
@@ -404,11 +435,12 @@ fn fight(w: &mut World, s: usize, r: i32) -> bool {
         return true;
     }
     let (x, y) = (w.units.x[s], w.units.y[s]);
+    let calm = w.units.cold[s].calm;
     let first = w.units.cold[s].orders.first().copied();
     if let Some(Order::Attack { target }) = first {
         if w.ref_pos(target).is_some() {
             if w.units.cold[s].noprog > 60 {
-                let t = nearest_enemy(w, x, y, 3, true);
+                let t = nearest_enemy(w, x, y, 3, true, calm);
                 if t != NONE && t != target {
                     push_front(w, s, Order::Attack { target: t });
                 }
@@ -416,13 +448,13 @@ fn fight(w: &mut World, s: usize, r: i32) -> bool {
             return true;
         }
     }
-    let t = nearest_enemy(w, x, y, r, false);
+    let t = nearest_enemy(w, x, y, r, false, calm);
     if t != NONE {
         push_front(w, s, Order::Attack { target: t });
         return true;
     }
     if matches!(first, Some(Order::Move { .. })) && w.units.cold[s].stuck > 30 {
-        let t = nearest_enemy(w, x, y, 3, true);
+        let t = nearest_enemy(w, x, y, 3, true, calm);
         if t != NONE {
             push_front(w, s, Order::Attack { target: t });
             return true;
@@ -743,6 +775,11 @@ pub fn on_hit(w: &mut World, x: i32, y: i32, victim: u32, attacker: u8) {
         let Some((cx, cy)) = nest_center(w, &w.nature.nests[i]) else { continue };
         let d = dist2(cx, cy, x, y);
         let n = &mut w.nature.nests[i];
+        // le joueur qui apprivoise ce nid frappe le nid ou sa horde : l'apprivoisement repart de zéro
+        if n.tamer != 0 && n.tamer == attacker.wrapping_add(1) && (n.b == victim || n.horde.contains(&victim)) {
+            n.tamer = 0;
+            n.tame = 0;
+        }
         // près du nid, ou une bête de sa horde attirée plus loin : le nid riposte
         if d <= zone || (d <= call && n.horde.contains(&victim)) {
             n.alarm = until;
@@ -795,11 +832,26 @@ pub fn update(w: &mut World) {
     }
     let mut i = 0;
     while i < w.nature.nests.len() {
-        if (w.tick + i as u32).is_multiple_of(NEST_PERIOD) && !update_nest(w, i) {
-            remove_nest(w, i);
-            continue;
+        if (w.tick + i as u32).is_multiple_of(NEST_PERIOD) {
+            match update_nest(w, i) {
+                NestFate::Lives => {}
+                NestFate::Destroyed => {
+                    remove_nest(w, i);
+                    continue;
+                }
+                // apprivoisé : déjà retiré de la liste (il est devenu un nid greffé)
+                NestFate::Tamed => continue,
+            }
         }
         i += 1;
+    }
+    let mut k = 0;
+    while k < w.nature.dens.len() {
+        if (w.tick + k as u32).is_multiple_of(NEST_PERIOD) && !update_den(w, k) {
+            w.nature.dens.remove(k);
+            continue;
+        }
+        k += 1;
     }
     let mut k = 0;
     while k < w.nature.raids.len() {
@@ -847,13 +899,23 @@ fn nearest_nest(w: &World, x: i32, y: i32, r_tiles: i32) -> Option<usize> {
     (best.1 != usize::MAX).then_some(best.1)
 }
 
-/// Une seconde de la vie d'un nid. Faux s'il a été détruit.
-fn update_nest(w: &mut World, i: usize) -> bool {
-    let Some(b) = w.building(w.nature.nests[i].b) else { return false };
+/// Sort d'un nid après une seconde de sa vie.
+enum NestFate {
+    Lives,
+    Destroyed,
+    Tamed,
+}
+
+/// Une seconde de la vie d'un nid.
+fn update_nest(w: &mut World, i: usize) -> NestFate {
+    let Some(b) = w.building(w.nature.nests[i].b) else { return NestFate::Destroyed };
     let (cx, cy) = w.buildings[b].center();
     let level = w.nature.level;
     let horde: Vec<u32> = std::mem::take(&mut w.nature.nests[i].horde).into_iter().filter(|&id| beast(w, id).is_some()).collect();
     w.nature.nests[i].horde = horde;
+    if taming(w, i, cx, cy) {
+        return NestFate::Tamed;
+    }
     let n = &w.nature.nests[i];
     let age = w.tick.saturating_sub(n.born);
     let max = horde_max(age, level);
@@ -898,11 +960,176 @@ fn update_nest(w: &mut World, i: usize) -> bool {
     if level >= FAUNA_NORMAL && w.tick >= w.nature.nests[i].next_try {
         w.nature.nests[i].next_try = w.tick + ATTACK_CHECK;
         let n = &w.nature.nests[i];
-        if n.horde.len() >= attack_size(max) && !alarmed {
+        if n.horde.len() >= attack_size(max) && !alarmed && n.tamer == 0 {
             consider_attack(w, i, cx, cy);
         }
     }
+    NestFate::Lives
+}
+
+// ---------- Apprivoisement (Souche) ----------
+
+/// Propriétaire d'une unité ou d'un bâtiment (référence), s'il existe.
+fn owner_of(w: &World, r: u32) -> Option<u8> {
+    if r == NONE {
+        return None;
+    }
+    if let Some(u) = w.unit(r) {
+        return Some(w.units.owner[u]);
+    }
+    w.building(r).map(|b| w.buildings[b].owner)
+}
+
+/// Nid de mordeurs sauvage (pas une ruche) de référence `r` : son indice dans `nature.nests`.
+pub fn wild_nest(w: &World, r: u32) -> Option<usize> {
+    w.building(r)?;
+    w.nature.nests.iter().position(|n| n.b == r && n.species == SPECIES_BEASTS)
+}
+
+/// Le nid `b` est-il en train d'être apprivoisé par un joueur de l'équipe `team` ?
+pub fn tamed_by_team(w: &World, b: usize, team: u8) -> bool {
+    let r = w.building_ref(b);
+    w.nature.nests.iter().any(|n| n.b == r && n.tamer != 0 && w.team_of(n.tamer - 1) == team)
+}
+
+/// Nids greffés du joueur.
+pub fn dens_of(w: &World, p: u8) -> usize {
+    w.nature.dens.iter().filter(|d| d.owner == p).count()
+}
+
+/// Apprivoisement d'un nid sauvage (chaque seconde) : la première Reine de la Souche (par indice) qui a
+/// l'ordre de l'apprivoiser et entre dans son territoire (TERRITORY_R cases) le calme (sa horde épargne ce
+/// joueur) ; à moins de TAME_R cases, l'apprivoisement avance, et au bout de TAME_TICKS le nid est à elle.
+/// Sans Reine (partie, morte, autre ordre), tout retombe à zéro. Vrai si le nid vient d'être apprivoisé
+/// (il est alors retiré de `nature.nests`).
+fn taming(w: &mut World, i: usize, cx: i32, cy: i32) -> bool {
+    if w.nature.nests[i].species != SPECIES_BEASTS {
+        return false;
+    }
+    let r = w.nature.nests[i].b;
+    let near = ((TAME_R * TILE) as i64).pow(2);
+    let zone = ((TERRITORY_R * TILE) as i64).pow(2);
+    let mut found: Vec<usize> = Vec::new();
+    w.grid.fine.query(cx, cy, TERRITORY_R * TILE, |o| found.push(o));
+    found.sort_unstable();
+    found.dedup();
+    let mut who: Option<(u8, bool)> = None;
+    for o in found {
+        if !w.units.alive[o] || w.units.hp[o] <= 0 || w.units.kind[o] != U_QUEEN {
+            continue;
+        }
+        let d = dist2(cx, cy, w.units.x[o], w.units.y[o]);
+        let p = w.units.owner[o];
+        if d <= zone && matches!(w.units.cold[o].orders.first(), Some(&Order::Tame { target }) if target == r) && crate::souche::den_room(w, p) {
+            who = Some((p, d <= near));
+            break;
+        }
+    }
+    let n = &mut w.nature.nests[i];
+    match who {
+        Some((p, close)) => {
+            if n.tamer != p + 1 {
+                n.tamer = p + 1;
+                n.tame = 0;
+            }
+            if close {
+                n.tame += NEST_PERIOD as u16;
+                if n.tame >= TAME_TICKS {
+                    tame_nest(w, i, p, cx, cy);
+                    return true;
+                }
+            }
+        }
+        None => {
+            n.tamer = 0;
+            n.tame = 0;
+        }
+    }
+    false
+}
+
+/// Le nid `i` passe au joueur `p` : il devient un nid greffé, et sa horde le suit.
+fn tame_nest(w: &mut World, i: usize, p: u8, cx: i32, cy: i32) {
+    let n = w.nature.nests.remove(i);
+    let Some(b) = w.building(n.b) else { return };
+    let (x, y) = (w.buildings[b].x, w.buildings[b].y);
+    let (bw, bh) = w.buildings[b].size();
+    w.grid.remove_building(b as u32, x, y, bw, bh);
+    w.buildings[b].owner = p;
+    w.buildings[b].target = NONE;
+    // pas de ralliement tant que le joueur n'en donne pas : les bêtes restent au nid
+    w.buildings[b].rally = (0, 0);
+    let team = w.team_of(p);
+    w.grid.add_building(b as u32, x, y, bw, bh, team);
+    w.buildings_version = w.buildings_version.wrapping_add(1);
+    let mut brood = Vec::new();
+    for id in n.horde {
+        if let Some(s) = beast(w, id) {
+            if adopt(w, s, p) {
+                brood.push(id);
+            }
+        }
+    }
+    w.nature.dens.push(Den { b: n.b, owner: p, spawn: DEN_PERIOD, brood });
+    w.ev(EV_TAMED, p as i32, cx, cy, 0);
+}
+
+/// Une bête de la faune passe au joueur `p` (dans la limite de ses unités) : elle oublie ses ordres.
+fn adopt(w: &mut World, s: usize, p: u8) -> bool {
+    if w.players[p as usize].unit_count >= UNIT_CAP {
+        return false;
+    }
+    let old = w.units.owner[s] as usize;
+    clear_orders(w, s);
+    let c = &mut w.units.cold[s];
+    c.wtarget = [NONE; 2];
+    c.calm = 0;
+    w.units.owner[s] = p;
+    w.players[old].unit_count = w.players[old].unit_count.saturating_sub(1);
+    w.players[p as usize].unit_count += 1;
     true
+}
+
+/// Une seconde d'un nid greffé. Faux s'il a été détruit (ou a changé de maître).
+fn update_den(w: &mut World, k: usize) -> bool {
+    let Some(b) = w.building(w.nature.dens[k].b) else { return false };
+    let owner = w.nature.dens[k].owner;
+    if w.buildings[b].owner != owner || !w.players[owner as usize].alive {
+        return false;
+    }
+    let brood: Vec<u32> = std::mem::take(&mut w.nature.dens[k].brood).into_iter().filter(|&id| w.unit(id).is_some_and(|s| w.units.hp[s] > 0 && w.units.owner[s] == owner)).collect();
+    w.nature.dens[k].brood = brood;
+    let full = bdef(B_NEST).hp;
+    let bb = &mut w.buildings[b];
+    bb.hp = (bb.hp + NEST_REGEN).min(full);
+    let d = &mut w.nature.dens[k];
+    d.spawn = d.spawn.saturating_sub(NEST_PERIOD);
+    if d.spawn > 0 {
+        return true;
+    }
+    // pas de place (bêtes du nid en vie, limite d'unités) : nouvel essai dans 20 s
+    d.spawn = DEN_PERIOD;
+    if d.brood.len() >= DEN_BROOD || w.players[owner as usize].unit_count + DEN_LITTER as u32 > UNIT_CAP {
+        return true;
+    }
+    // comme une couveuse, le nid pond une portée d'œufs devant lui (voir ponte.rs) ; les mordeurs qui en
+    // sortent restent au nid tant que le joueur ne lui donne pas de point de ralliement
+    w.nature.dens[k].spawn = DEN_PERIOD * DEN_LITTER as u32;
+    let kind = beast_kind(w);
+    let rally = Some(w.buildings[b].rally).filter(|&(rx, ry)| rx > 0 || ry > 0);
+    let eggs = crate::ponte::lay_from(w, b, kind, DEN_LITTER, rally);
+    w.nature.dens[k].brood.extend(eggs);
+    true
+}
+
+/// Un œuf a éclos : dans la portée d'un nid greffé, la bête qui en sort prend sa place.
+pub fn egg_hatched(w: &mut World, egg: u32, born: u32) {
+    for d in w.nature.dens.iter_mut() {
+        if let Some(slot) = d.brood.iter_mut().find(|id| **id == egg) {
+            *slot = born;
+            return;
+        }
+    }
 }
 
 /// Défense du territoire et vie au nid : en alerte (ou quand un ennemi entre dans le territoire, sauf
@@ -910,8 +1137,28 @@ fn update_nest(w: &mut World, i: usize) -> bool {
 /// rôdent autour du nid.
 fn defend(w: &mut World, i: usize, cx: i32, cy: i32, alarmed: bool) {
     let level = w.nature.level;
-    let intruder = if level >= FAUNA_NORMAL { nearest_enemy(w, cx, cy, TERRITORY_R, false) } else { NONE };
+    // nid qu'une Reine apprivoise : sa horde est calmée envers ce joueur (ni intrus, ni cible), et lâche
+    // ce qu'elle lui faisait
+    let calm = w.nature.nests[i].tamer;
+    let intruder = if level >= FAUNA_NORMAL { nearest_enemy(w, cx, cy, TERRITORY_R, false, calm) } else { NONE };
     let horde = w.nature.nests[i].horde.clone();
+    for &id in &horde {
+        let Some(s) = beast(w, id) else { continue };
+        if w.units.cold[s].calm != calm {
+            w.units.cold[s].calm = calm;
+        }
+        if calm != 0 {
+            let on_tamer = match w.units.cold[s].orders.first() {
+                Some(&Order::Attack { target }) => owner_of(w, target).is_some_and(|o| o.wrapping_add(1) == calm),
+                _ => false,
+            };
+            if on_tamer || w.units.cold[s].wtarget.iter().any(|&t| owner_of(w, t).is_some_and(|o| o.wrapping_add(1) == calm)) {
+                w.units.cold[s].wtarget = [NONE; 2];
+                let (x, y) = jitter(w, cx, cy, 3);
+                command(w, s, move_to(x, y, false));
+            }
+        }
+    }
     if alarmed || intruder != NONE {
         let (ax, ay) = (w.nature.nests[i].ax, w.nature.nests[i].ay);
         // tireur hors de portée de poursuite (artillerie, tir de loin) : contre-attaque en règle
@@ -1256,7 +1503,7 @@ fn go_home(w: &mut World, k: usize, units: &[u32]) {
 
 /// Prochain bâtiment de joueur à détruire près du point d'arrivée de la horde (24 cases).
 fn next_target(w: &World, x: i32, y: i32) -> Option<(i32, i32)> {
-    let t = nearest_enemy(w, x, y, 24, false);
+    let t = nearest_enemy(w, x, y, 24, false, 0);
     w.ref_pos(t)
 }
 
@@ -1274,6 +1521,14 @@ pub fn hash_into(w: &World, h: &mut crate::ser::Hasher) {
         h.add(nest.next_try as u64 | (nest.alarm as u64) << 32);
         h.add(nest.counter as u64 | (nest.burst as u64) << 32);
         h.add(nest.struck as u64 | (nest.foe as u64) << 32 | (nest.species as u64) << 40);
+        // apprivoisement : seulement s'il a lieu (l'empreinte d'une partie sans Souche ne change pas)
+        if nest.tamer != 0 {
+            h.add(nest.tamer as u64 | (nest.tame as u64) << 8);
+        }
+    }
+    for d in &n.dens {
+        h.add(d.b as u64 | (d.owner as u64) << 32 | (d.brood.len() as u64) << 40);
+        h.add(d.spawn as u64);
     }
     for r in &n.ruins {
         h.add(r.b as u64 | (r.holder as u64) << 32 | (r.progress as u64) << 40);
@@ -1287,9 +1542,15 @@ pub fn hash_into(w: &World, h: &mut crate::ser::Hasher) {
 }
 
 /// Renseignements sur un nid pour l'interface : [bêtes au nid, plafond, seuil d'attaque, âge (s),
-/// évolution ‰, pression totale des bâtiments voisins, chance d'attaque ‰ à chaque tentative].
+/// évolution ‰, pression totale des bâtiments voisins, chance d'attaque ‰ à chaque tentative, joueur qui
+/// l'apprivoise (-1 : personne), avancement de l'apprivoisement ‰].
 pub fn nest_info(w: &World, b: usize) -> Vec<i32> {
     let r = w.building_ref(b);
+    // nid greffé (Souche) : [-1, bêtes en vie, plafond, secondes avant la prochaine naissance, nids greffés, limite]
+    if let Some(d) = w.nature.dens.iter().find(|d| d.b == r) {
+        let alive = d.brood.iter().filter(|&&id| w.unit(id).is_some()).count();
+        return vec![-1, alive as i32, DEN_BROOD as i32, d.spawn.div_ceil(20) as i32, dens_of(w, d.owner) as i32, crate::souche::den_limit(w, d.owner) as i32];
+    }
     let Some(n) = w.nature.nests.iter().find(|n| n.b == r) else { return Vec::new() };
     let age = w.tick.saturating_sub(n.born);
     let max = horde_max(age, w.nature.level);
@@ -1297,5 +1558,8 @@ pub fn nest_info(w: &World, b: usize) -> Vec<i32> {
     let p: u32 = pressure(w, cx, cy).iter().map(|x| x.0).sum();
     let chance = if w.nature.level >= FAUNA_NORMAL { attack_chance(p, w.nature.level) } else { 0 };
     let home = n.horde.iter().filter(|&&id| beast(w, id).is_some()).count();
-    vec![home as i32, max as i32, attack_size(max) as i32, (age / 20) as i32, evolution(w.tick, w.nature.level) as i32, p as i32, chance as i32]
+    // apprivoisement (Souche) : joueur (-1 : personne) et avancement ‰
+    let tamer = n.tamer as i32 - 1;
+    let tame = n.tame as i32 * 1000 / TAME_TICKS as i32;
+    vec![home as i32, max as i32, attack_size(max) as i32, (age / 20) as i32, evolution(w.tick, w.nature.level) as i32, p as i32, chance as i32, tamer, tame]
 }
