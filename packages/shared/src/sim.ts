@@ -16,6 +16,7 @@ export interface SimExports {
   info_building(r: number): number;
   info_unit(id: number): number;
   power_zones(player: number): number;
+  zone_economy(player: number, tx: number, ty: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
   can_place_line(nWords: number): number;
@@ -36,6 +37,7 @@ export interface SimExports {
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
   research_queue(player: number): number;
+  belt_path(r: number): number;
 }
 
 const dec = new TextDecoder();
@@ -111,6 +113,10 @@ export class Sim {
   researchQueue(player: number): Int32Array {
     return this.outI32(this.ex.research_queue(player));
   }
+  /** Chemin de tapis du tapis `ref` (double clic) : références de ses tapis, sans traverser un tapis de contrôle. */
+  beltPath(ref: number): number[] {
+    return Array.from(this.outI32(this.ex.belt_path(ref)), (r) => r >>> 0);
+  }
   plannedBuilds(player: number): Int32Array {
     return this.outI32(this.ex.planned_builds(player));
   }
@@ -120,6 +126,11 @@ export class Sim {
   /** Zones électriques de l'équipe du joueur (voir sim/src/render.rs, power_zones). */
   powerZones(player: number): PowerZones {
     return JSON.parse(this.outString(this.ex.power_zones(player | 0))) as PowerZones;
+  }
+  /** Économie de la zone électrique (ou du réseau de racines) qui couvre la case (tx, ty) : voir
+   * sim/src/zone_eco.rs. */
+  zoneEconomy(player: number, tx: number, ty: number): ZoneEconomy {
+    return JSON.parse(this.outString(this.ex.zone_economy(player | 0, tx | 0, ty | 0))) as ZoneEconomy;
   }
   infoBuilding(ref: number): unknown {
     return JSON.parse(this.outString(this.ex.info_building(ref >>> 0)));
@@ -183,6 +194,23 @@ export class Sim {
   winner(): number {
     return this.ex.game_winner();
   }
+}
+
+/** Économie d'une zone (barre des ressources) : `zone` 0 aucune, 1 zone vivante, 2 zone éteinte (générateur
+ * à sec, référence `gen`), 3 réseau de racines (Souche) ; `stock` par objet (dépôts de la zone, soutes des unités
+ * qui s'y trouvent, bourse du joueur), `cap` plafond total des dépôts de la zone ; `prod`, `cons` : débits
+ * maximaux en centièmes d'objet par minute ; `machines` : machines comptées ; `power` : énergie de la zone. */
+export interface ZoneEconomy {
+  zone: 0 | 1 | 2 | 3;
+  net?: number;
+  gen?: number;
+  stock?: number[];
+  cap?: number;
+  prod?: number[];
+  cons?: number[];
+  machines?: number;
+  /** énergie de la zone : production, demande, puissance installée (kW), satisfaction (0..1024), autonomie (s, -1 : rien ne brûle) */
+  power?: [number, number, number, number, number];
 }
 
 /** Zones électriques : réseaux [id, joueur, production, demande, installé, satisfaction, combustible,

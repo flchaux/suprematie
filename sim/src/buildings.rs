@@ -1255,9 +1255,10 @@ pub fn flow_max(w: &World, b: usize) -> u32 {
             tenths(12_000 * r.output.1 as u64 * crafter_speed(bb) as u64, r.time as u64 * 100)
         }
         // un objet : 30 * RECIPE_SCALE de progrès, 1024 * res_mult * vitesse du niveau / 100 par tick
+        // pureté du gisement et cadence comprises (comme tick_extractor)
         BClass::Extractor => {
             let lvl = EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)].speed as u64;
-            tenths(12_000 * w.players[owner].res_mult.max(0) as u64 * lvl, 30 * 100 * 100)
+            tenths(12_000 * w.players[owner].res_mult.max(0) as u64 * lvl * purity_of(bb) as u64 * clock_of(bb) as u64, 30 * 100 * 100 * 100 * 100)
         }
         // une unité : build * 20 * RECIPE_SCALE de progrès, 1024 * build_mult par tick
         BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64, udef(q.0).build as u64 * 20 * 100)),
@@ -1745,7 +1746,7 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
 }
 
 /// Objet produit disponible en sortie du bâtiment.
-fn output_of(b: &Building) -> u8 {
+pub fn output_of(b: &Building) -> u8 {
     match b.def().class {
         BClass::Crafter if b.recipe != RECIPE_NONE && b.out > 0 => RECIPES[b.recipe as usize].output.0,
         BClass::Extractor if b.out > 0 => b.recipe,
@@ -2230,7 +2231,10 @@ fn tick_extractor(w: &mut World, b: usize) {
         let n = front_count(bw, bh, dir).max(1);
         let start = w.buildings[b].timer as usize % n;
         let mut done = false;
-        for k in 0..n {
+        // foreuse nomade : pas de face avant privilégiée, ses voisins collés sont servis à tour de rôle
+        // sur toutes ses faces (transfert direct ci-dessous)
+        let nomad = w.buildings[b].kind == B_T_DRILL;
+        for k in 0..if nomad { 0 } else { n } {
             let (fx, fy) = front_tile_k(x, y, bw, bh, dir, (start + k) % n);
             if push_to(w, fx, fy, it, dir) {
                 w.buildings[b].timer = ((start + k + 1) % n) as _;
@@ -2369,6 +2373,20 @@ pub fn crafter_speed(bb: &Building) -> u32 {
 }
 
 // ---------- Cadence (surcadençage, sous-cadençage) ----------
+
+/// Puissance électrique demandée par une machine à pleine marche (kW) : niveau et cadence compris, comme
+/// ce qu'elle réclame à sa zone (0 : n'en consomme pas ; extracteur sur hydrocarbure : 0).
+pub fn power_need(bb: &Building) -> i32 {
+    match bb.def().class {
+        BClass::Crafter => crafter_power(bb),
+        BClass::Extractor if bb.recipe == HYDROCARBON => 0,
+        BClass::Extractor => {
+            let lvl = &EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
+            (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(bb) as i64 / 1000) as i32
+        }
+        _ => bb.def().power_use,
+    }
+}
 
 /// Pureté (%) du gisement sous un extracteur ou une centrale géothermique, relevée à la pose.
 #[inline]

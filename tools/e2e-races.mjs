@@ -20,6 +20,27 @@ const check = (ok, what, extra = "") => {
 };
 const url = `${base}/?k=testkey${webgpu ? "" : "&webgl"}`;
 
+/** Point de la page (sur le canevas, hors interface) dont le sol visé est (x, z) en cases. */
+async function screenAt(page, x, z) {
+  return page.evaluate(([x, z]) => {
+    const { client } = window.__game;
+    const r = client.canvasEl.getBoundingClientRect();
+    let best = { x: 0, y: 0, d: Infinity };
+    for (let sy = 60; sy < r.height - 20; sy += 4) {
+      for (let sx = 20; sx < r.width - 20; sx += 4) {
+        const g = client.groundAt(sx, sy);
+        if (!g) continue;
+        const d = Math.hypot(g.x - x, g.z - z);
+        if (d >= best.d || d > 0.4) continue;
+        const el = document.elementFromPoint(sx + r.left, sy + r.top);
+        if (el !== client.canvasEl && !client.canvasEl.contains(el)) continue;
+        best = { x: sx + r.left, y: sy + r.top, d };
+      }
+    }
+    return best;
+  }, [x, z]);
+}
+
 async function open(name) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
@@ -255,7 +276,7 @@ if (!nest) {
     const pos = await a.page.evaluate(async (ref) => {
       const { client, ui } = window.__game;
       const q = client.frame.players[ui.me].commander;
-      client.cmd([50, 0, ref, 1, q]);
+      client.cmd([52, 0, ref, 1, q]);
       const t = client.frame.tick;
       while (client.frame.tick < t + 4) await new Promise((r) => setTimeout(r, 50));
       const f = client.frame;
@@ -266,7 +287,7 @@ if (!nest) {
       }
       return null;
     }, ref);
-    if (pos && pos.code === 18) {
+    if (pos && pos.code === 21) {
       const d = Math.hypot(pos.x - pos.qx, pos.z - pos.qz);
       if (!best || d < best.d) best = { ref, d, x: pos.x, z: pos.z };
     }
@@ -274,7 +295,7 @@ if (!nest) {
   console.log("     nid le plus proche :", JSON.stringify(best));
   if (best) {
     // la Reine y va d'elle-même (ordre « Apprivoiser ») ; on attend que le nid soit en vue
-    await a.page.evaluate((ref) => { const { client, ui } = window.__game; client.cmd([50, 0, ref, 1, client.frame.players[ui.me].commander]); }, best.ref);
+    await a.page.evaluate((ref) => { const { client, ui } = window.__game; client.cmd([52, 0, ref, 1, client.frame.players[ui.me].commander]); }, best.ref);
     // le client ne reçoit que la zone affichée : on regarde le nid
     await aimAt(best.x + 1, best.z + 1, 60);
     for (let k = 0; k < 150 && !nest; k++) {
@@ -370,23 +391,7 @@ const target = await b.page.evaluate(() => {
 check(!!target, "gisement libre près d'un chenillard foreuse");
 if (target) {
   await b.page.waitForTimeout(1500);
-  const screen = await b.page.evaluate(([x, z]) => {
-    const { client } = window.__game;
-    const r = client.canvasEl.getBoundingClientRect();
-    let best = { x: 0, y: 0, d: Infinity };
-    for (let sy = 60; sy < r.height - 20; sy += 4) {
-      for (let sx = 20; sx < r.width - 20; sx += 4) {
-        const g = client.groundAt(sx, sy);
-        if (!g) continue;
-        const d = Math.hypot(g.x - x, g.z - z);
-        if (d >= best.d || d > 0.4) continue;
-        const el = document.elementFromPoint(sx + r.left, sy + r.top);
-        if (el !== client.canvasEl && !client.canvasEl.contains(el)) continue;
-        best = { x: sx + r.left, y: sy + r.top, d };
-      }
-    }
-    return best;
-  }, [target.x + 1, target.y + 1]);
+  const screen = await screenAt(b.page, target.x + 1, target.y + 1);
   await b.page.mouse.move(screen.x, screen.y);
   await b.page.waitForTimeout(600);
   await b.page.mouse.move(screen.x + 2, screen.y + 1);
@@ -440,9 +445,18 @@ await b.page.evaluate(([id, x, y]) => {
   sc.updateCamera();
 }, [gen.id, gen.x, gen.y]);
 await b.page.waitForTimeout(800);
-const deployBtn = b.page.locator("button.cmd[title='Déployer']");
+const deployBtn = b.page.locator("button.cmd[title^='Déployer']");
 check((await deployBtn.count()) === 1, "bouton Déployer du chenillard");
 await deployBtn.click({ force: true, timeout: 120000 });
+// mode placement : le fantôme du module suit la souris ; clic sur la position du chenillard
+const placing = await b.page.evaluate(() => ({ mode: window.__game.ui.mode, kind: window.__game.ui.data.buildings[window.__game.ui.buildKind]?.key }));
+check(placing.mode === "build" && placing.kind === "t_generator", "Déployer : placement du module", JSON.stringify(placing));
+const gp = await screenAt(b.page, gen.x / 256, gen.y / 256);
+await b.page.mouse.move(gp.x, gp.y);
+await b.page.waitForTimeout(800);
+await b.page.mouse.move(gp.x + 2, gp.y + 1);
+await b.page.waitForTimeout(800);
+await b.page.mouse.click(gp.x + 2, gp.y + 1, { timeout: 120000 });
 const t1 = await b.page.evaluate(() => window.__game.client.frame.tick);
 // à mi-déploiement : les stabilisateurs sortent (bit 29 du mot de l'unité)
 await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 150, t1, { timeout: 600000 });
@@ -453,8 +467,8 @@ const mid = await b.page.evaluate((id) => {
 }, gen.id);
 check(mid === 1, "chenillard signalé en déploiement (animation des stabilisateurs)");
 await b.page.screenshot({ path: `${outDir}/races-deploiement.png`, timeout: 120000 });
-// déploiement : 15 s de jeu
-await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 340, t1, { timeout: 600000 });
+// trajet jusqu'à l'emplacement choisi, puis 15 s de déploiement
+await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 520, t1, { timeout: 900000 });
 const deployed = await b.page.evaluate(() => {
   const { client, ui } = window.__game;
   const k = ui.data.buildings.findIndex((x) => x.key === "t_generator");

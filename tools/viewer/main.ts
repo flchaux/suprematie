@@ -128,7 +128,7 @@ if (set !== "decor") list.forEach((d, i) => {
     pm.mesh.count = 1;
     // ?dep=0.5 : pivots de déploiement (« dep|… ») à cet avancement (0 replié, 1 déployé ; par défaut : replié)
     const steps = parseDep(p.name);
-    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p|^stabil/.test(p.name) ? 0 : 0.5);
+    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p/.test(p.name) ? 0 : 0.5);
     const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(pose);
     pm.mesh.setMatrixAt(0, m);
     setTeamColor(pm, 0, color);

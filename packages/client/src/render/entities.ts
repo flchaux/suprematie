@@ -98,8 +98,7 @@ class KindMesh {
       const wave = Number(/^ondule(\d+)/.exec(p.name)?.[1] ?? 0);
       // droïde roulant : 1 « boule » (roulé), 2 « deplie… » (déployé), 3 « deplie_tourelle » (déployé, vise) ;
       // 4 « eppz… » : l'EPPZ d'une ruine, visible tant qu'elle le garde (bâtiment en service)
-      // 5 « stabil… » : stabilisateurs d'un chenillard des Transhumants, qui sortent pendant le déploiement
-      const mode = /^boule/.test(p.name) ? 1 : /^deplie_tourelle/.test(p.name) ? 3 : /^deplie/.test(p.name) ? 2 : /^eppz/.test(p.name) ? 4 : /^stabil/.test(p.name) ? 5 : 0;
+      const mode = /^boule/.test(p.name) ? 1 : /^deplie_tourelle/.test(p.name) ? 3 : /^deplie/.test(p.name) ? 2 : /^eppz/.test(p.name) ? 4 : 0;
       // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
       // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
       const slide = Number(/^chenille_p([\d.]+)/.exec(p.name)?.[1] ?? 0);
@@ -741,8 +740,6 @@ export class Entities {
         st.packTick = f.tick;
       }
       const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
-      // les bras sortent pendant les 40 premiers % du déploiement (ancrage ensuite), rentrent au début du repli
-      const stab = packing === 1 ? Math.min(1, packT / 0.4) : packing === 2 ? 1 - Math.min(1, packT / 0.4) : 0;
       // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
       const depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
@@ -772,8 +769,8 @@ export class Entities {
         } else if (p.mode === 1) {
           // boule du droïde : elle roule (un tour par circonférence parcourue)
           tmpM2.multiply(new THREE.Matrix4().makeRotationX(st.phase * 0.9));
-        } else if (p.mode === 2 || p.mode === 5) {
-          // pattes du droïde, stabilisateurs d'un chenillard : ils se déplient depuis leur point d'attache
+        } else if (p.mode === 2) {
+          // pattes du droïde : elles se déplient depuis le centre
         } else if (p.dep) {
           // déploiement décrit dans le modèle (rotations autour de l'origine du pivot, puis décalages)
           tmpM2.multiply(depMatrix(p.dep, depP, sc));
@@ -783,7 +780,7 @@ export class Entities {
         } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
         // droïde : la boule rentre quand il se déploie, les pièces déployées sortent
         const dep = st.dep ?? 0;
-        const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : p.mode === 5 ? Math.max(0.001, stab) : 1;
+        const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
         tmpM2.scale(tmpS.set(sc * vis, sc * vis, sc * vis));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));

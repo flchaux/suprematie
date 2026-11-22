@@ -336,6 +336,38 @@ pub fn hold_room(w: &World, s: usize, it: u8) -> u32 {
     (udef(w.units.kind[s]).hold as u32).saturating_sub(total(&w.units.cold[s].hold))
 }
 
+/// Événement : un constructeur n'a trouvé aucun dépôt où livrer un objet de sa soute
+/// (joueur, x, y, objet ; voir l'ordre Deliver).
+pub const EV_NO_DEPOT: i32 = 46;
+
+/// Livraison au dépôt (ordre Deliver) du constructeur `s` : objet à livrer et stock visé. Pour un objet
+/// donné, le stock utilisable le plus proche (à vol d'oiseau, sans limite de distance ; jamais sa propre
+/// soute) qui a de la place pour lui ; pour `item` 0 (toute la soute), le plus proche qui a de la place
+/// pour au moins un des objets de la soute, et le premier de ces objets. Rien si la soute n'en a pas, ou
+/// si aucun stock n'a de place.
+pub fn deliver_target(w: &World, s: usize, item: u8) -> Option<(u8, Store)> {
+    let hold = &w.units.cold[s].hold;
+    if item as usize >= N || (item != 0 && has(hold, item) == 0) {
+        return None;
+    }
+    let near = stores_near(w, w.units.owner[s], w.units.x[s], w.units.y[s], i32::MAX);
+    near.into_iter().filter(|&(_, st)| st != Store::U(s)).find_map(|(_, st)| {
+        if item != 0 {
+            return (st.room(w, item) > 0).then_some((item, st));
+        }
+        (1..N).find(|&it| has(hold, it as u8) > 0 && st.room(w, it as u8) > 0).map(|it| (it as u8, st))
+    })
+}
+
+/// Les drones du constructeur `s` videront-ils sa soute ? Ingénieur (la soute du commandant est un dépôt,
+/// jamais vidée) dont un objet de la soute a de la place dans un stock utilisable, à toute distance.
+pub fn will_unload(w: &World, s: usize) -> bool {
+    if unit_is_store(w, s) || udef(w.units.kind[s]).drones == 0 {
+        return false;
+    }
+    deliver_target(w, s, 0).is_some()
+}
+
 /// Reste à payer d'un chantier (bâtiment `kind`, payé `paid`), ajouté à `seq` (objet, quantité).
 fn remaining(kind: u16, paid: &[u16; 4], seq: &mut Vec<(u8, u32)>) {
     for (k, &(it, n)) in bdef(kind).cost.iter().enumerate() {

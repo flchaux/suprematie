@@ -654,8 +654,18 @@ export function buildModel(model: Model): BuiltModel {
   const pivots: BuiltPivot[] = [];
   for (const [name, geometry] of hi.pivots) {
     const p: BuiltPivot = { name, geometry, origin: hi.origins.get(name)! };
-    // un pivot fait entièrement de pièces fines disparaît au loin
-    if (useLo) p.geometryLo = lo!.pivots.get(name) ?? emptyGeometry();
+    // un pivot fait entièrement de pièces fines disparaît au loin ; sa géométrie lointaine est rapportée à
+    // l'origine du modèle proche (celle du modèle lointain diffère si la première pièce du pivot est fine)
+    if (useLo) {
+      const g = lo!.pivots.get(name);
+      const lo0 = lo!.origins.get(name);
+      const hi0 = hi.origins.get(name)!;
+      if (g && lo0 && !lo0.equals(hi0)) {
+        const moved = g.clone();
+        moved.translate(lo0.x - hi0.x, lo0.y - hi0.y, lo0.z - hi0.z);
+        p.geometryLo = moved;
+      } else p.geometryLo = g ?? emptyGeometry();
+    }
     pivots.push(p);
   }
   const box = hi.box.isEmpty() ? new THREE.Box3(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5)) : hi.box;

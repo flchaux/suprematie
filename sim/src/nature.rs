@@ -127,7 +127,7 @@ pub const TAME_TICKS: u16 = 600;
 pub const DEN_PERIOD: u32 = 400;
 pub const DEN_BROOD: usize = 6;
 /// Événement : un nid a été apprivoisé (joueur, x, y).
-pub const EV_TAMED: i32 = 46;
+pub const EV_TAMED: i32 = 47;
 
 /// Espèces de la faune.
 pub const SPECIES_BEASTS: u8 = 0;

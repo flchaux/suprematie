@@ -5,13 +5,13 @@ import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
-import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
+import type { Frame, GameData, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { ownerColor, ownerHex } from "./colors.ts";
-import { ui, pushMessage, hasTechUI, type HarvestInfo } from "./state.svelte.ts";
+import { ui, pushMessage, hasTechUI, type HarvestInfo, type PickupInfo, type DeliverInfo } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
@@ -353,6 +353,24 @@ export class GameClient {
     });
   }
 
+  /** Barre des ressources : économie de la zone électrique au centre de l'écran (4 fois par seconde au plus,
+   * une requête à la fois). */
+  private zoneSent = 0;
+  private queryZone(sc: GameScene): void {
+    // une requête à la fois (sans réponse au bout de 2 s, le Worker n'avait pas encore de partie : on relance)
+    const now = performance.now();
+    if (now - this.zoneSent < 2000 || !this.frame || ui.me < 0 || ui.spectator) return;
+    this.zoneSent = now;
+    const me = ui.me;
+    const at: [number, number] = [Math.floor(sc.target.x), Math.floor(sc.target.z)];
+    void this.query<ZoneEconomy | null>("zoneEconomy", [me, ...at]).then((z) => {
+      this.zoneSent = 0;
+      if (!z || ui.me !== me) return;
+      const color = z.zone === 2 ? DEAD_COLOR : (sc.power?.colorOf.get(z.net ?? 0) ?? 0x8a96a8);
+      ui.zone = { ...z, color, at };
+    });
+  }
+
   // ---------- boucle d'affichage ----------
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
@@ -374,6 +392,7 @@ export class GameClient {
       this.fpsCount = 0;
       this.lastUiUpdate = now;
       this.updateUi();
+      this.queryZone(sc);
     }
     // zones électriques : vue électrique (touche maintenue) ou pose d'un bâtiment qui consomme ou alimente
     const pv = keymap.held("powerView", this.keys);
@@ -573,6 +592,13 @@ export class GameClient {
             pushMessage("Nid apprivoisé : il est greffé à votre essaim et fait naître des mordeurs pour vous", "good");
             sfx.research();
           } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a apprivoisé un nid de mordeurs`, "alert");
+          break;
+        case EV.NO_DEPOT:
+          // livraison de la soute : aucun de nos dépôts n'a de place pour cet objet
+          if (a === ui.me) {
+            pushMessage(`Livraison impossible : aucun de vos dépôts n'a de place pour ${this.data!.items[e]?.name.toLowerCase() ?? "cet objet"} (il reste dans la soute)`, "alert");
+            sfx.error();
+          }
           break;
         case EV.DEPLOY_FAILED:
           // chenillard des Transhumants qui n'a pas trouvé la place de se déployer
@@ -978,7 +1004,8 @@ export class GameClient {
     if (!this.canvasEl?.contains(e.target as Node) && !this.mouse.dragging) return;
     if (e.button === 0) {
       if (ui.mode === "build") {
-        this.placeBuildings(e.shiftKey);
+        if (this.deployUnits.length) this.placeDeploy(e.shiftKey);
+        else this.placeBuildings(e.shiftKey);
         return;
       }
       if (ui.mode === "copy" || ui.mode === "paste") {
@@ -1385,6 +1412,7 @@ export class GameClient {
     this.updateCursor(true);
   }
   cancelMode(): void {
+    this.deployUnits = [];
     ui.mode = "";
     ui.buildKind = -1;
     this.resetLine();
@@ -1483,7 +1511,17 @@ export class GameClient {
           if (!add) this.selected.clear();
           // plusieurs bâtiments (Maj+clic, double-clic, cadre) : la sélection n'a plus d'unités
           for (const id of [...this.selected]) if (!Ord.isBuildingRef(id)) this.selected.delete(id);
-          if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350) {
+          if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350 && this.data!.buildings[b.kind]?.cls === BClass.Belt) {
+            // double-clic sur un tapis : tout son chemin, jusqu'aux tapis de contrôle (requête à la simulation)
+            this.selected.add(b.ref);
+            const click = now;
+            void this.query<number[]>("beltPath", [b.ref]).then((refs) => {
+              // sélection changée entre-temps (autre clic) : ne rien ajouter
+              if (this.lastClick.time !== click || !this.selected.has(b.ref)) return;
+              for (const r of refs ?? []) this.selected.add(r);
+              this.updateUi();
+            });
+          } else if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350) {
             // double-clic : tous nos bâtiments de ce type à l'écran
             const el = this.canvasEl!;
             for (const ref of this.ownBuildingsInRect(0, 0, el.clientWidth, el.clientHeight, b.kind)) this.selected.add(ref);
@@ -1657,7 +1695,7 @@ export class GameClient {
       return;
     }
     const id = g.ids[0];
-    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pack?: number; packLeft?: number } | null>("unit", [id]).then((r) => {
+    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pack?: number; packLeft?: number; pickup?: PickupInfo | null; deliver?: DeliverInfo | null } | null>("unit", [id]).then((r) => {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });
@@ -1739,6 +1777,7 @@ export class GameClient {
       if (def.cls === BClass.Gate) return "move";
       if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
       if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => this.data!.units[u.kind].key === "commander")) return "load";
+      if (this.canPickup(def.cls, tb.build) && this.holdersOf(units).length) return "load";
     }
     if (!tb && units.some((u) => this.data!.units[u.kind].key === "commander")) {
       const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
@@ -1821,14 +1860,25 @@ export class GameClient {
         sfx.confirm();
         return;
       }
-      // commandant sur un de nos tapis : il s'y poste et récupère les objets qui passent (stock commun)
+      // commandant sur un de nos tapis : il s'y poste et récupère les objets qui passent (dans sa soute)
       const cmdrs = units.filter((u) => this.data!.units[u.kind].key === "commander").map((u) => u.id);
       if (def.cls === BClass.Belt && cmdrs.length) {
         this.cmd(Ord.target(O.COLLECT, cmdrs, tb.ref, queue));
         const rest = units.filter((u) => !cmdrs.includes(u.id));
         if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
         this.scene?.addMarker(g.x, g.z, 0xffd060);
-        pushMessage("Commandant : récupération des objets du tapis (versés au stock)", "info");
+        pushMessage("Commandant : récupération des objets du tapis (dans sa soute, ses drones les portent à un dépôt)", "info");
+        sfx.confirm();
+        return;
+      }
+      // commandant ou ingénieur sur un extracteur ou un fabricant terminé : il ramasse ce qui sort, dans sa soute
+      const holders = this.holdersOf(units);
+      if (this.canPickup(def.cls, tb.build) && holders.length) {
+        this.cmd(Ord.pickup(holders, tb.ref, queue));
+        const rest = units.filter((u) => !holders.includes(u.id));
+        if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
+        this.scene?.addMarker(g.x, g.z, 0xffd060);
+        pushMessage(`Ramassage : ce qui sort de ${def.name.toLowerCase()} va dans la soute`, "info");
         sfx.confirm();
         return;
       }
@@ -1923,6 +1973,29 @@ export class GameClient {
     pushMessage("La Reine apprivoise le nid : 30 s à moins de 6 cases. Sa horde est calmée envers vous ; frapper le nid ou ses bêtes fait tout reprendre à zéro", "info");
     sfx.confirm();
     return true;
+  }
+
+  /** Constructeurs à soute (commandant, ingénieurs, Arche) parmi les unités. */
+  private holdersOf(units: { id: number; kind: number }[]): number[] {
+    return units.filter((u) => (this.data!.units[u.kind].hold ?? 0) > 0).map((u) => u.id);
+  }
+
+  /** Un bâtiment de cette classe, à cet avancement, a-t-il une sortie à ramasser (extracteur, fabricant terminés) ? */
+  private canPickup(cls: number, build: number): boolean {
+    return (cls === BClass.Extractor || cls === BClass.Crafter) && build >= 65536;
+  }
+
+  /**
+   * Livraison : les constructeurs sélectionnés portent l'objet `item` de leur soute (0 : tout) au dépôt le
+   * plus proche qui a de la place (Maj : en file).
+   */
+  deliverSelected(item: number, queue = false): void {
+    const ids = this.holdersOf(this.selectedUnits());
+    if (!ids.length || !this.data) return;
+    this.cmd(Ord.deliver(ids, item, queue));
+    const what = item ? this.data.items[item]?.name.toLowerCase() : "la soute";
+    pushMessage(`Livraison : ${what} part au dépôt le plus proche qui a de la place`, "info");
+    sfx.confirm();
   }
 
   /** Commandants parmi les unités. */
@@ -2042,9 +2115,54 @@ export class GameClient {
     const ids = this.selectedUnits().map((u) => u.id);
     if (ids.length) this.cmd(Ord.stop(ids));
   }
+  /**
+   * Déployer : les chenillards des Transhumants passent en mode placement (fantôme du module : position et
+   * sens, R pour tourner) ; les autres unités déployables (sonde, artillerie) se déploient sur place.
+   */
   deploySelected(): void {
-    const ids = this.selectedUnits().map((u) => u.id);
-    if (ids.length) this.cmd(Ord.deploy(ids));
+    const sel = this.selectedUnits();
+    const ch = sel.filter((u) => (this.data!.units[u.kind].deploys ?? -1) >= 0);
+    const other = sel.filter((u) => !ch.includes(u)).map((u) => u.id);
+    if (other.length) this.cmd(Ord.deploy(other));
+    if (ch.length) this.startDeploy(ch.map((u) => ({ id: u.id, kind: u.kind })));
+  }
+
+  /** chenillards à placer (le premier est celui du fantôme), pour le mode placement du déploiement */
+  deployUnits: { id: number; kind: number }[] = [];
+
+  /** Mode placement du déploiement : le fantôme du module du premier chenillard suit la souris. */
+  private startDeploy(list: { id: number; kind: number }[]): void {
+    if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
+    this.deployUnits = list;
+    ui.buildKind = this.data!.units[list[0].kind].deploys;
+    ui.mode = "build";
+    this.resetLine();
+    this.beltForced = false;
+    sfx.click();
+    this.updateGhost();
+    const more = list.length > 1 ? ` · Maj+clic : placer ensuite les ${list.length - 1} autres` : "";
+    pushMessage(`${this.data!.units[list[0].kind].name} : choisissez l'emplacement et le sens du module (R pour tourner), clic pour le déployer${more}`, "info");
+  }
+
+  /** Clic en mode placement du déploiement : le chenillard roule jusqu'au module fantôme et s'y déploie. */
+  private placeDeploy(shift: boolean): void {
+    const cur = this.deployUnits[0];
+    const c = this.ghostCells[0];
+    if (!cur || !c || !c.ok) {
+      const def = this.data!.buildings[ui.buildKind];
+      pushMessage(`Pas la place de déployer ici${def?.deposit ? " : la foreuse se pose sur un gisement libre" : " : terrain plat et libre"}`, "alert");
+      sfx.error();
+      return;
+    }
+    const def = this.data!.buildings[ui.buildKind];
+    const w = c.dir & 1 ? def.h : def.w;
+    const h = c.dir & 1 ? def.w : def.h;
+    this.cmd(Ord.deployAt([cur.id], Math.round((c.x + w / 2) * TILE), Math.round((c.y + h / 2) * TILE), false, c.dir));
+    this.scene?.addMarker(c.x + w / 2, c.y + h / 2, 0xff9a3c);
+    sfx.confirm();
+    const rest = this.deployUnits.slice(1);
+    if (shift && rest.length) this.startDeploy(rest);
+    else this.cancelMode();
   }
   /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */
   packSelected(): void {
@@ -2056,6 +2174,7 @@ export class GameClient {
   // ---------- placement des bâtiments ----------
   startBuild(kind: number): void {
     if (ui.mode === "copy" || ui.mode === "paste") this.cancelMode();
+    this.deployUnits = [];
     ui.buildKind = kind;
     ui.mode = "build";
     this.resetLine();
@@ -2212,7 +2331,8 @@ export class GameClient {
     const cur = this.snapBuild(g);
     // machines qui peuvent se jumeler : une rangée se pose en glissant
     const machine = isMachine(def.cls);
-    const lineable = def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine;
+    // placement d'un module de chenillard : un seul fantôme, pas de file
+    const lineable = !this.deployUnits.length && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine);
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const splitters = isBelt ? this.splitterTiles() : new Map<number, { dir: number; outs: number; owner: number }>();

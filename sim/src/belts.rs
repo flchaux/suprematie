@@ -656,6 +656,53 @@ pub struct BeltContents {
     pub powered: bool,
 }
 
+/// Plafond du chemin de tapis renvoyé par `belt_path` (double clic de l'interface).
+pub const BELT_PATH_MAX: usize = 4096;
+
+/// Chemin de tapis auquel appartient le tapis `b` (double clic sur un tapis) : tous les tapis du même
+/// propriétaire reliés à lui de proche en proche, en aval (`next_belt` : tout droit, virage, ascenseur,
+/// arrivée par le côté) comme en amont (les tapis dont `next_belt` est celui-ci), sans traverser un
+/// tapis de contrôle (répartiteur, trieur, débordement : ce ne sont pas des tapis, `next_belt` s'y arrête).
+/// Les chantiers ne relient rien (seul `b` peut en être un). Indices de bâtiments croissants, au plus
+/// `BELT_PATH_MAX` ; vide si `b` n'est pas un tapis.
+pub fn belt_path(w: &World, b: usize) -> Vec<usize> {
+    let Some(bb) = w.buildings.get(b) else { return Vec::new() };
+    if !bb.alive || bb.def().class != BClass::Belt {
+        return Vec::new();
+    }
+    let owner = bb.owner;
+    let mut mark = vec![false; w.buildings.len()];
+    mark[b] = true;
+    let mut seen: Vec<usize> = vec![b];
+    let mut todo: Vec<usize> = vec![b];
+    let mut add = |t: usize, seen: &mut Vec<usize>, todo: &mut Vec<usize>| {
+        if w.buildings[t].owner == owner && !mark[t] && seen.len() < BELT_PATH_MAX {
+            mark[t] = true;
+            seen.push(t);
+            todo.push(t);
+        }
+    };
+    while let Some(t) = todo.pop() {
+        if let Some(n) = next_belt(w, t) {
+            add(n, &mut seen, &mut todo);
+        }
+        // amont : tapis voisins (même niveau ou niveau voisin) qui débouchent dans celui-ci
+        let tb = &w.buildings[t];
+        let (x, y, f) = (tb.x, tb.y, tb.floor);
+        for (dx, dy) in DIRS {
+            for g in [f, f + 1, f.wrapping_sub(1)] {
+                if let Some((p, _)) = belt_at(w, x + dx, y + dy, g) {
+                    if next_belt(w, p) == Some(t) {
+                        add(p, &mut seen, &mut todo);
+                    }
+                }
+            }
+        }
+    }
+    seen.sort_unstable();
+    seen
+}
+
 /// Places d'une case de tapis (écart minimal entre deux objets).
 pub const TILE_SLOTS: u32 = (TILE / ITEM_GAP) as u32;
 
