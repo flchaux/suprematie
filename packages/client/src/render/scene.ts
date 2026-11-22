@@ -632,6 +632,8 @@ export class GameScene {
       this.entities.setDetail(this.lodLo);
       const iconScale = Math.max(1, this.distance / 160);
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, dt, spectator, view);
+      // les roches hautes d'un gisement disparaissent sous le bâtiment qui le recouvre
+      this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }
     this.decor?.update(frame, this.camera, this.distance, this.strategic, view, this.target, this.time);
     // repères de clic

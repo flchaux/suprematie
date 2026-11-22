@@ -9,8 +9,9 @@
 import * as THREE from "three/webgpu";
 import {
   texture, vec2, vec3, float, fract, floor, mod, dFdx, dFdy, abs, pow, positionWorld, normalWorld, attribute,
-  mx_noise_float, smoothstep, mix, clamp, dot, min, max, uniformArray,
+  mx_noise_float, smoothstep, mix, clamp, dot, min, max, uniform, uniformArray,
 } from "three/tsl";
+import { fogMapSize } from "./fog.ts";
 
 type N = ReturnType<typeof float>;
 type V2 = ReturnType<typeof vec2>;
@@ -38,7 +39,28 @@ const ROWS = 3;
 const placeholder = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
 placeholder.needsUpdate = true;
 const atlasNode = texture(placeholder);
+/** 1 dès que l'atlas est chargé (les lectures faites ailleurs que sur le sol valent 1 d'ici là). */
+const groundReady = uniform(0);
 let loading: Promise<boolean> | null = null;
+
+const noDeposit = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
+noDeposit.needsUpdate = true;
+/** Carte des taches de minerai de la carte courante (voir depositMask dans deposits.ts). */
+const depositNode = texture(noDeposit);
+export function setDepositTexture(tex: THREE.Texture): void {
+  depositNode.value = tex;
+}
+
+/**
+ * Tache de minerai au point courant : rgb = teinte (linéaire), a = poids (0 hors de la tache, 1 au
+ * cœur). La lecture est décalée par un bruit d'environ une case : le bord de la tache ondule au lieu
+ * de suivre les cases.
+ */
+export function depositSample() {
+  const p2 = vec2(positionWorld.x, positionWorld.z);
+  const warp = vec2(mx_noise_float(p2.mul(0.85).add(vec2(3.1, 7.7))), mx_noise_float(p2.mul(0.85).add(vec2(-11.3, 5.9)))).mul(0.75);
+  return depositNode.sample(p2.add(warp).div(fogMapSize));
+}
 
 /** Charge les textures du sol et construit l'atlas (une fois) ; faux si indisponibles. */
 export function loadGroundTextures(): Promise<boolean> {
@@ -77,6 +99,7 @@ export function loadGroundTextures(): Promise<boolean> {
     tex.anisotropy = 8;
     tex.needsUpdate = true;
     atlasNode.value = tex;
+    groundReady.value = 1;
     return true;
   })().catch((e) => {
     console.warn("textures du sol indisponibles", e);
@@ -98,6 +121,21 @@ function sampleLayer(layer: N, t: V2) {
 }
 
 const lum = (c: ReturnType<typeof vec3>) => dot(c, vec3(0.3, 0.55, 0.15));
+
+/**
+ * Grain de la texture de roche au point courant (projection triplanaire, une répétition toutes les
+ * `cells` cases) : une clarté autour de 1, à multiplier par la couleur d'une roche. Vaut 1 tant que
+ * l'atlas n'est pas chargé.
+ */
+export function rockDetail(cells: number): N {
+  const n = abs(normalWorld);
+  const w4 = pow(n, vec3(4, 4, 4));
+  const w = w4.div(w4.x.add(w4.y).add(w4.z));
+  const pr = positionWorld.div(cells);
+  const rock = float(ROCK);
+  const c = sampleLayer(rock, vec2(pr.z, pr.y)).mul(w.x).add(sampleLayer(rock, vec2(pr.x, pr.z).add(0.5)).mul(w.y)).add(sampleLayer(rock, vec2(pr.x, pr.y)).mul(w.z));
+  return mix(float(1), clamp(lum(c).div(LUM[ROCK]), 0.55, 1.6), groundReady) as unknown as N;
+}
 
 /**
  * Couleur du sol (linéaire) au point courant. Attribut des sommets « ground » : x = position dans
@@ -142,9 +180,11 @@ export function groundColor(): ReturnType<typeof vec3> {
     const d = clamp(lum(layer).sub(lumRef), -0.1, 0.1);
     return mix(base, layer, smoothstep(0, 1, clamp(w.sub(0.5).mul(2.2).add(d.mul(3)).add(0.5), 0, 1)));
   };
+  const dirt = sampleLayer(float(DIRT), uvB.add(0.23));
+  const gravel = sampleLayer(float(GRAVEL), uvC.add(0.4));
   col = patch(col, sampleLayer(float(LUSH), uvC), LUM[LUSH], smoothstep(0.05, 0.4, n1).mul(grassZ));
-  col = patch(col, sampleLayer(float(DIRT), uvB.add(0.23)), LUM[DIRT], smoothstep(0.3, 0.55, n2).mul(grassZ.mul(0.8).add(dryZ)));
-  col = patch(col, sampleLayer(float(GRAVEL), uvC.add(0.4)), LUM[GRAVEL], smoothstep(0.25, 0.55, n3).mul(sandZ.add(dryZ.mul(0.7))));
+  col = patch(col, dirt, LUM[DIRT], smoothstep(0.3, 0.55, n2).mul(grassZ.mul(0.8).add(dryZ)));
+  col = patch(col, gravel, LUM[GRAVEL], smoothstep(0.25, 0.55, n3).mul(sandZ.add(dryZ.mul(0.7))));
   // roche : projection triplanaire (le dessus et les deux côtés), mêlée selon la pente
   const n = abs(normalWorld);
   const w4 = pow(n, vec3(4, 4, 4));
@@ -159,6 +199,17 @@ export function groundColor(): ReturnType<typeof vec3> {
   const dr = clamp(lum(rc).sub(LUM[ROCK]), -0.2, 0.2);
   const rw = smoothstep(0, 1, clamp(rn.sub(0.5).mul(3).add(dr.mul(3)).add(0.5), 0, 1)).mul(smoothstep(0.02, 0.15, g.y));
   col = mix(col, rc, rw);
+  // gisements : la végétation cède peu à peu à la terre nue, puis à un lit de gravier et de roche
+  // teinté par le minerai, en deux nuances mêlées (minerai vif, roche stérile plus terne). Les deux
+  // passages sont larges (environ une case) et suivent le relief des textures : pas de bord net.
+  const dep = depositSample();
+  const fade = (base: ReturnType<typeof vec3>, layer: ReturnType<typeof vec3>, relief: N, w: N) => mix(base, layer, smoothstep(0, 1, clamp(w.add(relief.mul(1.6)), 0, 1)));
+  col = fade(col, dirt, clamp(lum(dirt).sub(LUM[DIRT]), -0.1, 0.1), smoothstep(0.0, 0.55, dep.a).mul(0.9));
+  const bed = mix(gravel.div(LUM[GRAVEL]), ry.div(LUM[ROCK]), n2.mul(0.5).add(0.5));
+  const vein = smoothstep(-0.3, 0.4, mx_noise_float(p2.mul(0.6).add(vec2(71.3, -23.9))));
+  const dull = mix(dep.rgb, vec3(lum(dep.rgb)), 0.55).mul(0.8);
+  const ore = bed.mul(mix(dep.rgb, dull, vein));
+  col = fade(col, ore, clamp(lum(gravel).sub(LUM[GRAVEL]), -0.1, 0.1), smoothstep(0.25, 0.8, dep.a).mul(0.95));
   // seconde échelle (environ 37 cases, tournée) : variations lentes de luminosité
   const big = vec2(p2.x.mul(0.8).sub(p2.y.mul(0.6)), p2.x.mul(0.6).add(p2.y.mul(0.8))).div(37);
   const bl = lum(sampleLayer(float(3), big));

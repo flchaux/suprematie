@@ -5,7 +5,8 @@ import { applyPower } from "./power.ts";
 import * as THREE from "three/webgpu";
 import { attribute, texture, positionWorld, vec2, float, mix, uniform, vec3, mx_noise_float, smoothstep, normalize, transformNormalToView, cameraPosition, dot, max, pow, sin } from "three/tsl";
 import { fogFactor, applyFog, setFogTexture } from "./fog.ts";
-import { groundColor, loadGroundTextures } from "./ground.ts";
+import { depositSample, groundColor, loadGroundTextures, setDepositTexture } from "./ground.ts";
+import { Deposits, depositMask } from "./deposits.ts";
 
 export const HSCALE = 0.08; // hauteur monde par unité de hauteur de la carte
 
@@ -148,6 +149,9 @@ export class Terrain {
   waterTime = uniform(0);
   /** sol : maillage, matériau texturé (une fois l'atlas chargé) et matériau simple */
   ground!: THREE.Mesh;
+  deposits!: Deposits;
+  /** carte des taches de minerai (voir depositMask) */
+  depositTex!: THREE.DataTexture;
   private texturedMat: THREE.Material | null = null;
   private plainMat!: THREE.Material;
   private wantDetail = true;
@@ -238,7 +242,12 @@ export class Terrain {
     const base = attribute("color", "vec3");
     const tint = mix(vec3(0.92, 0.95, 0.85), vec3(1.08, 1.02, 0.94), macro.mul(0.5).add(0.5));
     const grain = float(1).add(mid.mul(0.07)).add(fine.mul(0.045));
-    const ground = base.mul(tint).mul(grain);
+    // gisements : tache de minerai aux bords irréguliers (carte des taches, voir deposits.ts)
+    this.depositTex = depositMask(map);
+    setDepositTexture(this.depositTex);
+    const dep = depositSample();
+    const stain = dep.rgb.mul(float(0.75).add(mid.mul(0.2)).add(fine.mul(0.12)));
+    const ground = mix(base.mul(tint).mul(grain), stain, smoothstep(0.12, 0.7, dep.a.add(fine.mul(0.08))).mul(0.85));
     mat.colorNode = applyPower(applyFog(ground, fog));
     this.plainMat = mat;
     const mesh = new THREE.Mesh(geo, mat);
@@ -259,40 +268,9 @@ export class Terrain {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(w * 4, h * 4).rotateX(-Math.PI / 2), new THREE.MeshBasicNodeMaterial({ color: 0x0b1016 }));
     border.position.set(w / 2, -1, h / 2);
     this.group.add(border);
-    // gisements
-    const rock = new THREE.IcosahedronGeometry(0.42, 0);
-    const dmat = new THREE.MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.3 });
-    const rocks = new THREE.InstancedMesh(rock, dmat, map.spots.length * 4);
-    const m4 = new THREE.Matrix4();
-    let r = 0;
-    for (const s of map.spots) {
-      const color = new THREE.Color(DEPOSIT_COLORS[s.kind] ?? 0xffffff);
-      for (let k = 0; k < 4; k++) {
-        const x = s.x + 0.5 + (k % 2);
-        const z = s.y + 0.5 + (k >> 1);
-        const y = groundHeight(map, x, z) + 0.1;
-        const sc = 0.8 + ((k * 7 + s.x) % 5) * 0.08;
-        m4.compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, k + s.y, 0)), new THREE.Vector3(sc, sc * 0.7, sc));
-        rocks.setMatrixAt(r, m4);
-        rocks.setColorAt(r, s.kind === 5 ? color : color);
-        r++;
-      }
-    }
-    rocks.count = r;
-    if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
-    this.group.add(rocks);
-    if (map.spots.some((s) => s.kind === 5)) {
-      // halo lumineux des cristaux
-      const glow = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshBasicNodeMaterial({ color: 0x8ff4ff }), map.spots.length);
-      let g = 0;
-      for (const s of map.spots) {
-        if (s.kind !== 5) continue;
-        m4.compose(new THREE.Vector3(s.x + 1, groundHeight(map, s.x + 1, s.y + 1) + 1.0, s.y + 1), new THREE.Quaternion(), new THREE.Vector3(1, 2, 1));
-        glow.setMatrixAt(g++, m4);
-      }
-      glow.count = g;
-      this.group.add(glow);
-    }
+    // gisements : amas de roches et de cristaux (deposits.ts)
+    this.deposits = new Deposits(map);
+    this.group.add(this.deposits.group);
   }
 
   /** Eau animée : profondeur (couleur, transparence), vaguelettes, reflet du ciel, écume sur les rives. */

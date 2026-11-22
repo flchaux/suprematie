@@ -1,66 +1,56 @@
-// Sons synthétisés en WebAudio (aucun fichier audio) : tirs, explosions, lasers, alertes, interface.
+// Sons du jeu, tous synthétisés (aucun fichier audio).
 //
-// Combat : chaque son est fait de couches (claquement, corps, traîne) de bruit filtré et d'oscillateurs,
-// avec une saturation douce et une hauteur qui varie un peu d'un tir à l'autre. Il passe par une voix
-// spatialisée (à gauche ou à droite selon l'écran, étouffé et plus réverbéré au loin), puis par un bus
-// commun compressé : une grosse bataille reste lisible. Le nombre de voix de combat est plafonné.
+// Interface et alertes : oscillateurs WebAudio joués en direct.
+// Combat : chaque son est calculé une fois, échantillon par échantillon, par audio/synth.ts (dans un
+// Worker), en plusieurs variantes, puis rejoué comme un tampon. Chaque tir passe par une voix
+// spatialisée (gauche-droite selon l'écran, assourdie au loin), envoie une part de son signal dans
+// l'écho d'un terrain ouvert (convolution), puis rejoint un bus commun compressé : une grosse bataille
+// reste lisible. Le nombre de voix de combat est plafonné.
+
+import { boomClass, BOOM_MIX, BOOM_NUKE, ORBITAL_MIX, runJob, shotMix, shotSpec, specKey, type Mix, type SynthJob, type SynthResult } from "./synth.ts";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 /** bus des sons de combat : compresseur, puis volume général */
 let bus: AudioNode | null = null;
-/** entrée de la réverbération (salle courte générée) */
-let reverb: AudioNode | null = null;
+/** écho du terrain : convolution avec une réponse calculée (voir outdoorImpulse) */
+let room: ConvolverNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
 let volume = 0.5;
 const lastPlay = new Map<string, number>();
 
-/** Bruit blanc de 2 s (mono), par contexte (contexte réel ou rendu hors ligne). */
-const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>();
+/** Bruit blanc de 2 s (mono) pour les sons d'interface. */
 function noiseBuffer(c: BaseAudioContext): AudioBuffer {
-  let b = noiseCache.get(c);
-  if (!b) {
-    b = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
-    const d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    noiseCache.set(c, b);
-  }
+  const b = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   return b;
 }
 
-/** Réponse impulsionnelle d'une petite salle : bruit stéréo qui décroît en 1,3 s, assombri vers la fin. */
-function roomImpulse(c: BaseAudioContext): AudioBuffer {
-  const len = Math.floor(c.sampleRate * 1.3);
-  const b = c.createBuffer(2, len, c.sampleRate);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = b.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < len; i++) {
-      const t = i / len;
-      // passe-bas qui se referme : les réflexions tardives sont plus sourdes
-      const k = 0.55 + 0.4 * t;
-      lp = lp * k + (Math.random() * 2 - 1) * (1 - k);
-      d[i] = lp * Math.pow(1 - t, 2.6) * 2.2;
-    }
-  }
-  return b;
-}
-
-/** Chaîne de sortie des sons de combat : compresseur vers `out`, réverbération en parallèle. */
-function buildBus(c: BaseAudioContext, out: AudioNode): { bus: AudioNode; reverb: AudioNode } {
+/**
+ * Chaîne de sortie des sons de combat : compresseur, puis écrêtage doux (la sortie ne dépasse jamais
+ * la pleine échelle, même sous une explosion nucléaire) vers `out` ; écho du terrain en parallèle.
+ */
+function buildBus(c: BaseAudioContext, out: AudioNode): { bus: AudioNode; room: ConvolverNode } {
   const comp = c.createDynamicsCompressor();
-  comp.threshold.value = -20;
-  comp.knee.value = 12;
+  comp.threshold.value = -16;
+  comp.knee.value = 10;
   comp.ratio.value = 5;
-  comp.attack.value = 0.003;
-  comp.release.value = 0.18;
-  comp.connect(out);
+  comp.attack.value = 0.002;
+  comp.release.value = 0.14;
+  // la courbe couvre une entrée de -2 à 2 (d'où le gain de 0,5 devant) : presque linéaire sous 0,5, arrondie vers ±1
+  const half = c.createGain();
+  half.gain.value = 0.5;
+  const clip = c.createWaveShaper();
+  const curve = new Float32Array(1025);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh((i / 512 - 1) * 2.2) / Math.tanh(2.2);
+  clip.curve = curve;
+  comp.connect(half).connect(clip).connect(out);
   const conv = c.createConvolver();
-  conv.buffer = roomImpulse(c);
-  const wet = c.createGain();
-  wet.gain.value = 0.55;
-  conv.connect(wet).connect(comp);
-  return { bus: comp, reverb: conv };
+  // la réponse est déjà à l'échelle (énergie 1) : pas de normalisation automatique
+  conv.normalize = false;
+  conv.connect(comp);
+  return { bus: comp, room: conv };
 }
 
 function ac(): AudioContext | null {
@@ -73,7 +63,8 @@ function ac(): AudioContext | null {
       noiseBuf = noiseBuffer(ctx);
       const b = buildBus(ctx, master);
       bus = b.bus;
-      reverb = b.reverb;
+      room = b.room;
+      ask("ir", 0, { kind: "ir" }, true);
     } catch {
       return null;
     }
@@ -185,315 +176,227 @@ function tone(f0: number, f1: number, dur: number, gain: number, type: Oscillato
   o.stop(t + dur + 0.05);
 }
 
-// ---------- Synthèse des sons de combat ----------
+// ---------- Sons de combat ----------
 
-/** Sortie d'une voix : contexte, nœud d'entrée, départ (s). */
-interface Out {
-  c: BaseAudioContext;
-  dst: AudioNode;
-  t: number;
+/** Ce que le son d'un tir tire de la définition de l'arme. */
+export interface WeaponSound {
+  proj: number;
+  dmg: number;
+  aoe: number;
+  cooldown: number;
+  salvo: number;
+  sustain: number;
 }
 
-/** Courbe de saturation douce (tanh), par contexte et par force. */
-const shaperCache = new WeakMap<BaseAudioContext, Map<number, WaveShaperNode["curve"]>>();
-function shaper(c: BaseAudioContext, drive: number): WaveShaperNode {
-  let m = shaperCache.get(c);
-  if (!m) shaperCache.set(c, (m = new Map()));
-  const k = Math.round(drive * 10);
-  let curve = m.get(k);
-  if (!curve) {
-    const n = 1024;
-    const a = new Float32Array(n);
-    const g = 1 + k * 1.5;
-    for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1)) * 2 - 1;
-      a[i] = Math.tanh(x * g) / Math.tanh(g);
+/** Tampons d'un son : ses variantes (calculées à la demande) et leur niveau perçu, celles déjà demandées, la dernière jouée. */
+interface Slot {
+  bufs: (AudioBuffer | undefined)[];
+  loud: number[];
+  asked: boolean[];
+  last: number;
+}
+/** Une variante prête à jouer, et le gain qui l'amène au niveau visé. */
+interface Ready {
+  buf: AudioBuffer;
+  gain: number;
+}
+const slots = new Map<string, Slot>();
+const queue: SynthJob[] = [];
+const waiting = new Map<number, { key: string; v: number }>();
+let current: SynthJob | null = null;
+let nextJob = 1;
+/** undefined : pas encore créé ; null : indisponible (calcul sur le fil principal) */
+let worker: Worker | null | undefined;
+
+function slotOf(key: string): Slot {
+  let s = slots.get(key);
+  if (!s) slots.set(key, (s = { bufs: [], loud: [], asked: [], last: -1 }));
+  return s;
+}
+
+/** Résultat d'un calcul : le tampon rejoint son emplacement (ou devient la réponse du terrain). */
+function done(res: SynthResult): void {
+  const w = waiting.get(res.id);
+  waiting.delete(res.id);
+  current = null;
+  if (w && ctx && res.chans.length && res.chans[0].length) {
+    const b = ctx.createBuffer(res.chans.length, res.chans[0].length, ctx.sampleRate);
+    res.chans.forEach((ch, i) => b.copyToChannel(ch as Float32Array<ArrayBuffer>, i));
+    if (w.key === "ir") {
+      if (room) room.buffer = b;
+    } else {
+      const slot = slotOf(w.key);
+      slot.bufs[w.v] = b;
+      slot.loud[w.v] = Math.max(0.01, res.loud);
     }
-    curve = a;
-    m.set(k, curve);
   }
-  const ws = c.createWaveShaper();
-  ws.curve = curve;
-  ws.oversample = "2x";
-  return ws;
+  pump();
 }
 
-/** Enveloppe : montée en `attack`, puis décroissance exponentielle jusqu'à `dur`. */
-function env(c: BaseAudioContext, t: number, gain: number, attack: number, dur: number): GainNode {
-  const g = c.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  return g;
-}
-
-interface NoiseLayer {
-  dur: number;
-  type: BiquadFilterType;
-  f0: number;
-  f1?: number;
-  q?: number;
-  gain: number;
-  attack?: number;
-  delay?: number;
-  drive?: number;
-}
-/** Couche de bruit filtré (fréquence qui glisse de f0 à f1), éventuellement saturée. */
-function nz(o: Out, l: NoiseLayer): void {
-  const c = o.c;
-  const t = o.t + (l.delay ?? 0);
-  const src = c.createBufferSource();
-  src.buffer = noiseBuffer(c);
-  const f = c.createBiquadFilter();
-  f.type = l.type;
-  f.Q.value = l.q ?? 0.9;
-  f.frequency.setValueAtTime(l.f0, t);
-  if (l.f1 !== undefined) f.frequency.exponentialRampToValueAtTime(Math.max(20, l.f1), t + l.dur);
-  const e = env(c, t, l.gain, l.attack ?? 0.002, l.dur);
-  let n: AudioNode = src.connect(f);
-  if (l.drive) n = n.connect(shaper(c, l.drive));
-  n.connect(e).connect(o.dst);
-  src.start(t, Math.random() * 1.5, l.dur + 0.05);
-}
-
-interface OscLayer {
-  type: OscillatorType;
-  f0: number;
-  f1?: number;
-  dur: number;
-  gain: number;
-  attack?: number;
-  delay?: number;
-  drive?: number;
-  /** passe-bas sur l'oscillateur (Hz) */
-  lp?: number;
-}
-/** Couche d'oscillateur (hauteur qui glisse de f0 à f1). */
-function osc(o: Out, l: OscLayer): void {
-  const c = o.c;
-  const t = o.t + (l.delay ?? 0);
-  const v = c.createOscillator();
-  v.type = l.type;
-  v.frequency.setValueAtTime(l.f0, t);
-  if (l.f1 !== undefined) v.frequency.exponentialRampToValueAtTime(Math.max(20, l.f1), t + l.dur);
-  const e = env(c, t, l.gain, l.attack ?? 0.003, l.dur);
-  let n: AudioNode = v;
-  if (l.lp) {
-    const f = c.createBiquadFilter();
-    f.type = "lowpass";
-    f.frequency.value = l.lp;
-    n = n.connect(f);
+/** Lance le calcul suivant, un seul à la fois : une demande urgente passe ainsi devant les autres. */
+function pump(): void {
+  if (current || !queue.length) return;
+  current = queue.shift()!;
+  if (worker === undefined) {
+    try {
+      worker = new Worker(new URL("./synthWorker.ts", import.meta.url), { type: "module" });
+      worker.onmessage = (e) => done(e.data as SynthResult);
+      worker.onerror = () => {
+        // Worker indisponible : on reprend le calcul en cours sur le fil principal
+        worker = null;
+        if (current) queue.unshift(current);
+        current = null;
+        pump();
+      };
+    } catch {
+      worker = null;
+    }
   }
-  if (l.drive) n = n.connect(shaper(c, l.drive));
-  n.connect(e).connect(o.dst);
-  v.start(t);
-  v.stop(t + l.dur + 0.05);
+  const job = current;
+  if (worker) worker.postMessage(job);
+  else setTimeout(() => done(runJob(job)), 0);
 }
 
-/**
- * Recette de chaque famille de projectiles (voir Proj dans sim/src/data.rs). `s` : taille de l'arme
- * (0,7 à 1,8 ; plus grave, plus long et plus fort quand elle grossit), `r` : variation de hauteur.
- * Renvoie la durée du son (s).
- */
-const RECIPES: Record<number, (o: Out, s: number, r: number) => number> = {
-  // balle : claquement sec, corps saturé, petit coup sourd
-  0: (o, s, r) => {
-    nz(o, { type: "highpass", f0: 3800, dur: 0.03, gain: 0.45 });
-    nz(o, { type: "bandpass", f0: 1300 * r, f1: 520 * r, q: 1.3, dur: 0.09 * s, gain: 0.75, drive: 0.6 });
-    osc(o, { type: "sine", f0: 160 * r, f1: 55, dur: 0.08 * s, gain: 0.45 });
-    return 0.18 * s;
-  },
-  // obus (canon, artillerie) : claquement, détonation grave saturée, coup de sub, retombée de débris
-  1: (o, s, r) => {
-    nz(o, { type: "highpass", f0: 2600, dur: 0.04, gain: 0.45 });
-    nz(o, { type: "lowpass", f0: 1000 * r, f1: 110, dur: 0.45 * s, gain: 0.95, drive: 0.45 });
-    osc(o, { type: "sine", f0: 95 * r, f1: 32, dur: 0.5 * s, gain: 0.8 });
-    nz(o, { type: "bandpass", f0: 2200, q: 0.7, delay: 0.06, dur: 0.28, gain: 0.1, attack: 0.02 });
-    return 0.6 * s;
-  },
-  // missile : allumage, souffle qui monte, sifflement
-  2: (o, s, r) => {
-    nz(o, { type: "lowpass", f0: 1600, dur: 0.06, gain: 0.4, drive: 0.3 });
-    nz(o, { type: "bandpass", f0: 450 * r, f1: 2600 * r, q: 1.6, attack: 0.08, dur: 0.75 * s, gain: 0.5 });
-    nz(o, { type: "highpass", f0: 5200, attack: 0.06, dur: 0.5, gain: 0.08 });
-    return 0.8 * s;
-  },
-  // bombe larguée : sifflement qui descend
-  3: (o, s, r) => {
-    osc(o, { type: "sine", f0: 1700 * r, f1: 480 * r, attack: 0.06, dur: 0.75, gain: 0.12 });
-    nz(o, { type: "bandpass", f0: 1300 * r, f1: 500, q: 2, attack: 0.06, dur: 0.65, gain: 0.07 });
-    return 0.8 * s;
-  },
-  // torpille : coup sourd sous l'eau et bulles
-  4: (o, s, r) => {
-    nz(o, { type: "lowpass", f0: 420, dur: 0.3 * s, gain: 0.6 });
-    osc(o, { type: "sine", f0: 190 * r, f1: 70, dur: 0.3 * s, gain: 0.4 });
-    for (let i = 0; i < 4; i++) osc(o, { type: "sine", f0: (700 + Math.random() * 700) * r, f1: 1500 * r, delay: 0.06 + i * 0.07 + Math.random() * 0.03, dur: 0.04, gain: 0.05 });
-    return 0.5 * s;
-  },
-  // rayon orbital : grondement saturé qui s'enfonce
-  5: (o, s) => {
-    osc(o, { type: "sawtooth", f0: 85, f1: 38, attack: 0.1, dur: 1.3, gain: 0.3, drive: 0.5, lp: 900 });
-    nz(o, { type: "lowpass", f0: 700, f1: 200, attack: 0.15, dur: 1.3, gain: 0.45 });
-    nz(o, { type: "highpass", f0: 4000, attack: 0.05, dur: 0.6, gain: 0.06 });
-    return 1.4 * s;
-  },
-  // plasma : « thoum » rond et grave, corps chaud, souffle bref
-  6: (o, s, r) => {
-    osc(o, { type: "square", f0: 440 * r, f1: 110 * r, dur: 0.22 * s, gain: 0.18, lp: 1400 });
-    osc(o, { type: "sine", f0: 220 * r, f1: 58, dur: 0.32 * s, gain: 0.55 });
-    nz(o, { type: "bandpass", f0: 900 * r, f1: 400, q: 1.1, dur: 0.14, gain: 0.25 });
-    return 0.38 * s;
-  },
-  // canon à ions : décharge électrique et grésillements
-  7: (o, s, r) => {
-    osc(o, { type: "sawtooth", f0: 1500 * r, f1: 180, dur: 0.26 * s, gain: 0.12, lp: 3200, drive: 0.4 });
-    for (let i = 0; i < 6; i++) nz(o, { type: "highpass", f0: 2500 + Math.random() * 3000, delay: Math.random() * 0.22, dur: 0.018, gain: 0.25 });
-    return 0.35 * s;
-  },
-  // laser : balayage aigu et harmonique fine
-  8: (o, s, r) => {
-    osc(o, { type: "sawtooth", f0: 2600 * r, f1: 480 * r, dur: 0.17 * s, gain: 0.12, lp: 6000 });
-    osc(o, { type: "sine", f0: 5200 * r, f1: 960 * r, dur: 0.12 * s, gain: 0.05 });
-    return 0.2 * s;
-  },
-  // blaster : « piou » carré filtré, déclic
-  9: (o, s, r) => {
-    osc(o, { type: "square", f0: 1750 * r, f1: 270 * r, dur: 0.12 * s, gain: 0.13, lp: 4200 });
-    osc(o, { type: "sine", f0: 880 * r, f1: 160 * r, dur: 0.1 * s, gain: 0.12 });
-    nz(o, { type: "highpass", f0: 4200, dur: 0.02, gain: 0.18 });
-    return 0.16 * s;
-  },
-  // souffle de feu : grondement long, crépitement
-  10: (o, s) => {
-    nz(o, { type: "lowpass", f0: 650, f1: 420, attack: 0.15, dur: 1.6, gain: 0.85, drive: 0.3 });
-    nz(o, { type: "bandpass", f0: 2100, q: 0.8, attack: 0.1, dur: 1.2, gain: 0.14 });
-    osc(o, { type: "sawtooth", f0: 62, f1: 44, attack: 0.15, dur: 1.4, gain: 0.12, lp: 300 });
-    return 1.7 * s;
-  },
-  // canon de rail : claquement, résonance métallique, sifflement qui retombe
-  11: (o, s, r) => {
-    nz(o, { type: "highpass", f0: 3000, dur: 0.05, gain: 0.8 });
-    osc(o, { type: "sine", f0: 2100 * r, dur: 0.5, gain: 0.1 });
-    osc(o, { type: "sine", f0: 2100 * 2.76 * r, dur: 0.28, gain: 0.04 });
-    nz(o, { type: "bandpass", f0: 6200, f1: 1400, q: 2.2, dur: 0.38, gain: 0.16 });
-    osc(o, { type: "sine", f0: 120 * r, f1: 50, dur: 0.12 * s, gain: 0.3 });
-    return 0.6 * s;
-  },
-  // morsure : deux craquements et un coup sourd
-  12: (o, s, r) => {
-    nz(o, { type: "bandpass", f0: 950 * r, q: 1.6, dur: 0.05, gain: 0.6, drive: 0.5 });
-    nz(o, { type: "bandpass", f0: 620 * r, q: 1.6, delay: 0.065, dur: 0.06, gain: 0.5, drive: 0.5 });
-    osc(o, { type: "sine", f0: 125 * r, f1: 60, dur: 0.09 * s, gain: 0.4 });
-    return 0.2 * s;
-  },
-  // crachat acide : glouglou résonant
-  13: (o, s, r) => {
-    nz(o, { type: "bandpass", f0: 1150 * r, f1: 300, q: 4, dur: 0.26 * s, gain: 0.55 });
-    osc(o, { type: "sine", f0: 300 * r, f1: 120, dur: 0.2, gain: 0.25 });
-    osc(o, { type: "sine", f0: 900 * r, f1: 1400 * r, delay: 0.05, dur: 0.05, gain: 0.07 });
-    return 0.32 * s;
-  },
-};
-
-/** Niveau de chaque recette, pour que les familles sonnent à peu près aussi fort (mesuré au rendu hors ligne). */
-const LEVEL: Record<number, number> = { 2: 2, 3: 1.7, 4: 1.8, 6: 1.4, 8: 5, 9: 3, 10: 0.65, 11: 1.1, 13: 2.8 };
-
-/** Explosion : claquement, détonation saturée, sub qui s'enfonce, débris. `big` : 0 à 3. */
-function explosionLayers(o: Out, big: number): number {
-  const r = 0.92 + Math.random() * 0.16;
-  nz(o, { type: "highpass", f0: 2200, dur: 0.05, gain: 0.35 + big * 0.1 });
-  nz(o, { type: "lowpass", f0: 900 * r, f1: 90, dur: 0.5 + big * 0.55, gain: 0.9, drive: 0.5 });
-  osc(o, { type: "sine", f0: 80 * r, f1: 26, dur: 0.6 + big * 0.5, gain: 0.5 + big * 0.2 });
-  nz(o, { type: "bandpass", f0: 2600, q: 0.6, delay: 0.08, attack: 0.03, dur: 0.4 + big * 0.3, gain: 0.08 + big * 0.03 });
-  return 1.4 + big * 0.6;
-}
-
-/** Voix de combat en cours (plafonnée : au-delà, les sons lointains se taisent). */
-let voices = 0;
-const MAX_VOICES = 28;
-
-/**
- * Voix spatialisée : gain selon la proximité, passe-bas qui se ferme au loin, placement gauche-droite,
- * part réverbérée qui grandit avec la distance. Null si rien ne doit sonner.
- */
-function spatial(near: number, pan: number, gain: number, dur: number): Out | null {
+/** Demande le calcul de la variante `v` d'un son (une seule fois). `urgent` : avant les autres calculs en attente. */
+function ask(key: string, v: number, job: Pick<SynthJob, "kind" | "spec" | "cls">, urgent: boolean): void {
   const c = ac();
-  if (!c || !bus || !reverb || volume <= 0 || near <= 0.05) return null;
-  if (voices >= MAX_VOICES + 12 || (voices >= MAX_VOICES && near < 0.6)) return null;
+  const slot = slotOf(key);
+  if (!c) return;
+  if (slot.asked[v]) {
+    // déjà en file : une demande urgente (un tir attend ce son) le fait passer devant
+    if (urgent) {
+      const i = queue.findIndex((j) => waiting.get(j.id)?.key === key && waiting.get(j.id)?.v === v);
+      if (i > 0) queue.unshift(...queue.splice(i, 1));
+    }
+    return;
+  }
+  slot.asked[v] = true;
+  const j: SynthJob = { ...job, id: nextJob++, seed: v, sr: c.sampleRate };
+  waiting.set(j.id, { key, v });
+  if (urgent) queue.unshift(j);
+  else queue.push(j);
+  pump();
+}
+
+/**
+ * Une variante prête du son `key`, différente de la précédente si possible, avec le gain qui l'amène
+ * au niveau visé par `mix`. Null tant qu'aucune n'est calculée (ce tir reste muet). Les autres
+ * variantes sont demandées au fil des tirs.
+ */
+function take(key: string, mix: Mix, job: Pick<SynthJob, "kind" | "spec" | "cls">): Ready | null {
+  const slot = slotOf(key);
+  const n = mix.variants;
+  const ready: number[] = [];
+  for (let v = 0; v < n; v++) if (slot.bufs[v]) ready.push(v);
+  if (!ready.length) {
+    ask(key, 0, job, true);
+    return null;
+  }
+  for (let v = 0; v < n; v++) {
+    if (!slot.asked[v]) {
+      ask(key, v, job, false);
+      break;
+    }
+  }
+  let i = Math.floor(Math.random() * ready.length);
+  if (ready.length > 1 && ready[i] === slot.last) i = (i + 1) % ready.length;
+  slot.last = ready[i];
+  return { buf: slot.bufs[ready[i]]!, gain: Math.pow(10, mix.target / 20) / slot.loud[ready[i]] };
+}
+
+/** Voix de combat en cours (plafonnées : au-delà, les sons lointains se taisent). */
+let voices = 0;
+/** Voix de combat lancées depuis le début (vérifications). */
+let played = 0;
+const MAX_VOICES = 32;
+
+/**
+ * Joue un tampon comme une voix spatialisée. `near` (0 à 1) : proximité de la caméra. Au loin, le son
+ * direct faiblit et s'assourdit, alors que l'écho du terrain garde son niveau : il ne reste qu'un
+ * coup sourd et sa traîne. `pan` : gauche-droite à l'écran. `delay` (s) : départ différé (salves).
+ */
+function voice(buf: AudioBuffer, near: number, pan: number, level: number, wet: number, delay = 0, rate = 1): void {
+  const c = ctx;
+  if (!c || !bus || !room || c.state !== "running") return;
+  if (voices >= MAX_VOICES + 12 || (voices >= MAX_VOICES && near < 0.6)) return;
   voices++;
-  setTimeout(() => voices--, dur * 1000 + 50);
-  const t = c.currentTime + 0.005;
-  const g = c.createGain();
-  g.gain.value = gain * (0.2 + 0.8 * near * near);
+  played++;
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = rate;
   const lp = c.createBiquadFilter();
   lp.type = "lowpass";
-  lp.frequency.value = 1400 + 17000 * near * near;
-  const p = c.createStereoPanner();
-  p.pan.value = Math.max(-0.85, Math.min(0.85, pan));
-  g.connect(lp).connect(p).connect(bus);
-  const send = c.createGain();
-  send.gain.value = 0.12 + 0.5 * (1 - near);
-  p.connect(send).connect(reverb);
-  return { c, dst: g, t };
-}
-
-/** Taille d'une arme pour le son, d'après ses dégâts et son rayon d'effet (0,7 à 1,8). */
-export function weaponSize(dmg: number, aoe: number): number {
-  return Math.max(0.7, Math.min(1.8, 0.55 + Math.log10(Math.max(1, dmg)) * 0.3 + aoe / 1800));
-}
-
-/**
- * Rendu hors ligne d'un son de tir (ou d'une explosion : proj = -1 - taille), pour la vitrine et les
- * vérifications : échantillons stéréo mélangés en mono, à 44,1 kHz.
- */
-export async function renderOffline(proj: number, size = 1): Promise<Float32Array> {
-  const sr = 44100;
-  const c = new OfflineAudioContext(2, sr * 3, sr);
-  const out = c.createGain();
-  out.gain.value = 0.5;
-  out.connect(c.destination);
-  const b = buildBus(c, out);
+  lp.Q.value = 0.5;
+  lp.frequency.value = Math.min(c.sampleRate * 0.45, 650 + 19000 * Math.pow(near, 2.4));
   const g = c.createGain();
-  g.gain.value = 0.3 * (proj >= 0 ? (LEVEL[proj] ?? 1) : 1);
-  g.connect(b.bus);
+  g.gain.value = level * (0.08 + 0.92 * Math.pow(near, 1.5));
+  const p = c.createStereoPanner();
+  p.pan.value = Math.max(-0.8, Math.min(0.8, pan * 0.8));
+  src.connect(lp).connect(g).connect(p).connect(bus);
+  // l'écho baisse bien moins vite que le son direct, et n'est pas placé (il vient de partout)
   const send = c.createGain();
-  send.gain.value = 0.2;
-  g.connect(send).connect(b.reverb);
-  const o: Out = { c, dst: g, t: 0.01 };
-  if (proj < 0) explosionLayers(o, -1 - proj);
-  else (RECIPES[proj] ?? RECIPES[0])(o, size, 1);
-  const buf = await c.startRendering();
-  const l = buf.getChannelData(0);
-  const r = buf.getChannelData(1);
-  const m = new Float32Array(l.length);
-  for (let i = 0; i < l.length; i++) m[i] = (l[i] + r[i]) / 2;
-  return m;
+  send.gain.value = level * wet * (0.2 + 0.25 * Math.pow(near, 0.7));
+  lp.connect(send).connect(room);
+  src.onended = () => {
+    voices--;
+    p.disconnect();
+    send.disconnect();
+  };
+  src.start(c.currentTime + 0.004 + delay);
 }
 
 export const sfx = {
   /**
-   * Tir : proj = type de projectile, near = 0..1 (proximité de la caméra), pan = -1..1 (gauche-droite à
-   * l'écran), size = taille de l'arme (voir weaponSize).
+   * Tir d'une arme. near = 0..1 (proximité de la caméra), pan = -1..1 (gauche-droite à l'écran). Une
+   * salve joue jusqu'à cinq coups échelonnés ; un rayon prolongé joue un son de la durée du rayon.
    */
-  fire(proj: number, near: number, pan = 0, size = 1): void {
-    if (near <= 0.05 || !throttle("fire" + proj, proj === 0 || proj === 9 ? 35 : 55)) return;
-    const recipe = RECIPES[proj] ?? RECIPES[0];
-    const o = spatial(near, pan, 0.32 * Math.min(1.4, size) * (LEVEL[proj] ?? 1), 1.8);
-    if (!o) return;
-    const r = (0.94 + Math.random() * 0.12) / Math.pow(size, 0.35);
-    recipe(o, size, r);
+  fire(w: WeaponSound, near: number, pan = 0): void {
+    if (near <= 0.04 || volume <= 0) return;
+    const spec = shotSpec(w);
+    const key = "s" + specKey(spec);
+    const held = spec.sustain > 0;
+    if (!throttle(key, held ? 350 : spec.rapid ? 45 : 65)) return;
+    const m = shotMix(spec);
+    const shots = held ? 1 : Math.min(5, Math.max(1, w.salvo));
+    const gap = spec.proj === 2 ? 0.085 : 0.06;
+    for (let i = 0; i < shots; i++) {
+      const r = take(key, m, { kind: "shot", spec });
+      if (!r) return;
+      voice(r.buf, near, pan, r.gain, m.wet, i * gap * (0.8 + 0.4 * Math.random()), 0.96 + 0.08 * Math.random());
+    }
   },
-  explosion(size: number, near: number, pan = 0): void {
-    if (near <= 0.05 || !throttle("boom" + Math.min(3, size | 0), 70)) return;
-    const big = Math.min(3, size);
-    const o = spatial(near, pan, 0.45 + big * 0.12, 3);
-    if (o) explosionLayers(o, big);
+  /** Explosion de rayon `radius` (cases) ; kind : 2 pour une unité expérimentale, 3 pour une arme nucléaire. */
+  explosion(radius: number, kind: number, near: number, pan = 0): void {
+    const cls = boomClass(radius, kind);
+    // une explosion nucléaire s'entend de partout
+    if (cls >= BOOM_NUKE) near = Math.max(near, 0.45);
+    if (near <= 0.04 || volume <= 0 || !throttle("b" + cls, cls === 0 ? 45 : 80)) return;
+    const m = BOOM_MIX[cls];
+    const r = take("b" + cls, m, { kind: "boom", cls });
+    if (r) voice(r.buf, near, pan, r.gain, m.wet, 0, 0.94 + 0.12 * Math.random());
   },
-  laser(near: number, pan = 0): void {
-    if (near <= 0.05 || !throttle("laser", 60)) return;
-    const o = spatial(near, pan, 0.3 * (LEVEL[8] ?? 1), 0.4);
-    if (o) RECIPES[8](o, 1, 0.94 + Math.random() * 0.12);
+  /** Frappe d'un rayon instantané (canon orbital). */
+  strike(near: number, pan = 0): void {
+    if (near <= 0.04 || volume <= 0 || !throttle("o", 400)) return;
+    const r = take("o", ORBITAL_MIX, { kind: "orbital" });
+    if (r) voice(r.buf, Math.max(near, 0.3), pan, r.gain, ORBITAL_MIX.wet);
+  },
+  /** État de la synthèse (vérifications) : tampons prêts, calculs en attente, voix en cours. */
+  stats(): { ready: number; pending: number; voices: number; played: number; state: string } {
+    let ready = 0;
+    for (const s of slots.values()) for (const b of s.bufs) if (b) ready++;
+    return { ready, pending: queue.length + (current ? 1 : 0), voices, played, state: ctx?.state ?? "aucun" };
+  },
+  /** Prépare en tâche de fond les sons des armes du jeu et des explosions (une variante de chacun). */
+  warm(weapons: WeaponSound[]): void {
+    if (!ac()) return;
+    for (let cls = 0; cls <= 3; cls++) ask("b" + cls, 0, { kind: "boom", cls }, false);
+    for (const w of weapons) {
+      const spec = shotSpec(w);
+      ask("s" + specKey(spec), 0, { kind: "shot", spec }, false);
+    }
+    for (let cls = 4; cls <= BOOM_NUKE; cls++) ask("b" + cls, 0, { kind: "boom", cls }, false);
+    ask("o", 0, { kind: "orbital" }, false);
   },
   click(): void {
     tone(900, 700, 0.05, 0.06, "square");
