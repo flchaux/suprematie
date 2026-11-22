@@ -569,6 +569,20 @@ pub fn fuel_tank(kind: u16) -> i32 {
     FUEL_TANK_UNITS * if kind == B_CRYSTAL_REACTOR { FUEL_CELL / 4 } else { FUEL_HYDROCARBON }
 }
 
+/// Bâtiments qu'on peut mettre en pause (ordre `O_SET_PAUSE`) : extracteurs, fabricants et usines d'unités.
+#[inline]
+pub fn pausable(bb: &Building) -> bool {
+    matches!(bb.def().class, BClass::Extractor | BClass::Crafter | BClass::Factory)
+}
+
+/// Bâtiment mis en pause par son joueur : `enabled` faux sur un bâtiment de production. Il ne travaille
+/// plus (ni énergie, ni entrées, ni production, ni partage entre jumelles) et garde tout son contenu,
+/// cycle en cours compris ; il reprend là où il en était.
+#[inline]
+pub fn paused(bb: &Building) -> bool {
+    !bb.enabled && pausable(bb)
+}
+
 /// Le bâtiment a-t-il besoin d'électricité ? (un extracteur sur un gisement d'hydrocarbure n'en a pas)
 #[inline]
 pub fn needs_power(bb: &Building) -> bool {
@@ -1356,6 +1370,10 @@ const MAX_TWINS: usize = 20;
 /// Jumelles de `b` rangées dans `v` (sans allocation), par indice croissant ; renvoie leur nombre.
 fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
     let bb = &w.buildings[b];
+    // une machine en pause ne partage pas (comme pendant une amélioration)
+    if paused(bb) {
+        return 0;
+    }
     // ce qu'elle fabrique (règle commune avec l'aperçu de pose : voir twins.rs)
     let Some(key) = crate::twins::product_key(bb) else { return 0 };
     let (bw, bh) = bb.size();
@@ -1373,7 +1391,7 @@ fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usize {
             if c == b || v[..n].contains(&c) || n == MAX_TWINS {
                 continue;
             }
-            if crate::twins::twin_with(&w.buildings[c], bb.kind, bb.owner, key) {
+            if crate::twins::twin_with(&w.buildings[c], bb.kind, bb.owner, key) && !paused(&w.buildings[c]) {
                 v[n] = c;
                 n += 1;
             }
@@ -1666,7 +1684,7 @@ pub fn touching_depots(w: &World, b: usize) -> Vec<usize> {
 /// Le bâtiment accepte-t-il cet objet (par un bras ou un tapis) ?
 pub fn accepts(w: &World, b: usize, item: u8) -> bool {
     let bb = &w.buildings[b];
-    if !bb.alive || !bb.complete() || item == 0 {
+    if !bb.alive || !bb.complete() || item == 0 || paused(bb) {
         return false;
     }
     match bb.def().class {
@@ -1855,6 +1873,11 @@ pub fn update_buildings(w: &mut World) {
             if main && w.buildings[b].upgrade > 0 && w.tick.is_multiple_of(DEPOT_FEED_PERIOD) {
                 feed_generator_from_depot(w, b);
             }
+            continue;
+        }
+        if paused(bb) {
+            // en pause : endormi jusqu'à la reprise (l'ordre le réveille)
+            w.buildings[b].wake = u32::MAX;
             continue;
         }
         match bb.def().class {

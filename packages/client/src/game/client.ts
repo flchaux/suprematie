@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BF, BClass, pausableClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -396,10 +396,11 @@ export class GameClient {
     const water = scene === "eau";
     // ?demo=ascenseurs : files de tapis qui changent de niveau par des ascenseurs (vu comme le joueur 0)
     // ?demo=chantiers : chantiers figés à tous les avancements, pour juger leurs barres de progression
-    if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers") ui.me = 0;
+    // ?demo=nomades : soute des Transhumants, chariots de convoi en navette, générateur et poteaux (joueur 0)
+    if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers" || scene === "nomades") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
-    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte";
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "nomades";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -918,22 +919,22 @@ export class GameClient {
       lvls.set(k, Math.max(lvls.get(k) ?? 0, (f.buf[o + 1] >>> 24) & 7));
     }
     // bâtiments sélectionnés : un seul passage sur l'image quand il y en a beaucoup
-    const selBs: { ref: number; kind: number; owner: number }[] = [];
+    const selBs: { ref: number; kind: number; owner: number; paused: boolean; built: boolean }[] = [];
     let nb = 0;
     for (const id of this.selected) if (Ord.isBuildingRef(id)) nb++;
-    const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number }>() : null;
+    const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number; paused: boolean; built: boolean }>() : null;
     if (byRef) {
       for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
         const ref = f.buf[o] >>> 0;
-        if (this.selected.has(ref)) byRef.set(ref, { ref, kind: f.buf[o + 1] & 0xff, owner: (f.buf[o + 1] >> 8) & 0xff });
+        if (this.selected.has(ref)) byRef.set(ref, this.buildingState(f.buf, o));
       }
     }
     for (const id of this.selected) {
       if (Ord.isBuildingRef(id)) {
-        const bw = byRef ? byRef.get(id) : this.findBuilding(id);
+        const bw = byRef ? byRef.get(id) : this.findBuildingState(id);
         if (bw) {
           alive.add(id);
-          selBs.push({ ref: bw.ref, kind: bw.kind, owner: bw.owner });
+          selBs.push(bw);
         } else if (!this.frame || this.scene?.strategic) alive.add(id);
       }
     }
@@ -958,6 +959,37 @@ export class GameClient {
     } else ui.buildingInfo = null;
     this.plans.tick();
     if (ui.gameOver === null && f.winner !== -1 && ui.replay) ui.gameOver = { winner: f.winner, replay: "", won: false };
+  }
+
+  /** Bâtiment de l'image au mot `o` : type, joueur, en pause (bâtiment de production, BF.ENABLED éteint), terminé. */
+  private buildingState(buf: Int32Array, o: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean } {
+    const kind = buf[o + 1] & 0xff;
+    const cls = this.data?.buildings[kind]?.cls ?? -1;
+    return { ref: buf[o] >>> 0, kind, owner: (buf[o + 1] >> 8) & 0xff, paused: pausableClass(cls) && !(((buf[o + 1] >> 20) & 0xff) & BF.ENABLED), built: buf[o + 4] >= 65536 };
+  }
+  private findBuildingState(ref: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean } | null {
+    const f = this.frame;
+    if (!f) return null;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) if (f.buf[o] >>> 0 === ref) return this.buildingState(f.buf, o);
+    return null;
+  }
+  /** Nos bâtiments de production terminés de la sélection, qu'on peut mettre en pause ou relancer. */
+  pausableSelection(): { ref: number; paused: boolean }[] {
+    return ui.selBuildings.filter((b) => b.owner === ui.me && b.built && pausableClass(this.data?.buildings[b.kind]?.cls ?? -1)).map((b) => ({ ref: b.ref, paused: !!b.paused }));
+  }
+  /**
+   * Bouton (ou raccourci) Pause : met en pause les bâtiments de production sélectionnés ; s'ils sont
+   * tous déjà en pause, les relance. L'état affiché suit tout de suite, la simulation confirme ensuite.
+   */
+  togglePauseSelected(): void {
+    const l = this.pausableSelection();
+    if (!l.length) return;
+    const on = !l.every((b) => b.paused);
+    this.cmd(Ord.setPause(l.map((b) => b.ref), on));
+    const refs = new Set(l.map((b) => b.ref));
+    ui.selBuildings = ui.selBuildings.map((b) => (refs.has(b.ref) ? { ...b, paused: on } : b));
+    if (ui.buildingInfo && ui.selBuilding && refs.has(ui.selBuilding.ref)) ui.buildingInfo = { ...ui.buildingInfo, enabled: !on };
+    sfx.click();
   }
 
   findBuilding(ref: number): { ref: number; kind: number; owner: number; x: number; y: number } | null {
@@ -1420,6 +1452,9 @@ export class GameClient {
         break;
       case "cancelBuilding":
         this.demolishSelected();
+        break;
+      case "pauseBuilding":
+        this.togglePauseSelected();
         break;
       case "zoomIn":
         if (this.scene) {
@@ -2058,6 +2093,18 @@ export class GameClient {
         sfx.confirm();
         return;
       }
+      // chariots de convoi sur un de nos modules éloignés : navette avec leur soute (Maj : livrer à ce fabricant)
+      const carts = units.filter((u) => this.data!.units[u.kind].key === "t_cart").map((u) => u.id);
+      if (carts.length && this.canPickup(def.cls, tb.build)) {
+        const feed = queue && def.cls === BClass.Crafter;
+        this.cmd(Ord.haul(carts, tb.ref, feed));
+        const rest = units.filter((u) => !carts.includes(u.id));
+        if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
+        this.scene?.addMarker(g.x, g.z, 0xffc83c);
+        pushMessage(feed ? `Convoi : la soute livre à ${def.name.toLowerCase()} les ingrédients de sa recette` : `Convoi : ce qui sort de ${def.name.toLowerCase()} est rapporté à la soute (Maj+clic droit sur un fabricant : le livrer)`, "info");
+        sfx.confirm();
+        return;
+      }
       // commandant ou ingénieur sur un extracteur ou un fabricant terminé : il ramasse ce qui sort, dans sa soute
       const holders = this.holdersOf(units);
       if (this.canPickup(def.cls, tb.build) && holders.length) {
@@ -2409,6 +2456,14 @@ export class GameClient {
     sfx.confirm();
     if (shift && g.poles.length < g.max) this.updateGhost();
     else this.cancelMode();
+  }
+
+  /** Transhumants : la soute sélectionnée attelle un chariot de convoi. */
+  hitchCart(): void {
+    const h = ui.selBuildings.find((b) => b.owner === ui.me && this.data?.buildings[b.kind].key === "t_hold");
+    if (!h) return;
+    this.cmd(Ord.hitch(h.ref));
+    sfx.confirm();
   }
 
   /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */

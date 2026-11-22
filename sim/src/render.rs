@@ -132,7 +132,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     let (bw, bh) = crate::buildings::dims(kind, dir);
                     (x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2)
                 }
-                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Jump { beacon: target } => {
+                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Haul { site: target, .. } | Order::Jump { beacon: target } => {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
@@ -208,6 +208,10 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         if crate::buildings::needs_power(bb) && net_ok && w.nets.get(bb.net as usize).is_some_and(|n| n.sat < 900) {
             flags |= 128;
         }
+    }
+    // en pause : ni marche ni diagnostic (le client montre le signe de pause, bit 8 éteint)
+    if crate::buildings::paused(bb) {
+        flags &= !(1 | 2 | 32 | 64 | 128);
     }
     let (aux1, aux2) = match def.class {
         BClass::Crafter => {
@@ -727,7 +731,7 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
             let (bw, bh) = crate::buildings::dims(kind, dir);
             Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2))
         }
-        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } => w.ref_pos(target),
+        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Haul { site: target, .. } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
         Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),

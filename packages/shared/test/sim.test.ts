@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim } from "../src/sim.ts";
-import { pack, move, build, research, O, validCmd, target } from "../src/orders.ts";
+import { pack, move, build, research, O, validCmd, target, setPause } from "../src/orders.ts";
 import { parseFrame, parseBotDump, UNIT_WORDS } from "../src/render.ts";
 import type { GameData } from "../src/data.ts";
 
@@ -16,8 +16,8 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 80 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 15 des Transhumants), 71 bâtiments (52, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
-    expect(data.units.length).toBe(80);
+  it("contient 81 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 16 des Transhumants), 71 bâtiments (52, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
+    expect(data.units.length).toBe(81);
     expect(data.buildings.length).toBe(71);
     expect(data.buildings.filter((b) => b.race === 2).length).toBe(10);
     expect(data.techs.length).toBe(64);
@@ -28,7 +28,7 @@ describe("données", () => {
     expect(eggs.map((u) => u.key)).toEqual(["egg_s", "egg_m", "egg_l"]);
     for (const u of eggs) expect([u.factory, u.litter, u.speed, u.weapons.length]).toEqual([0, 0, 0, 0]);
     expect(data.units.filter((u) => u.litter > 0).map((u) => [u.key, u.litter])).toEqual([["sower", 3], ["gnawer", 6], ["spitter", 4], ["shell", 3], ["vine", 4], ["membrane", 3]]);
-    expect(data.units.filter((u) => u.race === 2).length).toBe(15);
+    expect(data.units.filter((u) => u.race === 2).length).toBe(16);
     // une unité de commandement par race
     expect(data.units.filter((u) => u.commander).map((u) => u.key)).toEqual(["commander", "queen", "ark"]);
     expect(data.units[0].key).toBe("commander");
@@ -48,6 +48,12 @@ describe("ordres", () => {
     const c = move([{ id: 1, x: 0, y: 0 }, { id: 2, x: 512, y: 0 }], 10000, 10000);
     expect(c.slice(0, 5)).toEqual([O.MOVE, 0, 10000, 10000, 2]);
     expect(c[6]).toBeLessThan(c[9]);
+  });
+  it("pause d'une sélection de bâtiments : [pause, n, réf…]", () => {
+    const out: number[] = [];
+    pack(1, setPause([0x40000005, 0x40000009], true), out);
+    expect(out).toEqual([6, O.SET_PAUSE, 1, 1, 2, 0x40000005, 0x40000009]);
+    expect(setPause([7], false)).toEqual([O.SET_PAUSE, 0, 1, 7]);
   });
   it("rejette les ordres mal formés", () => {
     expect(validCmd([1, 2, 3])).toBe(true);

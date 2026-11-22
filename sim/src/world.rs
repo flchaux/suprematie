@@ -136,6 +136,9 @@ pub enum Order {
     Deliver { item: u8 },
     /// Reine de la Souche : apprivoiser un nid de mordeurs sauvage (référence du nid ; voir souche::tame)
     Tame { target: u32 },
+    /// chariot de convoi des Transhumants : navette entre sa soute et le module `site` ; `feed` : de la soute
+    /// vers le fabricant (ingrédients de sa recette), sinon du module vers la soute (ce qui sort)
+    Haul { site: u32, feed: bool },
 }
 
 impl Order {
@@ -162,6 +165,7 @@ impl Order {
             Order::Pickup { .. } => 18,
             Order::Deliver { .. } => 19,
             Order::Tame { .. } => 21,
+            Order::Haul { .. } => 22,
         }
     }
 }
@@ -185,6 +189,10 @@ impl Ser for Order {
             }
             Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } => target.ser(w),
             Order::Deliver { item } => item.ser(w),
+            Order::Haul { site, feed } => {
+                site.ser(w);
+                (feed as u8).ser(w);
+            }
             Order::Jump { beacon } => beacon.ser(w),
             Order::DeployAt { x, y, dir } => {
                 x.ser(w);
@@ -230,6 +238,7 @@ impl Ser for Order {
             19 => Order::Deliver { item: u8::de(r) },
             20 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
             21 => Order::Tame { target: u(r) },
+            22 => Order::Haul { site: u(r), feed: u8::de(r) != 0 },
             _ => Order::Enter { target: u(r) },
         }
     }
@@ -1007,7 +1016,8 @@ impl World {
                 h.add_i32(b.hp);
                 h.add(b.build as u64 | (b.kind as u64) << 32);
                 h.add(b.progress as u64 | (b.out as u64) << 32);
-                h.add(b.hand as u64 | (b.timer as u64) << 8);
+                // bâtiment coupé ou en pause (`enabled` faux ; vrai : rien d'ajouté, hash inchangé)
+                h.add(b.hand as u64 | (b.timer as u64) << 8 | (!b.enabled as u64) << 24);
                 // niveau et amélioration en cours (zone du générateur principal, vitesses, production)
                 h.add(b.level as u64 | (b.upgrade as u64) << 8);
                 // stock d'un dépôt ou d'un entrepôt, réserve d'une usine, tampons d'une gare

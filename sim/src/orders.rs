@@ -73,6 +73,15 @@ pub const O_TAME: i32 = 52;
 /// Générateur nomade des Transhumants : planter un poteau relais : [réf. du générateur, x, y (cases, case du
 /// poteau)] (voir transhumants::plant_pole).
 pub const O_PLANT_POLE: i32 = 53;
+/// Soute des Transhumants : atteler un chariot de convoi (coût pris dans son stock) : [réf. de la soute]
+/// (voir transhumants::hitch).
+pub const O_HITCH: i32 = 54;
+/// Chariots de convoi : navette entre leur soute et un module : [drapeaux (bit 0 en file, bit 1 livrer : de la
+/// soute vers le fabricant), réf. du module, n, unités…] (voir transhumants::haul_step).
+pub const O_HAUL: i32 = 55;
+/// Mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf. de bâtiment…]
+/// (extracteurs, fabricants, usines d'unités terminés ; voir buildings::paused).
+pub const O_SET_PAUSE: i32 = 56;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -619,6 +628,24 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 }
             }
         }
+        O_HITCH => {
+            if let Some(b) = own_building(w, p, c.next()) {
+                crate::transhumants::hitch(w, b);
+            }
+        }
+        O_HAUL => {
+            let flags = c.next();
+            let (q, feed) = (flags & 1 != 0, flags & 2 != 0);
+            let site = c.next() as u32;
+            let ok = w.building(site).is_some_and(|b| crate::transhumants::haul_ok(w, p, b, feed));
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && w.units.kind[s] == U_T_CART {
+                        give(w, s, q, Order::Haul { site, feed });
+                    }
+                }
+            }
+        }
         O_PLANT_POLE => {
             let (r, x, y) = (c.next(), c.next(), c.next());
             if let Some(b) = own_building(w, p, r) {
@@ -706,6 +733,22 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if w.buildings[b].def().class == crate::data::BClass::Inserter && (1..=3).contains(&k) {
                     w.buildings[b].turn = k as u8;
                     w.buildings[b].wake = 0;
+                }
+            }
+        }
+        O_SET_PAUSE => {
+            let on = c.next() != 0;
+            let n = c.next().clamp(0, 4096);
+            for _ in 0..n {
+                if let Some(b) = own_building(w, p, c.next()) {
+                    if buildings::pausable(&w.buildings[b]) && w.buildings[b].enabled == on && (!on || w.buildings[b].complete()) {
+                        w.buildings[b].enabled = !on;
+                        w.buildings[b].wake = 0;
+                        if !on {
+                            // reprise : ses fournisseurs (bras endormis) réessaient
+                            buildings::wake_watchers(w, b);
+                        }
+                    }
                 }
             }
         }

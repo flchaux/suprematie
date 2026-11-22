@@ -198,6 +198,10 @@ export class Sim {
   liftsDemo(): number {
     return this.ex.lifts_demo() >>> 0;
   }
+  /** Démo des Transhumants (soute, chariots de convoi en navette, générateur et poteaux). */
+  nomadesDemo(): number {
+    return this.ex.nomades_demo() >>> 0;
+  }
   chantiersDemo(): number {
     return this.ex.chantiers_demo() >>> 0;
   }

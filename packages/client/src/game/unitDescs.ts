@@ -78,6 +78,7 @@ export const UNIT_DESCS: Record<string, string> = {
   ch_hold: "« Déployer » : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez ; le chenillard s'y rend, pose ses stabilisateurs et se déploie en 15 s : il devient une soute, qui garde son stock à bord quand elle se replie.",
   ch_lab: "« Déployer » : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez ; le chenillard s'y rend, pose ses stabilisateurs et se déploie en 15 s : il devient un laboratoire nomade.",
   ch_workshop: "« Déployer » : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez ; le chenillard s'y rend, pose ses stabilisateurs et se déploie en 15 s : il devient l'atelier, l'usine des chenillards et de l'armée.",
+  t_cart: "Chariot de convoi : attelé à une soute (bouton de sa fiche, payé avec son stock ; six par soute). Clic droit sur une foreuse ou un fabricant éloigné : il en rapporte la production à sa soute, en boucle (20 objets par voyage). Maj+clic droit sur un fabricant : il lui livre depuis la soute les ingrédients de sa recette. Rentre dans la soute quand elle se replie.",
   ch_bastion: "« Déployer » : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez ; le chenillard s'y rend, pose ses stabilisateurs et se déploie en 15 s : il devient une tourelle lourde.",
   tracker: "Pisteur : éclaireur très rapide à grande vue ; chaque case qu'il découvre donne des relevés pour la recherche.",
   rider: "Cavalier : char rapide à canon cinétique, pour l'escorte et les raids.",

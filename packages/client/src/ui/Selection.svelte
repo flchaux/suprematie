@@ -5,7 +5,7 @@
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
-  import { BClass, RECIPE_NONE, PACK1, HYDROCARBON, ENERGY_CELL } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
   import Icon from "./Icon.svelte";
@@ -83,11 +83,17 @@
     return [...m].sort((a, b) => a[0] - b[0]);
   };
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
+  /** machine ou usine terminée qu'on peut mettre en pause, et son état (enabled faux : en pause) */
+  const canPause = $derived(!!info && !!bdef && mine && info.build >= 65536 && pausableClass(bdef.cls));
+  /** sélection de plusieurs bâtiments : nos machines et usines terminées, et leur état de pause */
+  const pausables = $derived(client.pausableSelection());
+  const paused = $derived(!!info && !!bdef && pausableClass(bdef.cls) && info.enabled === false);
   // diagnostic : ce qui bloque le bâtiment, en clair
   const status = $derived.by(() => {
     // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
     if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · en attente de matériaux" : ""), kind: info.stalled ? "warn" : "build" };
+    if (paused) return { text: "En pause : ni énergie, ni ingrédients, ni production ; il reprendra là où il en était", kind: "paused" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : "arrêté"} pendant le chantier)`, kind: "build" };
     // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
     const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
@@ -228,7 +234,14 @@
       </div>
     </div>
     {#if BUILDING_DESCS[bdef.key]}<p class="udesc small">{BUILDING_DESCS[bdef.key]}</p>{/if}
-    {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
+    {#if status.text || canPause}
+      <div class="stline">
+        {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
+        {#if canPause}
+          <button class="icon-btn pausebtn" class:resume={paused} title={paused ? "Relancer : la machine reprend là où elle en était (cycle en cours et contenu gardés)" : "Mettre en pause : plus d'énergie, plus d'ingrédients ni de production ; le contenu et le cycle en cours sont gardés. Vaut aussi pour une sélection de plusieurs bâtiments."} onclick={() => client.togglePauseSelected()}><Icon name={paused ? "play" : "pause"} size={13} /> {paused ? "Reprendre" : "Pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
+        {/if}
+      </div>
+    {/if}
     {#if nest && nest.length && nest[0] === -1}
       <!-- nid greffé (apprivoisé par une Reine de la Souche) -->
       {@const [, brood, cap, next, have, lim] = nest}
@@ -287,6 +300,13 @@
         {#if sv.rateSeve || sv.rateSels}
           <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if bdef.key === "leaves"}<span class="dim"> · les frondaisons voisines (4 cases) se font de l'ombre</span>{/if}</div>
         {/if}
+      {/if}
+      {#if info.transh?.cartsMax}
+        {@const tc = info.transh}
+        <div class="row small" title="Un chariot de convoi fait la navette entre cette soute et un module éloigné : clic droit sur une foreuse ou un fabricant pour rapporter ce qui en sort, Maj+clic droit sur un fabricant pour lui livrer les ingrédients de sa recette. Les chariots rentrent dans la soute quand elle se replie.">
+          <span class="kicker">Chariots</span> <b class="num">{tc.carts}</b><span class="dim"> / <span class="num">{tc.cartsMax}</span></span>
+          {#if tc.carts < tc.cartsMax}<button class="icon-btn" onclick={() => client.hitchCart()} title="Atteler un chariot de convoi, payé avec le stock de cette soute">Atteler un chariot {#each tc.cartCost as [it, n]}<Item id={it} n={n} size={14} />{/each}</button>{/if}
+        </div>
       {/if}
       {#if info.transh?.poles}
         {@const tp = info.transh}
@@ -651,6 +671,15 @@
         </button>
       {/each}
     </div>
+    {#if pausables.length}
+      {@const pl = pausables}
+      {@const all = pl.every((b) => b.paused)}
+      {@const np = pl.filter((b) => b.paused).length}
+      <div class="stline">
+        <div class="status {np ? 'paused' : 'idle'}"><span class="led"></span>{np ? `${np} machine${np > 1 ? "s" : ""} sur ${pl.length} en pause` : `${pl.length} machine${pl.length > 1 ? "s" : ""} ou usine${pl.length > 1 ? "s" : ""} de production`}</div>
+        <button class="icon-btn pausebtn" class:resume={all} title={all ? "Relancer toutes ces machines : elles reprennent là où elles en étaient" : "Mettre en pause toutes ces machines : plus d'énergie, plus d'ingrédients ni de production ; contenu et cycle en cours gardés"} onclick={() => client.togglePauseSelected()}><Icon name={all ? "play" : "pause"} size={13} /> {all ? "Tout reprendre" : "Tout mettre en pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
+      </div>
+    {/if}
     {#if own.length}
       <div class="row">
         <button class="icon-btn danger" title="Démontés par vos constructeurs, matériaux rapportés à vos dépôts ; les chantiers sont annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
@@ -866,6 +895,12 @@
   .status.warn .led { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: blink 1s infinite; }
   .status.build { color: var(--accent); }
   .status.build .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .status.paused { color: #9fc6ff; }
+  .status.paused .led { background: #9fc6ff; box-shadow: 0 0 8px #9fc6ff; }
+  .stline { display: flex; align-items: center; gap: 8px; }
+  .stline .status { flex: 1; min-width: 0; }
+  .pausebtn { flex-shrink: 0; font-size: 11px; padding: 3px 8px; white-space: nowrap; }
+  .pausebtn.resume { color: #9fc6ff; --b-line: rgba(159, 198, 255, 0.6); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .upgrade { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .upbar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }

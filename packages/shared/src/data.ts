@@ -62,6 +62,10 @@ export const BClass = {
   Turret: 11, Shield: 12, Transfer: 13, Gate: 14, Silo: 15, AntiMissile: 16, Beacon: 17, Orbital: 18,
   Warehouse: 19, Rail: 20, Station: 21, CargoPad: 22, Router: 23, Portal: 24, Roboport: 25, Nest: 26, Ruin: 27, Organ: 28,
 } as const;
+/** Bâtiments qu'on peut mettre en pause (ordre SET_PAUSE) : extracteurs, fabricants, usines d'unités (comme buildings::pausable). */
+export function pausableClass(cls: number): boolean {
+  return cls === BClass.Extractor || cls === BClass.Crafter || cls === BClass.Factory;
+}
 /** Objets des races : sève et sels (réserve des réseaux de la Souche), ADN (recherche de la Souche), relevés (recherche des Transhumants). */
 export const SEVE = 27;
 export const SELS = 28;

@@ -375,6 +375,15 @@ pub extern "C" fn anciens_demo() -> u32 {
     h
 }
 
+/// Démo des Transhumants : soute, chariots de convoi en navette, générateur et poteaux (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn nomades_demo() -> u32 {
+    let w = stress::nomades_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des chantiers : chantiers figés à tous les avancements (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn chantiers_demo() -> u32 {
@@ -458,4 +467,6 @@ mod races_tests;
 mod ponte_tests;
 #[cfg(test)]
 mod zone_eco_tests;
+#[cfg(test)]
+mod pause_tests;
 pub mod stress;

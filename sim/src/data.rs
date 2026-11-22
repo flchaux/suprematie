@@ -976,12 +976,14 @@ pub const U_RAM: u16 = 76;
 pub const U_EGG_S: u16 = 77;
 pub const U_EGG_M: u16 = 78;
 pub const U_EGG_L: u16 = 79;
+/// chariot de convoi des Transhumants, attelé à une soute (voir transhumants::hitch)
+pub const U_T_CART: u16 = 80;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 80] = [
+pub const UNITS: [UnitDef; 81] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1070,6 +1072,9 @@ pub const UNITS: [UnitDef; 80] = [
     UnitDef { key: "egg_s", name: "Œuf", hp: 100, speed: 0, radius: 60, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
     UnitDef { key: "egg_m", name: "Œuf", hp: 180, speed: 0, radius: 85, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
     UnitDef { key: "egg_l", name: "Gros œuf", hp: 600, speed: 0, radius: 140, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
+    // ----- Transhumants : chariot de convoi, attelé à une soute (coût pris dans son stock), qui fait la
+    // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
+    UnitDef { key: "t_cart", name: "Chariot de convoi", hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.
