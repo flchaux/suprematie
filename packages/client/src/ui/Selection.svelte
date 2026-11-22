@@ -113,7 +113,10 @@
     }
     if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
     const low = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON) && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
-    return info.working ? { text: "En marche" + low, kind: low ? "warn" : "good" } : { text: "En attente" + low, kind: "idle" };
+    // en marche : performance de la dernière minute (débit réel rapporté au maximum de la machine)
+    const perf = info.flowMax > 0 && (bdef.cls === BClass.Crafter || bdef.cls === BClass.Extractor) ? Math.min(100, Math.round((info.flow / info.flowMax) * 100)) : null;
+    const perfTxt = perf !== null ? ` · ${perf} % de performance sur la dernière minute` : "";
+    return info.working ? { text: "En marche" + perfTxt + low, kind: low || (perf !== null && perf < 50) ? "warn" : "good" } : { text: "En attente" + low, kind: "idle" };
   });
   /** Débit d'un fabricant : objets par minute à pleine vitesse, et au niveau d'énergie actuel. */
   const rate = $derived.by(() => {
@@ -143,11 +146,29 @@
     const pct = info.flowMax > 0 ? Math.min(100, Math.round((info.flow / info.flowMax) * 100)) : null;
     return unit ? { v: info.flow / 10, unit, item: rate?.item, pct, max: (info.flowMax ?? 0) / 10 } : null;
   });
-  /** Caractéristiques d'une recette dans ce bâtiment : durée d'un cycle (s), énergie par cycle (kJ), objets par minute. */
+  /** Caractéristiques d'une recette dans ce bâtiment, à son niveau et à sa cadence : durée d'un cycle (s), énergie par cycle (kJ), objets par minute. */
   const recipeSpec = (r: { time: number; output: [number, number] }) => {
-    const secs = r.time / 20 / (Math.max(1, bdef?.speed ?? 100) / 100);
-    return { secs, energy: (bdef?.powerUse ?? 0) * secs, perMin: (60 / secs) * r.output[1] };
+    const secs = r.time / 20 / (Math.max(1, (cspeed * (info?.clock ?? 100)) / 100) / 100);
+    return { secs, energy: (info?.kwMax || bdef?.powerUse || 0) * secs, perMin: (60 / secs) * r.output[1] };
   };
+  const fmt1 = (v: number) => v.toLocaleString("fr-FR", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+  const fmtX = (v: number) => v.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+  /** Multiplicateurs d'une machine (vitesse et énergie) : niveau, pureté du gisement, cadence. */
+  const machineMults = $derived.by(() => {
+    if (!info || !bdef || !d) return null;
+    const lv = info.level ?? 0;
+    const lvl = bdef.key === "furnace" ? d.furnaceLevels?.[lv] : bdef.cls === BClass.Extractor ? d.extractorLevels?.[lv] : null;
+    return { speed: (lvl?.speed ?? 100) / 100, power: (lvl?.power ?? 100) / 100, purity: (info.purity || 100) / 100, clock: (info.clock ?? 100) / 100, clockPower: (info.clockPower ?? 1000) / 1000, lv: lvl ? lv + 1 : 0 };
+  });
+  /** Niveau actuel, pour la carte d'amélioration. */
+  const upgCur = $derived.by(() => {
+    if (!info || !bdef || !d) return "";
+    const lv = info.level ?? 0;
+    if (bdef.key === "furnace" && d.furnaceLevels?.[lv]) return `niveau ${lv + 1} sur ${d.furnaceLevels.length} : vitesse ×${fmtX(d.furnaceLevels[lv].speed / 100)}, ${Math.round((bdef.powerUse * d.furnaceLevels[lv].power) / 100)} kW`;
+    if (bdef.cls === BClass.Extractor && d.extractorLevels?.[lv]) return `niveau ${lv + 1} sur ${d.extractorLevels.length} : vitesse ×${fmtX(d.extractorLevels[lv].speed / 100)}, énergie ×${fmtX(d.extractorLevels[lv].power / 100)}`;
+    if (bdef.key === "generator" && d.generatorLevels?.[lv]) return `niveau ${lv + 1} sur ${d.generatorLevels.length} : ${d.generatorLevels[lv].prod} kW`;
+    return "";
+  });
   /** cadence possible : de 10 à 250 %, avec assez de fragments (ceux de la machine et ceux en réserve) */
   const clockOk = (c: number, installed: number) => c >= 10 && c <= 250 && Math.max(0, Math.ceil((c - 100) / 50)) <= installed + ui.shards;
   const fmtE = (kj: number) => (kj >= 1000 ? `${(kj / 1000).toFixed(1)} MJ` : `${Math.round(kj)} kJ`);
@@ -255,22 +276,6 @@
       {#if info.transh && info.transh.wear >= 0}
         <div class="row small" title="La foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement : son débit baisse jusqu'à 60 %. Le gisement se reconstitue quand on le laisse."><span class="kicker">Usure du gisement</span> <b class="num" class:bad={info.transh.wear >= 400}>{Math.round(info.transh.wear / 10)} %</b><span class="dim"> · débit ×<span class="num">{((2000 - 2 * info.transh.wear) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span></div>
       {/if}
-      {#if upg && info.build >= 65536}
-        <div class="upgrade">
-          {#if info.upgrade > 0}
-            <div class="upbar"><span style="width: {info.upgrade / 10}%"></span></div>
-            <button class="icon-btn danger" title="Rembourse le coût de l'amélioration" onclick={() => client.upgradeBuilding()}><Icon name="close" size={14} /> Annuler l'amélioration</button>
-          {:else}
-            {@const ok = hasTechUI(upg.tech)}
-            <button class="icon-btn" disabled={!ok || upg.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name="plus" size={14} /> {upg.label}</button>
-            <span class="dim small num">{upg.gain} · chantier de {upg.time} s, {"running" in upg ? "toujours en service" : "arrêté"} pendant ce temps</span>
-            {#if ok}<Cost cost={upg.cost} />{:else}<span class="bad small"><Icon name="lock" size={12} /> Recherche : {d.techs[upg.tech]?.name}</span>{/if}
-          {/if}
-        </div>
-      {/if}
-      {#if rate}
-        <div class="row small"><span class="kicker">Débit</span> <Item id={rate.item} size={16} /> <span class="num">{rate.now.toFixed(1)}</span>/min <span class="dim">(max <span class="num">{rate.max.toFixed(1)}</span>)</span></div>
-      {/if}
       {#if info.clockable && info.build >= 65536}
         {@const ck = info.clock ?? 100}
         {@const inst = info.shards ?? 0}
@@ -278,10 +283,14 @@
           <span class="kicker">Cadence</span>
           <button class="icon-btn" disabled={!mine || !clockOk(ck - 10, inst)} aria-label="Ralentir" onclick={() => client.setClock(ck - 10)}>−</button>
           <b class="num">{ck} %</b>
-          <button class="icon-btn" disabled={!mine || !clockOk(ck + 10, inst)} aria-label="Accélérer" onclick={() => client.setClock(ck + 10)}>+</button>
+          <button class="icon-btn" disabled={!mine || !clockOk(ck + 10, inst)} aria-label="Accélérer" title={ck < 250 && !clockOk(ck + 10, inst) ? `Au-delà de ${ck} % : il faut un fragment d'énergie de plus (un par tranche de 50 % au-dessus de 100 %). Détruisez un nid de la faune pour en gagner.` : "Accélérer"} onclick={() => client.setClock(ck + 10)}>+</button>
           <span class="dim">· énergie ×<span class="num">{((info.clockPower ?? 1000) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span>
           <span class="dim nowrap">· fragments <span class="num">{inst}</span> installé{inst > 1 ? "s" : ""}, <span class="num">{ui.shards}</span> en réserve</span>
         </div>
+      {/if}
+      {#if info.build >= 65536 && info.kwMax > 0 && (bdef.cls === BClass.Crafter || bdef.cls === BClass.Extractor) && machineMults}
+        {@const m = machineMults}
+        <div class="row small" title={`${bdef.powerUse} kW de base${m.lv ? ` × ${fmtX(m.power)} (niveau ${m.lv})` : ""} × ${fmtX(m.clockPower)} (cadence ${Math.round(m.clock * 100)} %)`}><span class="kicker">Énergie</span> <b class="num">{info.kwMax}</b> kW à pleine marche</div>
       {/if}
       {#if info.purity}
         <div class="row small"><span class="kicker">Pureté</span> <b class="purity p{info.purity}">{info.purity >= 200 ? "Pur" : info.purity <= 50 ? "Impur" : "Normal"}</b><span class="dim num">· rendement ×{(info.purity / 100).toLocaleString("fr-FR")}</span></div>
@@ -318,7 +327,7 @@
         {/if}
         <span class="dim small">Brûle {cell ? "des cellules d'énergie" : "de l'hydrocarbure, ou du carburant (5 fois plus d'énergie)"}, d'autant plus vite que sa zone consomme.</span>
       {/if}
-      {#if flow}
+      {#if flow && bdef.cls !== BClass.Crafter && bdef.cls !== BClass.Extractor}
         <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
       {/if}
       {#if info.twins}
@@ -342,11 +351,6 @@
           </div>
           {#if belt.jam >= slots}<div class="status warn"><span class="led"></span>Sortie bouchée : {belt.jam} objets à l'arrêt en bout de file</div>{/if}
         </div>
-      {/if}
-      {#if bdef.key === "furnace" && d.furnaceLevels}
-        {@const fl = d.furnaceLevels}
-        {@const lv = info.level ?? 0}
-        <div class="row small"><span class="kicker">Niveau</span> <span class="num">{lv + 1} / {fl.length}</span>{#if fl[lv]}<span class="dim num"> · vitesse ×{(fl[lv].speed / 100).toFixed(1)} · {Math.round((bdef.powerUse * fl[lv].power) / 100)} kW</span>{/if}</div>
       {/if}
       {#if bdef.cls === BClass.Crafter}
         <div class="rhead">
@@ -390,20 +394,21 @@
         {/if}
         {#if info.recipe !== RECIPE_NONE && d.recipes[info.recipe] && !picking}
           {@const r = d.recipes[info.recipe]}
+          {@const fmax = (info.flowMax ?? 0) / 10}
+          {@const fnow = (info.flow ?? 0) / 10}
+          {@const pct = fmax > 0 ? Math.min(100, Math.round((fnow / fmax) * 100)) : 0}
+          {@const m = machineMults}
           <div class="flow">
-            {#each r.inputs as [it, n], j}<span class="tip slot"><Item id={it} n={info.inv[j]} need={n} size={22} /><span class="tt">{d.items[it].name} : {info.inv[j]} (recette : {n})</span></span>{/each}
+            {#each r.inputs as [it, n], j}<span class="tip slot"><Item id={it} n={info.inv[j]} need={n} size={22} /><span class="tt">Entrée : {d.items[it].name}, {info.inv[j]} en attente (il en faut {n} par cycle)</span></span>{/each}
             <span class="arrow">▸▸</span>
-            <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">{d.items[r.output[0]].name} ×{r.output[1]} en {(r.time / 20 / (cspeed / 100)).toFixed(1)} s</span></span>
+            <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">Sortie : {d.items[r.output[0]].name}, {info.out} prêt{info.out > 1 ? "s" : ""} à partir</span></span>
           </div>
-          {@const sp = recipeSpec(r)}
-          <div class="detail small">
-            <span class="kicker">Détail</span>
-            <span>{r.inputs.map(([it, n]) => `${n} ${d.items[it].name}`).join(" + ")} ⟶ {r.output[1]} {d.items[r.output[0]].name}</span>
-            <span class="num dim">{sp.secs.toFixed(1)} s par cycle · {fmtE(sp.energy)} par cycle ({bdef.powerUse} kW) · {fmtE(sp.energy / r.output[1])} par objet</span>
-            <span class="num">
-              {#each r.inputs as [it, n]}<span class="pm"><Item id={it} size={14} />−{((n * 60) / sp.secs).toFixed(1)}</span>{/each}
-              <span class="pm good"><Item id={r.output[0]} size={14} />+{sp.perMin.toFixed(1)}</span><span class="dim"> /min à pleine énergie</span>
-            </span>
+          <div class="row small" title="Ce qui a vraiment été produit pendant la dernière minute, rapporté au maximum de la machine"><span class="kicker">Débit</span> <Item id={r.output[0]} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
+          <div class="perfbar"><span style:width={pct + "%"}></span></div>
+          <div class="row small" title={m ? `${fmt1((1200 / r.time) * r.output[1] * ((bdef.speed ?? 100) / 100))} /min de base${m.lv ? ` × ${fmtX(m.speed)} (niveau ${m.lv})` : ""} × ${fmtX(m.clock)} (cadence)` : ""}><span class="kicker">Au maximum</span>
+            {#each r.inputs as [it, n]}<span class="pm"><Item id={it} size={14} />−{fmt1((fmax * n) / r.output[1])}</span>{/each}
+            <span class="arrow">▸</span>
+            <span class="pm good"><Item id={r.output[0]} size={14} />+{fmt1(fmax)}</span><span class="dim"> /min</span>
           </div>
         {/if}
       {:else if bdef.cls === BClass.Factory}
@@ -477,7 +482,15 @@
         {@const levels = d.extractorLevels ?? []}
         {@const lvl = info.level ?? 0}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
-        <div class="row"><span class="kicker">Niveau</span> <span class="num">{lvl + 1} / {levels.length || 1}</span>{#if levels[lvl]}<span class="dim small num">· vitesse ×{(levels[lvl].speed / 100).toFixed(1)} · énergie ×{(levels[lvl].power / 100).toFixed(1)}</span>{/if}</div>
+        {@const fmax = (info.flowMax ?? 0) / 10}
+        {@const fnow = (info.flow ?? 0) / 10}
+        {@const pct = fmax > 0 ? Math.min(100, Math.round((fnow / fmax) * 100)) : 0}
+        {@const m = machineMults}
+        {#if info.build >= 65536}
+          <div class="row small" title="Ce qui a vraiment été extrait pendant la dernière minute, rapporté au maximum de l'extracteur"><span class="kicker">Débit</span> <Item id={info.recipe} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
+          <div class="perfbar"><span style:width={pct + "%"}></span></div>
+          <div class="row small" title={m ? `Vitesse${m.lv ? ` × ${fmtX(m.speed)} (niveau ${m.lv})` : ""} × ${fmtX(m.purity)} (pureté) × ${fmtX(m.clock)} (cadence)` : ""}><span class="kicker">Au maximum</span> <span class="pm good"><Item id={info.recipe} size={14} />+{fmt1(fmax)}</span><span class="dim"> /min</span></div>
+        {/if}
       {:else if bdef.cls === BClass.Belt && bdef.collect}
         <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part au dépôt le plus proche (à moins de {d.depot?.near ?? 30} cases) qui a de la place, au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
         <div class="row"><span class="kicker">Surplus mis en dépôt</span> <span class="num">{info.out ?? 0}</span></div>
@@ -566,6 +579,27 @@
           {#if (info.carriers ?? []).some((c: { out: number }) => c.out)}<button class="ghost danger icon-btn" title="Retirer les véhicules partant d'ici" onclick={() => client.removeCarriers()}><Icon name="trash" size={14} /></button>{/if}
         </div>
         {#if d.carriers?.[air ? 1 : 0]}<span class="dim small">Coût d'un {air ? "drone" : "train"} : <Cost cost={d.carriers[air ? 1 : 0].cost} /></span>{/if}
+      {/if}
+      {#if upg && info.build >= 65536}
+        <!-- amélioration : le bouton seul ; ce qu'elle apporte et coûte s'affiche au survol, dans une carte -->
+        <div class="upgrade">
+          {#if info.upgrade > 0}
+            <div class="upbar"><span style="width: {info.upgrade / 10}%"></span></div>
+            <button class="icon-btn danger" title="Rembourse le coût de l'amélioration" onclick={() => client.upgradeBuilding()}><Icon name="close" size={14} /> Annuler l'amélioration</button>
+          {:else}
+            {@const ok = hasTechUI(upg.tech)}
+            <div class="tip upcard">
+              <button class="icon-btn" disabled={!ok || upg.cost.some(([it, n]) => (ui.stock[it] ?? 0) < n)} onclick={() => client.upgradeBuilding()}><Icon name={ok ? "plus" : "lock"} size={14} /> {upg.label}</button>
+              <div class="tt">
+                <b>{upg.label}</b><br />
+                {#if upgCur}<span class="dim">Actuellement :</span> {upgCur}<br />{/if}
+                <span class="dim">Après :</span> {upg.gain}<br />
+                <span class="dim">Chantier :</span> <span class="num">{upg.time}</span> s, {"running" in upg ? "le bâtiment reste en service" : "le bâtiment s'arrête pendant ce temps"}<br />
+                {#if ok}<span class="dim">Coût :</span> <Cost cost={upg.cost} />{:else}<span class="bad"><Icon name="lock" size={12} /> Recherche requise : {d.techs[upg.tech]?.name}</span>{/if}
+              </div>
+            </div>
+          {/if}
+        </div>
       {/if}
     {/if}
   </div>
@@ -841,4 +875,7 @@
   .purity.p50 { color: #e08a5a; }
   .purity.p100 { color: var(--text, #d8e2ea); }
   .purity.p200 { color: #7fe08a; }
+  .perfbar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin: -2px 0 4px; }
+  .perfbar span { display: block; height: 100%; background: var(--accent, #3ef0ff); }
+  .upcard .tt { min-width: 240px; }
 </style>
