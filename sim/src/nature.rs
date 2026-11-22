@@ -486,15 +486,22 @@ fn colony_kind(w: &mut World, i: usize) -> u16 {
     }
 }
 
-/// Dégâts reçus par un réplicateur (ou sa ruche) ou infligés par un disrupteur : seul le disrupteur
-/// blesse les réplicateurs ; contre le reste, il ne fait qu'un cinquième de ses dégâts.
+/// Arme qui blesse les réplicateurs : projectile cinétique (balle, obus, canon de rail).
+pub fn kinetic(weapon: u8) -> bool {
+    (weapon as usize) < WEAPONS.len() && matches!(WEAPONS[weapon as usize].proj, Proj::Bullet | Proj::Shell | Proj::Rail)
+}
+
+/// Dégâts reçus par un réplicateur (ou sa ruche) ou infligés par un disrupteur : seuls les armes à feu,
+/// les obus (et le canon de rail) et le disrupteur blessent les réplicateurs ; les armes à énergie,
+/// missiles, bombes et lances-flammes ne leur font rien. Le disrupteur ne fait qu'un cinquième de ses
+/// dégâts au reste.
 pub fn replicator_damage(w: &World, replicator: bool, dmg: i32) -> i32 {
     if dmg <= 0 {
         return dmg;
     }
     let disruptor = w.unit(w.shooter).is_some_and(|s| w.units.kind[s] == U_DISRUPTOR);
     match (replicator, disruptor) {
-        (true, false) => 0,
+        (true, false) if !kinetic(w.hit_weapon) => 0,
         (false, true) => (dmg / 5).max(1),
         _ => dmg,
     }

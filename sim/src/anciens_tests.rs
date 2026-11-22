@@ -167,30 +167,68 @@ fn eppz_socket_needs_an_eppz_and_powers_without_fuel() {
 // ---------- Réplicateurs ----------
 
 #[test]
-fn replicators_shrug_off_everything_but_the_disruptor() {
+fn replicators_fear_only_bullets_shells_and_the_disruptor() {
     let mut w = world(FAUNA_NORMAL as i32);
     let i = found_colony(&mut w, 200, 200, SPECIES_REPLICATORS).expect("ruche");
     spawn_beast(&mut w, i, U_REPLICATOR);
     let id = *w.nature.nests[i].horde.last().unwrap();
     let s = w.unit(id).unwrap();
-    // un char tire : rien
-    let tank = w.spawn_unit(U_LIGHT_TANK, 0, 190 * TILE, 200 * TILE);
-    w.shooter = tank;
-    crate::combat::damage_unit(&mut w, s, 500, 0);
-    assert_eq!(w.units.hp[s], udef(U_REPLICATOR).hp, "un char blesse un réplicateur");
     let hive = w.building(w.nature.nests[i].b).unwrap();
-    crate::combat::damage_building(&mut w, hive, 500, 0);
-    assert_eq!(w.buildings[hive].hp, bdef(B_HIVE).hp, "un char blesse la ruche");
-    // le disrupteur : oui
+    let full = udef(U_REPLICATOR).hp;
+    let robot = w.spawn_unit(U_LINE_ROBOT, 0, 190 * TILE, 200 * TILE);
+    w.shooter = robot;
+    // armes à énergie, missiles : rien (blaster du robot de ligne, plasma, missiles tactiques)
+    for wi in [2u8, 8, 9] {
+        w.hit_weapon = wi;
+        crate::combat::damage_unit(&mut w, s, 50, 0);
+        crate::combat::damage_building(&mut w, hive, 50, 0);
+    }
+    assert_eq!(w.units.hp[s], full, "une arme à énergie blesse un réplicateur");
+    assert_eq!(w.buildings[hive].hp, bdef(B_HIVE).hp, "une arme à énergie blesse la ruche");
+    // armes à feu, obus, canon de rail : oui
+    let mut hp = full;
+    for wi in [4u8, 5, 54] {
+        assert!(kinetic(wi));
+        w.hit_weapon = wi;
+        crate::combat::damage_unit(&mut w, s, 20, 0);
+        hp -= 20;
+        assert_eq!(w.units.hp[s], hp, "arme {wi}");
+    }
+    w.hit_weapon = 5;
+    crate::combat::damage_building(&mut w, hive, 50, 0);
+    assert!(w.buildings[hive].hp < bdef(B_HIVE).hp, "un obus ne blesse pas la ruche");
+    // le disrupteur (arme à énergie) : oui, et il blesse peu le reste
     let d = w.spawn_unit(U_DISRUPTOR, 0, 190 * TILE, 202 * TILE);
     w.shooter = d;
-    crate::combat::damage_unit(&mut w, s, 100, 0);
-    assert_eq!(w.units.hp[s], udef(U_REPLICATOR).hp - 100);
-    // et il blesse peu le reste
-    let ts = w.unit(tank).unwrap();
-    crate::combat::damage_unit(&mut w, ts, 100, 0);
-    assert_eq!(w.units.hp[ts], udef(U_LIGHT_TANK).hp - 20);
+    w.hit_weapon = 61;
+    crate::combat::damage_unit(&mut w, s, 20, 0);
+    assert_eq!(w.units.hp[s], hp - 20);
+    let rs = w.unit(robot).unwrap();
+    crate::combat::damage_unit(&mut w, rs, 100, 0);
+    assert_eq!(w.units.hp[rs], udef(U_LINE_ROBOT).hp - 20);
     w.shooter = NONE;
+    w.hit_weapon = 255;
+}
+
+#[test]
+fn light_tanks_beat_a_replicator_but_line_robots_cannot() {
+    for (kind, dies) in [(U_LIGHT_TANK, true), (U_LINE_ROBOT, false)] {
+        let mut w = world(FAUNA_NORMAL as i32);
+        let i = found_colony(&mut w, 270, 270, SPECIES_REPLICATORS).expect("ruche");
+        spawn_beast(&mut w, i, U_REPLICATOR);
+        let id = *w.nature.nests[i].horde.last().unwrap();
+        let s = w.unit(id).unwrap();
+        w.units.x[s] = 200 * TILE;
+        w.units.y[s] = 200 * TILE;
+        w.units.px[s] = w.units.x[s];
+        w.units.py[s] = w.units.y[s];
+        w.units.cold[s].stun = 1000;
+        for k in 0..3 {
+            w.spawn_unit(kind, 0, 208 * TILE, (199 + k) * TILE);
+        }
+        run(&mut w, 400);
+        assert_eq!(w.unit(id).is_none(), dies, "{}", udef(kind).key);
+    }
 }
 
 #[test]

@@ -54,6 +54,6 @@ export const UNIT_DESCS: Record<string, string> = {
   beast_m: "Mordeur adulte : plus massif et mieux cuirassé que le petit. Les nids en font naître de plus en plus souvent à mesure que la faune évolue avec le temps de jeu.",
   beast_l: "Grand mordeur : énorme bête cuirassée aux mandibules qui broient les murs et les tourelles. N'apparaît que lorsque la faune a bien évolué, au bout d'une demi-heure de jeu environ.",
   roll_droid: "Droïde roulant : il roule en boule, très vite (plus vite qu'une moto), sans pouvoir tirer. À l'arrêt devant une cible, il se déplie en moins d'une seconde en tourelle à deux blasters, protégée par un bouclier personnel. Il se replie dès qu'on le fait bouger.",
-  replicator: "Réplicateur : faune mécanique faite de blocs. Insensible à toutes les armes, sauf celle du disrupteur. Il dévore les bâtiments, et chaque bâtiment qu'il abat fait naître un autre réplicateur.",
-  disruptor: "Disrupteur : fantassin-robot au fusil à bobines, la seule arme qui défait les réplicateurs et leurs ruches. Contre tout le reste, il ne fait qu'un cinquième de ses dégâts.",
+  replicator: "Réplicateur : faune mécanique faite de blocs. Les armes à énergie, missiles et bombes ne lui font rien : seuls les armes à feu, les obus, le canon de rail et le disrupteur le blessent. Il dévore les bâtiments, et chaque bâtiment qu'il abat fait naître un autre réplicateur.",
+  disruptor: "Disrupteur : fantassin-robot au fusil à bobines, la seule arme à énergie qui défait les réplicateurs et leurs ruches (avec les armes à feu, les obus et le canon de rail). Contre tout le reste, il ne fait qu'un cinquième de ses dégâts.",
 };

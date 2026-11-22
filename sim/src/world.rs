@@ -516,6 +516,8 @@ pub struct World {
     pub shooter: u32,
     /// origine du tir en cours de résolution (blindage frontal du Gardien) ; i32::MIN : inconnue
     pub hit_from: (i32, i32),
+    /// arme du tir en cours de résolution (réplicateurs : seules certaines armes les blessent) ; 255 : inconnue
+    pub hit_weapon: u8,
     /// prochain tick où un événement « attaque subie » peut être émis, par joueur et par type
     /// (sortie pour l'interface seulement : ni hachée ni sauvegardée)
     pub attack_ev: Vec<u32>,
@@ -616,6 +618,7 @@ impl World {
             ghosts: Vec::new(),
             shooter: NONE,
             hit_from: (i32::MIN, 0),
+            hit_weapon: 255,
             attack_ev: Vec::new(),
             nature,
             fog,

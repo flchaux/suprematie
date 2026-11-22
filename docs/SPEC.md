@@ -106,7 +106,7 @@ Des nids de bêtes hostiles occupent la carte, comme les nids de Factorio. L'hô
   - **Durcissement** : un nid subit 20 % de dégâts en moins au départ, jusqu'à 60 % quand l'évolution est complète (200 + évolution × 2/5 ‰).
 - Expansion : toutes les 7 à 12 min (4 à 7 en agressive, 10 à 15 en paisible), un nid de plus de 5 min envoie 4 bêtes fonder un nid à 12-28 cases, à plus de 32 cases de tout bâtiment de joueur. Le nombre de nids est plafonné (trois fois celui du départ), comme celui des bêtes (768 sur 10 km, 1 536 sur 20 km).
 - Un nid détruit ne laisse ni épave ni fantôme ; les bêtes non plus.
-- Réplicateurs : deuxième espèce de la faune (`Nest::species`). Une ruche (`B_HIVE`, deux en faune agressive) au centre de la carte ou entre deux départs ; elle pond deux fois moins vite qu'un nid et suit les mêmes règles (horde, défense, attaques, expansion). Réplicateurs et ruches sont insensibles à toute arme sauf celle du disrupteur (unité terrestre, recherche Production terrestre), qui ne fait qu'un cinquième de ses dégâts au reste (`replicator_damage`). Un bâtiment de joueur abattu par un réplicateur en fait naître un autre sur place, qui rejoint l'attaque (`building_killed`, `breed`). Les bots ajoutent des disrupteurs à leur armée dès qu'ils voient des réplicateurs.
+- Réplicateurs : deuxième espèce de la faune (`Nest::species`). Une ruche (`B_HIVE`, deux en faune agressive) au centre de la carte ou entre deux départs ; elle pond deux fois moins vite qu'un nid et suit les mêmes règles (horde, défense, attaques, expansion). Réplicateurs et ruches ne sont blessés que par les projectiles cinétiques (balles, obus, canon de rail : `kinetic`, d'après l'arme du tir en cours `World::hit_weapon`) et par le disrupteur (unité terrestre, recherche Production terrestre), qui ne fait qu'un cinquième de ses dégâts au reste (`replicator_damage`) ; armes à énergie, missiles, bombes et lances-flammes ne leur font rien. Un bâtiment de joueur abattu par un réplicateur en fait naître un autre sur place, qui rejoint l'attaque (`building_killed`, `breed`). Les bots ajoutent des disrupteurs à leur armée dès qu'ils voient des réplicateurs.
 
 ### Brouillard de guerre
 
@@ -168,7 +168,7 @@ La faction compte 37 unités, inspirées de Supreme Commander, Star Wars et Star
 | Unité | Rôle | Palier | Inspiration |
 | --- | --- | --- | --- |
 | Robot de ligne | Robot d'infanterie bon marché, produit en grand nombre, arme légère | 1 | Star Wars (robots de combat) |
-| Disrupteur | Seul à défaire les réplicateurs et leurs ruches ; un cinquième de ses dégâts contre le reste | 1 | Stargate (arme anti-réplicateurs) |
+| Disrupteur | Seule arme à énergie qui défait les réplicateurs et leurs ruches ; un cinquième de ses dégâts contre le reste | 1 | Stargate (arme anti-réplicateurs) |
 | Droïde roulant | Roule en boule (vitesse 72, sans tirer), se déplie à l'arrêt en 0,8 s en tourelle à deux blasters avec bouclier personnel (900 PV), se replie pour bouger | 3 | Star Wars (droïdeka) |
 | Moto-glisseur | Éclaireur très rapide et peu blindé | 1 | Star Wars (motos à répulseurs) |
 | Char léger | Char d'appui direct de base | 1 | Supreme Commander |

@@ -351,9 +351,11 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         // morsure : coup direct, sans trait (le rendu montre un éclat à l'impact)
         w.shooter = src;
         w.hit_from = (x, y);
+        w.hit_weapon = wi as u8;
         hit_ref(w, t, dmg, owner, 0);
         w.shooter = NONE;
         w.hit_from = (i32::MIN, 0);
+        w.hit_weapon = 255;
         w.ev(EV_FIRE, wi as i32, tx, ty, owner as i32);
         return;
     }
@@ -366,6 +368,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         }
         w.shooter = src;
         w.hit_from = (x, y);
+        w.hit_weapon = wi as u8;
         if wd.aoe > 0 {
             area_damage(w, tx, ty, wd.aoe, dmg, owner, wd.mask, false);
         } else {
@@ -373,6 +376,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         }
         w.shooter = NONE;
         w.hit_from = (i32::MIN, 0);
+        w.hit_weapon = 255;
         return;
     }
     let per_tick = (wd.speed * TILE / 20).max(1);
@@ -798,9 +802,11 @@ pub fn update_projectiles(w: &mut World) {
         w.projectiles.swap_remove(i);
         w.shooter = p.src;
         w.hit_from = (p.x0, p.y0);
+        w.hit_weapon = p.weapon;
         impact(w, &p);
         w.shooter = NONE;
         w.hit_from = (i32::MIN, 0);
+        w.hit_weapon = 255;
     }
 }
 
@@ -844,6 +850,7 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
     }
     w.shooter = p.src;
     w.hit_from = (p.x0, p.y0);
+    w.hit_weapon = p.weapon;
     if p.aoe > 0 {
         area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
     } else {
@@ -851,6 +858,7 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
     }
     w.shooter = NONE;
     w.hit_from = (i32::MIN, 0);
+    w.hit_weapon = 255;
     true
 }
 
