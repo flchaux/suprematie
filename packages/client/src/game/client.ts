@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
+import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BF, BClass, pausableClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
 import type { Frame, GameData, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -918,22 +918,22 @@ export class GameClient {
       lvls.set(k, Math.max(lvls.get(k) ?? 0, (f.buf[o + 1] >>> 24) & 7));
     }
     // bâtiments sélectionnés : un seul passage sur l'image quand il y en a beaucoup
-    const selBs: { ref: number; kind: number; owner: number }[] = [];
+    const selBs: { ref: number; kind: number; owner: number; paused: boolean; built: boolean }[] = [];
     let nb = 0;
     for (const id of this.selected) if (Ord.isBuildingRef(id)) nb++;
-    const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number }>() : null;
+    const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number; paused: boolean; built: boolean }>() : null;
     if (byRef) {
       for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
         const ref = f.buf[o] >>> 0;
-        if (this.selected.has(ref)) byRef.set(ref, { ref, kind: f.buf[o + 1] & 0xff, owner: (f.buf[o + 1] >> 8) & 0xff });
+        if (this.selected.has(ref)) byRef.set(ref, this.buildingState(f.buf, o));
       }
     }
     for (const id of this.selected) {
       if (Ord.isBuildingRef(id)) {
-        const bw = byRef ? byRef.get(id) : this.findBuilding(id);
+        const bw = byRef ? byRef.get(id) : this.findBuildingState(id);
         if (bw) {
           alive.add(id);
-          selBs.push({ ref: bw.ref, kind: bw.kind, owner: bw.owner });
+          selBs.push(bw);
         } else if (!this.frame || this.scene?.strategic) alive.add(id);
       }
     }
@@ -958,6 +958,37 @@ export class GameClient {
     } else ui.buildingInfo = null;
     this.plans.tick();
     if (ui.gameOver === null && f.winner !== -1 && ui.replay) ui.gameOver = { winner: f.winner, replay: "", won: false };
+  }
+
+  /** Bâtiment de l'image au mot `o` : type, joueur, en pause (bâtiment de production, BF.ENABLED éteint), terminé. */
+  private buildingState(buf: Int32Array, o: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean } {
+    const kind = buf[o + 1] & 0xff;
+    const cls = this.data?.buildings[kind]?.cls ?? -1;
+    return { ref: buf[o] >>> 0, kind, owner: (buf[o + 1] >> 8) & 0xff, paused: pausableClass(cls) && !(((buf[o + 1] >> 20) & 0xff) & BF.ENABLED), built: buf[o + 4] >= 65536 };
+  }
+  private findBuildingState(ref: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean } | null {
+    const f = this.frame;
+    if (!f) return null;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) if (f.buf[o] >>> 0 === ref) return this.buildingState(f.buf, o);
+    return null;
+  }
+  /** Nos bâtiments de production terminés de la sélection, qu'on peut mettre en pause ou relancer. */
+  pausableSelection(): { ref: number; paused: boolean }[] {
+    return ui.selBuildings.filter((b) => b.owner === ui.me && b.built && pausableClass(this.data?.buildings[b.kind]?.cls ?? -1)).map((b) => ({ ref: b.ref, paused: !!b.paused }));
+  }
+  /**
+   * Bouton (ou raccourci) Pause : met en pause les bâtiments de production sélectionnés ; s'ils sont
+   * tous déjà en pause, les relance. L'état affiché suit tout de suite, la simulation confirme ensuite.
+   */
+  togglePauseSelected(): void {
+    const l = this.pausableSelection();
+    if (!l.length) return;
+    const on = !l.every((b) => b.paused);
+    this.cmd(Ord.setPause(l.map((b) => b.ref), on));
+    const refs = new Set(l.map((b) => b.ref));
+    ui.selBuildings = ui.selBuildings.map((b) => (refs.has(b.ref) ? { ...b, paused: on } : b));
+    if (ui.buildingInfo && ui.selBuilding && refs.has(ui.selBuilding.ref)) ui.buildingInfo = { ...ui.buildingInfo, enabled: !on };
+    sfx.click();
   }
 
   findBuilding(ref: number): { ref: number; kind: number; owner: number; x: number; y: number } | null {
@@ -1420,6 +1451,9 @@ export class GameClient {
         break;
       case "cancelBuilding":
         this.demolishSelected();
+        break;
+      case "pauseBuilding":
+        this.togglePauseSelected();
         break;
       case "zoomIn":
         if (this.scene) {

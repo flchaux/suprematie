@@ -50,6 +50,8 @@ export const O = {
   TAME: 52,
   /** Transhumants : le générateur nomade plante un poteau relais : [réf. du générateur, x, y (cases)] */
   PLANT_POLE: 53,
+  /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
+  SET_PAUSE: 54,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -279,6 +281,10 @@ export function cancelPlan(x: number, y: number): Cmd {
 }
 export function rotate(refs: number[]): Cmd {
   return [O.ROTATE, refs.length, ...refs.map((r) => r | 0)];
+}
+/** Met en pause (ou relance) des extracteurs, fabricants et usines d'unités. */
+export function setPause(refs: number[], on: boolean): Cmd {
+  return [O.SET_PAUSE, on ? 1 : 0, refs.length, ...refs.map((r) => r | 0)];
 }
 export function toggle(ref: number): Cmd {
   return [O.TOGGLE, ref | 0];

@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim } from "../src/sim.ts";
-import { pack, move, build, research, O, validCmd, target } from "../src/orders.ts";
+import { pack, move, build, research, O, validCmd, target, setPause } from "../src/orders.ts";
 import { parseFrame, parseBotDump, UNIT_WORDS } from "../src/render.ts";
 import type { GameData } from "../src/data.ts";
 
@@ -48,6 +48,12 @@ describe("ordres", () => {
     const c = move([{ id: 1, x: 0, y: 0 }, { id: 2, x: 512, y: 0 }], 10000, 10000);
     expect(c.slice(0, 5)).toEqual([O.MOVE, 0, 10000, 10000, 2]);
     expect(c[6]).toBeLessThan(c[9]);
+  });
+  it("pause d'une sélection de bâtiments : [pause, n, réf…]", () => {
+    const out: number[] = [];
+    pack(1, setPause([0x40000005, 0x40000009], true), out);
+    expect(out).toEqual([6, O.SET_PAUSE, 1, 1, 2, 0x40000005, 0x40000009]);
+    expect(setPause([7], false)).toEqual([O.SET_PAUSE, 0, 1, 7]);
   });
   it("rejette les ordres mal formés", () => {
     expect(validCmd([1, 2, 3])).toBe(true);

@@ -3,7 +3,7 @@
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
-import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES, pausableClass } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
@@ -515,13 +515,13 @@ export class Entities {
       built.box.getSize(size);
       this.vehicleMeshes.push(new KindMesh(this.group, built, len / Math.max(size.x, size.z, 0.01), TEX_PER_TILE_UNIT));
     }
-    // icônes de diagnostic : atlas dessiné à la volée (4 icônes de 64 px), panneaux tournés vers la caméra
+    // icônes de diagnostic : atlas dessiné à la volée (DIAG_ICONS icônes de 64 px), panneaux tournés vers la caméra
     this.diagIcon = new THREE.InstancedBufferAttribute(new Float32Array(2000), 1);
     this.diagIcon.setUsage(THREE.DynamicDrawUsage);
     const dmat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false });
     const atlas = tslTexture(diagAtlas());
     const icon = instancedBufferAttribute(this.diagIcon, "float");
-    const t = atlas.sample(vec2(uv().x.add(icon).div(4), uv().y));
+    const t = atlas.sample(vec2(uv().x.add(icon).div(DIAG_ICONS), uv().y));
     dmat.colorNode = t.rgb;
     dmat.opacityNode = t.a;
     this.ranks = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.7, 0.7).rotateZ(Math.PI / 4), new THREE.MeshBasicNodeMaterial({ color: new THREE.Color(2.2, 1.7, 0.5), depthTest: false, transparent: true }), 3000);
@@ -1309,14 +1309,16 @@ export class Entities {
       const frac = Math.max(0, Math.min(1, hp / def.hp));
       // diagnostic (nos bâtiments) : icône si le problème dure plus de 2 s
       if (owner === me && build >= 1 && DIAG_CLASSES.has(def.cls)) {
-        const icon = bflags & BF.UNPOWERED ? 0 : bflags & BF.NO_INPUT ? 1 : bflags & BF.OUT_BLOCKED ? 2 : bflags & BF.LOW_POWER ? 3 : -1;
+        // en pause (bâtiment de production, BF.ENABLED éteint) : signe de pause, tout de suite
+        const paused = pausableClass(def.cls) && !(bflags & BF.ENABLED);
+        const icon = paused ? DIAG_PAUSED : bflags & BF.UNPOWERED ? 0 : bflags & BF.NO_INPUT ? 1 : bflags & BF.OUT_BLOCKED ? 2 : bflags & BF.LOW_POWER ? 3 : -1;
         const ref = buf[o] >>> 0;
         if (icon < 0) this.diagSince.delete(ref);
         else {
           let st = this.diagSince.get(ref);
           if (!st || st.icon !== icon) this.diagSince.set(ref, (st = { icon, since: now, seen: 0 }));
           st.seen = this.frameN;
-          if (now - st.since > 2000 && nd < 2000) {
+          if ((paused || now - st.since > 2000) && nd < 2000) {
             const s = Math.max(0.9, Math.min(3, iconScale * 0.9));
             tmpM.compose(tmpV.set(cx, y + km.height + 0.9 * s, cz), camQ, tmpS.set(s, s, s));
             this.diag.setMatrixAt(nd, tmpM);
@@ -2331,10 +2333,14 @@ export class Entities {
 /** Bâtiments qui affichent une icône de diagnostic. */
 const DIAG_CLASSES = new Set<number>([BClass.Crafter, BClass.Extractor, BClass.Lab, BClass.Factory, BClass.Station, BClass.CargoPad, BClass.Turret, BClass.Radar, BClass.Shield]);
 
-/** Atlas des icônes de diagnostic : sans énergie, entrée manquante, sortie bloquée, énergie faible. */
+/** Nombre d'icônes de l'atlas de diagnostic, et celle de la pause. */
+const DIAG_ICONS = 5;
+const DIAG_PAUSED = 4;
+
+/** Atlas des icônes de diagnostic : sans énergie, entrée manquante, sortie bloquée, énergie faible, en pause. */
 function diagAtlas(): THREE.Texture {
   const c = document.createElement("canvas");
-  c.width = 256;
+  c.width = 64 * DIAG_ICONS;
   c.height = 64;
   const g = c.getContext("2d");
   if (g) {
@@ -2397,6 +2403,11 @@ function diagAtlas(): THREE.Texture {
     // énergie faible
     disc(3, "#ffe066");
     bolt(3, "#ffe066");
+    // en pause : deux barres
+    disc(DIAG_PAUSED, "#9fc6ff");
+    g.fillStyle = "#9fc6ff";
+    g.fillRect(DIAG_PAUSED * 64 + 21, 18, 8, 28);
+    g.fillRect(DIAG_PAUSED * 64 + 35, 18, 8, 28);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
