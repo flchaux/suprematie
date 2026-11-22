@@ -259,7 +259,7 @@ export class Terrain {
     loadGroundTextures().then((ok) => {
       if (!ok) return;
       const tm = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
-      tm.colorNode = applyPower(applyFog(applyTerreau(groundColor()), fogFactor()));
+      tm.colorNode = applyPower(applyFog(applyTerreau(groundColor(), true), fogFactor()));
       this.texturedMat = tm;
       this.setDetail(this.wantDetail);
     });
