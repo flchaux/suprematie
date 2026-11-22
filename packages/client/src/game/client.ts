@@ -5,7 +5,7 @@ import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe } from "@supreme/shared";
-import type { Frame, GameData, ServerMsg, GameStart, PowerZones } from "@supreme/shared";
+import type { Frame, GameData, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
@@ -353,6 +353,24 @@ export class GameClient {
     });
   }
 
+  /** Barre des ressources : économie de la zone électrique au centre de l'écran (4 fois par seconde au plus,
+   * une requête à la fois). */
+  private zoneSent = 0;
+  private queryZone(sc: GameScene): void {
+    // une requête à la fois (sans réponse au bout de 2 s, le Worker n'avait pas encore de partie : on relance)
+    const now = performance.now();
+    if (now - this.zoneSent < 2000 || !this.frame || ui.me < 0 || ui.spectator) return;
+    this.zoneSent = now;
+    const me = ui.me;
+    const at: [number, number] = [Math.floor(sc.target.x), Math.floor(sc.target.z)];
+    void this.query<ZoneEconomy | null>("zoneEconomy", [me, ...at]).then((z) => {
+      this.zoneSent = 0;
+      if (!z || ui.me !== me) return;
+      const color = z.zone === 2 ? DEAD_COLOR : (sc.power?.colorOf.get(z.net ?? 0) ?? 0x8a96a8);
+      ui.zone = { ...z, color, at };
+    });
+  }
+
   // ---------- boucle d'affichage ----------
   private loop(now: number): void {
     requestAnimationFrame((t) => this.loop(t));
@@ -374,6 +392,7 @@ export class GameClient {
       this.fpsCount = 0;
       this.lastUiUpdate = now;
       this.updateUi();
+      this.queryZone(sc);
     }
     // zones électriques : vue électrique (touche maintenue) ou pose d'un bâtiment qui consomme ou alimente
     const pv = keymap.held("powerView", this.keys);

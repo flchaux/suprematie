@@ -167,7 +167,7 @@
   .corner { position: absolute; width: 14px; height: 14px; border-color: var(--accent); border-style: solid; pointer-events: none; filter: drop-shadow(0 0 4px var(--accent)); }
   .corner.tl { top: 3px; left: 3px; border-width: 2px 0 0 2px; }
   .corner.br { bottom: 3px; right: 3px; border-width: 0 2px 2px 0; }
-  .mode { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); padding: 7px 14px; display: flex; align-items: center; gap: 8px; color: var(--accent); }
+  .mode { position: absolute; top: calc(var(--topbar-h, 48px) + 12px); left: 50%; transform: translateX(-50%); padding: 7px 14px; display: flex; align-items: center; gap: 8px; color: var(--accent); }
   .mode :global(.key) { margin-left: 4px; }
   .nowrap { white-space: nowrap; }
   .messages { position: absolute; left: 10px; bottom: 252px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; max-width: 480px; }
@@ -186,18 +186,18 @@
   .msg.chat :global(.ic) { color: var(--amber); }
   .chatbox { position: absolute; left: 10px; bottom: 238px; padding: 6px 8px; display: flex; align-items: center; gap: 8px; color: var(--amber); }
   .chatbox input { width: 380px; }
-  .waiting { position: absolute; top: 104px; left: 50%; transform: translateX(-50%); padding: 9px 16px; color: var(--warn); display: flex; align-items: center; gap: 9px; }
+  .waiting { position: absolute; top: calc(var(--topbar-h, 48px) + 56px); left: 50%; transform: translateX(-50%); padding: 9px 16px; color: var(--warn); display: flex; align-items: center; gap: 9px; }
   .dot { width: 8px; height: 8px; background: var(--amber); box-shadow: 0 0 10px var(--amber); animation: blink 1.2s infinite; }
   .replay { position: absolute; top: 60px; right: 10px; padding: 6px 10px; display: flex; gap: 4px; align-items: center; }
   .replay button { padding: 3px 8px; min-width: 34px; display: inline-flex; justify-content: center; }
-  .perfbox { position: absolute; top: 60px; left: 10px; padding: 9px 12px; font-size: 11.5px; display: flex; flex-direction: column; gap: 3px; pointer-events: none; }
+  .perfbox { position: absolute; top: calc(var(--topbar-h, 48px) + 12px); left: 10px; padding: 9px 12px; font-size: 11.5px; display: flex; flex-direction: column; gap: 3px; pointer-events: none; }
   @keyframes slide { from { opacity: 0; transform: translateX(-10px); } }
   @keyframes blink { 50% { opacity: 0.3; } }
-  .floorbadge { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); padding: 6px 12px; font-size: 12px; z-index: 6; pointer-events: none; white-space: nowrap; }
-  .logilegend { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 6px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; white-space: nowrap; }
+  .floorbadge { position: absolute; left: 50%; top: calc(var(--topbar-h, 48px) + 102px); transform: translateX(-50%); padding: 6px 12px; font-size: 12px; z-index: 6; pointer-events: none; white-space: nowrap; }
+  .logilegend { position: absolute; left: 50%; top: calc(var(--topbar-h, 48px) + 16px); transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 6px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; white-space: nowrap; }
   .logilegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .logilegend .sep { width: 1px; height: 14px; background: var(--line); }
-  .powerlegend { position: absolute; left: 16px; top: 64px; display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; max-width: 300px; }
+  .powerlegend { position: absolute; left: 16px; top: calc(var(--topbar-h, 48px) + 16px); display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; font-size: 11.5px; z-index: 7; pointer-events: none; max-width: 300px; }
   .powerlegend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .powerlegend .deadsw { background: repeating-linear-gradient(45deg, #ff4a3d 0 3px, transparent 3px 6px); border: 1px solid #ff4a3d; }
   .powerlegend .warn { color: var(--amber); }

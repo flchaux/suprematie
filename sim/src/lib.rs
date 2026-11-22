@@ -24,6 +24,7 @@ pub mod transhumants;
 pub mod twins;
 pub mod units;
 pub mod world;
+pub mod zone_eco;
 
 use std::cell::RefCell;
 use world::World;
@@ -186,6 +187,13 @@ pub extern "C" fn info_building(r: u32) -> *const u8 {
 #[no_mangle]
 pub extern "C" fn power_zones(player: i32) -> *const u8 {
     let s = with_world(|w| render::power_zones(w, player), "null".into());
+    set_out_bytes(s.into_bytes())
+}
+
+/// Économie de la zone au centre de l'écran (JSON, voir zone_eco::zone_economy).
+#[no_mangle]
+pub extern "C" fn zone_economy(player: i32, tx: i32, ty: i32) -> *const u8 {
+    let s = with_world(|w| zone_eco::zone_economy(w, player, tx, ty), "null".into());
     set_out_bytes(s.into_bytes())
 }
 
@@ -390,4 +398,6 @@ mod main_gen_tests;
 mod drones_tests;
 #[cfg(test)]
 mod races_tests;
+#[cfg(test)]
+mod zone_eco_tests;
 pub mod stress;

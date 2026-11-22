@@ -1,8 +1,9 @@
 <script lang="ts">
   import { ui } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
-  import { PACK1, GAME_SPEEDS, SEVE, SELS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
+  import { PACK1, GAME_SPEEDS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import Item from "./Item.svelte";
+  import ZoneBar from "./ZoneBar.svelte";
   import Icon from "./Icon.svelte";
   import Shortcuts from "./Shortcuts.svelte";
   import { kb, keyOf } from "../game/keys.svelte.ts";
@@ -10,8 +11,11 @@
     const k = keyOf(id);
     return k ? `${label} (${k})` : label;
   };
-  // objets montrés en permanence (les plaques et composants de base), puis les autres dès qu'il y en a
-  const SHOWN = [6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+  // hauteur de la barre (quatre lignes de ressources) : les panneaux placés dessous la suivent (--topbar-h)
+  let leftH = $state(42);
+  $effect(() => {
+    document.documentElement.style.setProperty("--topbar-h", leftH + 6 + "px");
+  });
   const tech = $derived(ui.data && ui.research ? ui.data.techs[ui.research] : null);
   const power = (kw: number) => (kw >= 1000 ? (kw / 1000).toFixed(1) + " MW" : kw + " kW");
   const load = $derived(ui.powerProd > 0 ? Math.min(1.2, ui.powerUse / ui.powerProd) : ui.powerUse > 0 ? 1.2 : 0);
@@ -22,29 +26,9 @@
 </script>
 
 <div class="top">
-  <div class="panel left">
-    {#if ui.me >= 0 && ui.race === RACE_SOUCHE}
-      <!-- Souche : pas de réserve commune ; la sève et les sels sont dans les réseaux de racines -->
-      <div class="stock">
-        {#each [[SEVE, ui.seve], [SELS, ui.sels]] as [id, n]}
-          {@const fill = ui.store > 0 ? Math.min(1, n / ui.store) : 0}
-          <span class="tip res" class:full={fill >= 1}><Item {id} {n} size={20} /><span class="cap"><span style:width={fill * 100 + "%"}></span></span><span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{n}</span> dans l'ensemble de vos réseaux de racines (plafond total <span class="num">{ui.store}</span>)<br /><span class="dim">Chaque réseau a sa propre réserve : un organe ne pousse qu'avec celle de son réseau. Une racine coupée partage la réserve entre les morceaux.</span></span></span>
-        {/each}
-        <span class="tip res"><Item id={ADN} n={ui.stock[ADN] ?? 0} size={20} /><span class="tt"><b>ADN</b><br />Recherche des matrices. Vient des ennemis et des bêtes digérés sur votre terreau.</span></span>
-      </div>
-      <div class="sep"></div>
-    {:else if ui.me >= 0}
-      <div class="stock">
-        {#if ui.race === RACE_TRANSH}
-          <span class="tip res"><Item id={RELEVES} n={ui.stock[RELEVES] ?? 0} size={20} /><span class="tt"><b>Relevés</b><br />Recherche des laboratoires nomades. Viennent de l'exploration et des ennemis détruits.</span></span>
-        {/if}
-        {#each SHOWN as id}
-          {#if id <= 12 || (ui.stock[id] ?? 0) > 0}
-            {@const fill = ui.stockCap > 0 ? Math.min(1, (ui.stock[id] ?? 0) / ui.stockCap) : 0}
-            <span class="tip res" class:full={fill >= 1} class:near={fill >= 0.85 && fill < 1}><Item {id} n={ui.stock[id] ?? 0} size={20} /><span class="cap"><span style:width={fill * 100 + "%"}></span></span>{#if (ui.teamStock[id] ?? 0) > 0}<span class="team num">+{(ui.teamStock[id] ?? 0) >= 10000 ? Math.floor((ui.teamStock[id] ?? 0) / 1000) + "k" : ui.teamStock[id]}</span>{/if}<span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{ui.stock[id] ?? 0}</span> dans vos dépôts et les soutes de vos constructeurs<br /><span class="num">{ui.teamStock[id] ?? 0}</span> dans les entrepôts de l'équipe<br />Capacité de vos dépôts : <span class="num">{ui.stockCap}</span> de chaque objet{#if fill >= 1} <b class="bad">pleins</b>{/if}<br /><span class="dim">Pas de réserve commune : chaque dépôt garde son stock, et les drones de vos constructeurs vont chercher sur place, dans les dépôts proches, ce que demandent leurs chantiers.</span></span></span>
-          {/if}
-        {/each}
-      </div>
+  <div class="panel left" bind:clientHeight={leftH}>
+    {#if ui.me >= 0}
+      <ZoneBar />
       <div class="sep"></div>
     {/if}
     {#if ui.me >= 0}
@@ -124,18 +108,9 @@
   .top { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; align-items: stretch; gap: 8px; pointer-events: none; }
   .top > * { pointer-events: auto; }
   .left, .right { display: flex; align-items: center; gap: 10px; padding: 5px 12px; height: 42px; min-width: 0; }
-  .left { flex-shrink: 1; overflow: visible; }
+  .left { flex-shrink: 1; overflow: visible; height: auto; min-height: 42px; }
+  .right { align-self: flex-start; }
   .grow { flex: 1; }
-  .stock { display: flex; gap: 11px; }
-  .res :global(.num) { font-size: 12.5px; }
-  .res { position: relative; }
-  /* remplissage de vos dépôts (capacité totale par objet) */
-  .res .cap { position: absolute; left: 0; right: 0; bottom: 1px; height: 2px; background: rgba(255, 255, 255, 0.1); pointer-events: none; }
-  .res .cap > span { display: block; height: 100%; background: var(--accent); opacity: 0.7; }
-  .res.near .cap > span { background: var(--amber); opacity: 1; }
-  .res.full .cap > span { background: var(--bad, #ff5a4f); opacity: 1; }
-  .res.full :global(.num) { color: var(--bad, #ff5a4f); }
-  .res .team { font-size: 10.5px; color: var(--accent); margin-left: 1px; opacity: 0.9; }
   .sep { width: 1px; height: 24px; background: linear-gradient(180deg, transparent, var(--line-hi), transparent); flex-shrink: 0; }
   .gauge { display: flex; align-items: center; gap: 7px; color: var(--accent); white-space: nowrap; }
   .gauge.bad { color: var(--bad); }
@@ -165,7 +140,6 @@
   @keyframes nudge { 50% { filter: drop-shadow(0 0 8px rgba(255, 181, 71, 0.55)); } }
   @media (max-width: 1250px) {
     .perf { display: none; }
-    .stock { gap: 7px; }
     .left { gap: 7px; }
   }
   @media (max-width: 1000px) {
