@@ -397,6 +397,8 @@ mod main_gen_tests;
 #[cfg(test)]
 mod drones_tests;
 #[cfg(test)]
+mod pickup_tests;
+#[cfg(test)]
 mod races_tests;
 #[cfg(test)]
 mod zone_eco_tests;

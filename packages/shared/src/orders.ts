@@ -30,7 +30,7 @@ export const O = {
   EMPTY_STASH: 46,
   /** cadence d'une machine : [réf., cadence %] (10 à 250 par pas de 10 ; au-dessus de 100 %, des fragments d'énergie) */
   SET_CLOCK: 47,
-  /** commandant : récupérer les objets d'un de nos tapis (versés au stock commun) */
+  /** commandant : récupérer les objets d'un de nos tapis (dans sa soute ; ses drones les portent à un dépôt) */
   COLLECT: 23,
   /** tourner d'un quart de tour nos tapis, bras et tapis de contrôle : [n, réf…] */
   ROTATE: 24,
@@ -42,6 +42,10 @@ export const O = {
   PACK: 48,
   /** chenillards : rouler jusqu'au point et s'y déployer : [drapeaux, x, y (sous-unités), n, unités…] */
   DEPLOY_AT: 49,
+  /** commandant, ingénieurs : ramasser ce qui sort d'un de nos extracteurs ou fabricants (soute) : [drapeaux, réf., n, unités…] */
+  PICKUP: 50,
+  /** commandant, ingénieurs : porter un objet de la soute (0 : tout) au dépôt le plus proche qui a de la place : [drapeaux, objet, n, unités…] */
+  DELIVER: 51,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -210,6 +214,14 @@ export function deploy(ids: number[]): Cmd {
 export function deployAt(ids: number[], x: number, y: number, queue = false, dir?: number): Cmd {
   const flags = (queue ? 1 : 0) | (dir === undefined ? 0 : ((dir & 3) + 1) << 2);
   return [O.DEPLOY_AT, flags, x | 0, y | 0, ids.length, ...ids.map((v) => v | 0)];
+}
+/** commandant, ingénieurs : ramasser ce qui sort du bâtiment `ref` (extracteur, fabricant), dans leur soute */
+export function pickup(ids: number[], ref: number, queue = false): Cmd {
+  return target(O.PICKUP, ids, ref, queue);
+}
+/** commandant, ingénieurs : porter l'objet `item` de leur soute (0 : tout) au dépôt le plus proche qui a de la place */
+export function deliver(ids: number[], item: number, queue = false): Cmd {
+  return [O.DELIVER, queue ? 1 : 0, item | 0, ids.length, ...ids.map((x) => x | 0)];
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {

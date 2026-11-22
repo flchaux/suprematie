@@ -61,6 +61,12 @@ pub const O_PACK: i32 = 48;
 /// Chenillards : rouler jusqu'au point et s'y déployer : [drapeaux, x, y (sous-unités), n, unités…] ; drapeaux :
 /// bit 0 en file, bits 2-4 sens du module + 1 (0 : sens automatique) ; le point est le centre du module.
 pub const O_DEPLOY_AT: i32 = 49;
+/// Commandant ou ingénieur : ramasser ce qui sort d'un de nos extracteurs ou fabricants, dans sa soute :
+/// [drapeaux (1 : en file), réf. du bâtiment, n, unités…].
+pub const O_PICKUP: i32 = 50;
+/// Commandant ou ingénieur : porter un objet de sa soute (0 : tout) au dépôt le plus proche qui a de la
+/// place : [drapeaux (1 : en file), objet, n, unités…].
+pub const O_DELIVER: i32 = 51;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -507,6 +513,29 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if let Some(s) = own_unit(w, p, id) {
                     if ok && w.units.kind[s] == crate::data::U_COMMANDER {
                         give(w, s, q, Order::Collect { target });
+                    }
+                }
+            }
+        }
+        O_PICKUP => {
+            let q = c.next() & 1 != 0;
+            let target = c.next() as u32;
+            let ok = w.building(target).is_some_and(|b| crate::units::pickup_ok(w, p, b));
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && udef(w.units.kind[s]).hold > 0 {
+                        give(w, s, q, Order::Pickup { target });
+                    }
+                }
+            }
+        }
+        O_DELIVER => {
+            let q = c.next() & 1 != 0;
+            let item = c.next();
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if (0..crate::data::NUM_ITEMS as i32).contains(&item) && udef(w.units.kind[s]).hold > 0 {
+                        give(w, s, q, Order::Deliver { item: item as u8 });
                     }
                 }
             }

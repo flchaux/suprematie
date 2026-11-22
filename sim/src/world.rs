@@ -128,6 +128,12 @@ pub enum Order {
     /// d'un chenillard foreuse sur un gisement ; voir transhumants::deploy_at)
     /// `dir` : sens du module choisi par le joueur + 1 (0 : sens automatique)
     DeployAt { x: i32, y: i32, dir: u8 },
+    /// commandant ou ingénieur : se poster près d'un de nos extracteurs ou fabricants et ramasser ce qui
+    /// attend dans sa sortie, mis dans sa soute (voir units::PICKUP_RANGE)
+    Pickup { target: u32 },
+    /// commandant ou ingénieur : porter l'objet `item` de sa soute (0 : tout ce qu'elle contient) au dépôt
+    /// le plus proche qui a de la place (voir drones::deliver_target)
+    Deliver { item: u8 },
 }
 
 impl Order {
@@ -149,8 +155,10 @@ impl Order {
             Order::Face { .. } => 14,
             Order::Collect { .. } => 15,
             Order::Harvest { .. } => 16,
-            // 17 : sans sens (sauvegardes du 22 novembre 2026), 18 : avec le sens
-            Order::DeployAt { .. } => 18,
+            // 17 : sans sens (sauvegardes du 22 novembre 2026), 20 : avec le sens
+            Order::DeployAt { .. } => 20,
+            Order::Pickup { .. } => 18,
+            Order::Deliver { .. } => 19,
         }
     }
 }
@@ -172,7 +180,8 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } => target.ser(w),
+            Order::Deliver { item } => item.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::DeployAt { x, y, dir } => {
                 x.ser(w);
@@ -214,7 +223,9 @@ impl Ser for Order {
             15 => Order::Collect { target: u(r) },
             16 => Order::Harvest { x: i(r), y: i(r) },
             17 => Order::DeployAt { x: i(r), y: i(r), dir: 0 },
-            18 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
+            18 => Order::Pickup { target: u(r) },
+            19 => Order::Deliver { item: u8::de(r) },
+            20 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

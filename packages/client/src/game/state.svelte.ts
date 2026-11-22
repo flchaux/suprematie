@@ -8,6 +8,11 @@ export interface Message { id: number; text: string; kind: "info" | "alert" | "c
 /** Récolte du commandant en cours (sim : render::harvest_info) : ressource brute, produit fondu, case du
  * gisement, état (0 en route, 1 récolte, 2 combat, 3 soute pleine), avancement du cycle (‰), durée d'un cycle (ticks). */
 export interface HarvestInfo { raw: number; out: number; x: number; y: number; state: number; progress: number; cycle: number }
+/** Ramassage de la sortie d'un bâtiment (sim : render::pickup_info) : bâtiment, objet de sa sortie (0 : rien),
+ * en attente, centre (cases), état (0 en route, 1 posté, 2 soute pleine vidée par les drones, 3 soute pleine que rien ne vide). */
+export interface PickupInfo { kind: number; item: number; out: number; x: number; y: number; state: number }
+/** Livraison de la soute (sim : render::deliver_info) : objet (0 : tout), dépôt visé (cases ; -1 : aucun). */
+export interface DeliverInfo { item: number; x: number; y: number }
 
 export const ui = $state({
   screen: "connect" as "connect" | "lobby" | "loading" | "game",
@@ -62,7 +67,7 @@ export const ui = $state({
   /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
   selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
-  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number },
+  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pickup?: PickupInfo | null; deliver?: DeliverInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number },
   buildingInfo: null as null | Record<string, unknown>,
   canBuild: false,
   mode: "" as string,

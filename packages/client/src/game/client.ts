@@ -11,7 +11,7 @@ import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
 import { parseMapInfo, groundHeight, HSCALE, type MapData, DEPOSIT_COLORS } from "../render/terrain.ts";
 import { ownerColor, ownerHex } from "./colors.ts";
-import { ui, pushMessage, hasTechUI, type HarvestInfo } from "./state.svelte.ts";
+import { ui, pushMessage, hasTechUI, type HarvestInfo, type PickupInfo, type DeliverInfo } from "./state.svelte.ts";
 import { say, setVoiceEnabled } from "../audio/voice.ts";
 import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
@@ -585,6 +585,13 @@ export class GameClient {
             pushMessage("EPPZ capturé ! Posez un socle à EPPZ (Énergie) : 25 000 kW sans combustible", "good");
             sfx.research();
           } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a capturé un EPPZ`, "alert");
+          break;
+        case EV.NO_DEPOT:
+          // livraison de la soute : aucun de nos dépôts n'a de place pour cet objet
+          if (a === ui.me) {
+            pushMessage(`Livraison impossible : aucun de vos dépôts n'a de place pour ${this.data!.items[e]?.name.toLowerCase() ?? "cet objet"} (il reste dans la soute)`, "alert");
+            sfx.error();
+          }
           break;
         case EV.DEPLOY_FAILED:
           // chenillard des Transhumants qui n'a pas trouvé la place de se déployer
@@ -1671,7 +1678,7 @@ export class GameClient {
       return;
     }
     const id = g.ids[0];
-    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pack?: number; packLeft?: number } | null>("unit", [id]).then((r) => {
+    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pack?: number; packLeft?: number; pickup?: PickupInfo | null; deliver?: DeliverInfo | null } | null>("unit", [id]).then((r) => {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });
@@ -1751,6 +1758,7 @@ export class GameClient {
       if (def.cls === BClass.Gate) return "move";
       if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
       if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => this.data!.units[u.kind].key === "commander")) return "load";
+      if (this.canPickup(def.cls, tb.build) && this.holdersOf(units).length) return "load";
     }
     if (!tb && units.some((u) => this.data!.units[u.kind].key === "commander")) {
       const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
@@ -1831,14 +1839,25 @@ export class GameClient {
         sfx.confirm();
         return;
       }
-      // commandant sur un de nos tapis : il s'y poste et récupère les objets qui passent (stock commun)
+      // commandant sur un de nos tapis : il s'y poste et récupère les objets qui passent (dans sa soute)
       const cmdrs = units.filter((u) => this.data!.units[u.kind].key === "commander").map((u) => u.id);
       if (def.cls === BClass.Belt && cmdrs.length) {
         this.cmd(Ord.target(O.COLLECT, cmdrs, tb.ref, queue));
         const rest = units.filter((u) => !cmdrs.includes(u.id));
         if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
         this.scene?.addMarker(g.x, g.z, 0xffd060);
-        pushMessage("Commandant : récupération des objets du tapis (versés au stock)", "info");
+        pushMessage("Commandant : récupération des objets du tapis (dans sa soute, ses drones les portent à un dépôt)", "info");
+        sfx.confirm();
+        return;
+      }
+      // commandant ou ingénieur sur un extracteur ou un fabricant terminé : il ramasse ce qui sort, dans sa soute
+      const holders = this.holdersOf(units);
+      if (this.canPickup(def.cls, tb.build) && holders.length) {
+        this.cmd(Ord.pickup(holders, tb.ref, queue));
+        const rest = units.filter((u) => !holders.includes(u.id));
+        if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
+        this.scene?.addMarker(g.x, g.z, 0xffd060);
+        pushMessage(`Ramassage : ce qui sort de ${def.name.toLowerCase()} va dans la soute`, "info");
         sfx.confirm();
         return;
       }
@@ -1901,6 +1920,29 @@ export class GameClient {
     pushMessage(`Chariot foreuse : il se rend sur le gisement de ${this.data!.items[spot.kind]?.name.toLowerCase() ?? "minerai"} et s'y déploie`, "info");
     sfx.confirm();
     return true;
+  }
+
+  /** Constructeurs à soute (commandant, ingénieurs, Arche) parmi les unités. */
+  private holdersOf(units: { id: number; kind: number }[]): number[] {
+    return units.filter((u) => (this.data!.units[u.kind].hold ?? 0) > 0).map((u) => u.id);
+  }
+
+  /** Un bâtiment de cette classe, à cet avancement, a-t-il une sortie à ramasser (extracteur, fabricant terminés) ? */
+  private canPickup(cls: number, build: number): boolean {
+    return (cls === BClass.Extractor || cls === BClass.Crafter) && build >= 65536;
+  }
+
+  /**
+   * Livraison : les constructeurs sélectionnés portent l'objet `item` de leur soute (0 : tout) au dépôt le
+   * plus proche qui a de la place (Maj : en file).
+   */
+  deliverSelected(item: number, queue = false): void {
+    const ids = this.holdersOf(this.selectedUnits());
+    if (!ids.length || !this.data) return;
+    this.cmd(Ord.deliver(ids, item, queue));
+    const what = item ? this.data.items[item]?.name.toLowerCase() : "la soute";
+    pushMessage(`Livraison : ${what} part au dépôt le plus proche qui a de la place`, "info");
+    sfx.confirm();
   }
 
   /** Commandants parmi les unités. */

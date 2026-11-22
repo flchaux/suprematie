@@ -10,6 +10,35 @@ use crate::world::*;
 /// Distance (sous-unités) à laquelle le commandant récupère les objets d'un tapis.
 const COLLECT_RANGE: i32 = 3 * TILE;
 
+/// Ramassage (ordre Pickup) : distance au bord du bâtiment à laquelle le constructeur prend sa sortie.
+pub const PICKUP_RANGE: i32 = 3 * TILE;
+/// Livraison (ordre Deliver) : distance au bord du dépôt à laquelle le constructeur y dépose sa soute.
+pub const DELIVER_RANGE: i32 = 3 * TILE;
+/// État du ramassage, gardé dans `UnitCold::timer` tant que l'ordre Pickup est en tête de file.
+pub const PK_GOING: u16 = 0;
+/// posté : prend ce qui sort, à mesure
+pub const PK_WORKING: u16 = 1;
+/// soute d'un ingénieur pleine : ses drones la vident dans un dépôt
+pub const PK_FULL: u16 = 2;
+/// soute pleine et rien ne la vide : soute du commandant (un dépôt) pleine pour ce produit, ou aucun
+/// dépôt n'a de place pour ce que porte l'ingénieur
+pub const PK_STUCK: u16 = 3;
+
+/// Le joueur `p` peut-il ramasser la sortie du bâtiment `b` ? Ses propres extracteurs et fabricants
+/// terminés (foreuses et fabricants des Transhumants compris).
+pub fn pickup_ok(w: &World, p: u8, b: usize) -> bool {
+    let bb = &w.buildings[b];
+    bb.alive && bb.owner == p && bb.complete() && matches!(bb.def().class, BClass::Extractor | BClass::Crafter)
+}
+
+/// Le constructeur `s` est-il à moins de `range` du bord du bâtiment `b` ? Renvoie aussi le centre.
+fn near_building(w: &World, s: usize, b: usize, range: i32) -> (bool, i32, i32, i32) {
+    let (tx, ty) = w.buildings[b].center();
+    let (bw, bh) = w.buildings[b].size();
+    let reach = bw.max(bh) * TILE / 2 + range;
+    (dist(w.units.x[s], w.units.y[s], tx, ty) <= reach, tx, ty, reach)
+}
+
 /// Récolte du commandant (ordre Harvest) : distance au centre de la case du gisement (sous-unités).
 pub const HARVEST_RANGE: i32 = 3 * TILE;
 /// Durée d'un cycle de récolte, en multiple de la durée de la recette de fonderie : extraire puis
@@ -889,6 +918,84 @@ fn run_order(w: &mut World, s: usize) -> u32 {
         }
         Order::DeployAt { x, y, dir } => {
             crate::transhumants::deploy_at(w, s, x, y, dir);
+            NONE
+        }
+        Order::Pickup { target } => {
+            // constructeur posté près d'un de nos extracteurs ou fabricants : ce qui attend dans sa
+            // sortie va dans sa soute, à mesure que ça sort
+            let b = match w.building(target) {
+                Some(b) if def.hold > 0 && pickup_ok(w, owner, b) => b,
+                _ => {
+                    pop_order(w, s);
+                    return NONE;
+                }
+            };
+            let (near, tx, ty, reach) = near_building(w, s, b, PICKUP_RANGE);
+            if !near {
+                w.units.cold[s].timer = PK_GOING;
+                steer(w, s, tx, ty, tx, ty, reach - TILE);
+                return NONE;
+            }
+            clear_goal(w, s);
+            // place pour le produit de sa sortie (soute du commandant : 600 par objet ; d'un ingénieur : au total)
+            let it = buildings::output_of(&w.buildings[b]);
+            let room = if it != 0 { crate::drones::hold_room(w, s, it) } else { 1 };
+            if room > 0 {
+                w.units.cold[s].timer = PK_WORKING;
+                if it != 0 {
+                    let k = (w.buildings[b].out as u32).min(room) as u16;
+                    w.buildings[b].out -= k;
+                    w.buildings[b].wake = 0;
+                    crate::drones::put(&mut w.units.cold[s].hold, it, k);
+                    w.units.cold[s].flags |= UF_WORKING;
+                }
+                return NONE;
+            }
+            // soute pleine : les drones d'un ingénieur la vident au dépôt qui a de la place, à toute distance ;
+            // celle du commandant est un dépôt, qu'il ne vide pas : il attend (le reste attend en sortie)
+            w.units.cold[s].timer = if crate::drones::will_unload(w, s) { PK_FULL } else { PK_STUCK };
+            NONE
+        }
+        Order::Deliver { item } => {
+            // porter un objet de la soute (0 : toute la soute) au dépôt le plus proche qui a de la place
+            let Some((first, st)) = (if def.hold > 0 { crate::drones::deliver_target(w, s, item) } else { None }) else {
+                // aucun dépôt n'a de place pour ce qu'il porte (une demande explicite le signale)
+                if item != 0 && crate::drones::has(&w.units.cold[s].hold, item) > 0 {
+                    w.ev(crate::drones::EV_NO_DEPOT, owner as i32, w.units.x[s], w.units.y[s], item as i32);
+                }
+                pop_order(w, s);
+                return NONE;
+            };
+            // à 3 cases du bord du dépôt (ou du commandant, dont la soute est un dépôt)
+            let (tx, ty) = st.pos(w);
+            let reach = DELIVER_RANGE
+                + match st {
+                    crate::drones::Store::B(b) => {
+                        let (bw, bh) = w.buildings[b].size();
+                        bw.max(bh) * TILE / 2
+                    }
+                    crate::drones::Store::U(u) => udef(w.units.kind[u]).radius,
+                };
+            if dist(w.units.x[s], w.units.y[s], tx, ty) > reach {
+                steer(w, s, tx, ty, tx, ty, reach - TILE);
+                return NONE;
+            }
+            clear_goal(w, s);
+            // dépose tout ce que ce dépôt peut prendre ; le reste ira au suivant (tick d'après)
+            let items: Vec<u8> = if item != 0 { vec![item] } else { (first..NUM_ITEMS as u8).collect() };
+            for it in items {
+                let k = crate::drones::has(&w.units.cold[s].hold, it).min(st.room(w, it));
+                if k > 0 {
+                    crate::drones::take(&mut w.units.cold[s].hold, it, k);
+                    st.put(w, it, k);
+                    w.units.cold[s].flags |= UF_WORKING;
+                }
+            }
+            let hold = &w.units.cold[s].hold;
+            let left = if item != 0 { crate::drones::has(hold, item) as u32 } else { crate::drones::total(hold) };
+            if left == 0 {
+                pop_order(w, s);
+            }
             NONE
         }
         Order::Harvest { x, y } => {

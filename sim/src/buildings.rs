@@ -1688,7 +1688,7 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
 }
 
 /// Objet produit disponible en sortie du bâtiment.
-fn output_of(b: &Building) -> u8 {
+pub fn output_of(b: &Building) -> u8 {
     match b.def().class {
         BClass::Crafter if b.recipe != RECIPE_NONE && b.out > 0 => RECIPES[b.recipe as usize].output.0,
         BClass::Extractor if b.out > 0 => b.recipe,
