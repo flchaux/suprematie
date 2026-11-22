@@ -309,8 +309,8 @@ fn retarget(w: &mut World, s: usize, tx: i32, ty: i32) {
 /// drones::plan) : l'unité va au dépôt, à moins de la moitié de son rayon de ravitaillement, puis y
 /// attend que ses drones remplissent sa soute. Faux s'il n'y a pas de chargement à faire.
 fn supply_detour(w: &mut World, s: usize) -> bool {
-    let Some(d) = w.building(w.units.cold[s].supply_at) else { return false };
-    let (dx, dy) = w.buildings[d].center();
+    let Some(d) = crate::drones::Store::resolve(w, w.units.cold[s].supply_at) else { return false };
+    let (dx, dy) = d.pos(w);
     let r = udef(w.units.kind[s]).supply * TILE / 2;
     if dist(w.units.x[s], w.units.y[s], dx, dy) > r {
         retarget(w, s, dx, dy);
@@ -381,7 +381,7 @@ fn reclaim_wreck(w: &mut World, s: usize, wk: usize) -> bool {
     let bp = build_power(w, s) as i32;
     let amount = (bp / 5).max(1);
     // dans la soute de l'ingénieur, dans la limite de sa place (ses drones la vident dans un dépôt)
-    let room = crate::drones::hold_room(w, s) as i32;
+    let room = crate::drones::hold_room(w, s, IRON_PLATE) as i32;
     if room == 0 {
         // soute pleine (ou pas de soute) : le recyclage s'arrête
         return false;
@@ -876,10 +876,11 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             }
             clear_goal(w, s);
             // dans la limite de la soute (ses drones la vident dans un dépôt)
-            if crate::drones::hold_room(w, s) == 0 {
+            let room: Vec<bool> = (0..NUM_ITEMS).map(|it| crate::drones::hold_room(w, s, it as u8) > 0).collect();
+            if !room.iter().skip(1).any(|&r| r) {
                 return NONE;
             }
-            let it = crate::belts::take_from_belt(w, b, &|_| true);
+            let it = crate::belts::take_from_belt(w, b, &|it| room[it as usize]);
             if it != 0 {
                 crate::drones::put(&mut w.units.cold[s].hold, it, 1);
                 w.units.cold[s].flags |= UF_WORKING;
@@ -907,7 +908,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             let (out, n) = RECIPES[r].output;
             let o = owner as usize;
             // soute pleine : la récolte attend que les drones la vident dans un dépôt
-            if crate::drones::hold_room(w, s) < n as u32 {
+            if crate::drones::hold_room(w, s, out) < n as u32 {
                 w.units.cold[s].timer = HV_FULL;
                 return NONE;
             }

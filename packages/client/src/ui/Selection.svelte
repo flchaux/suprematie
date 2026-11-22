@@ -672,7 +672,7 @@
         {@const hold = ui.unitInfo.hold as number[]}
         {@const reach = (ui.unitInfo.reach ?? []) as number[]}
         {@const inHold = hold.reduce((a: number, b: number) => a + b, 0)}
-        <div class="row"><span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span><span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
+        <div class="row">{#if ud.commander}<span class="kicker tip">Soute (dépôt)<span class="tt">Elle compte comme un dépôt : les drones des ingénieurs et des usines proches y puisent, et la récolte y reste</span></span><span class="num small">{inHold}</span><span class="dim small">· {d.depot?.cap[0] ?? 600} par objet</span>{:else}<span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span>{/if}<span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
         {#if inHold > 0}<div class="row wrap">{#each hold as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>{/if}
         {#if ui.unitInfo.loading}<div class="status build"><span class="led"></span>Charge sa soute : les environs du chantier n'ont pas tout</div>{/if}
         <div class="row"><span class="kicker">À portée ({ud.supply} cases)</span>{#if !reach.some((n) => n > 0)}<span class="dim small">aucun dépôt garni</span>{/if}</div>

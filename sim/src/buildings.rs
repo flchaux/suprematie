@@ -2068,7 +2068,7 @@ fn tick_collector(w: &mut World, b: usize) {
         }
         l.moving = k as u32;
         if it != 0 {
-            crate::drones::put(&mut w.buildings[dest].stash, it, 1);
+            dest.put(w, it, 1);
             let bb = &mut w.buildings[b];
             bb.out = bb.out.wrapping_add(1);
             bb.working = true;
