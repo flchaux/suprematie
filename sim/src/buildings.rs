@@ -270,7 +270,8 @@ pub fn can_place_line(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)])
         .iter()
         .map(|&(x, y, dir)| {
             let mut ok = can_place(w, owner, kind, x, y, dir);
-            if !ok && chain && done.iter().any(|&(px, py)| (x - px).abs() <= def.supply && (y - py).abs() <= def.supply) {
+            // une racine collée par un côté à la précédente de la file est acceptée (la file pousse de proche en proche)
+            if !ok && chain && done.iter().any(|&(px, py)| (x - px).abs() + (y - py).abs() == 1) {
                 ok = can_place_with(w, owner, kind, x, y, dir, true);
             }
             if ok && chain {

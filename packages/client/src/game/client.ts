@@ -813,6 +813,21 @@ export class GameClient {
           }
           break;
         }
+        case EV.LOOT: {
+          // Transhumants : butin pris sur une victime détruite ; un message toutes les 3 s au plus
+          if (d === ui.me) {
+            sc.addMarker(a / TILE, c / TILE, 0xffc83c);
+            this.loot += e;
+            if (!this.lootTimer) {
+              this.lootTimer = window.setTimeout(() => {
+                pushMessage(`Butin : ${this.loot} objet${this.loot > 1 ? "s" : ""} pris à l'ennemi, rapporté${this.loot > 1 ? "s" : ""} à votre réserve la plus proche`, "good");
+                this.loot = 0;
+                this.lootTimer = 0;
+              }, 3000);
+            }
+          }
+          break;
+        }
         case EV.GIFT: {
           // dons par portail : regroupés en un message par seconde
           if (d === ui.me || e === ui.me) {
@@ -2996,6 +3011,9 @@ export class GameClient {
   lastPlannedQuery = 0;
   gifts = new Map<string, number>();
   giftTimer = 0;
+  /** butin des Transhumants pas encore annoncé (objets) */
+  loot = 0;
+  lootTimer = 0;
 
   /** Gare ou héliport sélectionné : retire ses véhicules (relier le bâtiment à lui-même). */
   removeCarriers(): void {

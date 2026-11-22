@@ -1,6 +1,7 @@
 // Races en jeu réel : un joueur choisit sa race dans le salon et joue contre une IA. Contrôles : race
-// reçue par la simulation, barre du haut et menu de construction de la race ; Souche : une frondaison
-// plantée par la Reine qui pousse sur le terreau ; Transhumants : un chenillard qui se déploie puis se
+// reçue par la simulation, barre du haut et menu de construction de la race ; Souche (affichage et
+// interactions seulement, la logique est testée en Rust) : file de racines tracée au glissé depuis la
+// graine-mère, terreau au sol ; Transhumants : un chenillard qui se déploie puis se
 // replie, l'arbre de recherche de la race ; aucune erreur dans la page. Captures dans le dossier donné.
 // Une partie par race (le serveur n'en héberge qu'une) : relancer le serveur entre les deux.
 // Usage : node tools/e2e-races.mjs http://127.0.0.1:3083 souche|transhumants [dossier des captures]
@@ -61,7 +62,8 @@ const raceName = which === "souche" ? "Souche" : "Transhumants";
 await me.page.waitForSelector("select:has(option:has-text('Transhumants'))");
 await me.page.locator(".player.me, .player", { hasText: which === "souche" ? "Racine" : "Nomade" }).first().locator("select:has(option:has-text('Souche'))").selectOption({ label: raceName });
 await me.page.waitForTimeout(800);
-const lobbyRaces = await me.page.evaluate(() => window.__game.ui.lobby.players.map((p) => p.race ?? 0));
+const myName = which === "souche" ? "Racine" : "Nomade";
+const lobbyRaces = await me.page.evaluate((n) => window.__game.ui.lobby.players.filter((p) => p.name === n).map((p) => p.race ?? 0), myName);
 check(lobbyRaces[0] === (which === "souche" ? 1 : 2), "race choisie dans le salon", JSON.stringify(lobbyRaces));
 await me.page.screenshot({ path: `${outDir}/races-salon-${which}.png` });
 await me.page.click("button:has-text('Tortue')");
@@ -89,43 +91,9 @@ await a.page.evaluate(() => {
 await a.page.waitForTimeout(800);
 const cats = await a.page.evaluate(() => [...document.querySelectorAll(".build .tabs > .tab")].map((e) => e.getAttribute("title")));
 check(cats.join(",") === "Réseau,Organes,Défense", "menu de construction de la Souche", cats.join(","));
-// planter une frondaison sur le terreau, à côté de la graine-mère (par l'ordre, comme le fait l'interface)
-const planted = await a.page.evaluate(() => {
-  const { client, ui } = window.__game;
-  const d = ui.data;
-  const leaves = d.buildings.findIndex((x) => x.key === "leaves");
-  const heart = d.buildings.findIndex((x) => x.key === "seed_heart");
-  const f = client.frame;
-  let hb = null;
-  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) === heart && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) hb = { x: f.buf[o + 2] & 0xffff, y: f.buf[o + 2] >>> 16 };
-  }
-  if (!hb) return null;
-  // à droite de la graine-mère (3 × 3), sur son terreau ; ordre BUILD : [type, file, genre, x, y, dir, n, unités…]
-  const x = hb.x + 4, y = hb.y;
-  client.cmd([3, 0, leaves, x, y, 0, 1, client.frame.players[ui.me].commander]);
-  return { x, y };
-});
-check(!!planted, "ordre de plantation envoyé");
-const t0 = await a.page.evaluate(() => window.__game.client.frame.tick);
-// la Reine marche jusqu'au chantier, plante, puis la frondaison pousse (12 s) : on attend 25 s de jeu
-await a.page.waitForFunction((t) => window.__game.client.frame.tick > t + 500, t0, { timeout: 600000 });
-const grown = await a.page.evaluate(() => {
-  const { client, ui } = window.__game;
-  const leaves = ui.data.buildings.findIndex((x) => x.key === "leaves");
-  const f = client.frame;
-  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) === leaves && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) return { build: f.buf[o + 4] };
-  }
-  return null;
-});
-check(!!grown, "frondaison plantée", JSON.stringify(grown));
 await a.page.screenshot({ path: `${outDir}/races-souche.png`, timeout: 120000 });
 
-// partie solo : on accélère (4×) pour la suite
-await a.page.evaluate(() => { for (let i = 0; i < 5; i++) window.__game.client.stepSpeed(1); });
-
-// ---------- racines tracées en glissant : une file continue, orientée, reliée à la graine-mère ----------
+// ---------- racines tracées en glissant : une file continue, orientée, collée à la graine-mère ----------
 const heartAt = await a.page.evaluate(() => {
   const { client, ui } = window.__game;
   const heart = ui.data.buildings.findIndex((x) => x.key === "seed_heart");
@@ -194,27 +162,7 @@ check(ghost.length === n && ghost.every((c, i) => i === 0 || Math.abs(c.x - ghos
 check(ghost.every((c) => c.dir === (lineSide > 0 ? 0 : 2)), "racines orientées dans le sens du tracé", ghost.map((c) => c.dir).join(""));
 await a.page.mouse.up();
 await a.page.keyboard.press("Escape");
-const tr = await a.page.evaluate(() => window.__game.client.frame.tick);
-await a.page.waitForFunction((t) => window.__game.client.frame.tick > t + 1600, tr, { timeout: 600000 });
-const rootNets = await a.page.evaluate(async (heartRef) => {
-  const { client, ui } = window.__game;
-  const root = ui.data.buildings.findIndex((x) => x.key === "root");
-  const f = client.frame;
-  const refs = [];
-  const all = [];
-  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) !== root || ((f.buf[o + 1] >> 8) & 0xff) !== ui.me) continue;
-    all.push(`${f.buf[o + 2] & 0xffff},${f.buf[o + 2] >>> 16}:${Math.round(f.buf[o + 4] / 655.36)}%`);
-    if (f.buf[o + 4] >= 65536) refs.push(f.buf[o] >>> 0);
-  }
-  console.log("     racines :", all.join(" "));
-  const net = async (r) => { const v = await client.query("building", [r]); return (typeof v === "string" ? JSON.parse(v) : v)?.net ?? -1; };
-  const hn = await net(heartRef);
-  const nets = [];
-  for (const r of refs) nets.push(await net(r));
-  return { hn, nets };
-}, heartAt.ref);
-check(rootNets.nets.length >= n - 1 && rootNets.nets.every((x) => x === rootNets.hn && x > 0), "racines poussées, reliées au réseau de la graine-mère", JSON.stringify(rootNets));
+check(ghost.every((c) => c.ok), "racines : file acceptée, collée à la graine-mère", ghost.map((c) => (c.ok ? "✓" : "✗")).join(""));
 const terreau = await a.page.evaluate(([hx, hy]) => {
   const t = window.__game.client.scene.terreau;
   const r = t.res ?? 1;
@@ -224,128 +172,6 @@ check(terreau.here === 255 && terreau.far === 0, "terreau au sol autour du rése
 await aimAt(heartAt.x + 1.5 + lineSide * 4, heartAt.y + 1.5, 32);
 await a.page.waitForTimeout(1500);
 await a.page.screenshot({ path: `${outDir}/races-souche-racines.png`, timeout: 120000 });
-
-// ---------- apprivoisement : la Reine apprivoise le nid de mordeurs sauvage le plus proche ----------
-// les nids vivent autour des gisements de cristal : la Reine marche vers le plus proche jusqu'à en voir un
-const findNest = () => a.page.evaluate(() => {
-  const { client, ui } = window.__game;
-  const f = client.frame;
-  const nk = ui.data.buildings.findIndex((x) => x.key === "nest");
-  let qx = 0, qz = 0;
-  for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if (f.buf[o] >>> 0 === f.players[ui.me].commander) { qx = f.buf[o + 2] / 256; qz = f.buf[o + 3] / 256; }
-  let best = null;
-  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
-    if ((f.buf[o + 1] & 0xff) !== nk || f.players[(f.buf[o + 1] >> 8) & 0xff]?.team !== 8) continue;
-    const x = (f.buf[o + 2] & 0xffff) + 1.5, z = (f.buf[o + 2] >>> 16) + 1.5;
-    const d = Math.hypot(x - qx, z - qz);
-    if (!best || d < best.d) best = { ref: f.buf[o] >>> 0, x, z, d };
-  }
-  return best;
-});
-let nest = await findNest();
-if (!nest) {
-  // nids hors de vue : on les trouve dans la simulation (fiche des bâtiments), puis on lit où l'ordre
-  // « Apprivoiser » envoie la Reine (cible de son premier ordre, mot auxiliaire de la trame) pour garder le plus proche
-  const cands = await a.page.evaluate(async () => {
-    const { client, ui } = window.__game;
-    const nk = ui.data.buildings.findIndex((x) => x.key === "nest");
-    const out = [];
-    // référence d'un emplacement jamais réutilisé : génération 1 (bits 20 et plus)
-    for (let s = 0; s < 1500; s++) {
-      const v = await client.query("building", [((1 << 30) | (1 << 20) | s) >>> 0]);
-      const b = typeof v === "string" ? JSON.parse(v) : v;
-      // nid de la faune (joueur caché, absent ou d'équipe 8 dans la trame)
-      if (b && b.kind === nk && (client.frame.players[b.owner]?.team ?? 8) === 8) out.push(((1 << 30) | (1 << 20) | s) >>> 0);
-    }
-    if (!out.length) {
-      const hist = {};
-      for (let s = 0; s < 2000; s++) {
-        const v = await client.query("building", [((1 << 30) | (1 << 20) | s) >>> 0]);
-        const b = typeof v === "string" ? JSON.parse(v) : v;
-        if (b) hist[`${b.kind}/${b.owner}`] = (hist[`${b.kind}/${b.owner}`] ?? 0) + 1;
-      }
-      return { out, hist, nk };
-    }
-    return { out };
-  }).then((r) => {
-    if (r.hist) console.log("     bâtiments (type/joueur) :", JSON.stringify(r.hist), "nid =", r.nk);
-    return r.out;
-  });
-  console.log("     nids sauvages dans la simulation :", cands.length);
-  let best = null;
-  for (const ref of cands) {
-    const pos = await a.page.evaluate(async (ref) => {
-      const { client, ui } = window.__game;
-      const q = client.frame.players[ui.me].commander;
-      client.cmd([52, 0, ref, 1, q]);
-      const t = client.frame.tick;
-      while (client.frame.tick < t + 4) await new Promise((r) => setTimeout(r, 50));
-      const f = client.frame;
-      for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) {
-        if (f.buf[o] >>> 0 !== q) continue;
-        const aux = f.buf[o + 8];
-        return { code: aux >>> 24, x: aux & 0xfff, z: (aux >>> 12) & 0xfff, qx: f.buf[o + 2] / 256, qz: f.buf[o + 3] / 256 };
-      }
-      return null;
-    }, ref);
-    if (pos && pos.code === 21) {
-      const d = Math.hypot(pos.x - pos.qx, pos.z - pos.qz);
-      if (!best || d < best.d) best = { ref, d, x: pos.x, z: pos.z };
-    }
-  }
-  console.log("     nid le plus proche :", JSON.stringify(best));
-  if (best) {
-    // la Reine y va d'elle-même (ordre « Apprivoiser ») ; on attend que le nid soit en vue
-    await a.page.evaluate((ref) => { const { client, ui } = window.__game; client.cmd([52, 0, ref, 1, client.frame.players[ui.me].commander]); }, best.ref);
-    // le client ne reçoit que la zone affichée : on regarde le nid
-    await aimAt(best.x + 1, best.z + 1, 60);
-    for (let k = 0; k < 150 && !nest; k++) {
-      await a.page.waitForTimeout(2000);
-      const n = await findNest();
-      if (n && n.ref === best.ref) nest = n;
-    }
-  }
-}
-check(!!nest, "un nid de mordeurs sauvage sur la carte", JSON.stringify(nest));
-if (nest) {
-  // par l'interface : clic droit de la Reine sur le nid
-  await aimAt(nest.x, nest.z, 40);
-  await a.page.evaluate(() => { const { client, ui } = window.__game; client.selectIds([client.frame.players[ui.me].commander]); });
-  await a.page.waitForTimeout(400);
-  const pn = await screenOf(nest.x, nest.z);
-  await a.page.mouse.click(pn.x, pn.y, { button: "right" });
-  await a.page.waitForTimeout(400);
-  const ord = await a.page.evaluate(() => window.__game.ui.messages?.map?.((m) => m.text ?? m).slice(-3) ?? []);
-  console.log("     messages :", JSON.stringify(ord));
-  const tn = await a.page.evaluate(() => window.__game.client.frame.tick);
-  let tamed = false;
-  // jusqu'à 10 min de jeu : la Reine (lente) marche jusqu'au nid, puis reste 30 s
-  for (let k = 0; k < 600 && !tamed && (await a.page.evaluate((t) => window.__game.client.frame.tick - t, tn)) < 12000; k++) {
-    await a.page.waitForTimeout(2000);
-    tamed = await a.page.evaluate((ref) => {
-      const { client, ui } = window.__game;
-      const f = client.frame;
-      for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) if (f.buf[o] >>> 0 === ref) return ((f.buf[o + 1] >> 8) & 0xff) === ui.me;
-      return false;
-    }, nest.ref);
-  }
-  const elapsed = await a.page.evaluate((t) => window.__game.client.frame.tick - t, tn);
-  check(tamed, "nid apprivoisé par la Reine", `${Math.round(elapsed / 20)} s de jeu`);
-  const beasts = await a.page.evaluate(() => {
-    const { client, ui } = window.__game;
-    const keys = ["beast_s", "beast_m", "beast_l"].map((k) => ui.data.units.findIndex((u) => u.key === k));
-    const f = client.frame;
-    let n = 0;
-    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if (keys.includes(f.buf[o + 1] & 0xff) && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) n++;
-    return n;
-  });
-  check(beasts > 0, "la horde du nid est à la Souche", `${beasts} bêtes`);
-  // fiche du nid greffé
-  await a.page.evaluate((ref) => window.__game.client.selectIds([ref]), nest.ref);
-  await aimAt(nest.x, nest.z, 30);
-  await a.page.waitForTimeout(1500);
-  await a.page.screenshot({ path: `${outDir}/races-souche-nid.png`, timeout: 120000 });
-}
 
 }
 // ---------- Transhumants ----------

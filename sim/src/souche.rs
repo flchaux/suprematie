@@ -149,8 +149,29 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32, bh: i
         let n = w.buildings.iter().filter(|b| b.alive && b.owner == owner && b.kind == B_SEED_HEART).count();
         return n < MAX_HEARTS;
     }
-    // les racines (petites) se posent sur le terreau comme le reste : le réseau grandit de proche en proche
+    // une racine se pose collée par un côté à une racine ou à une graine-mère du joueur (même en
+    // croissance) : le câble part toujours d'une graine-mère, jamais de réseau isolé dans un terreau
+    if kind == B_ROOT {
+        return touches_network(w, owner, x, y, bw, bh);
+    }
     on_terreau(w, owner, x, y, bw, bh)
+}
+
+/// L'emprise (x, y, bw, bh) touche par un côté un poteau de la Souche du joueur (racine ou graine-mère).
+pub fn touches_network(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> bool {
+    let probe = Building { x, y, kind: B_ROOT, ..Building::default() };
+    let r = (bw.max(bh) + 4) * TILE;
+    let mut ok = false;
+    w.grid.query_buildings(x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2, r, |p| {
+        if ok {
+            return;
+        }
+        let pb = &w.buildings[p];
+        if pb.alive && pb.owner == owner && pb.def().race == RACE_SOUCHE && pb.def().supply > 0 && linked(&probe, pb) {
+            ok = true;
+        }
+    });
+    ok
 }
 
 /// Réserves des réseaux avant un nouveau calcul : (sève, sels) par ancien réseau, et le nombre de

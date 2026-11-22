@@ -95,7 +95,7 @@ pub struct RaceDef {
 pub const RACES: [RaceDef; NUM_RACES] = [
     RaceDef { key: "industriels", name: "Industriels", desc: "Tapis, bras, fonderies et assembleurs, électricité par zones, laboratoires et lots de recherche." },
     RaceDef { key: "souche", name: "Souche", desc: "Base vivante : un réseau de racines met en commun sève et sels, les organes poussent seuls, la race évolue en digérant les cadavres." },
-    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration." },
+    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration ; butin : un quart de ce qu'ils détruisent." },
 ];
 
 // ---------- Recettes ----------
@@ -781,7 +781,7 @@ pub const BUILDINGS: [BuildingDef; 71] = [
     // socle à EPPZ : demande un EPPZ capturé (Player::eppz), produit sans combustible
     BuildingDef { key: "eppz_socket", name: "Socle à EPPZ", size: (2, 2), hp: 3000, power_prod: 25000, cost: &[(STEEL, 20), (CIRCUIT, 10)], build: 15, class: BClass::Power, supply: 14, connect: 30, ..BD },
     // ----- Souche : organes, posés sur le terreau d'un réseau de racines, qui poussent seuls -----
-    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 4000, build: 90, class: BClass::Organ, supply: 6, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 4000, build: 90, class: BClass::Organ, supply: 2, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "root", name: "Racine", hp: 150, cost: &[(SEVE, 4)], build: 2, class: BClass::Pylon, supply: 3, connect: 5, passable: true, vision: 0, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "leaves", name: "Frondaison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 10)], build: 8, class: BClass::Organ, vision: 6, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "taproot", name: "Racine-puits", size: (2, 2), hp: 600, cost: &[(SEVE, 60)], build: 10, class: BClass::Organ, deposit: 255, race: RACE_SOUCHE, ..BD },
