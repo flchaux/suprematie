@@ -2317,9 +2317,10 @@ fn tick_extractor(w: &mut World, b: usize) {
 
 /// Tapis qui partent d'une face du bâtiment `b` (case voisine d'un bord, tapis tourné vers l'extérieur) :
 /// les « trappes de sortie ». Par ordre de case (déterministe).
-/// Bâtiment qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt).
+/// Bâtiment qui dépose ses produits sur les tapis de ses faces (fabricant, dépôt, gare et héliport pour
+/// leurs objets reçus).
 pub fn feeds_belts(bb: &Building) -> bool {
-    bb.alive && bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Depot)
+    bb.alive && bb.complete() && matches!(bb.def().class, BClass::Crafter | BClass::Depot | BClass::Station | BClass::CargoPad)
 }
 
 pub fn out_belts(w: &World, b: usize) -> Vec<usize> {

@@ -120,13 +120,31 @@ pub fn take(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
     }
 }
 
-/// Tick d'une gare ou d'un héliport : consommation d'énergie (sans énergie, pas de chargement).
+/// Tick d'une gare ou d'un héliport : toujours en marche (sans électricité) ; ses objets reçus partent sur
+/// les tapis qui partent de ses faces.
 pub fn tick_station(w: &mut World, b: usize) {
     if w.buildings[b].stash.len() < 2 * N {
         w.buildings[b].stash = vec![0; 2 * N];
     }
     // les gares et héliports n'ont pas besoin d'électricité : un train livre toujours, même à une zone en panne
     w.buildings[b].working = true;
+    // « Reçus » : posés sur les tapis qui partent de ses faces, comme les sorties d'un dépôt (« à envoyer »
+    // n'en sort jamais : il attend un véhicule)
+    if w.buildings[b].stash[N..].iter().all(|&n| n == 0) {
+        return;
+    }
+    let mut want = [true; N];
+    want[0] = false;
+    for t in crate::buildings::out_belts(w, b) {
+        if !crate::belts::belt_has_room(w, t) {
+            continue;
+        }
+        let it = take(w, b, &want);
+        if it == 0 {
+            break;
+        }
+        crate::belts::put_on_belt(w, t, it);
+    }
 }
 
 // ---------- ordres ----------
