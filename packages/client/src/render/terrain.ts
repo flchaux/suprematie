@@ -5,6 +5,7 @@ import { applyPower } from "./power.ts";
 import * as THREE from "three/webgpu";
 import { attribute, texture, positionWorld, vec2, float, mix, uniform, vec3, mx_noise_float, smoothstep, normalize, transformNormalToView, cameraPosition, dot, max, pow, sin } from "three/tsl";
 import { fogFactor, applyFog, setFogTexture } from "./fog.ts";
+import { applyTerreau } from "./terreau.ts";
 import { depositSample, groundColor, loadGroundTextures, setDepositTexture } from "./ground.ts";
 import { Deposits, depositMask } from "./deposits.ts";
 
@@ -248,7 +249,7 @@ export class Terrain {
     const dep = depositSample();
     const stain = dep.rgb.mul(float(0.75).add(mid.mul(0.2)).add(fine.mul(0.12)));
     const ground = mix(base.mul(tint).mul(grain), stain, smoothstep(0.12, 0.7, dep.a.add(fine.mul(0.08))).mul(0.85));
-    mat.colorNode = applyPower(applyFog(ground, fog));
+    mat.colorNode = applyPower(applyFog(applyTerreau(ground), fog));
     this.plainMat = mat;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
@@ -258,7 +259,7 @@ export class Terrain {
     loadGroundTextures().then((ok) => {
       if (!ok) return;
       const tm = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
-      tm.colorNode = applyPower(applyFog(groundColor(), fogFactor()));
+      tm.colorNode = applyPower(applyFog(applyTerreau(groundColor()), fogFactor()));
       this.texturedMat = tm;
       this.setDetail(this.wantDetail);
     });

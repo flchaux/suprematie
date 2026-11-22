@@ -57,7 +57,7 @@ export const UNIT_DESCS: Record<string, string> = {
   replicator: "Réplicateur : faune mécanique faite de blocs. Les armes à énergie, missiles et bombes ne lui font rien : seuls les armes à feu, les obus, le canon de rail et le disrupteur le blessent. Il dévore les bâtiments, et chaque bâtiment qu'il abat fait naître un autre réplicateur.",
   disruptor: "Disrupteur : fantassin-robot au fusil à bobines, la seule arme à énergie qui défait les réplicateurs et leurs ruches (avec les armes à feu, les obus et le canon de rail). Contre tout le reste, il ne fait qu'un cinquième de ses dégâts.",
   // ----- Souche -----
-  queen: "La Reine, unité de commandement de la Souche : lente et résistante, elle plante les organes comme un semeur et crache de l'acide contre le sol et l'air. Elle guérit sur le terreau ; sa mort élimine le joueur.",
+  queen: "La Reine, unité de commandement de la Souche : lente et résistante, elle plante les organes comme un semeur et crache de l'acide contre le sol et l'air. Elle guérit sur le terreau ; sa mort élimine le joueur. Clic droit sur un nid de mordeurs sauvage : elle l'apprivoise (30 s tout près, sans tirer) ; le nid greffé fait naître des mordeurs pour vous, et sa horde vous suit. Un nid greffé, plus un par mutation acquise.",
   sower: "Semeur : plante les organes sur le terreau (ils poussent ensuite seuls, avec la réserve de leur réseau) et soigne les organes blessés. Sans arme.",
   gnawer: "Rongeur : organisme rapide et bon marché, mord au corps-à-corps ce qui est au sol. Guérit sur le terreau ; le feu lui fait 50 % de plus.",
   spitter: "Cracheur : artillerie vivante, crache de l'acide en cloche avec des dégâts de zone (26 cases).",

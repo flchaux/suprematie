@@ -46,6 +46,8 @@ export const O = {
   PICKUP: 50,
   /** commandant, ingénieurs : porter un objet de la soute (0 : tout) au dépôt le plus proche qui a de la place : [drapeaux, objet, n, unités…] */
   DELIVER: 51,
+  /** Reine de la Souche : apprivoiser un nid de mordeurs sauvage : [drapeaux, réf. du nid, n, unités…] */
+  TAME: 52,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -222,6 +224,10 @@ export function pickup(ids: number[], ref: number, queue = false): Cmd {
 /** commandant, ingénieurs : porter l'objet `item` de leur soute (0 : tout) au dépôt le plus proche qui a de la place */
 export function deliver(ids: number[], item: number, queue = false): Cmd {
   return [O.DELIVER, queue ? 1 : 0, item | 0, ids.length, ...ids.map((x) => x | 0)];
+}
+/** Souche : la Reine apprivoise le nid de mordeurs sauvage `nest` (référence de bâtiment). */
+export function tame(ids: number[], nest: number, queue = false): Cmd {
+  return target(O.TAME, ids, nest, queue);
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {

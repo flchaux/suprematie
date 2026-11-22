@@ -134,6 +134,8 @@ pub enum Order {
     /// commandant ou ingénieur : porter l'objet `item` de sa soute (0 : tout ce qu'elle contient) au dépôt
     /// le plus proche qui a de la place (voir drones::deliver_target)
     Deliver { item: u8 },
+    /// Reine de la Souche : apprivoiser un nid de mordeurs sauvage (référence du nid ; voir souche::tame)
+    Tame { target: u32 },
 }
 
 impl Order {
@@ -159,6 +161,7 @@ impl Order {
             Order::DeployAt { .. } => 20,
             Order::Pickup { .. } => 18,
             Order::Deliver { .. } => 19,
+            Order::Tame { .. } => 21,
         }
     }
 }
@@ -180,7 +183,7 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } => target.ser(w),
             Order::Deliver { item } => item.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::DeployAt { x, y, dir } => {
@@ -226,6 +229,7 @@ impl Ser for Order {
             18 => Order::Pickup { target: u(r) },
             19 => Order::Deliver { item: u8::de(r) },
             20 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
+            21 => Order::Tame { target: u(r) },
             _ => Order::Enter { target: u(r) },
         }
     }
@@ -291,8 +295,11 @@ pub struct UnitCold {
     pub hold: Vec<u16>,
     /// constructeur : dépôt où charger d'abord sa soute avant d'aller construire (NONE : aucun)
     pub supply_at: u32,
+    /// bête d'un nid qu'une Reine de la Souche apprivoise : joueur + 1 qu'elle n'attaque pas (0 : aucun ;
+    /// voir nature::taming)
+    pub calm: u8,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;

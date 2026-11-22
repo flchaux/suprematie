@@ -35,6 +35,7 @@ export const PALETTE: Record<ColorName, number> = {
   steel: 0xb4bcc6,
   rubber: 0x26282b,
   concrete: 0x9a968c,
+  acid: 0x9dff3a,
 };
 
 /**
@@ -42,7 +43,7 @@ export const PALETTE: Record<ColorName, number> = {
  * 2 métal sombre, 3 danger, 4 verre, 5 lumineux (sans texture), 6 caoutchouc, 7 cuivre, 8 béton.
  */
 export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, steel: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5,
-  leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5, rubber: 6, copper: 7, concrete: 8 };
+  leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5, rubber: 6, copper: 7, concrete: 8, acid: 5 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -554,7 +555,7 @@ function colorize(g: THREE.BufferGeometry, color: ColorName, smooth = false): TH
     mat[i * 2 + 1] = 1;
   }
   const isFaction = color === "faction" ? 1 : 0;
-  const glow = color === "glow" || color === "amber" || color === "crystal" ? 1 : 0;
+  const glow = color === "glow" || color === "amber" || color === "acid" || color === "crystal" ? 1 : 0;
   for (let i = 0; i < n; i++) {
     col[i * 3] = c.r;
     col[i * 3 + 1] = c.g;

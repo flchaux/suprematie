@@ -256,6 +256,33 @@ pub fn floor_of(dir: u8) -> u8 {
 }
 
 pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bool {
+    can_place_with(w, owner, kind, x, y, dir, false)
+}
+
+/// Aperçu d'une file posée d'un coup : chaque emplacement est-il posable ? Une file de racines de la Souche
+/// se plante sur le terreau à venir de ses racines précédentes (elles poussent de proche en proche) : une
+/// case couverte par la zone d'une racine acceptée plus tôt dans la file compte comme du terreau.
+pub fn can_place_line(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> Vec<bool> {
+    let def = bdef(kind);
+    let chain = def.race == RACE_SOUCHE && def.supply > 0 && kind != B_SEED_HEART;
+    let mut done: Vec<(i32, i32)> = Vec::new();
+    cells
+        .iter()
+        .map(|&(x, y, dir)| {
+            let mut ok = can_place(w, owner, kind, x, y, dir);
+            if !ok && chain && done.iter().any(|&(px, py)| (x - px).abs() <= def.supply && (y - py).abs() <= def.supply) {
+                ok = can_place_with(w, owner, kind, x, y, dir, true);
+            }
+            if ok && chain {
+                done.push((x, y));
+            }
+            ok
+        })
+        .collect()
+}
+
+/// `terreau` : pour une racine de la Souche plantée dans une file, le terreau est supposé (voir can_place_line).
+fn can_place_with(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8, terreau: bool) -> bool {
     if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
         return false;
     }
@@ -305,7 +332,7 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
         }
     }
     // Souche : sur le terreau de son réseau (sauf la graine-mère)
-    if def.race == RACE_SOUCHE && !w.infinite_grid && !crate::souche::can_place(w, owner, kind, x, y, bw, bh) {
+    if def.race == RACE_SOUCHE && !w.infinite_grid && !terreau && !crate::souche::can_place(w, owner, kind, x, y, bw, bh) {
         return false;
     }
     if def.deposit != 0 {
@@ -639,20 +666,44 @@ pub fn rebuild_power(w: &mut World) {
             }
             r
         }
-        // Souche : deux poteaux sont reliés quand leurs terreaux se touchent
+        // Souche : deux poteaux (racines, graines-mères) sont reliés quand ils se touchent par un côté,
+        // comme les cases d'un tapis ; recherche locale par la grille (un réseau compte des milliers de racines)
         let souche = w.players[owner as usize].race == RACE_SOUCHE;
+        if souche {
+            let mut pole_idx: Vec<u32> = vec![0; w.buildings.len()];
+            for (i, &pb) in poles.iter().enumerate() {
+                pole_idx[pb] = i as u32 + 1;
+            }
+            for i in 0..poles.len() {
+                let a = &w.buildings[poles[i]];
+                let (cx, cy) = a.center();
+                let (aw, ah) = a.size();
+                let mut near: Vec<usize> = Vec::new();
+                w.grid.query_buildings(cx, cy, (aw.max(ah) + 3) * TILE, |p| {
+                    let j = pole_idx[p] as usize;
+                    if j > i + 1 && crate::souche::linked(&w.buildings[poles[i]], &w.buildings[p]) {
+                        near.push(j - 1);
+                    }
+                });
+                for j in near {
+                    let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
+                    if ra != rb {
+                        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                        parent[hi] = lo;
+                    }
+                }
+            }
+        }
         for i in 0..poles.len() {
+            if souche {
+                break;
+            }
             let (ax, ay) = w.buildings[poles[i]].center();
             let ca = connect_of(&w.buildings[poles[i]]);
             for j in (i + 1)..poles.len() {
                 let (bx, by) = w.buildings[poles[j]].center();
                 let r = ca.min(connect_of(&w.buildings[poles[j]])) * TILE;
-                let linked = if souche {
-                    crate::souche::zones_touch(&w.buildings[poles[i]], &w.buildings[poles[j]])
-                } else {
-                    crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64)
-                };
-                if linked {
+                if crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64) {
                     let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
                     if ra != rb {
                         let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
@@ -709,7 +760,14 @@ pub fn rebuild_power(w: &mut World) {
                     best = p;
                 }
             });
-            let net = if best != usize::MAX { pole_net[best] } else { fallback };
+            // une racine de la Souche garde son propre réseau (reliée par contact, pas par le terreau qui la couvre)
+            let net = if souche && pole_net[bi] != 0 {
+                pole_net[bi]
+            } else if best != usize::MAX {
+                pole_net[best]
+            } else {
+                fallback
+            };
             if b.complete() && def.power_prod > 0 && net != 0 && net != fallback {
                 // les générateurs de la zone : leur production dépend de leur combustible (power_tick)
                 let cap = gen_prod(w, b);

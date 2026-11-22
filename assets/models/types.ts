@@ -9,8 +9,11 @@ export type ColorName =
   // couleurs naturelles des décorations du sol (decor.ts)
   | "leaf" | "leaf_dark" | "wood" | "dry" | "rock" | "snow" | "ice" | "crystal" | "flower" | "rust"
   // matières supplémentaires : cuivre (tuyauteries, bobines), acier clair poli, caoutchouc (pneus, chenilles, joints), béton (socles, bunkers)
-  | "copper" | "steel" | "rubber" | "concrete";
-// glow (cyan) et amber (voyants) sont lumineux : ils nourrissent le halo du rendu ; crystal a un léger éclat propre.
+  | "copper" | "steel" | "rubber" | "concrete"
+  // sève luminescente de la Souche (vert acide)
+  | "acid";
+// glow (cyan), amber (voyants) et acid (sève de la Souche) sont lumineux : ils nourrissent le halo du rendu ;
+// crystal a un léger éclat propre.
 
 export interface Part {
   /** Forme de base. */

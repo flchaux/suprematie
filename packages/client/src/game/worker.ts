@@ -124,9 +124,8 @@ onmessage = async (e: MessageEvent<In>) => {
       else if (m.q === "twinPreview") result = Array.from(sim.twinPreview(m.a));
       else if (m.q === "canPlaceMany") {
         // a = [joueur, type, puis (x, y, dir)…]
-        const r: boolean[] = [];
-        for (let i = 2; i + 2 < m.a.length; i += 3) r.push(sim.canPlace(m.a[0], m.a[1], m.a[i], m.a[i + 1], m.a[i + 2]));
-        result = r;
+        // (file de racines de la Souche : chaque racine compte sur le terreau des précédentes)
+        result = sim.canPlaceLine(m.a);
       }
       postMessage({ type: "query", reqId: m.reqId, result });
       break;
