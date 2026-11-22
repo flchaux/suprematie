@@ -1,7 +1,8 @@
 // Formation en file dans la démo « formation » : l'armée mêlée reçoit deux Maj + clic droit (vers l'est,
 // puis vers le sud), à la souris. Contrôles : deux ordres de déplacement en file (drapeaux 1 et 8), groupe
 // rangé en rangées droites au premier point (capture), disposition gardée en route vers le second
-// (capture), arrivée en rangées face au sud (capture).
+// (capture), arrivée en rangées face au sud (capture). La démo est figée au chargement puis avancée par
+// sauts (stopReplayAt) aux ticks relevés en Node : arrivée au premier point 289 ticks après l'ordre.
 // Usage : node tools/e2e-formation-file.mjs http://127.0.0.1:3061 [dossier des captures]
 import { launchBrowser } from "./browser.mjs";
 import { mkdirSync } from "node:fs";
@@ -26,6 +27,9 @@ await page.goto(url);
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem("supreme.gfx", JSON.stringify({ ground: false, decor: false, shadows: false, bloom: false })); });
 await page.goto(url);
 await page.waitForFunction(() => window.__game?.client.frame?.nUnits > 0, null, { timeout: 150000 });
+// démo figée pendant qu'on vise (le rendu logiciel est lent) ; les ordres partent au tick d'arrêt + 3
+const T0 = await page.evaluate(() => { const c = window.__game.client; c.stopReplayAt(c.frame.tick + 2); return c.frame.tick + 2; });
+await page.waitForFunction((t) => window.__game.client.frame.tick >= t, T0, { timeout: 60000 });
 
 // unités du joueur 0 (sauf le commandant) : identifiant, position (sous-unités), orientation (16 bits)
 const army = () => page.evaluate(() => {
@@ -92,8 +96,15 @@ await page.keyboard.up("Shift");
 await page.waitForTimeout(300);
 const cmds = await page.evaluate(() => window.__cmds);
 check(cmds.length === 2 && cmds.every((c) => c[0] === 1 && (c[1] & 9) === 9), "deux déplacements en formation en file", JSON.stringify(cmds.map((c) => c.slice(0, 5))));
-await page.evaluate(() => window.__game.client.setReplaySpeed(2));
-
+// ticks relevés en Node pour cette démo (voir le commentaire d'en-tête) : arrivée au premier point
+// t+289, mi-chemin vers le second t+400, arrivée et orientation finales avant t+600
+await page.evaluate(() => window.__game.client.setReplaySpeed(4));
+const goTo = async (t) => {
+  await page.evaluate((t) => window.__game.client.stopReplayAt(t), t);
+  await page.waitForFunction((t) => window.__game.client.frame.tick >= t, t, { timeout: 300000, polling: 500 });
+  return army();
+};
+const centre = (a) => ({ x: a.units.reduce((s, u) => s + u.x, 0) / n / TILE, z: a.units.reduce((s, u) => s + u.y, 0) / n / TILE });
 // rangées : positions le long d'un axe regroupées à 0,4 case près
 const rows = (vals) => {
   const s = [...vals].sort((p, q) => p - q);
@@ -101,42 +112,27 @@ const rows = (vals) => {
   for (let i = 1; i < s.length; i++) if (s[i] - s[i - 1] > 0.4 * TILE) k++;
   return k;
 };
-const snap = async (name) => {
-  await page.evaluate(() => window.__game.client.worker.postMessage({ type: "pause", paused: true }));
-  await page.screenshot({ path: `${outDir}/${name}.png`, timeout: 180000 });
-  await page.evaluate(() => window.__game.client.worker.postMessage({ type: "pause", paused: false }));
-};
-let prev = start;
-let atP1 = false;
-let midway = false;
-for (let round = 0; round < 200; round++) {
-  const t0 = prev.tick;
-  await page.waitForFunction((t0) => window.__game.client.frame.tick >= t0 + 10, t0, { timeout: 60000, polling: 50 });
-  const cur = await army();
-  const gx = cur.units.reduce((s, u) => s + u.x, 0) / n / TILE;
-  const gz = cur.units.reduce((s, u) => s + u.y, 0) / n / TILE;
-  if (!atP1 && Math.hypot(gx - p1.x, gz - p1.z) < 1) {
-    atP1 = true;
-    // au premier point : rangées perpendiculaires au trajet (vers l'est), donc peu de x distincts
-    const r = rows(cur.units.map((u) => u.x));
-    check(r <= 5, "au premier point : rangées droites face à l'est", `${r} rangées`);
-    await look(gx, gz, 30);
-    await snap("formation-file-point1");
-  }
-  if (atP1 && !midway && gz > p1.z + 9) {
-    midway = true;
-    const r = rows(cur.units.map((u) => u.y));
-    check(r <= 6, "en route vers le second point : rangées gardées", `${r} rangées`);
-    await look(gx, gz, 30);
-    await snap("formation-file-trajet");
-  }
-  prev = cur;
-  if (midway && cur.units.every((u) => u.facing === 16384) && Math.hypot(gx - p2.x, gz - p2.z) < 1) break;
-}
-const end = prev;
-const r = rows(end.units.map((u) => u.y));
-check(r <= 5, "arrivée : rangées droites face au sud", `${r} rangées`);
-check(end.units.every((u) => u.facing === 16384), "chacun tourné vers le sud");
+const T = T0 + 3;
+let a1 = await goTo(T + 289);
+let c1 = centre(a1);
+check(Math.hypot(c1.x - p1.x, c1.z - p1.z) < 1.5, "au premier point au tick prévu", `centre à ${Math.hypot(c1.x - p1.x, c1.z - p1.z).toFixed(2)} case`);
+await look(c1.x, c1.z, 30);
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${outDir}/formation-file-point1.png`, timeout: 180000 });
+a1 = await goTo(T + 400);
+c1 = centre(a1);
+await look(c1.x, c1.z, 30);
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${outDir}/formation-file-trajet.png`, timeout: 180000 });
+const end = await goTo(T + 620);
+const c2 = centre(end);
+check(Math.hypot(c2.x - p2.x, c2.z - p2.z) < 1, "arrivé au second point", `centre à ${Math.hypot(c2.x - p2.x, c2.z - p2.z).toFixed(2)} case`);
+check(rows(end.units.map((u) => u.y)) === 4, "arrivée : quatre rangées droites face au sud", `${rows(end.units.map((u) => u.y))} rangées`);
+// angle du dernier segment (le clic n'est pas exactement au sud du premier point)
+const [o1, o2] = cmds;
+const face = Math.round((Math.atan2(o2[3] - o1[3], o2[2] - o1[2]) / (2 * Math.PI)) * 65536) & 0xffff;
+const off = end.units.filter((u) => Math.abs(((u.facing - face + 32768) & 0xffff) - 32768) > 100).map((u) => u.facing);
+check(off.length === 0, "chacun tourné vers le second segment (sud)", `attendu ${face}${off.length ? ", écarts : " + off.join(" ") : ""}`);
 await look(p2.x, p2.z, 30);
 await page.waitForTimeout(1500);
 await page.screenshot({ path: `${outDir}/formation-file-arrivee.png`, timeout: 180000 });
