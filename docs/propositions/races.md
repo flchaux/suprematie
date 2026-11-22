@@ -29,6 +29,8 @@ Règles suivies pour toutes les races :
 
 **Principe.** Une race de machines faites de briques identiques qui se recopient : chaque unité est à la fois soldat, usine et réserve de matière.
 
+Règles détaillées, chiffres, déroulé d'une partie et plan de réalisation : [copistes.md](copistes.md).
+
 ### Économie
 
 - **La masse** remplace presque tout. Chaque assemblage (unité ou bâtiment des Copistes) porte un nombre entier de briques. Ses points de vie, ses dégâts et sa taille à l'écran suivent ce nombre (par exemple 10 PV par brique).
