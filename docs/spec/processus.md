@@ -11,7 +11,7 @@ Tests automatiques :
 - Déterminisme : deux simulations reçoivent la même graine et la même suite d'ordres pendant 10 000 ticks. Leurs hash doivent être identiques à chaque tick.
 - Déterminisme entre Node.js et Chrome : le même scénario tourne dans Node.js et dans Chrome via Playwright. Les hash doivent être identiques.
 - Sauvegarde : après `snapshot()` puis `restore()`, la suite de la partie donne les mêmes hash que sans interruption.
-- Format des sauvegardes versionné (`save.rs`) : en-tête « SUP2 » puis `VERSION`. Un champ sauvegardé ajouté à une structure se déclare après « since N » dans `ser_struct!` (et `VERSION` passe à N) : les sauvegardes plus anciennes se chargent, le champ y prend sa valeur par défaut. Les sauvegardes sans numéro (« SUPR », jusqu'au 21 novembre 2026) sont lues comme la version 1. Ne jamais insérer un champ au milieu d'une structure ni en retirer un sans gérer les anciennes versions.
+- Format des sauvegardes versionné (`save.rs`) : en-tête « SUP2 » puis `VERSION`. Un champ sauvegardé ajouté à une structure se déclare après « since N » dans `ser_struct!` (et `VERSION` passe à N) : les sauvegardes plus anciennes se chargent, le champ y prend sa valeur par défaut. La version 3 (22 novembre 2026) remplace la réserve du joueur par le stock de chaque dépôt : à la lecture d'une sauvegarde plus ancienne, la réserve devient un dépôt rempli (voir [economie.md](economie.md)). Les sauvegardes sans numéro (« SUPR », jusqu'au 21 novembre 2026) sont lues comme la version 1. Ne jamais insérer un champ au milieu d'une structure ni en retirer un sans gérer les anciennes versions.
 - Partie entre bots : 8 bots jouent 30 minutes de jeu entre eux, sans désynchronisation ni blocage.
 - Tests unitaires Rust (`cargo test`) pour les tapis, les bâtiments, le déplacement et le combat.
 - Banc de performance (voir Objectifs de performance).
@@ -98,7 +98,7 @@ Le déterminisme et la mesure de performance passent avant les graphismes, car i
 
 ## Questions ouvertes
 
-- [ ] Construction des bâtiments : stock commun alimenté par les dépôts (proposé dans Règles du jeu), ou livraison par drones comme les robots de construction de Factorio.
+- [x] Construction des bâtiments : livraison par drones depuis les dépôts proches, comme les robots de construction de Factorio (voir Dépôts et drones dans [economie.md](economie.md)).
 - [ ] Recherche individuelle (proposée) ou partagée entre coéquipiers.
 
 ## Sources
