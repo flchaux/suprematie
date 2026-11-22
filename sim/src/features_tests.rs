@@ -713,6 +713,23 @@ fn elevated_belts_cross_over_ground_belts() {
     assert!(sent[0] >= 25 && sent[1] >= 25);
 }
 
+/// Démo des ascenseurs : quatorze changements de niveau (dont un pris par le côté), et chaque extracteur
+/// livre ses dépôts à travers eux.
+#[test]
+fn lifts_demo_delivers_through_elevators() {
+    let mut w = crate::stress::lifts_demo();
+    let belts: Vec<usize> = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].def().class == BClass::Belt).collect();
+    let lifts: Vec<usize> = belts.iter().copied().filter(|&b| crate::belts::ramp_to(&w, b).is_some()).collect();
+    assert_eq!(lifts.len(), 14, "ascenseurs de la démo");
+    assert_eq!(lifts.iter().filter(|&&b| crate::belts::belt_shape(&w, b) != 0).count(), 1, "un ascenseur pris par le côté");
+    let (fe0, cu0) = (w.stock(0, IRON_ORE), w.stock(0, COPPER_ORE));
+    for _ in 0..1500 {
+        w.step(&[]);
+    }
+    assert!(w.stock(0, IRON_ORE) > fe0 + 10, "le fer traverse les ascenseurs");
+    assert!(w.stock(0, COPPER_ORE) > cu0 + 10, "le cuivre traverse les ascenseurs");
+}
+
 /// Double clic sur un tapis : son chemin suit les ascenseurs mais pas la ligne croisée par-dessus.
 #[test]
 fn belt_path_follows_elevators_not_crossings() {

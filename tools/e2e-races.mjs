@@ -217,7 +217,8 @@ const rootNets = await a.page.evaluate(async (heartRef) => {
 check(rootNets.nets.length >= n - 1 && rootNets.nets.every((x) => x === rootNets.hn && x > 0), "racines poussées, reliées au réseau de la graine-mère", JSON.stringify(rootNets));
 const terreau = await a.page.evaluate(([hx, hy]) => {
   const t = window.__game.client.scene.terreau;
-  return { here: t.data[(hy + 1) * t.w + hx + 1], far: t.data[(hy + 1) * t.w + Math.max(0, hx - 40)] };
+  const r = t.res ?? 1;
+  return { here: t.data[(hy + 1) * r * t.w + (hx + 1) * r], far: t.data[(hy + 1) * r * t.w + Math.max(0, hx - 40) * r] };
 }, [heartAt.x, heartAt.y]);
 check(terreau.here === 255 && terreau.far === 0, "terreau au sol autour du réseau", JSON.stringify(terreau));
 await aimAt(heartAt.x + 1.5 + lineSide * 4, heartAt.y + 1.5, 32);

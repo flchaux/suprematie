@@ -121,6 +121,71 @@ function tapisVirage(surface: Part["color"], fleche: Part["color"], filet: Part[
   return { parts };
 }
 
+/** Hauteur d'un niveau de tapis surélevé, en cases du monde (le rendu pose les tapis à niveau × cette hauteur). */
+export const NIVEAU_TAPIS = 1.6;
+
+/**
+ * Quai d'un ascenseur de tapis : court tronçon de tapis entre le bord arrière de la case (z = -0,5) et la
+ * cage, aux couleurs du tapis. Le jeu en pose un au niveau d'entrée et un au niveau de sortie (tourné
+ * vers l'avant) : pas de flèche, il se lit dans les deux sens. Seuil rayé du côté de la cage.
+ */
+function tapisQuai(surface: Part["color"], filet: Part["color"]): Model {
+  return {
+    parts: [
+      { shape: "box", size: [0.62, 0.06, 0.31], pos: [0, 0.03, -0.345], color: "dark" },
+      { shape: "box", size: [0.5, 0.03, 0.31], pos: [0, 0.075, -0.345], color: surface },
+      { shape: "box", size: [0.06, 0.12, 0.31], pos: [0.28, 0.06, -0.345], color: "light", mirror: true },
+      { shape: "box", size: [0.03, 0.02, 0.2], pos: [0.28, 0.13, -0.36], color: filet, mirror: true },
+      { shape: "box", size: [0.5, 0.012, 0.04], pos: [0, 0.094, -0.212], color: "hazard" },
+      // jambes de force sous le quai (visibles quand il est en hauteur)
+      { shape: "box", size: [0.04, 0.04, 0.3], pos: [0.22, -0.09, -0.33], rot: [-32, 0, 0], color: "metal", mirror: true, fine: true },
+    ],
+  };
+}
+
+/**
+ * Cage d'ascenseur de tapis, d'une case, entre deux niveaux voisins : les objets entrent par un quai,
+ * montent ou descendent à la verticale sur un plateau, sortent par l'autre quai. Les hauteurs sont en
+ * cases du monde (le jeu ne met à l'échelle que le plan) : palier bas à y = 0, palier haut à NIVEAU_TAPIS.
+ * Quatre montants, cadre de tête aux couleurs de l'équipe, lisses au palier haut, deux glissières
+ * latérales (le jeu y fait courir des traits lumineux dans le sens de la marche), croisillons fins.
+ * La cage est ouverte à l'avant, à l'arrière et sur le dessus : on voit les objets y monter.
+ */
+function ascenseur(): Model {
+  const h = NIVEAU_TAPIS;
+  const top = h + 0.62;
+  const x = 0.385;
+  const z = 0.235;
+  const r = (k: number) => Math.round(k * 1000) / 1000;
+  const parts: Part[] = [
+    // fosse
+    { shape: "bevel", size: [0.86, 0.05, 0.56], pos: [0, 0.025, 0], bevel: 0.015, color: "dark" },
+    // montants
+    { shape: "box", size: [0.07, top, 0.07], pos: [x, r(top / 2), z], color: "metal", mirror: true },
+    { shape: "box", size: [0.07, top, 0.07], pos: [x, r(top / 2), -z], color: "metal", mirror: true },
+    // cadre de tête : longerons d'équipe, traverses
+    { shape: "box", size: [0.09, 0.09, 0.58], pos: [x, r(top), 0], color: "faction", mirror: true },
+    { shape: "box", size: [0.86, 0.06, 0.06], pos: [0, r(top), z], color: "metal" },
+    { shape: "box", size: [0.86, 0.06, 0.06], pos: [0, r(top), -z], color: "metal" },
+    // lisses du palier haut
+    { shape: "box", size: [0.05, 0.05, 0.47], pos: [x, r(h - 0.04), 0], color: "metal", mirror: true },
+    { shape: "box", size: [0.77, 0.05, 0.05], pos: [0, r(h - 0.04), z], color: "metal" },
+    { shape: "box", size: [0.77, 0.05, 0.05], pos: [0, r(h - 0.04), -z], color: "metal" },
+    // glissières latérales
+    { shape: "box", size: [0.03, r(top - 0.1), 0.05], pos: [x, r(top / 2), 0], color: "steel", mirror: true },
+    // voyants de tête
+    { shape: "box", size: [0.05, 0.035, 0.05], pos: [x, r(top + 0.06), z], color: "amber", mirror: true, fine: true },
+    { shape: "box", size: [0.05, 0.035, 0.05], pos: [x, r(top + 0.06), -z], color: "amber", mirror: true, fine: true },
+  ];
+  // croisillons des deux flancs, sous et au-dessus du palier haut
+  for (const [y0, y1] of [[0.08, h - 0.07], [h - 0.01, top - 0.05]] as const) {
+    for (const s of [-1, 1]) {
+      parts.push({ shape: "tube", radius: 0.011, sides: 4, path: [[x, r(y0), r(-z * s)], [x, r(y1), r(z * s)]], color: "dark", mirror: true, fine: true });
+    }
+  }
+  return { parts };
+}
+
 /**
  * Turbine couchée du générateur (axe avant-arrière, hélice vers +z) posée sur le socle, à l'échelle `k`
  * (1 : turbine du générateur de base). 236 triangles.
@@ -807,6 +872,21 @@ export const BUILDING_MODELS: Record<string, Model> = {
   belt3_jonction_g: tapisJonction("dark", "glow", "glow", 0.8, [-1]),
   belt3_jonction_d: tapisJonction("dark", "glow", "glow", 0.8, [1]),
   belt3_jonction_gd: tapisJonction("dark", "glow", "glow", 0.8, [-1, 1]),
+  // ascenseur : cage d'ascenseur de tapis (une case, entre deux niveaux), commune à tous les tapis
+  ascenseur: ascenseur(),
+  // ascenseur_plateau : plateau qui porte un objet dans la cage (dessus à y = 0), patins sur les glissières
+  ascenseur_plateau: {
+    parts: [
+      { shape: "bevel", size: [0.6, 0.035, 0.36], pos: [0, -0.0175, 0], bevel: 0.01, color: "light" },
+      { shape: "box", size: [0.04, 0.012, 0.36], pos: [0.275, 0.004, 0], color: "hazard", mirror: true },
+      { shape: "box", size: [0.05, 0.08, 0.1], pos: [0.325, -0.02, 0], color: "steel", mirror: true },
+    ],
+  },
+  // <tapis>_quai : quai d'ascenseur aux couleurs du tapis (belt1 ambre, belt2 et belt3 cyan, collecteur comme belt1)
+  belt1_quai: tapisQuai("metal", "amber"),
+  belt2_quai: tapisQuai("dark", "glow"),
+  belt3_quai: tapisQuai("dark", "glow"),
+  collector_quai: tapisQuai("metal", "amber"),
   // inserter : petit socle rond à liseré cyan, embase d'équipe à pans coupés, colonne d'acier, bras (pivot) à
   // rotule et pince à deux doigts ; rotule, doigts et voyant en pièces fines
   inserter: {
