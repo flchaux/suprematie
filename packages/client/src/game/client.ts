@@ -20,6 +20,7 @@ import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { buildCats, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
 import { escapeAction, menuPauses, type MenuRole } from "./gameMenu.ts";
+import { isTextField, keyboardPan, syncModifiers, type FocusLike } from "./heldKeys.ts";
 import { isMachine, machineRow } from "./machineRow.ts";
 import * as Belts from "./belts.ts";
 
@@ -602,18 +603,10 @@ export class GameClient {
 
   private panCamera(dt: number): void {
     const sc = this.scene!;
-    if (ui.chatOpen) return;
     const speed = sc.distance * 1.4 * dt;
-    let dx = 0;
-    let dz = 0;
-    // pas de défilement pendant un raccourci avec Ctrl ou Alt (Ctrl+S…)
-    const mod = this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.keys.has("AltLeft") || this.keys.has("AltRight");
-    if (!mod && !kb.capturing) {
-      if (keymap.held("panLeft", this.keys)) dx -= 1;
-      if (keymap.held("panRight", this.keys)) dx += 1;
-      if (keymap.held("panUp", this.keys)) dz -= 1;
-      if (keymap.held("panDown", this.keys)) dz += 1;
-    }
+    // le clavier n'est coupé que par le focus dans un champ de saisie (pas par la boîte de discussion
+    // restée ouverte sans le focus, ni par un menu) ou par l'écran « Raccourcis » qui attend une touche
+    let [dx, dz] = keyboardPan(this.keys, keymap, { focus: document.activeElement as FocusLike | null, capturing: kb.capturing });
     const el = this.canvasEl!;
     if (this.mouse.inside && document.hasFocus() && !this.mouse.down) {
       const m = 6;
@@ -1013,7 +1006,15 @@ export class GameClient {
     el.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
     addEventListener("keydown", (e) => this.onKey(e, true));
     addEventListener("keyup", (e) => this.onKey(e, false));
+    // touches relâchées hors de la page (bascule de fenêtre, onglet caché) : plus rien n'est maintenu
     addEventListener("blur", () => this.keys.clear());
+    document.addEventListener("visibilitychange", () => document.hidden && this.keys.clear());
+    // liste déroulante de la partie (filtre, recette) : rendre le clavier au jeu une fois le choix fait,
+    // sinon ZQSD et les flèches changeraient l'option au lieu de faire défiler la caméra
+    document.addEventListener("change", (e) => {
+      const t = e.target as HTMLElement | null;
+      if (ui.screen === "game" && t?.tagName === "SELECT") t.blur();
+    });
     void initLayout();
     const v = Number(localStorage.getItem("supreme.volume") ?? "0.5");
     ui.volume = v;
@@ -1041,6 +1042,10 @@ export class GameClient {
 
   private onDown(e: PointerEvent): void {
     sfx.unlock();
+    syncModifiers(this.keys, e);
+    // clic sur la carte : le champ qui avait le focus (discussion, liste…) rend le clavier au jeu
+    const f = document.activeElement as HTMLElement | null;
+    if (f && isTextField(f)) f.blur();
     const [x, y] = this.localXY(e);
     this.mouse.x = x;
     this.mouse.y = y;
@@ -1117,6 +1122,7 @@ export class GameClient {
   }
 
   private onMove(e: PointerEvent): void {
+    syncModifiers(this.keys, e);
     if (!this.canvasEl) return;
     const [x, y] = this.localXY(e);
     this.mouse.x = x;
@@ -1255,23 +1261,14 @@ export class GameClient {
     }
   }
 
-  /** Champ de saisie de texte : le clavier lui appartient (discussion, pseudo…). */
-  private static typing(t: EventTarget | null): boolean {
-    const el = t as HTMLElement | null;
-    if (!el || !el.tagName) return false;
-    if (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
-    if (el.tagName !== "INPUT") return false;
-    const type = (el as HTMLInputElement).type;
-    return !["checkbox", "radio", "range", "button", "submit", "color"].includes(type);
-  }
-
   private onKey(e: KeyboardEvent, down: boolean): void {
+    syncModifiers(this.keys, e);
     if (!down) {
       // relâchement toujours pris en compte (même si un champ a pris le focus entre-temps)
       this.keys.delete(e.code);
       return;
     }
-    if (kb.capturing || GameClient.typing(e.target)) return;
+    if (kb.capturing || isTextField(e.target as FocusLike | null)) return;
     if (keymap.observe(e)) keysChanged();
     if (ui.screen !== "game" || e.metaKey) return;
     this.keys.add(e.code);
@@ -1317,13 +1314,13 @@ export class GameClient {
         menuOpen: ui.menuOpen,
         buildStep: !!kb.buildStep,
         mode: !!ui.mode,
-        panel: kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show || ui.showGfx,
+        panel: ui.chatOpen || kb.showKeys || ui.showResearch || ui.showStats || ui.showHelp || ui.showRecipes || plans.show || ui.showGfx,
         selection: this.selected.size > 0 || !!ui.selDeposit || !!ui.selPlan,
       });
       if (act === "closeMenu") this.closeMenu();
       else if (act === "buildStep") kb.buildStep = "";
       else if (act === "mode") this.cancelMode();
-      else if (act === "panels") kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = ui.showGfx = false;
+      else if (act === "panels") ui.chatOpen = kb.showKeys = ui.showResearch = ui.showStats = ui.showHelp = ui.showRecipes = plans.show = ui.showGfx = false;
       else if (act === "deselect") {
         this.selected.clear();
         ui.selDeposit = null;
@@ -1458,7 +1455,9 @@ export class GameClient {
         ui.showHelp = !ui.showHelp;
         break;
       case "chat":
+        // déjà ouverte mais sans le focus (clic sur la carte entre-temps) : Entrée y ramène le clavier
         ui.chatOpen = true;
+        setTimeout(() => document.querySelector<HTMLInputElement>(".chatbox input")?.focus());
         break;
       case "perf":
         ui.showPerf = !ui.showPerf;

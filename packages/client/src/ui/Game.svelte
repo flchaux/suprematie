@@ -83,7 +83,7 @@
     {#if ui.chatOpen}
       <form class="chatbox panel" onsubmit={sendChat}>
         <Icon name="chat" size={15} />
-        <input bind:value={chatText} placeholder="Message à tous (Entrée)" autofocus onkeydown={(e) => e.key === "Escape" && (ui.chatOpen = false)} />
+        <input bind:value={chatText} placeholder="Message à tous (Entrée)" autofocus onkeydown={(e) => e.key === "Escape" && (ui.chatOpen = false)} onblur={() => !chatText.trim() && (ui.chatOpen = false)} />
       </form>
     {/if}
     {#if ui.speed === 0 && !ui.replay && !ui.menuOpen}
