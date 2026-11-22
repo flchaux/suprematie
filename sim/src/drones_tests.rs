@@ -313,3 +313,51 @@ fn drones_in_flight_survive_snapshot() {
         assert_eq!(w.step(&[]), c.step(&[]), "snapshot/restore diverge avec des drones en vol");
     }
 }
+
+/// Générateur à moitié vide : son drone va chercher de l'hydrocarbure dans un dépôt à moins de 30 cases
+/// (il n'y a plus de réserve où son dépôt collé puisait) ; trop loin, rien n'arrive.
+#[test]
+fn generator_drone_fetches_fuel_from_nearby_depot() {
+    use crate::buildings::fuel_tank;
+    let mut w = world(1);
+    w.infinite_grid = false;
+    let g = place_building(&mut w, 0, B_GENERATOR, 100, 100, 0).unwrap();
+    complete_building(&mut w, g);
+    w.buildings[g].fuel = 0;
+    let far = depot(&mut w, 0, 140, 100, &[(HYDROCARBON, 50)]);
+    for _ in 0..200 {
+        w.step(&[]);
+    }
+    assert_eq!(w.buildings[g].fuel, 0, "dépôt à 40 cases : trop loin");
+    let d = depot(&mut w, 0, 112, 100, &[(HYDROCARBON, 50)]);
+    for _ in 0..400 {
+        w.step(&[]);
+    }
+    assert!(w.buildings[g].fuel > fuel_tank(B_GENERATOR) / 2, "réservoir rempli par drone : {}", w.buildings[g].fuel);
+    assert!(has(&w.buildings[d].stash, HYDROCARBON) < 50);
+    assert_eq!(has(&w.buildings[far].stash, HYDROCARBON), 50);
+}
+
+/// Sauvegarde sans numéro (« SUPR ») à la disposition de la version 2 : lue comme une version 2, puis
+/// convertie (la réserve devient un dépôt).
+#[test]
+fn unversioned_save_is_read_as_v2_and_converted() {
+    use crate::ser::{Ser, W};
+    let mut w = World::new(&[77, 512, 0, 1, 0, 0, 100, 100]);
+    w.place_start_buildings();
+    for b in 0..w.buildings.len() {
+        if w.buildings[b].alive && w.buildings[b].kind == B_DEPOT {
+            crate::buildings::remove_building(&mut w, b, false);
+        }
+    }
+    w.players[0].old_stock[STEEL as usize] = 77;
+    let v2 = crate::save::write(&w, 2, &[]);
+    // en-tête « SUP2 » + version (5 + 1 octets) remplacé par « SUPR » seul
+    let mut o = W::new();
+    0x5355_5052u32.ser(&mut o);
+    let mut bytes = o.buf;
+    bytes.extend_from_slice(&v2[6..]);
+    let a = crate::save::restore(&bytes).expect("sauvegarde sans numéro lue");
+    let d = (0..a.buildings.len()).find(|&k| a.buildings[k].alive && a.buildings[k].kind == B_DEPOT).expect("dépôt converti");
+    assert_eq!(has(&a.buildings[d].stash, STEEL), 77);
+}

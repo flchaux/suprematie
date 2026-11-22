@@ -6,7 +6,7 @@ export interface SelUnitGroup { kind: number; count: number; ids: number[]; /** 
 export interface Message { id: number; text: string; kind: "info" | "alert" | "chat" | "good"; time: number }
 
 /** Récolte du commandant en cours (sim : render::harvest_info) : ressource brute, produit fondu, case du
- * gisement, état (0 en route, 1 récolte, 2 combat, 3 réserve pleine), avancement du cycle (‰), durée d'un cycle (ticks). */
+ * gisement, état (0 en route, 1 récolte, 2 combat, 3 soute pleine), avancement du cycle (‰), durée d'un cycle (ticks). */
 export interface HarvestInfo { raw: number; out: number; x: number; y: number; state: number; progress: number; cycle: number }
 
 export const ui = $state({
@@ -24,7 +24,7 @@ export const ui = $state({
   stock: [] as number[],
   /** stock commun de l'équipe (entrepôts d'équipe) */
   teamStock: [] as number[],
-  /** plafond de la réserve, par objet (dépôts) */
+  /** capacité totale de vos dépôts, par objet */
   stockCap: 0,
   /** fragments d'énergie en réserve (surcadençage) */
   shards: 0,

@@ -142,6 +142,8 @@ pub const DRONE_SPEED: i32 = 16 * 256 / 20;
 /// Usines d'unités : drones et rayon de ravitaillement (cases).
 pub const FACTORY_DRONES: u8 = 4;
 pub const FACTORY_SUPPLY: i32 = 30;
+/// Générateurs à combustible : drones (rayon : NEAR_SUPPLY).
+pub const GENERATOR_DRONES: u8 = 1;
 /// Rayon (cases) des paiements immédiats, du collecteur de surplus et de l'affichage « à portée ».
 pub const NEAR_SUPPLY: i32 = 30;
 /// Amélioration d'un dépôt (plus haut, plus grand) : coût, recherche, durée (secondes).

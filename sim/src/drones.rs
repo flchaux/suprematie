@@ -4,7 +4,7 @@
 //!   `Building::stash` (NUM_ITEMS cases), plafonnés par objet (`store_cap`).
 //! - Constructeurs : le commandant et les ingénieurs (soute `UnitCold::hold`, dont la construction se
 //!   paie), les usines d'unités (réserve d'avance de l'usine). Chacun a des drones et un rayon de
-//!   ravitaillement.
+//!   ravitaillement. Les générateurs à combustible ont aussi un drone, pour leur réservoir.
 //! - Drones (`Carrier`, genre `DRONE`) : un aller-retour constructeur → dépôt → constructeur, en vol
 //!   direct. Ils n'existent que pendant le voyage. Les départs se décident toutes les `PLAN_PERIOD` ticks
 //!   (`plan`), les vols avancent à chaque tick (`update_drone`).
@@ -262,52 +262,56 @@ struct Head {
     ahead: [u32; N],
 }
 
-/// Reste à payer d'un chantier (bâtiment `kind`, déjà construit à `build`, payé `paid`), et avance des
-/// prochaines `AHEAD_TICKS` ticks de travail à la puissance `bp`.
-fn remaining(kind: u16, build: u32, paid: &[u16; 4], bp: u64, need: &mut [u32; N], ahead: Option<&mut [u32; N]>) {
+/// Reste à payer d'un chantier (bâtiment `kind`, déjà construit à `build`, payé `paid`) dans `rem`, et
+/// ce qu'en consomment les prochaines `AHEAD_TICKS` ticks de travail à la puissance `bp` dans `ahead`.
+fn remaining(kind: u16, build: u32, paid: &[u16; 4], bp: u64, rem: &mut [u32; N], ahead: &mut [u32; N]) {
     let def = bdef(kind);
     let work = def.build as u64 * 20 * 10;
     let delta = (bp * BUILD_FULL as u64 / work.max(1)).max(1);
     let until = (build as u64 + delta * AHEAD_TICKS).min(BUILD_FULL as u64);
-    let mut ahead = ahead;
     for (k, &(it, n)) in def.cost.iter().enumerate() {
         let rest = (n as u32).saturating_sub(paid[k] as u32);
-        need[it as usize] += rest;
-        if let Some(a) = ahead.as_deref_mut() {
-            let by = (n as u64 * until).div_ceil(BUILD_FULL as u64) as u32;
-            a[it as usize] += by.saturating_sub(paid[k] as u32).min(rest);
-        }
+        rem[it as usize] += rest;
+        let by = (n as u64 * until).div_ceil(BUILD_FULL as u64) as u32;
+        ahead[it as usize] += by.saturating_sub(paid[k] as u32).min(rest);
     }
 }
 
-/// Besoins d'un constructeur : reste à payer de tous les chantiers de sa file (ordres de construction et
-/// d'assistance), et chantier en tête de file.
-fn queue_need(w: &World, s: usize) -> ([u32; N], Option<Head>) {
+/// Besoins d'un constructeur de rayon `r` : reste à payer de tous les chantiers de sa file (ordres de
+/// construction et d'assistance), ce que leurs environs ne contiennent pas (à emporter : manque, chantier
+/// par chantier, des stocks utilisables à moins de `r` moins la portée de construction du chantier), et
+/// chantier en tête de file.
+fn queue_need(w: &World, s: usize, r: i32) -> ([u32; N], [u32; N], Option<Head>) {
     let mut need = [0u32; N];
+    let mut deficit = [0u32; N];
     let mut head = None;
+    let owner = w.units.owner[s];
     let bp = build_power(w, s);
+    // stocks à portée du dernier chantier examiné (une file de tapis : des chantiers voisins)
+    let mut last: Option<(i32, i32, Vec<(i64, usize)>)> = None;
     for (i, o) in w.units.cold[s].orders.iter().take(MAX_QUEUE).enumerate() {
+        let mut rem = [0u32; N];
         let mut ahead = [0u32; N];
         let site = match *o {
             Order::Build { kind, x, y, dir, bid } => match w.building(bid) {
                 Some(b) if !w.buildings[b].complete() => {
                     let bb = &w.buildings[b];
-                    remaining(bb.kind, bb.build, &bb.paid, bp, &mut need, Some(&mut ahead));
+                    remaining(bb.kind, bb.build, &bb.paid, bp, &mut rem, &mut ahead);
                     let (cx, cy) = bb.center();
                     Some((cx, cy, crate::units::build_range(bb.kind, bb.dir)))
                 }
                 Some(_) => None,
                 None if bid == 0 || bid == NONE => {
-                    remaining(kind, 0, &[0; 4], bp, &mut need, Some(&mut ahead));
+                    remaining(kind, 0, &[0; 4], bp, &mut rem, &mut ahead);
                     let (bw, bh) = crate::buildings::dims(kind, dir);
                     Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2, crate::units::build_range(kind, dir)))
                 }
                 None => None,
             },
             Order::Assist { target } => match w.building(target) {
-                Some(b) if !w.buildings[b].complete() && w.team_of(w.buildings[b].owner) == w.team_of(w.units.owner[s]) => {
+                Some(b) if !w.buildings[b].complete() && w.team_of(w.buildings[b].owner) == w.team_of(owner) => {
                     let bb = &w.buildings[b];
-                    remaining(bb.kind, bb.build, &bb.paid, bp, &mut need, Some(&mut ahead));
+                    remaining(bb.kind, bb.build, &bb.paid, bp, &mut rem, &mut ahead);
                     let (cx, cy) = bb.center();
                     Some((cx, cy, crate::units::build_range(bb.kind, bb.dir)))
                 }
@@ -315,13 +319,26 @@ fn queue_need(w: &World, s: usize) -> ([u32; N], Option<Head>) {
             },
             _ => None,
         };
-        if i == 0 {
-            if let Some((cx, cy, range)) = site {
-                head = Some(Head { cx, cy, range, ahead });
+        let Some((cx, cy, range)) = site else { continue };
+        // le constructeur bâtit jusqu'à sa portée de construction du chantier : seuls comptent les stocks
+        // qui resteront à son rayon de ravitaillement où qu'il se tienne
+        let reuse = matches!(&last, Some((lx, ly, _)) if (lx - cx).abs() <= 4 * TILE && (ly - cy).abs() <= 4 * TILE);
+        if !reuse {
+            last = Some((cx, cy, stores_near(w, owner, cx, cy, (r - range - TILE).max(TILE))));
+        }
+        let near = last.as_ref().map(|l| &l.2[..]).unwrap_or(&[]);
+        for it in 1..N {
+            if rem[it] > 0 {
+                need[it] += rem[it];
+                let avail: u32 = near.iter().map(|&(_, b)| has(&w.buildings[b].stash, it as u8) as u32).sum();
+                deficit[it] += rem[it].saturating_sub(avail);
             }
         }
+        if i == 0 {
+            head = Some(Head { cx, cy, range, ahead });
+        }
     }
-    (need, head)
+    (need, deficit, head)
 }
 
 // ---------- départs des drones ----------
@@ -408,14 +425,46 @@ pub fn plan(w: &mut World) {
     for i in 0..w.active.len() {
         let b = w.active[i] as usize;
         let bb = &w.buildings[b];
-        if bb.alive && bb.complete() && bb.def().class == BClass::Factory && !bb.queue.is_empty() {
-            plan_factory(w, b, &fl);
+        if !bb.alive || !bb.complete() {
+            continue;
+        }
+        match bb.def().class {
+            BClass::Factory if !bb.queue.is_empty() => plan_factory(w, b, &fl),
+            BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::fuel_tank(bb.kind) => plan_generator(w, b, &fl),
+            _ => {}
         }
     }
 }
 
-/// Commandant ou ingénieur : chargement avant un chantier hors de portée des dépôts, prises pour le
-/// chantier en cours, vidage de ce qui ne sert pas.
+/// Générateur à moitié vide : son drone va chercher du combustible dans les dépôts à moins de
+/// NEAR_SUPPLY cases, de quoi remplir son réservoir.
+fn plan_generator(w: &mut World, b: usize, fl: &Flights) {
+    let home = w.building_ref(b);
+    let (busy, incoming) = home_flights(fl, home);
+    let mut free = (GENERATOR_DRONES as usize).saturating_sub(busy);
+    if free == 0 {
+        return;
+    }
+    let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner);
+    let (x, y) = w.buildings[b].center();
+    let mut room = crate::buildings::fuel_tank(kind) - w.buildings[b].fuel;
+    for (it, &n) in incoming.iter().enumerate() {
+        room -= n as i32 * crate::buildings::fuel_energy(kind, it as u8);
+    }
+    let near = stores_near(w, owner, x, y, NEAR_SUPPLY * TILE);
+    let mut want = [0u32; N];
+    for it in [HYDROCARBON, FUEL, ENERGY_CELL] {
+        let e = crate::buildings::fuel_energy(kind, it);
+        if e > 0 && room >= e && near.iter().any(|&(_, d)| has(&w.buildings[d].stash, it) > 0) {
+            want[it as usize] = (room / e) as u32;
+            break;
+        }
+    }
+    fetch(w, owner, home, x, y, &near, &mut want, &mut free);
+}
+
+/// Commandant ou ingénieur : chargement avant les chantiers dont les environs n'ont pas les matériaux,
+/// prises pour le chantier en cours, vidage de ce qui ne sert pas.
 fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     let def = udef(w.units.kind[s]);
     let owner = w.units.owner[s];
@@ -423,25 +472,18 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     let (x, y) = (w.units.x[s], w.units.y[s]);
     let r = def.supply * TILE;
     let (busy, incoming) = home_flights(fl, home);
-    let (need, head) = queue_need(w, s);
+    let (need, deficit, head) = queue_need(w, s, r);
     let hold = w.units.cold[s].hold.clone();
     let have = |it: usize| has(&hold, it as u8) as u32 + incoming[it];
     let inside = w.units.cold[s].carried_by != NONE;
-    // chantier hors de portée de construction : ses environs ont-ils ce qui manque ?
+    // chantiers dont les environs n'ont pas tout : emporter d'abord ce qui manque, depuis le dépôt le plus
+    // proche qui en a (à portée : on s'arrête le temps que les drones partent le chercher)
     let mut supply_at = NONE;
-    if let Some(h) = head.as_ref().filter(|h| !inside && dist(x, y, h.cx, h.cy) > h.range + TILE) {
-        let near_site = stores_near(w, owner, h.cx, h.cy, r);
-        let uncovered: Vec<u8> = (1..N)
-            .filter(|&it| {
-                let miss = need[it].saturating_sub(have(it));
-                miss > 0 && near_site.iter().map(|&(_, b)| has(&w.buildings[b].stash, it as u8) as u32).sum::<u32>() < miss
-            })
-            .map(|it| it as u8)
-            .collect();
-        if !uncovered.is_empty() {
-            // le dépôt le plus proche qui a un objet manquant (à portée : on s'arrête pour charger)
+    if !inside && head.is_some() {
+        let missing: Vec<u8> = (1..N).filter(|&it| deficit[it] > have(it)).map(|it| it as u8).collect();
+        if !missing.is_empty() {
             let all = stores_near(w, owner, x, y, i32::MAX);
-            if let Some(&(_, b)) = all.iter().find(|&&(_, b)| uncovered.iter().any(|&it| has(&w.buildings[b].stash, it) > 0)) {
+            if let Some(&(_, b)) = all.iter().find(|&&(_, b)| missing.iter().any(|&it| has(&w.buildings[b].stash, it) > 0)) {
                 supply_at = w.building_ref(b);
             }
         }
@@ -458,10 +500,12 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights) {
     if near.is_empty() {
         return;
     }
-    // prises : tout le reste de la file pendant un chargement, sinon l'avance du chantier en cours
+    // prises : l'avance du chantier en cours, et pendant un chargement tout ce qui manque aux environs des
+    // chantiers de la file
     let mut want = [0u32; N];
     for it in 1..N {
-        let target = if supply_at != NONE { need[it] } else { head.as_ref().map_or(0, |h| h.ahead[it]) };
+        let ahead = head.as_ref().map_or(0, |h| h.ahead[it]);
+        let target = if supply_at != NONE { ahead.max(deficit[it]) } else { ahead };
         want[it] = target.saturating_sub(have(it));
     }
     fetch(w, owner, home, x, y, &near, &mut want, &mut free);
@@ -607,12 +651,13 @@ pub fn update_drone(w: &mut World, ci: usize) {
             put(&mut w.units.cold[s].hold, it as u8, n);
         }
     } else if let Some(f) = w.building(home) {
+        // usine : réserve d'avance ; générateur : réservoir
         for (it, &n) in cargo.iter().enumerate() {
-            if n > 0 {
-                crate::buildings::factory_put(&mut w.buildings[f], it as u8, n);
+            for _ in 0..n {
+                crate::buildings::insert_item(w, f, it as u8);
             }
         }
-        w.buildings[f].wake = 0;
+        crate::buildings::wake_watchers(w, f);
     }
 }
 

@@ -35,7 +35,7 @@
     if (bdef.cls === BClass.Depot) {
       const dp = d.depot;
       if (!dp || (info.level ?? 0) > 0) return null;
-      return { label: "Agrandir le dépôt", cost: dp.upgradeCost, tech: dp.upgradeTech, time: dp.upgradeTime, gain: `réserve +${dp.cap[1] - dp.cap[0]} par objet, sorties filtrées` };
+      return { label: "Agrandir le dépôt", cost: dp.upgradeCost, tech: dp.upgradeTech, time: dp.upgradeTime, gain: `${dp.cap[1]} de chaque objet au lieu de ${dp.cap[0]}, un étage de plus` };
     }
     if (bdef.cls === BClass.Power && d.generatorLevels && bdef.key === "generator") {
       const l = info.level ?? 0;
@@ -85,7 +85,7 @@
   const status = $derived.by(() => {
     // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
     if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
-    if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · stock insuffisant" : ""), kind: info.stalled ? "warn" : "build" };
+    if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · en attente de matériaux" : ""), kind: info.stalled ? "warn" : "build" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : "arrêté"} pendant le chantier)`, kind: "build" };
     // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
     const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
@@ -103,8 +103,10 @@
       const u = d.units[info.queue[0][0]];
       const lack = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n);
       const miss = lack.map(([it, n]) => `${n - (info.stash[it] ?? 0)} ${d.items[it].name}`);
-      const empty = lack.some(([it]) => (ui.stock[it] ?? 0) <= 0);
-      const how = !info.depots ? "collez un dépôt à l'usine, ou amenez-les par tapis" : empty ? "réserve du joueur épuisée pour certains" : "apport lent du dépôt : un tapis va plus vite";
+      // ce que les dépôts à portée des drones de l'usine ont encore (voir drones::site_missing)
+      const near = new Map(((info.missing ?? []) as number[][]).map(([it, , n]) => [it, n]));
+      const empty = lack.some(([it]) => (near.get(it) ?? 0) <= 0);
+      const how = empty ? `vos dépôts à moins de ${d.depot?.factorySupply ?? 30} cases n'en ont pas assez : amenez-en, ou un tapis` : "ses drones les apportent";
       if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
     if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
@@ -221,11 +223,18 @@
         <div class="status idle"><span class="led"></span>L'EPPZ a été emporté</div>
       {/if}
     {/if}
+    {#if info && info.build < 65536 && (info.missing ?? []).length}
+      <!-- chantier : ce qui manque encore, et ce que les dépôts proches en ont (drones des constructeurs) -->
+      <div class="row wrap"><span class="kicker">Manque</span>
+        {#each info.missing as [it, n, near]}<span class="miss tip"><Item id={it} n={n} size={18} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span><span class="tt"><b>{d.items[it]?.name}</b><br /><span class="num">{n}</span> encore à apporter<br /><span class="num">{near}</span> dans vos dépôts à moins de {d.depot?.near ?? 30} cases</span></span>{/each}
+      </div>
+      <span class="dim small"><Icon name="logistics" size={12} /> Les drones de vos constructeurs vont chercher les matériaux dans les dépôts proches ; un ingénieur emporte d'abord ce qui manque aux environs du chantier.</span>
+    {/if}
     {#if mine && info}
       {#if info.build < 65536}
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {:else}
-        <button class="icon-btn danger" title="Démonté par vos constructeurs les plus proches, matériaux rendus au stock" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        <button class="icon-btn danger" title="Démonté par vos constructeurs les plus proches : les matériaux vont dans leur soute, puis leurs drones les rapportent à un dépôt" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {/if}
       {#if upg && info.build >= 65536}
         <div class="upgrade">
@@ -404,10 +413,11 @@
           {@const cur = d.units[info.queue[0][0]]}
           <div class="row"><span class="kicker">En cours · {cur.name}</span>{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}</div>
         {/if}
+        {#if (info.missing ?? []).length}
+          <div class="row wrap"><span class="kicker">Manque</span>{#each info.missing as [it, n, near]}<span class="miss"><Item id={it} n={n} size={16} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span></span>{/each}</div>
+        {/if}
         <span class="dim small"><Icon name="logistics" size={12} />
-          {#if info.depots}Alimentée lentement depuis la réserve par le dépôt collé (1 objet/s{info.depots > 1 ? " : un seul dépôt compte" : ""}).
-          {:else}Collez un dépôt à l'usine : il l'alimente lentement depuis la réserve (1 objet/s), sans tapis.{/if}
-          Elle garde d'avance les composants de 2 unités.</span>
+          Ses {d.depot?.factoryDrones ?? 4} drones ({info.drones ?? 0} en vol) vont chercher les composants dans vos dépôts à moins de {d.depot?.factorySupply ?? 30} cases. Elle garde d'avance les composants de 2 unités.</span>
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
         <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}</button></div>
@@ -450,39 +460,41 @@
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
         <div class="row"><span class="kicker">Niveau</span> <span class="num">{lvl + 1} / {levels.length || 1}</span>{#if levels[lvl]}<span class="dim small num">· vitesse ×{(levels[lvl].speed / 100).toFixed(1)} · énergie ×{(levels[lvl].power / 100).toFixed(1)}</span>{/if}</div>
       {:else if bdef.cls === BClass.Belt && bdef.collect}
-        <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part dans votre stock au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
-        <div class="row"><span class="kicker">Surplus mis en réserve</span> <span class="num">{info.out ?? 0}</span></div>
+        <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part au dépôt le plus proche (à moins de {d.depot?.near ?? 30} cases) qui a de la place, au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
+        <div class="row"><span class="kicker">Surplus mis en dépôt</span> <span class="num">{info.out ?? 0}</span></div>
       {:else if bdef.cls === BClass.Depot}
         {@const dp = d.depot}
         {@const filters = (info.filters ?? []) as number[]}
-        <span class="dim small">Tout ce qui entre ici rejoint votre réserve, utilisée par vos ingénieurs. Quand la réserve d'un objet est pleine, le dépôt le refuse et le tapis attend.</span>
-        <div class="row"><span class="kicker">Réserve</span> <span class="num">{ui.stockCap}</span><span class="dim small">&nbsp;par objet{#if dp}&nbsp;· ce dépôt : +{dp.cap[Math.min(info.level ?? 0, dp.cap.length - 1)]}{/if}</span></div>
-        {#if (info.level ?? 0) > 0}
-          <div class="row"><span class="kicker">Sorties filtrées</span><span class="dim small">posées à tour de rôle sur les tapis qui partent du dépôt, ou prises par les bras</span></div>
-          <div class="row wrap">
-            {#each Array(dp?.maxFilters ?? 4) as _, k}
-              <select value={filters[k] ?? 0} disabled={!mine || (k > filters.length)} title="Objet sorti de la réserve" onchange={(e) => {
-                const v = Number((e.target as HTMLSelectElement).value);
-                const next = filters.slice();
-                if (v > 0) next[k] = v; else next.splice(k, 1);
-                client.setFilters(next.filter((x) => x > 0));
-              }}>
-                <option value={0}>— aucun —</option>
-                {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({ui.stock[i] ?? 0})</option>{/if}{/each}
-              </select>
-            {/each}
-          </div>
-        {:else}
-          <span class="dim small">Amélioré, il gagne un étage, agrandit davantage la réserve et peut sortir les objets de votre choix.</span>
+        {@const stash = (info.stash ?? []) as number[]}
+        <span class="dim small">Son stock lui est propre : les drones de vos constructeurs (commandant, ingénieurs, usines) et de vos générateurs viennent y puiser. Un objet plein (<span class="num">{info.storeCap}</span> au plus) est refusé, et le tapis attend.</span>
+        <div class="row"><span class="kicker">Stock</span>{#if !stash.some((n) => n > 0)}<span class="dim small">vide</span>{/if}</div>
+        <div class="row wrap">{#each stash as n, i}{#if i > 0 && n > 0}<span class="tip"><Item id={i} {n} size={20} /><span class="tt"><b>{d.items[i]?.name}</b><br /><span class="num">{n} / {info.storeCap}</span></span></span>{/if}{/each}</div>
+        <div class="row"><span class="kicker">Sorties</span><span class="dim small">{filters.length ? "seulement les objets choisis" : "tous les objets (par défaut)"}, posés à tour de rôle sur les tapis qui partent du dépôt, ou pris par les bras</span></div>
+        <div class="row wrap">
+          {#each Array(dp?.maxFilters ?? 4) as _, k}
+            <select value={filters[k] ?? 0} disabled={!mine || (k > filters.length)} title="Objet sorti du dépôt (aucun filtre : tout sort)" onchange={(e) => {
+              const v = Number((e.target as HTMLSelectElement).value);
+              const next = filters.slice();
+              if (v > 0) next[k] = v; else next.splice(k, 1);
+              client.setFilters(next.filter((x) => x > 0));
+            }}>
+              <option value={0}>{k === 0 ? "— tout —" : "— aucun —"}</option>
+              {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({stash[i] ?? 0})</option>{/if}{/each}
+            </select>
+          {/each}
+        </div>
+        {#if (info.level ?? 0) === 0}
+          <span class="dim small">Amélioré, il gagne un étage et garde jusqu'à {dp?.cap[1] ?? 2000} de chaque objet.</span>
         {/if}
       {:else if bdef.cls === BClass.Warehouse}
-        <span class="dim small">Ce qui entre ici rejoint le stock de l'équipe : chaque allié peut s'en servir pour construire (après son propre stock).</span>
+        {@const stash = (info.stash ?? []) as number[]}
+        <span class="dim small">Un dépôt commun à l'équipe : les drones de chaque allié peuvent y puiser (<span class="num">{info.storeCap}</span> au plus par objet).</span>
         <div class="row"><span class="kicker">Sortie</span>
           <select value={info.recipe === 255 ? 0 : info.recipe} title="Objet qu'un bras peut prendre dans l'entrepôt" onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value) || RECIPE_NONE)}>
             <option value={0}>— aucune —</option>
-            {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({ui.teamStock[i] ?? 0})</option>{/if}{/each}
+            {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name} ({stash[i] ?? 0})</option>{/if}{/each}
           </select></div>
-        <div class="row wrap">{#each ui.teamStock as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>
+        <div class="row wrap">{#each stash as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>
       {:else if bdef.cls === BClass.Router}
         {#if bdef.key === "splitter"}
           {@const sp = info.split ?? 0}
@@ -559,7 +571,7 @@
     </div>
     {#if own.length}
       <div class="row">
-        <button class="icon-btn danger" title="Démontés par vos constructeurs, matériaux rendus au stock ; les chantiers sont annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        <button class="icon-btn danger" title="Démontés par vos constructeurs, matériaux rapportés à vos dépôts ; les chantiers sont annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       </div>
     {/if}
   </div>
@@ -625,9 +637,21 @@
           {:else if h.state === 2}
             <div class="status warn"><span class="led"></span>Interrompue : le commandant combat</div>
           {:else}
-            <div class="status warn"><span class="led"></span>En attente : réserve pleine de {d.items[h.out]?.name.toLowerCase()}</div>
+            <div class="status warn"><span class="led"></span>En attente : soute pleine (aucun dépôt à portée pour la vider)</div>
           {/if}
         </div>
+      {/if}
+      {@const ud = d.units[ui.selUnits[0].kind]}
+      {#if ud.drones > 0 && ui.unitInfo.hold}
+        <!-- constructeur : soute, drones, ce qui est à portée (voir drones.rs) -->
+        {@const hold = ui.unitInfo.hold as number[]}
+        {@const reach = (ui.unitInfo.reach ?? []) as number[]}
+        {@const inHold = hold.reduce((a: number, b: number) => a + b, 0)}
+        <div class="row"><span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span><span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
+        {#if inHold > 0}<div class="row wrap">{#each hold as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>{/if}
+        {#if ui.unitInfo.loading}<div class="status build"><span class="led"></span>Charge sa soute : les environs du chantier n'ont pas tout</div>{/if}
+        <div class="row"><span class="kicker">À portée ({ud.supply} cases)</span>{#if !reach.some((n) => n > 0)}<span class="dim small">aucun dépôt garni</span>{/if}</div>
+        {#if reach.some((n) => n > 0)}<div class="row wrap">{#each reach as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={16} />{/if}{/each}</div>{/if}
       {/if}
     {/if}
     <div class="groups">
@@ -732,6 +756,7 @@
   .vet2 { font-size: 9px; color: #ffd060; }
   .share input[type="range"] { width: 100%; }
   .harvest { display: flex; flex-direction: column; gap: 5px; }
+  .miss { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
   .arrow { color: var(--accent); letter-spacing: -2px; }
   .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; max-height: 236px; overflow-y: auto; padding-right: 2px; }

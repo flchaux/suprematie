@@ -68,7 +68,7 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
         // version 2 écrite avant l'en-tête versionné ; on garde celle qui lit exactement tout le fichier
         MAGIC_V1 => {
             let start = r.pos;
-            for v in [VERSION, 1] {
+            for v in [2, 1] {
                 let mut r = R::new(bytes);
                 r.pos = start;
                 r.version = v;

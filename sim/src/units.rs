@@ -703,6 +703,17 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             }
             if let Some(b) = w.building(bid) {
+                // chantier posé : ce qui manque aux environs se charge d'abord ; puis à portée
+                if !w.buildings[b].complete() && supply_detour(w, s) {
+                    return NONE;
+                }
+                let (cx, cy) = w.buildings[b].center();
+                let range = build_range(w.buildings[b].kind, w.buildings[b].dir);
+                if dist(w.units.x[s], w.units.y[s], cx, cy) > range {
+                    retarget(w, s, cx, cy);
+                    steer(w, s, cx, cy, cx, cy, range - TILE);
+                    return NONE;
+                }
                 if !construct(w, s, b) {
                     pop_order(w, s);
                 }
@@ -765,10 +776,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                     pop_order(w, s);
                     return NONE;
                 }
+                if !w.buildings[b].complete() && supply_detour(w, s) {
+                    return NONE;
+                }
                 if dist(w.units.x[s], w.units.y[s], cx, cy) > range {
-                    if !w.buildings[b].complete() && supply_detour(w, s) {
-                        return NONE;
-                    }
                     retarget(w, s, cx, cy);
                     steer(w, s, cx, cy, cx, cy, range - TILE);
                     return NONE;
