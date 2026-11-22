@@ -879,3 +879,52 @@ pub fn chantiers_demo() -> World {
     }
     w
 }
+
+/// Démo des Transhumants (`?demo=nomades`) : une soute déployée et garnie, trois chariots de convoi (deux
+/// rapportent la sortie d'une fonderie éloignée, un livre des plaques à un assembleur éloigné), un
+/// générateur nomade et une file de poteaux relais. Réseau partout.
+pub fn nomades_demo() -> World {
+    let mut w = World::new(&[23, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    w.infinite_grid = true;
+    w.players[0].race = RACE_TRANSH;
+    let (sx, sy) = w.map.starts[0];
+    let (x0, y0) = ((sx - 20).clamp(8, w.map.w - 50), (sy - 6).clamp(8, w.map.h - 30));
+    flat(&mut w, x0 - 4, y0 - 6, x0 + 44, y0 + 16);
+    let put = |w: &mut World, kind: u16, x: i32, y: i32| -> Option<usize> {
+        let b = place_building(w, 0, kind, x, y, 0)?;
+        complete_building(w, b);
+        Some(b)
+    };
+    let recipe = |key: &str| RECIPES.iter().position(|r| r.key == key).unwrap_or(0) as u8;
+    let (hx, hy) = (x0 + 20, y0 + 4);
+    let Some(h) = put(&mut w, B_T_HOLD, hx, hy) else { return w };
+    crate::drones::put(&mut w.buildings[h].stash, IRON_PLATE, 300);
+    crate::drones::put(&mut w.buildings[h].stash, GEAR, 60);
+    if let Some(f) = put(&mut w, B_T_FURNACE, hx + 18, hy) {
+        w.buildings[f].recipe = recipe("iron_plate");
+        w.buildings[f].out = 60;
+        let fr = w.building_ref(f);
+        for _ in 0..2 {
+            if crate::transhumants::hitch(&mut w, h) {
+                let s = *crate::transhumants::carts_of(&w, h).last().unwrap();
+                w.units.cold[s].orders.push(Order::Haul { site: fr, feed: false });
+            }
+        }
+    }
+    if let Some(a) = put(&mut w, B_T_ASSEMBLER, hx - 18, hy) {
+        w.buildings[a].recipe = recipe("gear");
+        let ar = w.building_ref(a);
+        if crate::transhumants::hitch(&mut w, h) {
+            let s = *crate::transhumants::carts_of(&w, h).last().unwrap();
+            w.units.cold[s].orders.push(Order::Haul { site: ar, feed: true });
+        }
+    }
+    if let Some(g) = put(&mut w, B_T_GENERATOR, hx, hy + 6) {
+        w.buildings[g].fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
+        for k in 1..=3 {
+            crate::transhumants::plant_pole(&mut w, g, hx + 1 + 11 * k, hy + 8);
+        }
+    }
+    w.power_dirty = true;
+    w
+}

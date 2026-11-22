@@ -396,10 +396,11 @@ export class GameClient {
     const water = scene === "eau";
     // ?demo=ascenseurs : files de tapis qui changent de niveau par des ascenseurs (vu comme le joueur 0)
     // ?demo=chantiers : chantiers figés à tous les avancements, pour juger leurs barres de progression
-    if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers") ui.me = 0;
+    // ?demo=nomades : soute des Transhumants, chariots de convoi en navette, générateur et poteaux (joueur 0)
+    if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers" || scene === "nomades") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
-    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte";
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "nomades";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -2092,6 +2093,18 @@ export class GameClient {
         sfx.confirm();
         return;
       }
+      // chariots de convoi sur un de nos modules éloignés : navette avec leur soute (Maj : livrer à ce fabricant)
+      const carts = units.filter((u) => this.data!.units[u.kind].key === "t_cart").map((u) => u.id);
+      if (carts.length && this.canPickup(def.cls, tb.build)) {
+        const feed = queue && def.cls === BClass.Crafter;
+        this.cmd(Ord.haul(carts, tb.ref, feed));
+        const rest = units.filter((u) => !carts.includes(u.id));
+        if (rest.length) this.cmd(Ord.move(rest, gx, gy, queue, false));
+        this.scene?.addMarker(g.x, g.z, 0xffc83c);
+        pushMessage(feed ? `Convoi : la soute livre à ${def.name.toLowerCase()} les ingrédients de sa recette` : `Convoi : ce qui sort de ${def.name.toLowerCase()} est rapporté à la soute (Maj+clic droit sur un fabricant : le livrer)`, "info");
+        sfx.confirm();
+        return;
+      }
       // commandant ou ingénieur sur un extracteur ou un fabricant terminé : il ramasse ce qui sort, dans sa soute
       const holders = this.holdersOf(units);
       if (this.canPickup(def.cls, tb.build) && holders.length) {
@@ -2441,6 +2454,14 @@ export class GameClient {
     sfx.confirm();
     if (shift && g.poles.length < g.max) this.updateGhost();
     else this.cancelMode();
+  }
+
+  /** Transhumants : la soute sélectionnée attelle un chariot de convoi. */
+  hitchCart(): void {
+    const h = ui.selBuildings.find((b) => b.owner === ui.me && this.data?.buildings[b.kind].key === "t_hold");
+    if (!h) return;
+    this.cmd(Ord.hitch(h.ref));
+    sfx.confirm();
   }
 
   /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */

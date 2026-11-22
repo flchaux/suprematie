@@ -301,6 +301,13 @@
           <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if bdef.key === "leaves"}<span class="dim"> · les frondaisons voisines (4 cases) se font de l'ombre</span>{/if}</div>
         {/if}
       {/if}
+      {#if info.transh?.cartsMax}
+        {@const tc = info.transh}
+        <div class="row small" title="Un chariot de convoi fait la navette entre cette soute et un module éloigné : clic droit sur une foreuse ou un fabricant pour rapporter ce qui en sort, Maj+clic droit sur un fabricant pour lui livrer les ingrédients de sa recette. Les chariots rentrent dans la soute quand elle se replie.">
+          <span class="kicker">Chariots</span> <b class="num">{tc.carts}</b><span class="dim"> / <span class="num">{tc.cartsMax}</span></span>
+          {#if tc.carts < tc.cartsMax}<button class="icon-btn" onclick={() => client.hitchCart()} title="Atteler un chariot de convoi, payé avec le stock de cette soute">Atteler un chariot {#each tc.cartCost as [it, n]}<Item id={it} n={n} size={14} />{/each}</button>{/if}
+        </div>
+      {/if}
       {#if info.transh?.poles}
         {@const tp = info.transh}
         <div class="row small" title="Chaque poteau planté agrandit la zone électrique du générateur ({tp.poleReach} cases au plus entre deux poteaux). Le générateur les rembarque quand il se replie.">

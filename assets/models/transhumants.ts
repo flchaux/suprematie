@@ -17,6 +17,7 @@ import { laboratoireNomade } from "./nomades/laboratoire.ts";
 import { atelierNomade } from "./nomades/atelier.ts";
 import { bastionNomade } from "./nomades/bastion.ts";
 import { poteauNomade } from "./nomades/poteau.ts";
+import { chariotConvoi } from "./nomades/convoi.ts";
 
 // ——— Bâtiments ———
 
@@ -109,6 +110,8 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
   ch_lab: { parts: laboratoireNomade(true) },
   ch_workshop: { parts: atelierNomade(true) },
   ch_bastion: { parts: bastionNomade(true) },
+  // t_cart : chariot de convoi attelé à une soute (voir nomades/convoi.ts)
+  t_cart: { parts: chariotConvoi() },
   // tracker : pisteur, buggy léger ; quatre roues à pneus, caisse ouverte d'équipe, arceau de sécurité, pare-soleil
   // de toile, mât d'observation (pivot « tourelle ») à optique ambre et mitrailleuse, bidons
   tracker: {
