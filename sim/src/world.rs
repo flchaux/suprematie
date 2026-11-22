@@ -127,6 +127,12 @@ pub enum Order {
     /// chenillard des Transhumants : rouler jusqu'au point (x, y) (sous-unités) et s'y déployer (clic droit
     /// d'un chenillard foreuse sur un gisement ; voir transhumants::deploy_at)
     DeployAt { x: i32, y: i32 },
+    /// commandant ou ingénieur : se poster près d'un de nos extracteurs ou fabricants et ramasser ce qui
+    /// attend dans sa sortie, mis dans sa soute (voir units::PICKUP_RANGE)
+    Pickup { target: u32 },
+    /// commandant ou ingénieur : porter l'objet `item` de sa soute (0 : tout ce qu'elle contient) au dépôt
+    /// le plus proche qui a de la place (voir drones::deliver_target)
+    Deliver { item: u8 },
 }
 
 impl Order {
@@ -149,6 +155,8 @@ impl Order {
             Order::Collect { .. } => 15,
             Order::Harvest { .. } => 16,
             Order::DeployAt { .. } => 17,
+            Order::Pickup { .. } => 18,
+            Order::Deliver { .. } => 19,
         }
     }
 }
@@ -170,7 +178,8 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } => target.ser(w),
+            Order::Deliver { item } => item.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::Face { a } => a.ser(w),
             Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } | Order::DeployAt { x, y } => {
@@ -207,6 +216,8 @@ impl Ser for Order {
             15 => Order::Collect { target: u(r) },
             16 => Order::Harvest { x: i(r), y: i(r) },
             17 => Order::DeployAt { x: i(r), y: i(r) },
+            18 => Order::Pickup { target: u(r) },
+            19 => Order::Deliver { item: u8::de(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

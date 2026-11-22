@@ -126,12 +126,13 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     let (bw, bh) = crate::buildings::dims(kind, dir);
                     (x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2)
                 }
-                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Jump { beacon: target } => {
+                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Jump { beacon: target } => {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
                 Order::Harvest { x, y } => (x * TILE + TILE / 2, y * TILE + TILE / 2),
                 Order::DeployAt { x, y } => (x, y),
+                Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map_or((w.units.x[s], w.units.y[s]), |(_, b)| w.buildings[b].center()),
             };
             ((tx / TILE) & 0xfff) | (((ty / TILE) & 0xfff) << 12) | ((o.code() as i32) << 24)
         }
@@ -616,7 +617,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -637,8 +638,37 @@ pub fn info_unit(w: &World, id: u32) -> String {
         drones,
         w.building(c.supply_at).is_some(),
         c.pack,
-        if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 }
+        if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 },
+        pickup_info(w, s),
+        deliver_info(w, s)
     )
+}
+
+/// Ramassage (ordre Pickup en tête de file) : {kind (bâtiment), item (objet de sa sortie, 0 : rien), out
+/// (en attente), x, y (centre, cases), state (units::PK_*)} ou null.
+fn pickup_info(w: &World, s: usize) -> String {
+    let c = &w.units.cold[s];
+    let Some(&Order::Pickup { target }) = c.orders.first() else { return "null".into() };
+    let Some(b) = w.building(target) else { return "null".into() };
+    let bb = &w.buildings[b];
+    let it = match bb.def().class {
+        BClass::Crafter if bb.recipe != RECIPE_NONE => RECIPES[bb.recipe as usize].output.0,
+        BClass::Extractor => bb.recipe,
+        _ => 0,
+    };
+    let (x, y) = bb.center();
+    format!("{{\"kind\":{},\"item\":{},\"out\":{},\"x\":{},\"y\":{},\"state\":{}}}", bb.kind, it, bb.out, x / TILE, y / TILE, c.timer)
+}
+
+/// Livraison (ordre Deliver en tête de file) : {item (0 : toute la soute), x, y (dépôt visé, cases ; -1 :
+/// aucun)} ou null.
+fn deliver_info(w: &World, s: usize) -> String {
+    let Some(&Order::Deliver { item }) = w.units.cold[s].orders.first() else { return "null".into() };
+    let (x, y) = crate::drones::deliver_target(w, s, item).map_or((-1, -1), |(_, b)| {
+        let (x, y) = w.buildings[b].center();
+        (x / TILE, y / TILE)
+    });
+    format!("{{\"item\":{},\"x\":{},\"y\":{}}}", item, x, y)
 }
 
 /// Récolte du commandant (ordre Harvest en tête de file) : {raw, out, x, y, state, progress (‰), cycle (ticks)}
@@ -680,18 +710,19 @@ pub fn map_info(w: &World) -> Vec<i32> {
 }
 
 /// Position visée par un ordre (sous-unités), si elle existe encore.
-fn order_point(w: &World, o: &Order) -> Option<(i32, i32)> {
+fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
     match *o {
         Order::Move { x, y, .. } | Order::Patrol { x, y, .. } | Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } => Some((x, y)),
         Order::Build { kind, x, y, dir, .. } => {
             let (bw, bh) = crate::buildings::dims(kind, dir);
             Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2))
         }
-        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => w.ref_pos(target),
+        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
         Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),
         Order::DeployAt { x, y } => Some((x, y)),
+        Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map(|(_, b)| w.buildings[b].center()),
     }
 }
 
@@ -701,7 +732,7 @@ pub fn unit_orders(w: &World, ids: &[u32]) -> Vec<i32> {
     let mut out = Vec::new();
     for &id in ids.iter().take(400) {
         let Some(s) = w.unit(id) else { continue };
-        let pts: Vec<(u8, i32, i32)> = w.units.cold[s].orders.iter().filter_map(|o| order_point(w, o).map(|(x, y)| (o.code(), x, y))).take(32).collect();
+        let pts: Vec<(u8, i32, i32)> = w.units.cold[s].orders.iter().filter_map(|o| order_point(w, s, o).map(|(x, y)| (o.code(), x, y))).take(32).collect();
         out.extend_from_slice(&[id as i32, w.units.x[s], w.units.y[s], pts.len() as i32]);
         for (c, x, y) in pts {
             out.extend_from_slice(&[c as i32, x, y]);

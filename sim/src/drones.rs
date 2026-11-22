@@ -249,6 +249,41 @@ pub fn hold_room(w: &World, s: usize) -> u32 {
     (udef(w.units.kind[s]).hold as u32).saturating_sub(total(&w.units.cold[s].hold))
 }
 
+/// Événement : un constructeur n'a trouvé aucun dépôt où livrer un objet de sa soute
+/// (joueur, x, y, objet ; voir l'ordre Deliver).
+pub const EV_NO_DEPOT: i32 = 46;
+
+/// Livraison au dépôt (ordre Deliver) du constructeur `s` : objet à livrer et stock visé. Pour un objet
+/// donné, le stock utilisable le plus proche (à vol d'oiseau, sans limite de distance) qui a de la place
+/// pour lui ; pour `item` 0 (toute la soute), le plus proche qui a de la place pour au moins un des objets
+/// de la soute, et le premier de ces objets. Rien si la soute n'en a pas, ou si aucun stock n'a de place.
+pub fn deliver_target(w: &World, s: usize, item: u8) -> Option<(u8, usize)> {
+    let hold = &w.units.cold[s].hold;
+    if item as usize >= N || (item != 0 && has(hold, item) == 0) {
+        return None;
+    }
+    let near = stores_near(w, w.units.owner[s], w.units.x[s], w.units.y[s], i32::MAX);
+    near.into_iter().find_map(|(_, b)| {
+        let bb = &w.buildings[b];
+        if item != 0 {
+            return (store_room(bb, item) > 0).then_some((item, b));
+        }
+        (1..N).find(|&it| has(hold, it as u8) > 0 && store_room(bb, it as u8) > 0).map(|it| (it as u8, b))
+    })
+}
+
+/// Les drones du constructeur `s` peuvent-ils vider sa soute ? Un objet de la soute a de la place dans un
+/// stock utilisable à son rayon de ravitaillement.
+pub fn can_unload_near(w: &World, s: usize) -> bool {
+    let d = udef(w.units.kind[s]);
+    if d.drones == 0 {
+        return false;
+    }
+    let hold = &w.units.cold[s].hold;
+    let near = stores_near(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE);
+    near.iter().any(|&(_, b)| (1..N).any(|it| has(hold, it as u8) > 0 && store_room(&w.buildings[b], it as u8) > 0))
+}
+
 /// Puissance de construction effective d'une unité.
 fn build_power(w: &World, s: usize) -> u64 {
     udef(w.units.kind[s]).build_power as u64 * w.players[w.units.owner[s] as usize].build_mult as u64 / 100

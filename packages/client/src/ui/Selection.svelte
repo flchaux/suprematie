@@ -666,6 +666,29 @@
           {/if}
         </div>
       {/if}
+      {#if ui.unitInfo.pickup}
+        <!-- ramassage de la sortie d'un extracteur ou d'un fabricant (ordre Pickup) -->
+        {@const p = ui.unitInfo.pickup}
+        {@const bname = d.buildings[p.kind]?.name ?? "bâtiment"}
+        <div class="harvest">
+          <div class="flow">
+            <span class="small">{bname}</span><span class="arrow">›››</span>{#if p.item}<Item id={p.item} n={p.out} size={20} />{:else}<span class="dim small">rien</span>{/if}<span class="arrow">›››</span><span class="small">soute</span>
+          </div>
+          {#if p.state === 0}
+            <div class="status build"><span class="led"></span>En route vers {bname.toLowerCase()} ({p.x}, {p.y})</div>
+          {:else if p.state === 1}
+            <div class="status good"><span class="led"></span>Ramasse ce qui sort, à mesure</div>
+          {:else if p.state === 2}
+            <div class="status warn"><span class="led"></span>Soute pleine : ses drones la vident dans un dépôt proche</div>
+          {:else}
+            <div class="status warn"><span class="led"></span>Soute pleine : aucun de vos dépôts n'a de place</div>
+          {/if}
+        </div>
+      {/if}
+      {#if ui.unitInfo.deliver}
+        {@const dv = ui.unitInfo.deliver}
+        <div class="status build"><span class="led"></span>Livre {dv.item ? (d.items[dv.item]?.name.toLowerCase() ?? "un objet") : "sa soute"}{dv.x >= 0 ? ` au dépôt (${dv.x}, ${dv.y})` : ""}</div>
+      {/if}
       {@const ud = d.units[ui.selUnits[0].kind]}
       {#if ud.drones > 0 && ui.unitInfo.hold}
         <!-- constructeur : soute, drones, ce qui est à portée (voir drones.rs) -->
@@ -673,7 +696,14 @@
         {@const reach = (ui.unitInfo.reach ?? []) as number[]}
         {@const inHold = hold.reduce((a: number, b: number) => a + b, 0)}
         <div class="row"><span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span><span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
-        {#if inHold > 0}<div class="row wrap">{#each hold as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={18} />{/if}{/each}</div>{/if}
+        {#if inHold > 0}
+          <!-- clic sur un objet : le porter au dépôt le plus proche qui a de la place (ordre Deliver) -->
+          <div class="row wrap">
+            {#each hold as n, i}{#if i > 0 && n > 0}<button class="hitem" title="Livrer : {d.items[i]?.name} au dépôt le plus proche (Maj : en file)" onclick={(ev) => client.deliverSelected(i, ev.shiftKey)}><Item id={i} {n} size={18} /></button>{/if}{/each}
+            <button class="icon-btn hall" title="Porter toute la soute au dépôt le plus proche qui a de la place (Maj : en file)" onclick={(ev) => client.deliverSelected(0, ev.shiftKey)}>Tout livrer</button>
+          </div>
+          <span class="dim tiny">Clic sur un objet : le porter au dépôt le plus proche</span>
+        {/if}
         {#if ui.unitInfo.loading}<div class="status build"><span class="led"></span>Charge sa soute : les environs du chantier n'ont pas tout</div>{/if}
         <div class="row"><span class="kicker">À portée ({ud.supply} cases)</span>{#if !reach.some((n) => n > 0)}<span class="dim small">aucun dépôt garni</span>{/if}</div>
         {#if reach.some((n) => n > 0)}<div class="row wrap">{#each reach as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={16} />{/if}{/each}</div>{/if}
@@ -781,6 +811,9 @@
   .vet2 { font-size: 9px; color: #ffd060; }
   .share input[type="range"] { width: 100%; }
   .harvest { display: flex; flex-direction: column; gap: 5px; }
+  .hitem { display: inline-flex; align-items: center; padding: 2px 5px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); cursor: pointer; }
+  .hitem:hover { border-color: var(--accent); background: rgba(62, 240, 255, 0.08); }
+  .hall { font-size: 11px; padding: 3px 8px; }
   .miss { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
   .flow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: rgba(62, 240, 255, 0.04); border: 1px solid var(--line); }
   .arrow { color: var(--accent); letter-spacing: -2px; }

@@ -17,6 +17,8 @@ const MAX_SEG = 6000;
 export const ORDER_COLORS: Record<number, number> = {
   1: 0x6cff8c, 2: 0xffa040, 3: 0x58d8ff, 4: 0xff4d4d, 5: 0xff4d4d, 6: 0xffd060, 7: 0x7da8ff,
   8: 0xd8b060, 9: 0xc07dff, 10: 0xc07dff, 11: 0xff70e0, 12: 0xff70e0, 13: 0xc07dff,
+  // ramassage d'un tapis, récolte, déploiement, ramassage d'une sortie, livraison au dépôt
+  15: 0xffd060, 16: 0xff9a3c, 17: 0xff9a3c, 18: 0xffd060, 19: 0xffd060,
 };
 
 export class CommandOverlay {
