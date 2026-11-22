@@ -158,9 +158,16 @@ export class GameClient {
   private pauseResume = 1;
   private pauseSentAt = -1e9;
 
+  /** Pause ou reprise ; part de la dernière demande si le serveur n'a pas encore répondu (deux appuis rapides). */
   togglePause(): void {
-    this.setPaused(!this.paused());
+    const now = performance.now();
+    const on = !(now - this.pauseAskedAt < 1000 ? this.pauseAsked : this.paused());
+    this.pauseAsked = on;
+    this.pauseAskedAt = now;
+    this.setPaused(on);
   }
+  private pauseAsked = false;
+  private pauseAskedAt = -1e9;
 
   /** Menu de partie (Échap) : le met en pause si on en a le droit ; le refermer reprend la partie si le menu
    * l'avait mise en pause. */
