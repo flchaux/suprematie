@@ -5,7 +5,7 @@
 // (relevées sur les côtés) et posent quatre stabilisateurs au sol : on voit un véhicule arrêté.
 // Repère : +x à droite, +y en haut, +z vers l'avant ; le jeu met chaque modèle à la taille de son emprise.
 import type { Model, Part, Vec3 } from "./types.ts";
-import { q, voute, arceau, heliceY, heliceZ, incl, fut, chenille, coffre, bache, socleNomade, stabilisateurs, chenillard, vrille } from "./nomades/commun.ts";
+import { q, incl, fut, chenille, coffre, bache } from "./nomades/commun.ts";
 import type { C } from "./nomades/commun.ts";
 import { foreuseNomade } from "./nomades/foreuse.ts";
 import { fonderieNomade } from "./nomades/fonderie.ts";

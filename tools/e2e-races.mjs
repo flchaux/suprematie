@@ -221,7 +221,7 @@ await b.page.evaluate(([id, x, y]) => {
   sc.updateCamera();
 }, [gen.id, gen.x, gen.y]);
 await b.page.waitForTimeout(800);
-const deployBtn = b.page.locator("button.cmd[title='Déployer']");
+const deployBtn = b.page.locator("button.cmd[title^='Déployer']");
 check((await deployBtn.count()) === 1, "bouton Déployer du chenillard");
 await deployBtn.click({ force: true, timeout: 120000 });
 // mode placement : le fantôme du module suit la souris ; clic sur la position du chenillard
@@ -243,8 +243,8 @@ const mid = await b.page.evaluate((id) => {
 }, gen.id);
 check(mid === 1, "chenillard signalé en déploiement (animation des stabilisateurs)");
 await b.page.screenshot({ path: `${outDir}/races-deploiement.png`, timeout: 120000 });
-// déploiement : 15 s de jeu
-await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 340, t1, { timeout: 600000 });
+// trajet jusqu'à l'emplacement choisi, puis 15 s de déploiement
+await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 520, t1, { timeout: 900000 });
 const deployed = await b.page.evaluate(() => {
   const { client, ui } = window.__game;
   const k = ui.data.buildings.findIndex((x) => x.key === "t_generator");

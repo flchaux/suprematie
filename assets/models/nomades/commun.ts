@@ -41,17 +41,6 @@ export function heliceY(cx: number, cz: number, r: number, y0: number, y1: numbe
   return out;
 }
 
-/** Tracé d'une hélice d'axe z (vrille couchée), centrée en (cx, cy). */
-export function heliceZ(cx: number, cy: number, r: number, z0: number, z1: number, tours: number, n: number): Vec3[] {
-  const out: Vec3[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const a = t * tours * 2 * Math.PI;
-    out.push([q(cx + Math.cos(a) * r), q(cy + Math.sin(a) * r), q(z0 + (z1 - z0) * t)]);
-  }
-  return out;
-}
-
 /**
  * Place une pièce le long d'un axe incliné (canon) : `base` = origine, `elev` = hausse en degrés (0 : vers +z),
  * `d` = distance le long de l'axe, `h` = décalage perpendiculaire. Un cylindre couché dans l'axe prend rot: [90, 0, 0].
@@ -125,111 +114,7 @@ export function bache(x: number, y: number, z: number, rx: number, ry: number, l
   return p;
 }
 
-/**
- * Socle d'un module déployé de w x d cases : caisse basse entre deux larges chenilles (les côtés, brin
- * supérieur visible de dessus) à jupes d'équipe et garde-boue rouille, plateau d'acier patiné à planches, quatre
- * stabilisateurs (bras, vérin, patin posé au sol) aux coins. Plateau : |x| < w/2 - 0,32, dessus à y = 0,62 ;
- * `recul` raccourcit la caisse et le plateau à l'avant (place d'une rampe).
- */
-export function socleNomade(w: number, d: number, recul = 0): Part[] {
-  const hw = w / 2;
-  const hd = d / 2;
-  const tx = q(hw - 0.17);
-  const tl = q(d - 0.5);
-  const dx = q(hw - 0.32);
-  const p: Part[] = [
-    ...chenille(tx, tl, 0.46, 0.3, 0.04),
-    // jupes d'équipe sur le flanc des chenilles (laissent voir les galets), garde-boue aux deux bouts
-    { shape: "box", size: [0.03, 0.24, q(tl - 0.3)], pos: [q(tx + 0.165), 0.36, 0], color: "faction", mirror: true },
-    { shape: "box", size: [0.035, 0.04, q(tl - 0.3)], pos: [q(tx + 0.168), 0.48, 0], color: "rust", mirror: true },
-    { shape: "box", size: [0.34, 0.04, 0.24], pos: [tx, 0.53, q(tl / 2 - 0.14)], color: "rust", mirror: true },
-    { shape: "box", size: [0.34, 0.04, 0.24], pos: [tx, 0.53, q(-tl / 2 + 0.14)], color: "rust", mirror: true },
-    // caisse basse et plateau
-    { shape: "bevel", size: [q(2 * dx - 0.06), 0.42, q(d - 0.26 - recul)], pos: [0, 0.36, q(-recul / 2)], bevel: 0.04, color: "dark" },
-    { shape: "bevel", size: [q(2 * dx), 0.06, q(d - 0.3 - recul)], pos: [0, 0.59, q(-recul / 2)], bevel: 0.02, color: "metal" },
-    ...[-0.5, 0, 0.5].map((f): Part => ({ shape: "box", size: [0.015, 0.012, q(d - 0.34 - recul)], pos: [q(f * dx), 0.624, q(-recul / 2)], color: "dark", fine: true })),
-  ];
-  // stabilisateurs : bras rouille sortis de la caisse, vérin d'acier, patin sombre au sol
-  for (const sz of [1, -1]) {
-    const x1 = q(hw - 0.16);
-    const z1 = q(sz * (hd - 0.12));
-    p.push(
-      { shape: "tube", radius: 0.045, sides: 4, path: [[q(dx - 0.2), 0.42, q(sz * (hd - 0.16))], [x1, 0.42, z1]], color: "rust", mirror: true },
-      { shape: "cylinder", sides: 6, radius: 0.06, height: 0.16, pos: [x1, 0.38, z1], color: "dark", mirror: true, fine: true },
-      { shape: "cylinder", sides: 6, radius: 0.04, height: 0.4, pos: [x1, 0.23, z1], color: "steel", mirror: true },
-      { shape: "cylinder", sides: 6, radius: 0.13, radiusTop: 0.09, height: 0.06, pos: [x1, 0.03, z1], color: "dark", mirror: true },
-      { shape: "box", size: [0.12, 0.03, 0.03], pos: [x1, 0.47, z1], color: "hazard", mirror: true, fine: true },
-    );
-  }
-  return p;
-}
-
-/**
- * Stabilisateurs d'un chenillard de longueur l (pivot « stabilisateurs ») : quatre bras rouille sortis de la caisse,
- * vérin d'acier et patin posé au sol, aux coins. Le jeu ne les montre que pendant le déploiement (ils sortent de
- * la caisse en 15 s) et le repli (ils rentrent en 10 s) ; déployé, le module a les mêmes sur son socle.
- */
-export function stabilisateurs(l: number): Part[] {
-  const h = l / 2;
-  // ancre du pivot : centre de la caisse (les bras en sortent)
-  const p: Part[] = [{ shape: "box", size: [0.05, 0.05, 0.05], pos: [0, 0.42, 0], color: "dark", pivot: "stabilisateurs" }];
-  for (const sz of [1, -1]) {
-    const z1 = q(sz * (h - 0.3));
-    p.push(
-      { shape: "box", size: [0.78, 0.12, 0.14], pos: [0.81, 0.44, z1], color: "rust", mirror: true, pivot: "stabilisateurs" },
-      { shape: "box", size: [0.3, 0.13, 0.15], pos: [0.95, 0.44, z1], color: "hazard", mirror: true, pivot: "stabilisateurs" },
-      { shape: "cylinder", sides: 6, radius: 0.07, height: 0.44, pos: [1.2, 0.22, z1], color: "steel", mirror: true, pivot: "stabilisateurs" },
-      { shape: "cylinder", sides: 6, radius: 0.2, radiusTop: 0.13, height: 0.07, pos: [1.2, 0.035, z1], color: "dark", mirror: true, pivot: "stabilisateurs" },
-    );
-  }
-  return p;
-}
-
-/**
- * Châssis commun des chenillards (modules repliés) : longueur l (z), deux larges chenilles, garde-chenilles
- * rouille, jupes d'équipe, caisse basse à nez incliné, plateau de planches, cabine basse à toit de bâche,
- * phares ambre, échappement, coffres arrière. Le chargement se pose sur le plateau : x de -0,64 à 0,64,
- * z de -l/2 à l/2 - 0,75, y = 0,65.
- */
-export function chenillard(l = 2.6): Part[] {
-  const h = l / 2;
-  return [
-    ...chenille(0.66, l, 0.5, 0.38, 0, 0, 0.25, true),
-    // garde-chenille étroit côté caisse : le brin supérieur et ses crampons restent visibles
-    { shape: "bevel", size: [0.1, 0.05, q(l - 0.14)], pos: [0.46, 0.535, 0], bevel: 0.015, color: "metal", mirror: true },
-    ...stabilisateurs(l),
-    { shape: "box", size: [0.03, 0.16, q(l * 0.74)], pos: [0.875, 0.45, -0.08], color: "faction", mirror: true },
-    // caisse basse à nez incliné
-    { shape: "extrude", profile: [[-h, 0.18], [q(h - 0.25), 0.18], [h, 0.4], [q(h - 0.08), 0.6], [q(-h + 0.04), 0.6], [-h, 0.48]], depth: 0.9, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
-    // plateau de planches
-    { shape: "box", size: [1.32, 0.05, q(l - 0.78)], pos: [0, 0.625, -0.36], color: "wood" },
-    ...[-0.33, 0, 0.33].map((x): Part => ({ shape: "box", size: [0.015, 0.012, q(l - 0.8)], pos: [x, 0.652, -0.36], color: "dark", fine: true })),
-    // cabine basse : caisse d'acier patiné, fente vitrée, toit de bâche, phares
-    { shape: "bevel", size: [1.16, 0.36, 0.52], pos: [0, 0.8, q(h - 0.38)], bevel: 0.04, color: "metal" },
-    { shape: "box", size: [0.86, 0.07, 0.03], pos: [0, 0.88, q(h - 0.115)], color: "glass" },
-    { shape: "extrude", profile: voute(0.6, 0.14, 6), depth: 0.6, pos: [0, 0.97, q(h - 0.38)], color: "dry" },
-    { shape: "box", size: [0.1, 0.06, 0.03], pos: [0.42, 0.72, q(h - 0.115)], color: "amber", mirror: true },
-    // échappement
-    { shape: "tube", radius: 0.04, path: [[0.5, 0.86, q(h - 0.66)], [0.5, 1.2, q(h - 0.66)], [0.5, 1.26, q(h - 0.74)]], bend: 0.06, color: "rust" },
-    // coffres arrière sur les garde-chenilles
-    ...coffre([0.66, 0.65, q(-h + 0.28)], [0.3, 0.16, 0.36], "rust"),
-    ...coffre([-0.66, 0.65, q(-h + 0.28)], [0.3, 0.16, 0.36], "rust"),
-    // crochet d'attelage
-    { shape: "box", size: [0.2, 0.08, 0.12], pos: [0, 0.3, q(-h - 0.02)], color: "steel", fine: true },
-  ];
-}
-
 // ——— Modules repliés (chargements des chenillards et pièces communes aux modules déployés) ———
-
-/** Vrille verticale (pivot « foret », elle tourne au travail) d'axe (x, z), de y0 à y1. */
-export function vrille(x: number, z: number, y0: number, y1: number, r: number, pivot?: string): Part[] {
-  const l = y1 - y0;
-  const tag = pivot ? { parent: pivot } : {};
-  return [
-    { shape: "lathe", sides: 10, pos: [x, y0, z], color: "dark", ...(pivot ? { pivot } : {}), profile: [[0, 0], [q(r * 0.25), q(l * 0.06)], [q(r * 0.35), q(l * 0.16)], [q(r * 0.35), q(l)], [0, q(l)]] },
-    { shape: "tube", radius: q(r * 0.2), sides: 4, path: heliceY(x, z, q(r * 0.62), q(y0 + l * 0.08), q(y1 - 0.06), 3.5, 28), bend: 0, color: "steel", fine: true, ...tag },
-  ];
-}
 
 /**
  * Châssis d'un chariot des Transhumants (unité repliée et module déployé : même géométrie) : deux larges chenilles,
