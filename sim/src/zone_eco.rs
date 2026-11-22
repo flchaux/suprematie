@@ -5,7 +5,7 @@
 //!   couvre la case, comme le rattachement des bâtiments (`rebuild_power`). Sinon, un générateur à sec qui
 //!   couvre la case : sa zone éteinte. Souche : le réseau de racines dont le terreau couvre la case.
 //! - Stock : dépôts du joueur rattachés à la zone (emprise touchée par la zone) et soutes de ses unités qui
-//!   s'y trouvent ; plus sa bourse (ADN, relevés), qui n'a pas de lieu. Souche : réserve du réseau.
+//!   s'y trouvent (celle du commandant est un dépôt : son plafond compte) ; plus sa bourse (ADN, relevés), qui n'a pas de lieu. Souche : réserve du réseau.
 //! - Production et consommation maximales : toutes les machines terminées de la zone à pleine vitesse
 //!   (énergie à 100 %, cadence, pureté, niveau, usure des gisements), sans pénurie ni sortie bloquée.
 //!   Les chantiers ne comptent pas. Débits en centièmes d'objet par minute.
@@ -196,7 +196,7 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
 /// Économie de la zone au centre de l'écran (case tx, ty) pour le joueur `p` (JSON) :
 /// `zone` : 0 aucune, 1 réseau vivant, 2 zone éteinte (générateur à sec), 3 réseau de racines ;
 /// `net` : réseau (1, 3) ; `gen` : référence du générateur à sec (2) ; `stock` : objets par type ; `cap` :
-/// plafond total des dépôts de la zone (Souche : de la réserve) ; `prod`, `cons` : débits maximaux en
+/// plafond total des dépôts de la zone, soute du commandant comprise s'il y est (Souche : de la réserve) ; `prod`, `cons` : débits maximaux en
 /// centièmes par minute ; `machines` : machines comptées.
 pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
     let Some(pl) = (p >= 0).then(|| w.players.get(p as usize)).flatten() else { return "null".into() };
@@ -234,13 +234,18 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
                 }
             }
         }
-        // soutes des unités du joueur (commandant, ingénieurs) qui se trouvent dans la zone
+        // soutes des unités du joueur (commandant, ingénieurs) qui se trouvent dans la zone ; celle du
+        // commandant est un dépôt mobile (plafond COMMANDER_CAP)
+        let store = crate::drones::commander_store(w, p);
         for s in 0..w.units.alive.len() {
             let h = &w.units.cold[s].hold;
-            if !w.units.alive[s] || w.units.owner[s] != p || h.iter().all(|&n| n == 0) {
+            if !w.units.alive[s] || w.units.owner[s] != p || (h.iter().all(|&n| n == 0) && store != Some(s)) {
                 continue;
             }
             if zone_of(w, p, w.units.x[s].div_euclid(TILE), w.units.y[s].div_euclid(TILE), 1, 1, None) == z {
+                if store == Some(s) {
+                    cap += crate::drones::COMMANDER_CAP as i64;
+                }
                 for (i, &n) in h.iter().enumerate().take(N) {
                     stock[i] += n as i64;
                 }

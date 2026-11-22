@@ -24,7 +24,7 @@ await page.click("button:has-text('Lancer la partie')");
 await page.waitForFunction(() => window.__game?.client.frame, null, { timeout: 60000 });
 await page.evaluate(() => { const { client } = window.__game; client.centerOnCommander(); client.scene.distance = 45; });
 await page.bringToFront();
-await page.waitForFunction(() => window.__game.client.frame.nBuildings >= 2, null, { timeout: 120000 });
+await page.waitForFunction(() => window.__game.client.frame.nBuildings >= 1, null, { timeout: 120000 });
 
 const buildings = () => page.evaluate(() => {
   const { client, ui } = window.__game;

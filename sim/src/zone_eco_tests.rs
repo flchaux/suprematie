@@ -151,3 +151,21 @@ fn souche_follows_the_root_network() {
     // une sève par seconde
     assert!(field(&s, "prod")[SEVE as usize] >= 6000);
 }
+
+/// La soute du commandant est un dépôt mobile : son stock et son plafond comptent dans la zone où il est.
+#[test]
+fn commander_hold_counts_where_he_stands() {
+    let mut w = World::new(&params());
+    w.infinite_grid = false;
+    w.place_start_buildings();
+    for _ in 0..3 {
+        w.step(&[]);
+    }
+    let s = w.unit(w.players[0].commander).unwrap();
+    let (tx, ty) = (w.units.x[s] / crate::fixed::TILE, w.units.y[s] / crate::fixed::TILE);
+    assert!(matches!(zone_at(&w, 0, tx, ty), Zone::Live(_)), "le commandant part dans la zone du générateur principal");
+    let e = zone_economy(&w, 0, tx, ty);
+    assert_eq!(field(&e, "stock")[IRON_PLATE as usize], crate::drones::has(&w.units.cold[s].hold, IRON_PLATE) as i64);
+    assert!(field(&e, "stock")[IRON_PLATE as usize] > 0, "ressources de départ dans sa soute");
+    assert_eq!(field(&e, "cap"), [crate::drones::COMMANDER_CAP as i64]);
+}

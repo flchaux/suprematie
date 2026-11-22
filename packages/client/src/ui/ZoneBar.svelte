@@ -71,7 +71,7 @@
             <span class="num">{n}</span> dans la réserve de ce réseau (plafond <span class="num">{z.cap ?? 0}</span>)<br />
           {:else}
             <span class="num">{n}</span> dans les dépôts de cette zone et les soutes de vos unités qui s'y trouvent<br />
-            Capacité des dépôts de la zone : <span class="num">{z.cap ?? 0}</span> de chaque objet{#if fill >= 1} <b class="bad">pleins</b>{/if}<br />
+            Capacité des dépôts de la zone (soute du commandant comprise s'il y est) : <span class="num">{z.cap ?? 0}</span> de chaque objet{#if fill >= 1} <b class="bad">pleins</b>{/if}<br />
             {#if team > 0}<span class="num">{team}</span> dans les entrepôts de l'équipe<br />{/if}
           {/if}
           Production maximale : <span class="num">{rate(p)}</span> par minute<br />
