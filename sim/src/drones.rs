@@ -254,11 +254,8 @@ fn build_power(w: &World, s: usize) -> u64 {
     udef(w.units.kind[s]).build_power as u64 * w.players[w.units.owner[s] as usize].build_mult as u64 / 100
 }
 
-/// Chantier en tête de file d'un constructeur : centre, portée de construction, avance voulue par objet.
+/// Chantier en tête de file d'un constructeur : avance voulue par objet.
 struct Head {
-    cx: i32,
-    cy: i32,
-    range: i32,
     ahead: [u32; N],
 }
 
@@ -335,7 +332,7 @@ fn queue_need(w: &World, s: usize, r: i32) -> ([u32; N], [u32; N], Option<Head>)
             }
         }
         if i == 0 {
-            head = Some(Head { cx, cy, range, ahead });
+            head = Some(Head { ahead });
         }
     }
     (need, deficit, head)
