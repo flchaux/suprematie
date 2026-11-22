@@ -713,6 +713,49 @@ fn elevated_belts_cross_over_ground_belts() {
     assert!(sent[0] >= 25 && sent[1] >= 25);
 }
 
+/// Double clic sur un tapis : son chemin suit les ascenseurs mais pas la ligne croisée par-dessus.
+#[test]
+fn belt_path_follows_elevators_not_crossings() {
+    let (w, a, b) = crossing_world();
+    let at = |x: i32, y: i32, f: u8| w.map.occ_floor(w.map.idx(x, y), f) as usize - 1;
+    let pa = crate::belts::belt_path(&w, a);
+    let mut want: Vec<usize> = (100..104).map(|x| at(x, 100, 0)).chain((104..111).map(|x| at(x, 100, 1))).chain((111..114).map(|x| at(x, 100, 0))).collect();
+    want.sort_unstable();
+    assert_eq!(pa, want, "montée, étage et descente, sans la ligne du dessous");
+    // depuis le milieu de l'étage : le même chemin
+    assert_eq!(crate::belts::belt_path(&w, at(107, 100, 1)), want);
+    let pb = crate::belts::belt_path(&w, b);
+    let mut want_b: Vec<usize> = (95..104).map(|y| at(107, y, 0)).collect();
+    want_b.sort_unstable();
+    assert_eq!(pb, want_b);
+}
+
+/// Double clic sur un tapis : virages et arrivées par le côté comptent, le chemin s'arrête aux tapis
+/// de contrôle et aux tapis d'un autre joueur.
+#[test]
+fn belt_path_stops_at_routers() {
+    let mut w = world(&[0, 0]);
+    flatten(&mut w, 90, 95, 130, 125);
+    let mut before: Vec<usize> = (100..105).map(|x| put(&mut w, 0, B_BELT1, x, 110, 0)).collect();
+    // arrivée par le côté (vers le sud) dans le tapis (102, 110)
+    before.extend((105..110).map(|y| put(&mut w, 0, B_BELT1, 102, y, 1)));
+    let sp = put(&mut w, 0, B_SPLITTER, 105, 110, 0);
+    // après le répartiteur : vers l'est puis virage vers le sud
+    let mut after: Vec<usize> = (106..111).map(|x| put(&mut w, 0, B_BELT1, x, 110, 0)).collect();
+    after.extend((110..115).map(|y| put(&mut w, 0, B_BELT1, 111, y, 1)));
+    // un tapis rapide prolonge le chemin (autre vitesse, autre ligne, même chemin)
+    after.push(put(&mut w, 0, B_BELT2, 111, 115, 1));
+    // la file continue chez un autre joueur : pas dans le chemin
+    let other = put(&mut w, 1, B_BELT1, 111, 116, 1);
+    before.sort_unstable();
+    after.sort_unstable();
+    assert_eq!(crate::belts::belt_path(&w, before[0]), before);
+    assert_eq!(crate::belts::belt_path(&w, *before.last().unwrap()), before, "depuis la branche latérale");
+    assert_eq!(crate::belts::belt_path(&w, after[3]), after);
+    assert!(!after.contains(&other) && !after.contains(&sp));
+    assert!(crate::belts::belt_path(&w, sp).is_empty(), "un répartiteur n'est pas un tapis");
+}
+
 #[test]
 fn elevated_placement_rules() {
     let mut w = world(&[0]);

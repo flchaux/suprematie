@@ -1504,7 +1504,17 @@ export class GameClient {
           if (!add) this.selected.clear();
           // plusieurs bâtiments (Maj+clic, double-clic, cadre) : la sélection n'a plus d'unités
           for (const id of [...this.selected]) if (!Ord.isBuildingRef(id)) this.selected.delete(id);
-          if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350) {
+          if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350 && this.data!.buildings[b.kind]?.cls === BClass.Belt) {
+            // double-clic sur un tapis : tout son chemin, jusqu'aux tapis de contrôle (requête à la simulation)
+            this.selected.add(b.ref);
+            const click = now;
+            void this.query<number[]>("beltPath", [b.ref]).then((refs) => {
+              // sélection changée entre-temps (autre clic) : ne rien ajouter
+              if (this.lastClick.time !== click || !this.selected.has(b.ref)) return;
+              for (const r of refs ?? []) this.selected.add(r);
+              this.updateUi();
+            });
+          } else if (!add && b.owner === ui.me && this.lastClick.id === b.ref && now - this.lastClick.time < 350) {
             // double-clic : tous nos bâtiments de ce type à l'écran
             const el = this.canvasEl!;
             for (const ref of this.ownBuildingsInRect(0, 0, el.clientWidth, el.clientHeight, b.kind)) this.selected.add(ref);

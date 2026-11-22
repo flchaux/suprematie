@@ -36,6 +36,7 @@ export interface SimExports {
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
   research_queue(player: number): number;
+  belt_path(r: number): number;
 }
 
 const dec = new TextDecoder();
@@ -110,6 +111,10 @@ export class Sim {
   /** File de recherche d'un joueur (technologies dans l'ordre). */
   researchQueue(player: number): Int32Array {
     return this.outI32(this.ex.research_queue(player));
+  }
+  /** Chemin de tapis du tapis `ref` (double clic) : références de ses tapis, sans traverser un tapis de contrôle. */
+  beltPath(ref: number): number[] {
+    return Array.from(this.outI32(this.ex.belt_path(ref)), (r) => r >>> 0);
   }
   plannedBuilds(player: number): Int32Array {
     return this.outI32(this.ex.planned_builds(player));
