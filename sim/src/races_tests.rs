@@ -182,7 +182,9 @@ fn organs_grow_on_terreau_only_and_draw_their_network() {
     let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
     // loin du terreau : refusé ; sur le terreau : planté
     assert!(place_building(&mut w, 0, B_LEAVES, hx + 20, hy, 0).is_none());
-    let leaves = (0..4).find_map(|k| place_building(&mut w, 0, B_LEAVES, hx + 4 + k, hy - 3, 0)).expect("frondaison sur le terreau");
+    // le terreau de départ est petit (deux cases autour de la graine-mère) : une place à son bord
+    let spots = [(3, 0), (3, 1), (-2, 0), (-2, 1), (0, 3), (1, 3), (0, -2), (1, -2), (3, 3), (-2, -2), (3, -2), (-2, 3)];
+    let leaves = spots.iter().find_map(|&(dx, dy)| place_building(&mut w, 0, B_LEAVES, hx + dx, hy + dy, 0)).expect("frondaison sur le terreau");
     let before = net_of(&w, heart).seve;
     steps(&mut w, 10);
     assert!(!w.buildings[leaves].complete());
@@ -224,22 +226,28 @@ fn roots_link_only_by_contact() {
         complete_building(w, b);
         b
     };
-    // collée à la graine-mère par un côté : même réseau
+    // collée à la graine-mère par un côté : posée, même réseau
     let a = put(&mut w, hx - 1, hy + 1);
-    // à deux cases (terreaux qui se recouvrent, mais pas de contact) : réseau à part
-    let b = put(&mut w, hx - 3, hy + 1);
-    // en diagonale de `a` (un coin seulement) : à part aussi
-    let c = put(&mut w, hx - 2, hy + 2);
-    crate::buildings::rebuild_power(&mut w);
-    assert_eq!(w.buildings[a].net, w.buildings[heart].net, "racine collée");
-    assert_ne!(w.buildings[b].net, w.buildings[heart].net, "racine sans contact");
-    assert_ne!(w.buildings[c].net, w.buildings[heart].net, "racine en diagonale");
-    // la case qui manque est posée : tout se relie
+    // sur le terreau mais sans contact (à deux cases de `a`) : refusée, pas de réseau isolé
+    assert!(place_building(&mut w, 0, B_ROOT, hx - 3, hy + 1, 0).is_none(), "racine sans contact");
+    // en diagonale de `a` (un coin seulement) : refusée aussi
+    assert!(place_building(&mut w, 0, B_ROOT, hx - 2, hy + 2, 0).is_none(), "racine en diagonale");
+    // la case qui manque, puis la suivante : le câble avance d'une case à la fois
     let d = put(&mut w, hx - 2, hy + 1);
+    let b = put(&mut w, hx - 3, hy + 1);
+    // une racine encore en croissance compte : on peut s'y coller
+    let g = place_building(&mut w, 0, B_ROOT, hx - 4, hy + 1, 0).expect("racine collée à la précédente");
+    assert!(!w.buildings[g].complete());
+    assert!(place_building(&mut w, 0, B_ROOT, hx - 5, hy + 1, 0).is_some(), "collée à une racine en croissance");
     crate::buildings::rebuild_power(&mut w);
-    for r in [b, c, d] {
+    for r in [a, d, b] {
         assert_eq!(w.buildings[r].net, w.buildings[heart].net);
     }
+    // une file tracée doit partir du réseau : détachée, elle est refusée en entier ; collée, acceptée
+    let line = |x0: i32| (0..4).map(|k| (x0 - k, hy - 3, 0u8)).collect::<Vec<_>>();
+    assert!(crate::buildings::can_place_line(&w, 0, B_ROOT, &line(hx - 1)).iter().all(|&ok| !ok), "file détachée");
+    let col: Vec<(i32, i32, u8)> = (0..4).map(|k| (hx - 1, hy + 2 + k, 0u8)).collect();
+    assert!(crate::buildings::can_place_line(&w, 0, B_ROOT, &col).iter().all(|&ok| ok), "file collée à `a`");
 }
 
 #[test]
@@ -299,7 +307,7 @@ fn matrix_researches_with_adn_and_digestion_feeds_it() {
     complete_building(&mut w, m);
     // un ennemi meurt sur le terreau : digéré, il donne de l'ADN
     let (cx, cy) = w.buildings[heart].center();
-    let foe = w.spawn_unit(U_LIGHT_TANK, 1, cx + 3 * TILE, cy + 5 * TILE);
+    let foe = w.spawn_unit(U_LIGHT_TANK, 1, cx + 3 * TILE, cy + 3 * TILE);
     let fs = w.unit(foe).unwrap();
     crate::combat::damage_unit(&mut w, fs, 100_000, 0);
     w.step(&[]);
@@ -314,10 +322,14 @@ fn matrix_researches_with_adn_and_digestion_feeds_it() {
 #[test]
 fn organisms_regenerate_on_terreau() {
     let mut w = game(RACE_SOUCHE, RACE_INDUS);
-    let q = w.unit(w.players[0].commander).unwrap();
-    w.units.hp[q] = 5000;
+    let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
+    let (cx, cy) = w.buildings[heart].center();
+    let g = w.spawn_unit(U_GNAWER, 0, cx, cy + 5 * TILE / 2);
+    let s = w.unit(g).unwrap();
+    w.units.hp[s] = 100;
     steps(&mut w, 100);
-    assert!(w.units.hp[q] > 5000, "la Reine guérit sur le terreau");
+    let s = w.unit(g).unwrap();
+    assert!(w.units.hp[s] > 100, "un organisme guérit sur le terreau");
     // le feu fait 50 % de plus aux organismes
     assert_eq!(crate::races::family_mult(41, true), 1500);
     assert_eq!(crate::races::family_mult(41, false), 1000);
