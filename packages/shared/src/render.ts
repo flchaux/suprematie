@@ -19,6 +19,8 @@ export const EV = {
   UNIT_CREATED: 10, SHIELD_HIT: 11, TELEPORT: 12, FIRE: 13, INTERCEPT: 14, ORBITAL: 15, GAME_OVER: 16, PROMOTED: 17, GIFT: 18, ATTACKED: 19, FACTORY_STARVED: 20, FUEL_LOW: 41, FUEL_DRY: 42, SHARDS: 43, EPPZ: 44, DEPLOY_FAILED: 45, NO_DEPOT: 46, TAMED: 47,
   /** éclosion d'un œuf de la Souche : x, y, type de l'œuf | type de l'organisme << 8, joueur | orientation << 8 */
   HATCH: 48,
+  /** Transhumants : butin pris sur une victime détruite : (x, y, joueur, objets récupérés) */
+  LOOT: 49,
 } as const;
 
 export const UF = { FIRING: 1, WORKING: 2, CHARGING: 4, STUNNED: 8, DEPLOYED: 16, SHIELD: 32, IDLE: 64, CARGO: 128 } as const;

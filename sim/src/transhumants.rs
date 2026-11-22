@@ -39,6 +39,13 @@ pub const RELEVES_PER_KILL_TIER: i32 = 4;
 pub const LAB_TRICKLE: u32 = 40;
 /// Événement : un chenillard n'a pas pu se déployer [joueur, x, y, type d'unité].
 pub const EV_DEPLOY_FAILED: i32 = 45;
+/// Butin : un Transhumant qui détruit une unité ou un bâtiment ennemi en récupère une part du coût, versée
+/// à sa réserve la plus proche : [x, y (sous-unités), joueur, objets récupérés].
+pub const EV_LOOT: i32 = 49;
+/// Part du coût de la victime prise en butin (%), arrondie au plus proche pour chaque objet.
+pub const LOOT_PCT: u32 = 25;
+/// Bâtiment détruit : pillé par l'unité des Transhumants la plus proche, à cette distance au plus (cases).
+pub const LOOT_RANGE: i32 = 15;
 /// Poteaux relais qu'un générateur nomade peut avoir plantés en même temps.
 pub const POLES_PER_GEN: usize = 10;
 
@@ -600,6 +607,68 @@ pub fn kill_credit(w: &mut World, killer: u8, tier: u8) {
             p.produced[RELEVES as usize] += n as u32;
         }
     }
+}
+
+/// Butin du joueur `looter` sur une victime de `victim` détruite en (x, y) qui valait `cost` : LOOT_PCT % de
+/// chaque objet (arrondi au plus proche), versés à la réserve du pillard la plus proche (dépôt, soute,
+/// Arche). Rien pour un autre peuple, un allié ou la faune ; ni monnaie de race, ni sève, ni sels.
+fn loot(w: &mut World, looter: u8, victim: u8, x: i32, y: i32, cost: &[(u8, u32)]) {
+    if !w.players.get(looter as usize).is_some_and(|p| p.race == RACE_TRANSH) {
+        return;
+    }
+    let vt = w.team_of(victim);
+    if vt == w.team_of(looter) || vt == crate::nature::NATURE_TEAM {
+        return;
+    }
+    let mut total = 0;
+    for &(it, n) in cost {
+        if crate::races::is_currency(it) || it == SEVE || it == SELS {
+            continue;
+        }
+        let g = (n * LOOT_PCT + 50) / 100;
+        if g > 0 {
+            crate::drones::refund(w, looter, x, y, it, g);
+            total += g;
+        }
+    }
+    if total > 0 {
+        w.ev(EV_LOOT, x, y, looter as i32, total as i32);
+    }
+}
+
+/// Unité `s` détruite par une unité du joueur `killer` (dernier coup) : butin si c'est un Transhumant.
+pub fn loot_unit(w: &mut World, killer: u8, s: usize) {
+    let cost: Vec<(u8, u32)> = udef(w.units.kind[s]).cost.iter().map(|&(it, n)| (it, n as u32)).collect();
+    let (x, y, owner) = (w.units.x[s], w.units.y[s], w.units.owner[s]);
+    loot(w, killer, owner, x, y, &cost);
+}
+
+/// Bâtiment `b` détruit : l'unité ennemie des Transhumants la plus proche (à LOOT_RANGE cases au plus ; à
+/// égalité, la plus petite) le pille ; un chantier ne rend que ce qui y a été apporté.
+pub fn loot_building(w: &mut World, b: usize) {
+    if !w.players.iter().any(|p| p.race == RACE_TRANSH) {
+        return;
+    }
+    let bb = &w.buildings[b];
+    let (owner, (cx, cy)) = (bb.owner, bb.center());
+    let team = w.team_of(owner);
+    let r = (LOOT_RANGE * TILE) as i64;
+    let mut best: Option<(i64, usize)> = None;
+    w.grid.coarse.query(cx, cy, LOOT_RANGE * TILE, |s| {
+        let o = w.units.owner[s];
+        if !w.units.alive[s] || w.team_of(o) == team || w.players[o as usize].race != RACE_TRANSH {
+            return;
+        }
+        let d = dist2(cx, cy, w.units.x[s], w.units.y[s]);
+        if d <= r * r && best.is_none_or(|(bd, bs)| (d, s) < (bd, bs)) {
+            best = Some((d, s));
+        }
+    });
+    let Some((_, s)) = best else { return };
+    let complete = bb.complete();
+    let cost: Vec<(u8, u32)> = bb.def().cost.iter().enumerate().map(|(k, &(it, n))| (it, if complete { n as u32 } else { bb.paid[k] as u32 })).collect();
+    let looter = w.units.owner[s];
+    loot(w, looter, owner, cx, cy, &cost);
 }
 
 /// Soute d'un Transhumant : elle alimente depuis son stock les fabricants collés à ses faces (un objet

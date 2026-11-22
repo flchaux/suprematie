@@ -95,7 +95,7 @@ pub struct RaceDef {
 pub const RACES: [RaceDef; NUM_RACES] = [
     RaceDef { key: "industriels", name: "Industriels", desc: "Tapis, bras, fonderies et assembleurs, électricité par zones, laboratoires et lots de recherche." },
     RaceDef { key: "souche", name: "Souche", desc: "Base vivante : un réseau de racines met en commun sève et sels, les organes poussent seuls, la race évolue en digérant les cadavres." },
-    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration." },
+    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration ; butin : un quart de ce qu'ils détruisent." },
 ];
 
 // ---------- Recettes ----------

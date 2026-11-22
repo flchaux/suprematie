@@ -799,3 +799,56 @@ fn a_generator_plants_ten_poles_at_most_and_takes_them_back_when_it_folds() {
     order(&mut w, 1, O_PLANT_POLE, &[r, gx, gy - 4]);
     assert_eq!(poles(&w), 0);
 }
+
+// ---------- Butin ----------
+
+fn kill_unit_by(w: &mut World, s: usize, killer: usize) {
+    w.units.cold[s].last_hit = w.unit_id(killer);
+    w.units.hp[s] = 0;
+    w.dead_units.push(s as u32);
+    steps(w, 1);
+}
+
+#[test]
+fn transhumants_loot_a_quarter_of_what_they_destroy() {
+    let mut w = game(RACE_TRANSH, RACE_INDUS);
+    let ark = find_unit(&w, 0, U_ARK).unwrap();
+    let (ax, ay) = (w.units.x[ark], w.units.y[ark]);
+    let (tx, ty) = (ax / TILE, ay / TILE);
+    flatten(&mut w, tx - 30, ty - 6, tx + 30, ty + 6);
+    let items = [STEEL, GEAR, CIRCUIT, IRON_PLATE];
+    let stock = |w: &World, p: usize| items.map(|it| w.stock(p, it));
+    // char léger ennemi (3 acier, 3 engrenages, 2 circuits) achevé par l'Arche : un quart, arrondi, de chaque
+    let s0 = stock(&w, 0);
+    let id = w.spawn_unit(U_LIGHT_TANK, 1, ax + 3 * TILE, ay);
+    let s = w.unit(id).unwrap();
+    kill_unit_by(&mut w, s, ark);
+    let s1 = stock(&w, 0);
+    assert_eq!([s1[0] - s0[0], s1[1] - s0[1], s1[2] - s0[2]], [1, 1, 1], "butin du char léger");
+    // dépôt ennemi (8 fer) détruit près de l'Arche : 2 fer
+    let d = place_building(&mut w, 1, B_DEPOT, tx + 4, ty + 2, 0).expect("dépôt ennemi");
+    complete_building(&mut w, d);
+    w.buildings[d].hp = 0;
+    w.dead_buildings.push(d as u32);
+    steps(&mut w, 1);
+    let s2 = stock(&w, 0);
+    assert_eq!(s2[3] - s1[3], 2, "butin du dépôt");
+    // loin de tout Transhumant : rien
+    let far = place_building(&mut w, 1, B_DEPOT, tx + 25, ty + 2, 0).expect("dépôt lointain");
+    complete_building(&mut w, far);
+    let far_d = crate::fixed::dist2(ax, ay, w.buildings[far].center().0, w.buildings[far].center().1);
+    let nearest = (0..w.units.alive.len()).filter(|&u| w.units.alive[u] && w.units.owner[u] == 0).map(|u| crate::fixed::dist2(w.buildings[far].center().0, w.buildings[far].center().1, w.units.x[u], w.units.y[u])).min().unwrap();
+    assert!(nearest > ((crate::transhumants::LOOT_RANGE * TILE) as i64).pow(2), "aucun Transhumant à portée ({far_d})");
+    w.buildings[far].hp = 0;
+    w.dead_buildings.push(far as u32);
+    steps(&mut w, 1);
+    assert_eq!(stock(&w, 0)[3], s2[3], "pas de butin sans pillard proche");
+    // les Industriels ne pillent pas
+    let p1 = stock(&w, 1);
+    let tank = w.spawn_unit(U_LIGHT_TANK, 1, ax + 3 * TILE, ay);
+    let tk = w.unit(tank).unwrap();
+    let rider = w.spawn_unit(U_CH_FURNACE, 0, ax + 5 * TILE, ay);
+    let rs = w.unit(rider).unwrap();
+    kill_unit_by(&mut w, rs, tk);
+    assert_eq!(stock(&w, 1), p1, "un Industriel ne prend pas de butin");
+}

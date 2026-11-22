@@ -9,7 +9,7 @@
   const RACE_DESC = [
     "Tapis, bras, fonderies et assembleurs ; électricité par zones ; recherche par lots en laboratoire",
     "Base vivante : racines qui mettent en commun sève et sels, organes qui poussent seuls ; recherche par l'ADN des cadavres digérés",
-    "Industrie montée sur des chenillards qui se déploient et se replient ; recherche par l'exploration",
+    "Industrie montée sur des chenillards qui se déploient et se replient ; recherche par l'exploration ; pillent un quart de ce qu'ils détruisent",
   ];
   const FAUNA_DESC: Record<Fauna, string> = {
     none: "Pas de nids sur la carte",

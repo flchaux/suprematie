@@ -1017,6 +1017,8 @@ pub fn cleanup_dead(w: &mut World) {
             let owner = w.buildings[b].owner;
             let (bw, bh) = w.buildings[b].size();
             w.ev(EV_BUILDING_DIED, cx, cy, kind as i32, owner as i32);
+            // Transhumants : butin pour le pillard le plus proche
+            crate::transhumants::loot_building(w, b);
             w.ev(EV_EXPLOSION, cx, cy, bw.max(bh) * TILE / 2, 0);
             // bâtiment terminé d'un joueur encore en jeu : fantôme à reconstruire par ses ingénieurs
             // (un nid de la faune ne se reconstruit pas et ne laisse pas d'épave)
@@ -1047,6 +1049,7 @@ fn credit_kill(w: &mut World, victim: usize) {
     // Transhumants : un ennemi détruit donne des relevés
     let (killer, tier) = (w.units.owner[k], udef(w.units.kind[victim]).tier);
     crate::transhumants::kill_credit(w, killer, tier);
+    crate::transhumants::loot_unit(w, killer, victim);
     let c = &mut w.units.cold[k];
     c.xp = c.xp.saturating_add(gain);
     let lvl = ((c.xp / (2 * own)) as u8).min(MAX_LVL);
