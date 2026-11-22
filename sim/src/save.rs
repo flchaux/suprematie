@@ -50,37 +50,65 @@ pub fn snapshot(w: &World) -> Vec<u8> {
 pub fn restore(bytes: &[u8]) -> Option<World> {
     let mut r = R::new(bytes);
     match u32::de(&mut r) {
-        MAGIC_V1 => r.version = 1,
+        // « SUPR » sans numéro : la version 1 (jusqu'au 21 novembre 2026), ou la disposition de la
+        // version 2 écrite avant l'en-tête versionné ; on garde celle qui lit exactement tout le fichier
+        MAGIC_V1 => {
+            let start = r.pos;
+            for v in [VERSION, 1] {
+                let mut r = R::new(bytes);
+                r.pos = start;
+                r.version = v;
+                if let Some(w) = read_world(&mut r) {
+                    if r.pos == bytes.len() {
+                        return Some(rebuild(w));
+                    }
+                }
+            }
+            None
+        }
         MAGIC => {
             r.version = u32::de(&mut r);
             if r.version == 0 || r.version > VERSION {
                 return None;
             }
+            read_world(&mut r).map(rebuild)
         }
-        _ => return None,
+        _ => None,
     }
-    let params: Vec<i32> = Ser::de(&mut r);
+}
+
+/// Lit l'état sauvegardé (sans les données dérivées) au format `r.version`.
+fn read_world(r: &mut R) -> Option<World> {
+    let params: Vec<i32> = Ser::de(r);
+    if params.len() < 4 {
+        return None;
+    }
     let mut w = World::new(&params);
-    w.tick = Ser::de(&mut r);
-    w.rng = Rng { state: Ser::de(&mut r) };
-    w.players = Ser::de(&mut r);
-    w.units = Ser::de(&mut r);
-    w.buildings = Ser::de(&mut r);
-    w.bfree = Ser::de(&mut r);
-    w.active = Ser::de(&mut r);
-    w.belts = <Belts as Ser>::de(&mut r);
-    w.projectiles = Ser::de(&mut r);
-    w.wrecks = Ser::de(&mut r);
-    w.wfree = Ser::de(&mut r);
-    w.nets = Ser::de(&mut r);
-    w.power_dirty = Ser::de(&mut r);
-    w.infinite_grid = Ser::de(&mut r);
-    w.winner = Ser::de(&mut r);
-    w.vis = Ser::de(&mut r);
-    w.team_stock = Ser::de(&mut r);
-    w.carriers = Ser::de(&mut r);
-    w.ghosts = Ser::de(&mut r);
-    w.nature = Ser::de(&mut r);
+    w.tick = Ser::de(r);
+    w.rng = Rng { state: Ser::de(r) };
+    w.players = Ser::de(r);
+    w.units = Ser::de(r);
+    w.buildings = Ser::de(r);
+    w.bfree = Ser::de(r);
+    w.active = Ser::de(r);
+    w.belts = <Belts as Ser>::de(r);
+    w.projectiles = Ser::de(r);
+    w.wrecks = Ser::de(r);
+    w.wfree = Ser::de(r);
+    w.nets = Ser::de(r);
+    w.power_dirty = Ser::de(r);
+    w.infinite_grid = Ser::de(r);
+    w.winner = Ser::de(r);
+    w.vis = Ser::de(r);
+    w.team_stock = Ser::de(r);
+    w.carriers = Ser::de(r);
+    w.ghosts = Ser::de(r);
+    w.nature = Ser::de(r);
+    Some(w)
+}
+
+/// Reconstruit les données dérivées d'un état lu : occupation, passabilité, grilles, navigation.
+fn rebuild(mut w: World) -> World {
     w.events.clear();
     // reconstruire l'occupation, la passabilité, la grille des bâtiments
     for i in 0..w.map.occ.len() {
@@ -126,5 +154,5 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
     }
     w.nav = Nav::new(&w.map);
     crate::flow::rebuild_goal_refs(&mut w);
-    Some(w)
+    w
 }

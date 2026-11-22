@@ -109,7 +109,8 @@ impl<T: Ser> Ser for Vec<T> {
         }
     }
     fn de(r: &mut R) -> Self {
-        let n = r.var() as usize;
+        // longueur bornée par ce qui reste à lire (une lecture au mauvais format ne s'emballe pas)
+        let n = (r.var() as usize).min(r.buf.len().saturating_sub(r.pos));
         let mut v = Vec::with_capacity(n.min(1 << 24));
         for _ in 0..n {
             v.push(T::de(r));
@@ -190,7 +191,7 @@ impl<T: Ser> Ser for std::collections::VecDeque<T> {
         }
     }
     fn de(r: &mut R) -> Self {
-        let n = r.var() as usize;
+        let n = (r.var() as usize).min(r.buf.len().saturating_sub(r.pos));
         let mut v = std::collections::VecDeque::with_capacity(n.min(1 << 20));
         for _ in 0..n {
             v.push_back(T::de(r));
