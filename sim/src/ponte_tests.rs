@@ -310,7 +310,7 @@ fn a_flyer_hatches_from_an_egg_on_the_ground() {
     let mut w = game();
     let h = heart(&w);
     let (cx, cy) = w.buildings[h].center();
-    let id = ponte::lay_egg(&mut w, 0, U_MEMBRANE, cx + 5 * TILE, cy + 5 * TILE, (cx, cy));
+    let id = ponte::lay_egg(&mut w, 0, U_MEMBRANE, cx + 5 * TILE, cy + 5 * TILE, Some((cx, cy)));
     let s = w.unit(id).unwrap();
     assert_eq!(w.units.kind[s], U_EGG_M);
     assert_eq!(udef(U_EGG_M).layer, Layer::Land);

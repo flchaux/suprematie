@@ -234,10 +234,10 @@
       {@const [, brood, cap, next, have, lim] = nest}
       <div class="sgrid small nest">
         <span class="dim">Mordeurs du nid</span><span class="num">{brood}</span>
-        <span class="dim">Prochaine naissance</span><span class="num">{brood >= cap ? `aucune (${cap} mordeurs au plus)` : `${next} s`}</span>
+        <span class="dim">Prochaine portée</span><span class="num">{brood >= cap ? `aucune (${cap} mordeurs au plus, œufs compris)` : `3 œufs dans ${next} s`}</span>
         <span class="dim">Nids greffés</span><span class="num">{have} / {lim}</span>
       </div>
-      <div class="status good"><span class="led"></span>Nid greffé : il fait naître des mordeurs sans coût. Clic droit au sol : point de ralliement</div>
+      <div class="status good"><span class="led"></span>Nid greffé : il pond des portées de 3 œufs de mordeurs, sans coût. Clic droit au sol : point de ralliement</div>
     {:else if nest && nest.length}
       {@const [home, max, need, age, evo, press, chance, tamer = -1, tame = 0] = nest}
       {#if tamer >= 0}

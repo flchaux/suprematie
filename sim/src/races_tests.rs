@@ -375,10 +375,18 @@ fn the_queen_tames_a_wild_nest_and_its_horde() {
     let beasts = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && crate::souche::is_beast(w.units.kind[s])).count();
     assert!(beasts >= 3, "la horde suit son nid : {beasts}");
     assert!(w.units.cold[q].orders.is_empty(), "l'ordre est terminé");
-    // le nid greffé fait naître des mordeurs pour son maître, sans coût
+    // le nid greffé pond pour son maître, sans coût : une portée d'œufs de mordeurs, qui éclosent
     steps(&mut w, crate::nature::DEN_PERIOD + 40);
+    let eggs: Vec<usize> = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && crate::ponte::is_egg(w.units.kind[s])).collect();
+    assert_eq!(eggs.len(), crate::nature::DEN_LITTER, "portée du nid greffé");
+    assert!(eggs.iter().all(|&s| crate::ponte::content(&w, s).is_some_and(crate::souche::is_beast)), "des œufs de mordeurs");
+    assert!(eggs.iter().all(|&s| w.units.cold[s].orders.is_empty()), "pas de ralliement : les bêtes resteront au nid");
+    let den = w.nature.dens[0].brood.len();
+    steps(&mut w, crate::ponte::INCUBATION + 5);
     let after = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && crate::souche::is_beast(w.units.kind[s])).count();
-    assert!(after > beasts, "naissance au nid greffé : {beasts} → {after}");
+    assert_eq!(after, beasts + crate::nature::DEN_LITTER, "éclosion au nid greffé : {beasts} → {after}");
+    assert_eq!(w.nature.dens[0].brood.len(), den, "les bêtes nées restent comptées dans la portée du nid");
+    assert!(w.nature.dens[0].brood.iter().all(|&id| w.unit(id).is_some_and(|s| crate::souche::is_beast(w.units.kind[s]))));
     // sauvegarde : le nid greffé et ses bêtes survivent
     let snap = crate::save::snapshot(&w);
     let mut r = crate::save::restore(&snap).expect("restauration");

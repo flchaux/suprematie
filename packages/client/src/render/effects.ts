@@ -398,8 +398,9 @@ export class Effects {
    */
   hatch(x: number, y: number, z: number, size: number, burst = false): void {
     if (!this.inView(x, z, 2)) return;
-    const sap: [number, number, number] = burst ? [2.4, 1.1, 0.25] : [2.2, 1.7, 0.45];
-    this.fire.spawn({ x, y: y + 0.3 * size, z, life: burst ? 0.16 : 0.12, s0: 0.3 * size, s1: (burst ? 1.1 : 0.7) * size, c0: sap, c1: [0.5, 0.3, 0.05] });
+    // sève vert acide ; plus jaune et plus vive quand l'œuf crève
+    const sap: [number, number, number] = burst ? [2.2, 2.4, 0.3] : [1.2, 2.4, 0.45];
+    this.fire.spawn({ x, y: y + 0.3 * size, z, life: burst ? 0.16 : 0.12, s0: 0.3 * size, s1: (burst ? 1.1 : 0.7) * size, c0: sap, c1: [0.2, 0.5, 0.05] });
     const v = burst ? 4.5 : 3;
     for (let i = 0, n = this.n(burst ? 10 : 6); i < n; i++) {
       this.fire.spawn({ x, y: y + 0.35 * size, z, vx: rnd(-v, v) * 0.6, vy: rnd(1.5, v + 1), vz: rnd(-v, v) * 0.6, life: rnd(0.3, 0.6), s0: 0.12 * size, s1: 0.04, c0: sap, grav: -14 });

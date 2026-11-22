@@ -123,9 +123,11 @@ crate::ser_struct!(Den { b, owner, spawn, brood });
 /// Apprivoisement : la Reine doit rester à moins de TAME_R cases du nid pendant TAME_TICKS (30 s).
 pub const TAME_R: i32 = 6;
 pub const TAME_TICKS: u16 = 600;
-/// Nid greffé : une naissance toutes les 20 s, jusqu'à DEN_BROOD bêtes en vie.
+/// Nid greffé : une portée de DEN_LITTER œufs toutes les DEN_PERIOD × DEN_LITTER ticks (une bête par
+/// 20 s), tant que moins de DEN_BROOD bêtes du nid sont en vie (œufs compris).
 pub const DEN_PERIOD: u32 = 400;
 pub const DEN_BROOD: usize = 6;
+pub const DEN_LITTER: usize = 3;
 /// Événement : un nid a été apprivoisé (joueur, x, y).
 pub const EV_TAMED: i32 = 47;
 
@@ -1105,28 +1107,29 @@ fn update_den(w: &mut World, k: usize) -> bool {
     if d.spawn > 0 {
         return true;
     }
+    // pas de place (bêtes du nid en vie, limite d'unités) : nouvel essai dans 20 s
     d.spawn = DEN_PERIOD;
-    if d.brood.len() >= DEN_BROOD || w.players[owner as usize].unit_count >= UNIT_CAP {
+    if d.brood.len() >= DEN_BROOD || w.players[owner as usize].unit_count + DEN_LITTER as u32 > UNIT_CAP {
         return true;
     }
+    // comme une couveuse, le nid pond une portée d'œufs devant lui (voir ponte.rs) ; les mordeurs qui en
+    // sortent restent au nid tant que le joueur ne lui donne pas de point de ralliement
+    w.nature.dens[k].spawn = DEN_PERIOD * DEN_LITTER as u32;
     let kind = beast_kind(w);
-    let (cx, cy) = w.buildings[b].center();
-    let a = w.rng.below(65536) as u16;
-    let r = 2 * TILE + TILE / 2;
-    let x = cx + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
-    let y = cy + (w.trig.sin(a) as i64 * r as i64 / 16384) as i32;
-    let (x, y) = buildings::free_spot_near(w, x, y, P_LAND);
-    let id = w.spawn_unit(kind, owner, x, y);
-    if let Some(s) = w.unit(id) {
-        w.units.facing[s] = a;
-        // point de ralliement du nid greffé
-        let (rx, ry) = w.buildings[b].rally;
-        if rx > 0 || ry > 0 {
-            w.units.cold[s].orders.push(move_to(rx, ry, false));
+    let rally = Some(w.buildings[b].rally).filter(|&(rx, ry)| rx > 0 || ry > 0);
+    let eggs = crate::ponte::lay_from(w, b, kind, DEN_LITTER, rally);
+    w.nature.dens[k].brood.extend(eggs);
+    true
+}
+
+/// Un œuf a éclos : dans la portée d'un nid greffé, la bête qui en sort prend sa place.
+pub fn egg_hatched(w: &mut World, egg: u32, born: u32) {
+    for d in w.nature.dens.iter_mut() {
+        if let Some(slot) = d.brood.iter_mut().find(|id| **id == egg) {
+            *slot = born;
+            return;
         }
     }
-    w.nature.dens[k].brood.push(id);
-    true
 }
 
 /// Défense du territoire et vie au nid : en alerte (ou quand un ennemi entre dans le territoire, sauf

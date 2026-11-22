@@ -10,6 +10,9 @@
 //! `INCUBATION` ticks après la ponte (un tiers de moins avec Fécondité) : l'œuf disparaît sans mort ni
 //! cadavre et l'organisme prend sa place (`hatch`), blessé dans la même proportion que l'œuf.
 //!
+//! Un nid greffé (nid de mordeurs apprivoisé, `nature::Den`) pond de la même façon, sans coût : une
+//! portée de `nature::DEN_LITTER` œufs de mordeurs devant lui.
+//!
 //! Rien de nouveau n'est sérialisé. Un œuf garde dans ses champs d'unité : l'espèce qu'il porte
 //! (`UnitCold::work` = type + 1), le tick d'éclosion (`ready_tick`), la durée de l'incubation (`timer`)
 //! et l'ordre de ralliement de la couveuse (`orders`), dont l'organisme hérite.
@@ -136,8 +139,9 @@ fn clutch_spots(w: &World, cx: i32, cy: i32, d: (i32, i32), r: i32, n: usize) ->
     out
 }
 
-/// Pond un œuf de l'espèce `kind` en (x, y) pour `owner` ; l'organisme ira en `rally` à l'éclosion.
-pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: (i32, i32)) -> u32 {
+/// Pond un œuf de l'espèce `kind` en (x, y) pour `owner` ; à l'éclosion l'organisme ira en `rally`, ou
+/// restera sur place s'il n'y en a pas.
+pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: Option<(i32, i32)>) -> u32 {
     let inc = incubation(w, owner);
     let facing = w.rng.below(65536) as u16;
     let id = w.spawn_unit(egg_of(kind), owner, x, y);
@@ -147,18 +151,27 @@ pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: (i32,
     c.work = kind as u32 + 1;
     c.ready_tick = w.tick + inc;
     c.timer = inc.min(u16::MAX as u32) as u16;
-    c.orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
+    if let Some((rx, ry)) = rally {
+        c.orders.push(Order::Move { x: rx, y: ry, gx: rx, gy: ry, attack: false, eta: 0 });
+    }
     id
 }
 
 /// Pond une portée de `n` œufs de l'espèce `kind` autour de (cx, cy), vers `d` (voir `clutch_spots`).
-pub fn lay_clutch(w: &mut World, owner: u8, kind: u16, n: usize, cx: i32, cy: i32, d: (i32, i32), rally: (i32, i32)) -> Vec<u32> {
+pub fn lay_clutch(w: &mut World, owner: u8, kind: u16, n: usize, cx: i32, cy: i32, d: (i32, i32), rally: Option<(i32, i32)>) -> Vec<u32> {
     let r = udef(egg_of(kind)).radius;
     clutch_spots(w, cx, cy, d, r, n).into_iter().map(|(x, y)| lay_egg(w, owner, kind, x, y, rally)).collect()
 }
 
 /// La couveuse `b` pond la portée de l'espèce `kind` devant sa sortie.
 pub fn lay(w: &mut World, b: usize, kind: u16) {
+    let rally = w.buildings[b].rally;
+    lay_from(w, b, kind, batch(kind) as usize, Some(rally));
+}
+
+/// Le bâtiment `b` (couveuse, nid greffé) pond `n` œufs de l'espèce `kind` devant sa sortie ; renvoie
+/// leurs identifiants.
+pub fn lay_from(w: &mut World, b: usize, kind: u16, n: usize, rally: Option<(i32, i32)>) -> Vec<u32> {
     let bb = &w.buildings[b];
     let (bw, bh) = bb.size();
     let (cx, cy) = bb.center();
@@ -167,8 +180,8 @@ pub fn lay(w: &mut World, b: usize, kind: u16) {
     let r = udef(egg_of(kind)).radius;
     // centre de la portée : un rang d'œufs entre lui et la façade
     let ahead = half + 3 * r + 44;
-    let (owner, rally) = (bb.owner, bb.rally);
-    lay_clutch(w, owner, kind, batch(kind) as usize, cx + d.0 * ahead, cy + d.1 * ahead, d, rally);
+    let owner = bb.owner;
+    lay_clutch(w, owner, kind, n, cx + d.0 * ahead, cy + d.1 * ahead, d, rally)
 }
 
 /// Un tick d'un œuf (appelé par `units::update_units` à la place des ordres et des armes) : il éclot
@@ -183,6 +196,7 @@ pub fn tick_egg(w: &mut World, s: usize) {
 /// son orientation, ses ordres et la même part de points de vie.
 pub fn hatch(w: &mut World, s: usize) {
     let egg = w.units.kind[s];
+    let old = w.unit_id(s);
     let kind = content(w, s);
     let owner = w.units.owner[s];
     let (x, y, facing) = (w.units.x[s], w.units.y[s], w.units.facing[s]);
@@ -200,4 +214,6 @@ pub fn hatch(w: &mut World, s: usize) {
     let full = w.units.hp[n] as i64;
     w.units.hp[n] = (full * (hp * 1000 / max).clamp(HATCH_MIN_HP, 1000) / 1000).max(1) as i32;
     w.ev(EV_HATCH, x, y, egg as i32 | (kind as i32) << 8, owner as i32 | (facing as i32) << 8);
+    // nid greffé : la bête née de l'œuf reste comptée dans sa portée
+    crate::nature::egg_hatched(w, old, id);
 }

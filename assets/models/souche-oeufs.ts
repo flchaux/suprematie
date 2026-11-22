@@ -5,7 +5,8 @@
 // jeu la rabat vers l'extérieur à l'éclosion (render/entities.ts). Avancement de ces pivots : 1 fermé,
 // 0,4 ouvert en tulipe (l'organisme sort), 0 lèvres affaissées et cœur éteint (la coque vide se fane).
 //
-// Le cœur lumineux (sève) ne se voit, œuf fermé, que par les fentes entre les lèvres. La couleur du
+// Même allure que les œufs décoratifs de la couveuse (souche.ts) : coque sombre, sève vert acide. Le cœur
+// lumineux (sève) ne se voit, œuf fermé, que par les fentes entre les lèvres. La couleur du
 // joueur est sur la collerette et la nervure de chaque lèvre.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
 
@@ -51,7 +52,7 @@ function levre(i: number, a: number, coque: ColorName): Part[] {
     // nervure à la couleur du joueur, du bas de la lèvre vers la pointe
     { shape: "tube", radius: 0.026, sides: 4, path: LEVRE.slice(0, 3).map(([r, y]) => pol(r + 0.012, a, y + 0.01)), bend: 0, color: "faction", parent: nom },
     // bord luisant : la fente entre deux lèvres
-    { shape: "tube", radius: 0.017, sides: 3, path: LEVRE.map(([r, y]) => pol(Math.max(0.02, r - 0.012), a - ARC / 2 - 1, y)), bend: 0, color: "amber", parent: nom, fine: true },
+    { shape: "tube", radius: 0.017, sides: 3, path: LEVRE.map(([r, y]) => pol(Math.max(0.02, r - 0.012), a - ARC / 2 - 1, y)), bend: 0, color: "acid", parent: nom, fine: true },
   ];
 }
 
@@ -71,7 +72,7 @@ function oeuf(coque: ColorName, bosses: number, epines: number): Model {
     { shape: "torus", radius: COL_R + 0.008, tube: 0.03, sides: 12, pos: [0, COL_Y, 0], color: "faction" },
     // cœur lumineux : la sève qui nourrit l'organisme ; à l'éclosion elle se retire aussitôt au fond de la
     // coque, là d'où sort l'organisme
-    { shape: "sphere", radius: 0.25, detail: 0, smooth: true, pos: [0, 0.36, 0], scale: [1, 1.12, 1], color: "amber", pivot: "dep|t:0,-0.62,0:0.3:0.4#coeur" },
+    { shape: "sphere", radius: 0.25, detail: 0, smooth: true, pos: [0, 0.36, 0], scale: [1, 1.12, 1], color: "acid", pivot: "dep|t:0,-0.62,0:0.3:0.4#coeur" },
     radicelle(20),
     radicelle(140),
     radicelle(260),
