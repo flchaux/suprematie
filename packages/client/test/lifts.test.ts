@@ -1,11 +1,11 @@
-// Ascenseurs de tapis : modèles (cage, quais, plateau) et trajet des objets dans la cage.
+// Ascenseurs de tapis : modèles (mât, quais, plateau) et trajet des objets.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim, BClass } from "@supreme/shared";
 import type { GameData } from "@supreme/shared";
 import { buildModel } from "../src/models/generator.ts";
-import { BUILDING_MODELS, NIVEAU_TAPIS } from "../../../assets/models/buildings.ts";
-import { FLOOR_H, LIFT_QUAY, liftDash, liftOut, liftUp } from "../src/render/liftAnim.ts";
+import { ASCENSEUR_MAT, BUILDING_MODELS, NIVEAU_TAPIS } from "../../../assets/models/buildings.ts";
+import { FLOOR_H, LIFT_QUAY, liftDash, liftOut, liftPad, liftUp } from "../src/render/liftAnim.ts";
 
 describe("modèles de l'ascenseur de tapis", () => {
   it("un quai par type de tapis de la simulation", async () => {
@@ -16,36 +16,46 @@ describe("modèles de l'ascenseur de tapis", () => {
     expect(belts.filter((k) => !BUILDING_MODELS[k + "_quai"])).toEqual([]);
   });
 
-  it("la cage relie deux paliers distants d'un niveau, dans l'emprise d'une case", () => {
+  it("le mât est fin, sur le côté du tapis, et relie deux paliers distants d'un niveau", () => {
     expect(FLOOR_H).toBe(NIVEAU_TAPIS);
-    const cage = buildModel(BUILDING_MODELS.ascenseur);
-    expect(cage.box.min.y).toBeCloseTo(0, 5);
-    // de la place au-dessus du palier haut pour un objet posé sur son plateau
-    expect(cage.box.max.y).toBeGreaterThan(FLOOR_H + 0.5);
-    expect(cage.box.max.y).toBeLessThan(FLOOR_H + 0.9);
-    for (const v of [cage.box.min.x, cage.box.max.x, cage.box.min.z, cage.box.max.z]) expect(Math.abs(v)).toBeLessThanOrEqual(0.5);
-    expect(cage.triangles).toBeLessThanOrEqual(400);
-    expect(cage.trianglesLo).toBeLessThan(cage.triangles);
+    const mast = buildModel(BUILDING_MODELS.ascenseur);
+    const belt = buildModel(BUILDING_MODELS.belt1);
+    expect(mast.box.min.y).toBeGreaterThanOrEqual(0);
+    expect(mast.box.min.y).toBeLessThan(0.05);
+    // il dépasse le palier haut, de peu
+    expect(mast.box.max.y).toBeGreaterThan(FLOOR_H + 0.2);
+    expect(mast.box.max.y).toBeLessThan(FLOOR_H + 0.5);
+    // hors du tapis, dans la case, console comprise : à peine plus d'un dixième de case
+    expect(mast.box.min.x).toBeGreaterThanOrEqual(belt.box.max.x);
+    expect(mast.box.max.x).toBeLessThan(0.5);
+    expect(mast.box.max.x - mast.box.min.x).toBeLessThanOrEqual(0.12);
+    expect((mast.box.min.x + mast.box.max.x) / 2).toBeCloseTo(ASCENSEUR_MAT, 1);
+    // symétrique d'avant en arrière : le jeu le retourne pour dresser le mât de l'autre côté
+    expect(mast.box.min.z).toBeCloseTo(-mast.box.max.z, 5);
+    expect(mast.box.max.z).toBeLessThanOrEqual(0.25);
+    expect(mast.triangles).toBeLessThanOrEqual(80);
   });
 
-  it("le quai va du bord arrière de la case à la cage, le plateau tient entre les deux quais", () => {
+  it("les quais couvrent la case hors du quart central, le plateau tient dans ce quart", () => {
     const belt = buildModel(BUILDING_MODELS.belt1);
     for (const key of ["belt1_quai", "belt2_quai", "belt3_quai", "collector_quai"]) {
       const quay = buildModel(BUILDING_MODELS[key]);
       expect(quay.box.min.z, key).toBeCloseTo(-0.5, 5);
-      expect(quay.box.max.z, key).toBeLessThanOrEqual(-0.18);
+      expect(quay.box.max.z, key).toBeCloseTo(-0.125, 5);
       // même largeur et même hauteur de rebord que le tapis qu'il prolonge
       expect(quay.box.max.x - quay.box.min.x, key).toBeCloseTo(belt.box.max.x - belt.box.min.x, 5);
       expect(quay.box.max.y, key).toBeLessThanOrEqual(belt.box.max.y + 1e-6);
-      expect(quay.triangles, key).toBeLessThanOrEqual(120);
+      expect(quay.triangles, key).toBeLessThanOrEqual(90);
     }
     const tray = buildModel(BUILDING_MODELS.ascenseur_plateau);
-    const quay = buildModel(BUILDING_MODELS.belt1_quai);
-    expect(tray.box.max.z).toBeLessThanOrEqual(-quay.box.max.z);
-    expect(tray.box.min.z).toBeGreaterThanOrEqual(quay.box.max.z);
-    // dessus du plateau à y = 0 (le jeu le pose à la hauteur de la bande du tapis), entre les glissières
+    expect(tray.box.min.z).toBeCloseTo(-0.125, 5);
+    expect(tray.box.max.z).toBeCloseTo(0.125, 5);
+    // un quart de case de l'autre côté aussi : un quai venu du côté opposé au mât s'arrête au même endroit
+    expect(tray.box.min.x).toBeCloseTo(-0.125, 5);
+    // dessus du plateau à y = 0 (le jeu le pose à la hauteur de la bande du tapis), chariot sur le mât
     expect(tray.box.max.y).toBeLessThanOrEqual(0.03);
-    expect(tray.box.max.x).toBeLessThan(0.385);
+    expect(tray.box.max.x).toBeGreaterThan(ASCENSEUR_MAT);
+    expect(tray.box.max.x).toBeLessThan(0.5);
   });
 });
 
@@ -55,7 +65,7 @@ describe("trajet d'un objet dans l'ascenseur", () => {
     expect(liftUp(0)).toBe(0);
     expect(liftOut(1)).toBe(1);
     expect(liftUp(1)).toBe(1);
-    // à mi-course : au centre de la cage, à mi-hauteur
+    // à mi-course : au milieu de la case, à mi-hauteur
     expect(liftOut(0.5)).toBe(0);
     expect(liftUp(0.5)).toBeCloseTo(0.5, 9);
   });
@@ -78,16 +88,35 @@ describe("trajet d'un objet dans l'ascenseur", () => {
     }
   });
 
-  it("garde la même vitesse sur le quai, dans la cage et sur l'autre quai", () => {
-    // longueur parcourue par pas de fraction : une demi-case, un niveau, une demi-case
-    const pos = (fr: number) => (fr < 0.5 ? 0.5 * (1 - liftOut(fr)) + FLOOR_H * liftUp(fr) : 0.5 + FLOOR_H * liftUp(fr) + 0.5 * liftOut(fr));
-    const n = 1000;
-    const step = (1 + FLOOR_H) / n;
-    for (let k = 0; k < n; k++) expect(pos((k + 1) / n) - pos(k / n), `pas ${k}`).toBeCloseTo(step, 6);
-    expect(LIFT_QUAY).toBeCloseTo(0.5 / (1 + FLOOR_H), 9);
+  it("monte dans le quart central de la traversée, à vitesse constante", () => {
+    expect(LIFT_QUAY).toBe(0.375);
+    expect(liftUp(0.375)).toBe(0);
+    expect(liftUp(0.625)).toBe(1);
+    expect(liftUp(0.4375)).toBeCloseTo(0.25, 9);
+    expect(liftUp(0.5625)).toBeCloseTo(0.75, 9);
+    // sur les quais : du bord au centre en 3/8 de la traversée, à vitesse constante
+    expect(liftOut(0.1875)).toBeCloseTo(0.5, 9);
+    expect(liftOut(0.375)).toBe(0);
+    expect(liftOut(0.625)).toBe(0);
+    expect(liftOut(0.8125)).toBeCloseTo(0.5, 9);
   });
 
-  it("les traits des glissières courent dans le sens de la marche et se figent à l'arrêt", () => {
+  it("le plateau ne rentre qu'une fois l'objet sorti, et celui du palier d'entrée se déploie d'autant", () => {
+    // l'objet (0,24 case) déborde encore sur le plateau (0,25 case) tant que son centre est à moins de 0,245 case du milieu
+    for (let k = 0; k <= 100; k++) {
+      const out = k / 100;
+      const g = liftPad(out);
+      expect(g).toBeGreaterThanOrEqual(0);
+      expect(g).toBeLessThanOrEqual(1);
+      if (out * 0.5 <= 0.245) expect(g, `distance ${out}`).toBe(1);
+      if (k > 0) expect(g).toBeLessThanOrEqual(liftPad((k - 1) / 100));
+    }
+    // rentré avant que l'objet quitte la case
+    expect(liftPad(0.75)).toBe(0);
+    expect(liftPad(1)).toBe(0);
+  });
+
+  it("les anneaux du mât courent dans le sens de la marche et se figent à l'arrêt", () => {
     const n = 3;
     for (const up of [true, false]) {
       const a = liftDash(0, n, 0.2, up, true);
