@@ -5,7 +5,7 @@ import type { GameData } from "@supreme/shared";
 /** [nom, icône, clés des bâtiments] ; l'onglet n (1..7) et le bâtiment n (1..9) au clavier. */
 export const BUILD_CATS: [string, string, string[]][] = [
   ["Production", "production", ["extractor", "furnace", "assembler1", "assembler2", "assembler3", "refinery", "chemical", "lab", "depot"]],
-  ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "long_inserter", "splitter", "sorter", "overflow", "collector"]],
+  ["Logistique", "logistics", ["belt1", "belt2", "belt3", "inserter", "long_inserter", "splitter", "sorter", "overflow"]],
   ["Transport", "unload", ["warehouse", "rail", "station", "cargo_pad", "roboport", "gift_portal"]],
   ["Énergie", "energy", ["main_generator", "generator", "pylon", "hydro_plant", "crystal_reactor", "geothermal", "eppz_socket"]],
   ["Usines", "factory", ["land_factory", "air_factory", "naval_factory", "gantry"]],
