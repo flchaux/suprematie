@@ -1,7 +1,7 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
 // ?set=units|buildings|items|decor|vehicles  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
 import * as THREE from "three/webgpu";
-import { buildModel, fallbackModel, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
+import { buildModel, depMatrix, fallbackModel, parseDep, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
 import { RECEIVER_CLASSES } from "../../packages/shared/src/data.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
 import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src/render/textures.ts";
@@ -126,7 +126,10 @@ if (set !== "decor") list.forEach((d, i) => {
   for (const p of built.pivots) {
     const pm = teamInstancedMesh((lo && p.geometryLo) || p.geometry, 1, texScale);
     pm.mesh.count = 1;
-    const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(new THREE.Matrix4().makeRotationY(0.5));
+    // ?dep=0.5 : pivots de déploiement (« dep|… ») à cet avancement (0 replié, 1 déployé ; par défaut : replié)
+    const steps = parseDep(p.name);
+    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p|^stabil/.test(p.name) ? 0 : 0.5);
+    const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(pose);
     pm.mesh.setMatrixAt(0, m);
     setTeamColor(pm, 0, color);
     scene.add(pm.mesh);

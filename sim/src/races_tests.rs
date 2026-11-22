@@ -5,7 +5,7 @@
 use crate::buildings::{complete_building, place_building, remove_building};
 use crate::data::*;
 use crate::fixed::TILE;
-use crate::orders::{O_DEPLOY, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_RESEARCH, O_RESEARCH_QUEUE};
+use crate::orders::{O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_RESEARCH, O_RESEARCH_QUEUE};
 use crate::world::*;
 
 /// Paramètres d'une partie à deux joueurs (équipes 0 et 1), sans faune, avec brouillard, et leurs races.
@@ -441,4 +441,77 @@ fn transhumant_start_stock_rides_in_the_hold_and_v3_reserve_converts() {
     assert_eq!(crate::drones::has(&a.units.cold[h].hold, IRON_PLATE), 123, "réserve convertie dans la soute");
     assert_eq!(a.players[0].purse[IRON_PLATE as usize], 0);
     assert_eq!(a.players[0].purse[RELEVES as usize], 20, "les relevés restent dans la bourse");
+}
+
+#[test]
+fn a_drill_sent_to_a_deposit_rolls_there_and_deploys_on_it() {
+    let mut w = game(RACE_TRANSH, RACE_INDUS);
+    let s = find_unit(&w, 0, U_CH_DRILL).unwrap();
+    let (tx, ty) = (w.units.x[s] / TILE, w.units.y[s] / TILE);
+    flatten(&mut w, tx - 4, ty - 4, tx + 20, ty + 6);
+    let k = spot(&mut w, COPPER_ORE, tx + 14, ty);
+    // clic droit sur le gisement : point au centre du gisement (2 × 2 cases)
+    let (gx, gy) = ((tx + 15) * TILE, (ty + 1) * TILE);
+    let id = w.unit_id(s) as i32;
+    order(&mut w, 0, O_DEPLOY_AT, &[0, gx, gy, 1, id]);
+    steps(&mut w, 400);
+    assert_eq!(w.units.cold[s].pack, crate::transhumants::PACK_DEPLOYING, "arrivé, il se déploie");
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 5);
+    let b = find_building(&w, 0, B_T_DRILL).expect("foreuse déployée");
+    assert_eq!(w.buildings[b].link, k as u32, "sur le gisement visé");
+    assert_eq!(w.buildings[b].recipe, COPPER_ORE);
+}
+
+#[test]
+fn deployed_modules_face_their_links() {
+    let (mut w, s, _k) = nomads();
+    // foreuse sur le gisement, fonderie collée à sa gauche (ouest), atelier collé au nord de la fonderie
+    let f = find_unit(&w, 0, U_CH_FURNACE).unwrap();
+    let a = find_unit(&w, 0, U_CH_WORKSHOP).unwrap();
+    let sp = w.map.spots[_k].clone();
+    // fonderie (2 × 2) en (sp.x - 2, sp.y) ; atelier (3 × 3) en (sp.x - 3, sp.y - 3)
+    w.units.x[f] = (sp.x - 1) * TILE + TILE / 2;
+    w.units.y[f] = (sp.y + 1) * TILE + TILE / 2;
+    w.units.x[a] = (sp.x - 2) * TILE + TILE / 2;
+    w.units.y[a] = (sp.y - 2) * TILE + TILE / 2;
+    let ids = [w.unit_id(s) as i32, w.unit_id(f) as i32, w.unit_id(a) as i32];
+    order(&mut w, 0, O_DEPLOY, &[3, ids[0], ids[1], ids[2]]);
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 5);
+    let d = find_building(&w, 0, B_T_DRILL).expect("foreuse");
+    let fu = find_building(&w, 0, B_T_FURNACE).expect("fonderie");
+    let at = find_building(&w, 0, B_T_WORKSHOP).expect("atelier");
+    let (dd, fb, ab) = (&w.buildings[d], &w.buildings[fu], &w.buildings[at]);
+    // la face avant de la foreuse donne sur la fonderie
+    let (bw, bh) = dd.size();
+    let (fx, fy) = crate::buildings::front_tile(dd.x, dd.y, bw, bh, dd.dir);
+    let (fw, fh) = fb.size();
+    assert!(fx >= fb.x && fx < fb.x + fw && fy >= fb.y && fy < fb.y + fh, "foreuse ({}, {}) sens {} vers la fonderie ({}, {})", dd.x, dd.y, dd.dir, fb.x, fb.y);
+    // la sortie de l'atelier est dégagée
+    let (aw, ah) = ab.size();
+    for k in 0..crate::buildings::front_count(aw, ah, ab.dir) {
+        let (x, y) = crate::buildings::front_tile_k(ab.x, ab.y, aw, ah, ab.dir, k);
+        assert_eq!(w.map.occ[w.map.idx(x, y)], 0, "sortie de l'atelier libre (sens {})", ab.dir);
+    }
+}
+
+#[test]
+fn a_deploying_chenillard_settles_on_its_module_spot_and_direction() {
+    let (mut w, s, k) = nomads();
+    // décalé d'une case et tourné de travers : il doit rejoindre le centre de l'emplacement et le sens prévus
+    w.units.x[s] += TILE / 2;
+    w.units.facing[s] = 5000;
+    let id = w.unit_id(s) as i32;
+    order(&mut w, 0, O_DEPLOY, &[1, id]);
+    let (work, timer) = (w.units.cold[s].work, w.units.cold[s].timer);
+    assert!(work != 0 && timer != 0, "plan du déploiement");
+    let (bx, by) = ((work & 0xffff) as i32 - 1, (work >> 16) as i32);
+    let dir = (timer - 1) as u8;
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 - 2);
+    assert_eq!((w.units.x[s], w.units.y[s]), (bx * TILE + TILE, by * TILE + TILE), "centré sur l'emplacement");
+    assert_eq!(w.units.facing[s], crate::buildings::bb_dir_angle(dir) as u16, "tourné vers le sens du module");
+    steps(&mut w, 5);
+    let b = find_building(&w, 0, B_T_DRILL).expect("foreuse");
+    assert_eq!((w.buildings[b].x, w.buildings[b].y), (bx, by));
+    assert_eq!(w.buildings[b].dir, dir, "sens du plan (rien de collé ne le change)");
+    assert_eq!(w.buildings[b].link, k as u32);
 }

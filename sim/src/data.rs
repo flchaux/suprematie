@@ -1040,7 +1040,7 @@ pub const UNITS: [UnitDef; 77] = [
     UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
     UnitDef { key: "ark", name: "Arche", hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "ch_drill", name: "Chenillard foreuse", hp: 1200, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
+    UnitDef { key: "ch_drill", name: "Chariot foreuse", hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
     UnitDef { key: "ch_furnace", name: "Chenillard fonderie", hp: 1000, speed: 20, radius: 200, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_FURNACE, ..UD },
     UnitDef { key: "ch_assembler", name: "Chenillard assembleur", hp: 1200, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_ASSEMBLER, ..UD },
     UnitDef { key: "ch_refinery", name: "Chenillard raffinerie", hp: 1400, speed: 20, radius: 200, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], build: 14, tech: T_T_REFINING, race: RACE_TRANSH, deploys: B_T_REFINERY, ..UD },

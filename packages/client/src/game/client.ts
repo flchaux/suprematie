@@ -1735,6 +1735,11 @@ export class GameClient {
       const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
       if (s && this.harvestRecipe(s.kind) >= 0) return "harvest";
     }
+    // chenillard foreuse sur un gisement libre : il s'y rend et s'y déploie
+    if (!tb && units.some((u) => this.data!.units[u.kind].key === "ch_drill")) {
+      const s = this.spotAt(Math.floor(g.x), Math.floor(g.z));
+      if (s && s.kind !== 250) return "harvest";
+    }
     if (engs) {
       const f = this.frame;
       for (let i = 0, o = f.wreckOff; i < f.nWrecks; i++, o += WRECK_WORDS) {
@@ -1817,6 +1822,8 @@ export class GameClient {
         return;
       }
     }
+    // chenillard foreuse sur un gisement libre : il s'y rend et s'y déploie
+    if (!tb && this.drillDeployAt(units, g.x, g.z, queue)) return;
     // commandant sur un gisement libre (sans extracteur) : récolte avec sa fonderie intégrée
     if (!tb && this.harvestAt(units, g.x, g.z, queue, false)) return;
     // épave
@@ -1852,6 +1859,27 @@ export class GameClient {
     if (r < 0) return -1;
     const me = this.frame?.players[ui.me];
     return !me || hasTech(me, this.data.recipes[r].tech) ? r : -1;
+  }
+
+  /**
+   * Transhumants : le chenillard foreuse sélectionné le plus proche du gisement libre sous (x, z) y roule et
+   * s'y déploie (les autres unités s'y rendent). Faux s'il n'y a ni foreuse ni gisement là (pas un geyser).
+   */
+  private drillDeployAt(units: { id: number; kind: number; x: number; y: number }[], x: number, z: number, queue: boolean): boolean {
+    const spot = this.spotAt(Math.floor(x), Math.floor(z));
+    const drills = units.filter((u) => this.data!.units[u.kind].key === "ch_drill");
+    if (!spot || spot.kind === 250 || !drills.length) return false;
+    // centre du gisement (2 × 2 cases) : le chenillard s'y arrête, la foreuse le couvre
+    const cx = (spot.x + 1) * TILE;
+    const cz = (spot.y + 1) * TILE;
+    const best = drills.reduce((a, b) => (Math.hypot(b.x - cx, b.y - cz) < Math.hypot(a.x - cx, a.y - cz) ? b : a));
+    this.cmd(Ord.deployAt([best.id], cx, cz, queue));
+    const rest = units.filter((u) => u.id !== best.id);
+    if (rest.length) this.cmd(Ord.move(rest, Math.round(x * TILE), Math.round(z * TILE), queue, false));
+    this.scene?.addMarker(spot.x + 1, spot.y + 1, 0xff9a3c);
+    pushMessage(`Chariot foreuse : il se rend sur le gisement de ${this.data!.items[spot.kind]?.name.toLowerCase() ?? "minerai"} et s'y déploie`, "info");
+    sfx.confirm();
+    return true;
   }
 
   /** Commandants parmi les unités. */

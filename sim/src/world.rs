@@ -124,6 +124,9 @@ pub enum Order {
     /// commandant : récolter le gisement de la case (x, y) (cases) et fondre le minerai dans sa
     /// fonderie intégrée ; le produit fondu va dans sa soute (voir units::HARVEST_*)
     Harvest { x: i32, y: i32 },
+    /// chenillard des Transhumants : rouler jusqu'au point (x, y) (sous-unités) et s'y déployer (clic droit
+    /// d'un chenillard foreuse sur un gisement ; voir transhumants::deploy_at)
+    DeployAt { x: i32, y: i32 },
 }
 
 impl Order {
@@ -145,6 +148,7 @@ impl Order {
             Order::Face { .. } => 14,
             Order::Collect { .. } => 15,
             Order::Harvest { .. } => 16,
+            Order::DeployAt { .. } => 17,
         }
     }
 }
@@ -169,7 +173,7 @@ impl Ser for Order {
             Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } => target.ser(w),
             Order::Jump { beacon } => beacon.ser(w),
             Order::Face { a } => a.ser(w),
-            Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } => {
+            Order::AttackGround { x, y } | Order::Unload { x, y } | Order::Teleport { x, y } | Order::Harvest { x, y } | Order::DeployAt { x, y } => {
                 x.ser(w);
                 y.ser(w);
             }
@@ -202,6 +206,7 @@ impl Ser for Order {
             14 => Order::Face { a: i(r) },
             15 => Order::Collect { target: u(r) },
             16 => Order::Harvest { x: i(r), y: i(r) },
+            17 => Order::DeployAt { x: i(r), y: i(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

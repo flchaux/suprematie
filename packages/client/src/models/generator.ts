@@ -664,6 +664,56 @@ export function buildModel(model: Model): BuiltModel {
   return built;
 }
 
+/**
+ * Étape d'une animation de déploiement décrite dans le nom d'un pivot (« dep|t:x,y,z:t0:t1|r:x,deg:t0:t1#nom ») :
+ * la pièce est modélisée dans sa pose déployée ; à l'avancement 0 (replié), elle est décalée de (x, y, z)
+ * (unités du modèle) et tournée de `deg` degrés autour de l'axe donné, par rapport à l'origine du pivot ;
+ * chaque étape se résorbe entre t0 et t1 (avancement de 0 à 1, adouci). Le suffixe « #nom » distingue deux
+ * pivots aux mêmes étapes.
+ */
+export interface DepStep { t: boolean; x: number; y: number; z: number; axis: "x" | "y" | "z"; deg: number; t0: number; t1: number }
+export function parseDep(name: string): DepStep[] | null {
+  if (!name.startsWith("dep|")) return null;
+  const steps: DepStep[] = [];
+  for (const seg of name.split("#")[0].split("|").slice(1)) {
+    const [k, v, a, b] = seg.split(":");
+    const t0 = Number(a), t1 = Number(b);
+    if (k === "t") {
+      const [x, y, z] = v.split(",").map(Number);
+      steps.push({ t: true, x, y, z, axis: "x", deg: 0, t0, t1 });
+    } else if (k === "r") {
+      const [ax, d] = v.split(",");
+      steps.push({ t: false, x: 0, y: 0, z: 0, axis: ax as "x" | "y" | "z", deg: Number(d), t0, t1 });
+    }
+  }
+  return steps;
+}
+/** Part restante d'une étape à l'avancement p (1 : pas commencée, 0 : finie), adoucie. */
+export function depLeft(st: DepStep, p: number): number {
+  const u = Math.max(0, Math.min(1, (p - st.t0) / Math.max(1e-6, st.t1 - st.t0)));
+  return 1 - u * u * (3 - 2 * u);
+}
+
+/** Transformation d'un pivot à l'avancement de déploiement p : rotations (dans l'ordre), puis décalage (×
+ * `scale`, l'échelle du modèle), autour de l'origine du pivot. */
+export function depMatrix(steps: DepStep[], p: number, scale: number): THREE.Matrix4 {
+  const m = new THREE.Matrix4();
+  let ox = 0, oy = 0, oz = 0;
+  for (const d of steps) {
+    const k = depLeft(d, p);
+    if (d.t) {
+      ox += d.x * k;
+      oy += d.y * k;
+      oz += d.z * k;
+      continue;
+    }
+    const ang = (d.deg * Math.PI * k) / 180;
+    m.multiply(d.axis === "x" ? new THREE.Matrix4().makeRotationX(ang) : d.axis === "y" ? new THREE.Matrix4().makeRotationY(ang) : new THREE.Matrix4().makeRotationZ(ang));
+  }
+  if (ox || oy || oz) m.multiply(new THREE.Matrix4().makeTranslation(ox * scale, oy * scale, oz * scale));
+  return m;
+}
+
 /** Part de l'emprise couverte par un bâtiment de plusieurs cases (marge pour distinguer les voisins). */
 export const BUILDING_FILL = 0.94;
 

@@ -66,7 +66,7 @@ export const UNIT_DESCS: Record<string, string> = {
   membrane: "Planeur à membranes : organisme volant qui lâche des spores sur le sol, avec des dégâts de zone.",
   // ----- Transhumants -----
   ark: "L'Arche, unité de commandement des Transhumants : immense chenillard lent, canon et défense antiaérienne, elle répare. Sa destruction élimine le joueur.",
-  ch_drill: "Chenillard foreuse : déployé (15 s) sur un gisement, il devient une foreuse nomade.",
+  ch_drill: "Chariot foreuse : la foreuse repliée sur son chariot. Clic droit sur un gisement libre : il s'y rend et s'y déploie (15 s) ; les stabilisateurs se posent, le mât se relève, la tige descend dans le sol. Ailleurs, il se déploie sur le gisement le plus proche (3 cases au plus).",
   ch_furnace: "Chenillard fonderie : déployé (15 s), il devient une fonderie nomade.",
   ch_assembler: "Chenillard assembleur : déployé (15 s), il devient un assembleur nomade.",
   ch_refinery: "Chenillard raffinerie : déployé (15 s), il devient une raffinerie nomade.",
