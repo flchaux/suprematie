@@ -737,7 +737,7 @@ pub fn plan(w: &mut World) {
             continue;
         }
         match bb.def().class {
-            BClass::Factory if !bb.queue.is_empty() => plan_factory(w, b, &fl, &mut rb),
+            BClass::Factory if !bb.queue.is_empty() && !crate::buildings::paused(bb) => plan_factory(w, b, &fl, &mut rb),
             BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::fuel_tank(bb.kind) => plan_generator(w, b, &fl, &mut rb),
             _ => {}
         }

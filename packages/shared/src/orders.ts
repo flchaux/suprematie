@@ -54,6 +54,8 @@ export const O = {
   HITCH: 54,
   /** chariots de convoi : navette avec un module : [drapeaux (1 : en file, 2 : livrer depuis la soute), réf. du module, n, unités…] */
   HAUL: 55,
+  /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
+  SET_PAUSE: 56,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -294,6 +296,10 @@ export function cancelPlan(x: number, y: number): Cmd {
 }
 export function rotate(refs: number[]): Cmd {
   return [O.ROTATE, refs.length, ...refs.map((r) => r | 0)];
+}
+/** Met en pause (ou relance) des extracteurs, fabricants et usines d'unités. */
+export function setPause(refs: number[], on: boolean): Cmd {
+  return [O.SET_PAUSE, on ? 1 : 0, refs.length, ...refs.map((r) => r | 0)];
 }
 export function toggle(ref: number): Cmd {
   return [O.TOGGLE, ref | 0];

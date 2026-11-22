@@ -346,11 +346,17 @@ fn building_fed_shape(w: &World, b: usize) -> u8 {
 }
 
 /// Le tapis `t` reçoit-il les produits du bâtiment dont il touche la face `face` (direction vers
-/// l'extérieur) ? Oui s'il en part tout droit, ou s'il fait un virage alimenté par ce côté.
+/// l'extérieur) ? Oui seulement s'il part de cette face : tout droit (arrière tourné vers le bâtiment),
+/// ou virage alimenté par ce côté ; et dans les deux cas, aucun tapis ni répartiteur ne l'alimente déjà.
+/// Un virage en pleine ligne dont l'arrière touche la face (sortie tournée à l'opposé, entrée par le
+/// côté) ne reçoit donc rien.
 pub fn takes_from_face(w: &World, t: usize, face: u8) -> bool {
     let tb = &w.buildings[t];
+    let d = tb.dir as usize;
+    // déjà alimenté par un tapis (derrière, côté, ascenseur) ou une sortie de répartiteur : pas un départ
+    let fed = || main_pred(w, t).is_some() || [(d + 1) % 4, (d + 2) % 4, (d + 3) % 4].into_iter().any(|s| splitter_feeds(w, t, s));
     if tb.dir == face {
-        return true;
+        return !fed();
     }
     if tb.dir == (face + 2) & 3 {
         return false;
@@ -362,8 +368,7 @@ pub fn takes_from_face(w: &World, t: usize, face: u8) -> bool {
     };
     // le côté qui alimente le virage regarde le bâtiment ; un tapis déjà alimenté par un répartiteur ne
     // le prend pas (il est droit ou tourné vers le répartiteur, voir belt_shape)
-    let d = tb.dir as usize;
-    sd == (face + 2) & 3 && main_pred(w, t).is_none() && ![(d + 1) % 4, (d + 2) % 4, (d + 3) % 4].into_iter().any(|s| splitter_feeds(w, t, s))
+    sd == (face + 2) & 3 && !fed()
 }
 
 /// Reconstruit les lignes autour des cases modifiées en conservant les objets.

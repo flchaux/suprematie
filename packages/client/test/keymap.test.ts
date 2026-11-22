@@ -71,6 +71,14 @@ describe("valeurs par défaut", () => {
     expect(d.factory11).toEqual([]);
   });
 
+  it("Maj+P : pause des machines sélectionnées, sans gêner la patrouille ni l'usine", () => {
+    for (const map of [AZERTY_MAP, QWERTY_MAP]) {
+      const km = new Keymap(detectLayout(map));
+      expect(km.get("pauseBuilding")).toEqual([{ code: "KeyP", shift: true }]);
+      expect(km.conflictsOf("pauseBuilding")).toEqual([]);
+    }
+  });
+
   it("QWERTY : flèches seules, A reste l'attaque", () => {
     const d = defaultBindings(detectLayout(QWERTY_MAP));
     expect(d.attackMove).toEqual([{ code: "KeyA" }]);
@@ -121,7 +129,10 @@ describe("correspondance", () => {
   });
 
   it("modificateurs exacts, sauf Maj libre (zoom, usine)", () => {
-    expect(az.match(ev("KeyP", { shiftKey: true }), { units: true })).toBeNull();
+    expect(az.match(ev("KeyE", { shiftKey: true }), { units: true })).toBeNull();
+    // Maj+P n'est pas la patrouille : c'est la pause des machines sélectionnées
+    expect(az.match(ev("KeyP", { shiftKey: true }), { units: true })?.id).toBe("pauseBuilding");
+    expect(az.match(ev("KeyP"), { units: true })?.id).toBe("patrol");
     expect(az.match(ev("F2"), {})?.id).toBe("camGo1");
     expect(az.match(ev("F2", { shiftKey: true }), {})?.id).toBe("camSave1");
     expect(az.match(ev("Equal", { shiftKey: true }), {})?.id).toBe("zoomIn"); // « + »
