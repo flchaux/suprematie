@@ -1503,6 +1503,48 @@ fn belt_along_a_face_becomes_a_building_fed_curve() {
     assert!(w.stock(0, IRON_PLATE) - before > 10, "les plaques passent par le virage jusqu'au dépôt");
 }
 
+/// Un virage en pleine ligne, collé à une face par son arrière (sa sortie pointe à l'opposé du bâtiment,
+/// mais il est alimenté par le côté), ne part pas du bâtiment : il ne reçoit rien. Le tapis qui part
+/// d'une face, même suivi d'un virage, reçoit toujours les produits.
+#[test]
+fn curve_in_a_line_against_a_face_takes_nothing() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 85, 85, 125, 125);
+    w.map.spots.push(crate::map::Spot { kind: IRON_ORE, x: 94, y: 100, purity: 0 });
+    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let i = w.map.idx(94 + dx, 100 + dy);
+        w.map.deposit[i] = IRON_ORE;
+    }
+    put(&mut w, 0, B_EXTRACTOR, 94, 100, 0);
+    for x in 96..100 {
+        put(&mut w, 0, B_BELT1, x, 100, 0);
+    }
+    // fonderie 2 x 2 en (100..102, 100..102)
+    let f = put(&mut w, 0, B_FURNACE, 100, 100, 0);
+    // face nord : une file arrive de l'est, tourne vers le nord en (101, 99) et s'éloigne ; l'arrière du
+    // virage touche la fonderie, mais il est alimenté par le côté
+    let feed: Vec<usize> = (102..105).rev().map(|x| put(&mut w, 0, B_BELT1, x, 99, 2)).collect();
+    let corner = put(&mut w, 0, B_BELT1, 101, 99, 3);
+    let after = [put(&mut w, 0, B_BELT1, 101, 98, 3), put(&mut w, 0, B_BELT1, 101, 97, 3)];
+    assert_eq!(crate::belts::belt_shape(&w, corner), 1, "virage alimenté par l'est");
+    // face sud : un tapis part vers le sud, puis tourne aussitôt vers l'est jusqu'à un dépôt
+    let out = put(&mut w, 0, B_BELT1, 100, 102, 1);
+    let turn = put(&mut w, 0, B_BELT1, 100, 103, 0);
+    put(&mut w, 0, B_BELT1, 101, 103, 0);
+    put(&mut w, 0, B_BELT1, 102, 103, 0);
+    put(&mut w, 0, B_DEPOT, 103, 103, 0);
+    assert_eq!(crate::belts::belt_shape(&w, turn), 2, "virage juste après le tapis de sortie");
+    assert!(!crate::belts::takes_from_face(&w, corner, 3), "le virage en pleine ligne ne part pas de la fonderie");
+    assert_eq!(crate::buildings::out_belts(&w, f), vec![out], "seul le tapis qui part de la face sud reçoit");
+    assert!(!crate::buildings::outlets_of(&w, f).contains(&corner));
+    let before = w.stock(0, IRON_PLATE);
+    run(&mut w, 4000);
+    assert!(w.stock(0, IRON_PLATE) - before > 10, "les plaques sortent par la face sud jusqu'au dépôt");
+    for t in feed.into_iter().chain([corner]).chain(after) {
+        assert!(w.belts.lines[w.buildings[t].line as usize].items.is_empty(), "rien sur la file nord");
+    }
+}
+
 /// Un générateur s'améliore deux fois : sans production pendant le chantier, puis plus de puissance.
 #[test]
 fn generator_upgrade_raises_power_production() {

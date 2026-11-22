@@ -1879,7 +1879,9 @@ export class Entities {
           const code = links.get(oz * W + ox);
           let state = 0; // 0 fermée, 1 entrée, 2 sortie
           if (code !== undefined && code < 4) {
-            if (code === side) state = 2;
+            // tapis qui part de la face ; un virage en pleine ligne dont l'arrière touche la face
+            // (alimenté par le côté) ne reçoit rien (takes_from_face dans la simulation)
+            if (code === side) state = curves.has(oz * W + ox) ? 0 : 2;
             else if (code === (side + 2) % 4) state = 1;
             // virage alimenté par cette face
             else if (curves.get(oz * W + ox) === (side + 2) % 4) state = 2;
