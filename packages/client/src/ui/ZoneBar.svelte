@@ -6,20 +6,35 @@
   import { SEVE, SELS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import Item from "./Item.svelte";
 
-  // plaques et composants de base : toujours montrés ; les autres objets dès qu'ils ont un stock ou un débit
+  // ressources de base (plaques, acier, engrenages, câbles, circuits) : seules montrées, barre repliée ;
+  // dépliée, s'y ajoutent les minerais et les autres objets qui ont un stock ou un débit dans la zone
   const BASE = [6, 7, 8, 10, 11, 12];
+  const KEY = "supreme.zoneBarOpen";
+  let open = $state(readOpen());
+  function readOpen() {
+    try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+  }
+  function toggle() {
+    open = !open;
+    try { localStorage.setItem(KEY, open ? "1" : "0"); } catch { /* sans stockage : réglage non retenu */ }
+  }
   const z = $derived(ui.zone);
   const souche = $derived(ui.race === RACE_SOUCHE);
   const at = (v: number[] | undefined, id: number) => v?.[id] ?? 0;
+  /** Objets autres que ceux de base qui ont un stock ou un débit dans la zone (montrés barre dépliée). */
+  const extra = $derived.by(() => {
+    if (!z || z.zone === 0 || souche) return [];
+    const out: number[] = [];
+    for (let id = 1; id < SEVE; id++) {
+      if (!BASE.includes(id) && (at(z.stock, id) > 0 || at(z.prod, id) > 0 || at(z.cons, id) > 0)) out.push(id);
+    }
+    return out;
+  });
   const cols = $derived.by(() => {
     if (!z || z.zone === 0) return [];
     if (souche) return [SEVE, SELS, ADN];
-    const out: number[] = [];
-    if (ui.race === RACE_TRANSH) out.push(RELEVES);
-    for (let id = 1; id < SEVE; id++) {
-      if (BASE.includes(id) || at(z.stock, id) > 0 || at(z.prod, id) > 0 || at(z.cons, id) > 0) out.push(id);
-    }
-    return out;
+    const ids = open ? [...BASE, ...extra].sort((a, b) => a - b) : BASE;
+    return ui.race === RACE_TRANSH ? [RELEVES, ...ids] : ids;
   });
   // zone vivante mais sans générateur qui brûle (relais seuls) : éteinte, comme dans la vue électrique
   const dead = $derived(z?.zone === 2 || (z?.zone === 1 && ui.powerNets.some((n) => n.id === z.net && n.dead)));
@@ -84,6 +99,15 @@
       <span class="r num" class:z={c === 0}>{c === 0 ? "·" : "−" + rate(c)}</span>
       <span class="r num s" class:z={rounded(net)} class:good={net > 0 && !rounded(net)} class:bad={net < 0 && !rounded(net)}>{rounded(net) ? "0" : (net < 0 ? "−" : "+") + rate(net)}</span>
     {/each}
+    {#if !souche}
+      <button class="tip more" class:open onclick={toggle} aria-expanded={open}>
+        <span>{open ? "‹" : "›"}</span>{#if !open && extra.length > 0}<span class="n num">+{extra.length}</span>{/if}
+        <span class="tt">
+          {#if open}<b>Replier</b><br />Ne montrer que les ressources de base (plaques, acier, engrenages, câbles, circuits).
+          {:else}<b>Déplier</b><br />Montrer aussi les minerais et les autres objets de la zone{#if extra.length > 0} ({extra.length} avec un stock ou un débit){/if}.{/if}
+        </span>
+      </button>
+    {/if}
   {/if}
 </div>
 
@@ -109,5 +133,8 @@
   .res.near .cap > span { background: var(--amber); opacity: 1; }
   .res.full .cap > span { background: var(--bad, #ff5a4f); opacity: 1; }
   .res.full :global(.num) { color: var(--bad, #ff5a4f); }
+  .more { grid-row: 1 / -1; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 18px; padding: 0 3px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 4px; background: rgba(255, 255, 255, 0.04); color: var(--dim); font-size: 14px; line-height: 1; cursor: pointer; }
+  .more:hover { color: var(--text); background: rgba(255, 255, 255, 0.09); }
+  .more .n { font-size: 10px; color: var(--accent); }
   .res .team { font-size: 10px; color: var(--accent); margin-left: 1px; opacity: 0.9; }
 </style>

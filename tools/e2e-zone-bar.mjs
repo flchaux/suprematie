@@ -108,11 +108,18 @@ const dry = gen ? await look(gen.x + 1, gen.y + 1, "zone-eteinte") : null;
 const mh = await page.evaluate(() => window.__game.client.map.h);
 const off = await look(mg.x, mg.y + (mg.y + 50 < mh ? 45 : -45), "hors-zone");
 const back = await look(mg.x + 1, mg.y + 1, "retour-base");
+// barre repliée par défaut (ressources de base seulement), puis dépliée : minerais et autres objets en plus
+const folded = back?.cols;
+await page.click(".zbar .more");
+const opened = await look(mg.x + 1, mg.y + 1, "base-depliee");
+await page.click(".zbar .more");
+console.log("colonnes repliée", folded, "dépliée", opened?.cols);
 console.log("erreurs :", errors.slice(0, 8));
 await browser.close();
 // énergie : celle de la zone (production du générateur principal à la base), pas de jauge hors zone ;
 // recherche et limite d'unités dans leur propre panneau
 const ok = base?.zone === 1 && back?.zone === 1 && off?.zone === 0 && (!gen || dry?.zone === 2) && errors.length === 0
-  && base.power?.[0] > 0 && !!base.gauge && off.gauge === null && (!gen || dry.power?.[0] === 0) && base.mid && off.mid;
+  && base.power?.[0] > 0 && !!base.gauge && off.gauge === null && (!gen || dry.power?.[0] === 0) && base.mid && off.mid
+  && folded === 6 && (!furnace || opened?.cols > folded);
 console.log(ok ? "OK" : "ÉCHEC");
 process.exit(ok ? 0 : 1);
