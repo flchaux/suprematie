@@ -16,6 +16,13 @@ Tests automatiques :
 - Tests unitaires Rust (`cargo test`) pour les tapis, les bâtiments, le déplacement et le combat.
 - Banc de performance (voir Objectifs de performance).
 
+Tests dans le navigateur (`tools/e2e-*.mjs`, captures) : sur ce serveur sans carte graphique, le rendu est logiciel. Un navigateur prend un à deux cœurs sur quatre, et une partie y avance à moins d'une image par seconde. Ils sont donc réservés à ce que Node ne peut pas vérifier :
+
+- La logique de jeu (bâtiments, races, économie, combat) se teste dans la simulation : tests Rust, ou un scénario Node qui appelle `sim.step` comme `tools/determinism.mjs`. On n'attend jamais des milliers de ticks dans un navigateur pour vérifier une règle du jeu.
+- Le navigateur sert à l'affichage et aux interactions : un écran, un menu, un raccourci, une erreur WebGPU. On préfère une scène de démonstration (`?demo=…`, qui démarre directement sur la situation voulue), arrêtée au tick voulu, plutôt qu'une partie lancée depuis le salon contre une IA.
+- Un seul scénario, le plus court qui montre la modification, et une seule fois en fin de tâche. Après une fusion de master sans conflit dans le code du client, on ne le relance pas. On ne relance pas les scénarios des autres fonctionnalités.
+- Tout passe par `launchBrowser` (`tools/browser.mjs`) : un seul navigateur à la fois sur toute la machine (verrou `~/.cache/supreme-browser.lock`, les autres attendent leur tour) et une priorité basse (nice 10), pour que le serveur de jeu reste fluide.
+
 Contrôles automatiques du code :
 
 - Clippy dans `sim/` : `float_arithmetic` interdit, et `disallowed_types` pour HashMap, HashSet, Instant et SystemTime.
@@ -37,6 +44,7 @@ Lire docs/SPEC.md (index), puis les fichiers de docs/spec/ utiles à la tâche, 
 ## Avant de terminer une tâche
 - Lancer npm run test:determinism et npm run bench.
 - Ne jamais désactiver un test ou une règle de lint pour faire passer une modification.
+- Tests dans Chrome (tools/e2e-*.mjs, captures) : seulement si la modification change l'affichage ou une interaction que les tests Node ne couvrent pas. Un seul scénario court, une seule fois en fin de tâche (pas de nouveau passage après une fusion sans conflit). Toujours par tools/browser.mjs.
 
 ## Modèles 3D
 - Écrire des descriptions de pièces dans assets/models/, jamais de sommets ni de fichiers .glb ou .gltf.
