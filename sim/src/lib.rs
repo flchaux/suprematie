@@ -9,6 +9,7 @@ pub mod data;
 pub mod drones;
 pub mod fixed;
 pub mod flow;
+pub mod formation;
 pub mod grid;
 pub mod logistics;
 pub mod map;

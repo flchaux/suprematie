@@ -2171,7 +2171,9 @@ export class GameClient {
         }
       }
     }
-    this.cmd(Ord.move(units, gx, gy, queue, false));
+    // Maj + clic droit : formation en file (rangées au premier point, disposition gardée ensuite)
+    if (queue && units.length > 1) this.cmd(Ord.moveQueuedFormation(units.map((u) => u.id), gx, gy));
+    else this.cmd(Ord.move(units, gx, gy, queue, false));
     this.scene?.addMarker(g.x, g.z, 0x7dff9a);
     sfx.confirm();
   }
@@ -3146,7 +3148,8 @@ export class GameClient {
       if (e.button === 2) {
         const units = this.selectedUnits();
         if (units.length) {
-          this.cmd(Ord.move(units, x * TILE, z * TILE, e.shiftKey));
+          if (e.shiftKey && units.length > 1) this.cmd(Ord.moveQueuedFormation(units.map((u) => u.id), x * TILE, z * TILE));
+          else this.cmd(Ord.move(units, x * TILE, z * TILE, e.shiftKey));
           sfx.confirm();
         }
         return;
