@@ -13,10 +13,13 @@ pub mod logistics;
 pub mod map;
 pub mod nature;
 pub mod orders;
+pub mod races;
 pub mod render;
 pub mod rng;
 pub mod save;
 pub mod ser;
+pub mod souche;
+pub mod transhumants;
 pub mod twins;
 pub mod units;
 pub mod world;
@@ -382,4 +385,6 @@ mod production_tests;
 mod anciens_tests;
 #[cfg(test)]
 mod main_gen_tests;
+#[cfg(test)]
+mod races_tests;
 pub mod stress;

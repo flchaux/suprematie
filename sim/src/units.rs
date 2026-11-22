@@ -543,6 +543,10 @@ pub fn update_units(w: &mut World) {
                 }
             }
         }
+        // chenillard des Transhumants : déploiement ou repli en cours
+        if w.units.cold[s].pack != 0 && crate::transhumants::tick_unit(w, s) {
+            continue;
+        }
         let t_ord = prof_now();
         let forced = run_order(w, s);
         prof_add(1, t_ord);
@@ -660,6 +664,11 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             }
             if let Some(b) = w.building(bid) {
+                // Souche : l'organe planté pousse seul, le semeur repart
+                if !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE {
+                    pop_order(w, s);
+                    return NONE;
+                }
                 if !construct(w, s, b) {
                     pop_order(w, s);
                 }
@@ -713,7 +722,9 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             if let Some(b) = w.building(target) {
                 let range = build_range(w.buildings[b].kind, w.buildings[b].dir);
                 let (cx, cy) = w.buildings[b].center();
-                if w.team_of(w.buildings[b].owner) != w.team_of(owner) || def.build_power == 0 {
+                // un organe de la Souche pousse seul : on ne l'aide pas, on le soigne une fois poussé
+                let growing = !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE;
+                if w.team_of(w.buildings[b].owner) != w.team_of(owner) || def.build_power == 0 || growing {
                     pop_order(w, s);
                     return NONE;
                 }
@@ -1114,7 +1125,7 @@ fn special(w: &mut World, s: usize) {
             let c = &mut w.units.cold[s];
             c.reveal = c.reveal.saturating_sub(1);
         }
-        U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID => {
+        U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID | U_TOWED_GUN => {
             // droïde roulant : il se déplie en moins d'une seconde
             let delay = if kind == U_ROLL_DROID { 16 } else { 60 };
             let c = &mut w.units.cold[s];

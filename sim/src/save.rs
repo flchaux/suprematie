@@ -17,7 +17,9 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 /// - 2 : allure des déplacements en formation, cadence / fragments / pureté des bâtiments, fragments
 ///   et EPPZ des joueurs, sortie de porte des unités, état des nids (riposte, ponte d'urgence, espèce),
 ///   ruines et naissances de réplicateurs.
-pub const VERSION: u32 = 2;
+/// - 3 : races (race du joueur, recherches au-delà de 64, objets de la Souche et des Transhumants,
+///   réserves des réseaux de racines, chenillards repliés, usure des gisements).
+pub const VERSION: u32 = 3;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     let mut o = W::new();
@@ -44,6 +46,7 @@ pub fn snapshot(w: &World) -> Vec<u8> {
     w.carriers.ser(&mut o);
     w.ghosts.ser(&mut o);
     w.nature.ser(&mut o);
+    w.wear.ser(&mut o);
     o.buf
 }
 
@@ -54,7 +57,7 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
         // version 2 écrite avant l'en-tête versionné ; on garde celle qui lit exactement tout le fichier
         MAGIC_V1 => {
             let start = r.pos;
-            for v in [VERSION, 1] {
+            for v in [2, 1] {
                 let mut r = R::new(bytes);
                 r.pos = start;
                 r.version = v;
@@ -104,6 +107,9 @@ fn read_world(r: &mut R) -> Option<World> {
     w.carriers = Ser::de(r);
     w.ghosts = Ser::de(r);
     w.nature = Ser::de(r);
+    if r.version >= 3 {
+        w.wear = Ser::de(r);
+    }
     Some(w)
 }
 

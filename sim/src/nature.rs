@@ -211,6 +211,8 @@ pub fn nature_player() -> Player {
         stock_cap: 0,
         shards: 0,
         eppz: 0,
+        race: 0,
+        researched2: 0,
     }
 }
 

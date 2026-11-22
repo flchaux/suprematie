@@ -51,15 +51,19 @@ pub struct Player {
     pub shards: u32,
     /// EPPZ en réserve (capturés dans les ruines des Anciens, posés dans un socle)
     pub eppz: u32,
+    /// race (voir data::RACES)
+    pub race: u8,
+    /// recherches acquises d'indice 64 à 127 (les 64 premières sont dans `researched`)
+    pub researched2: u64,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap; since 2: shards, eppz });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap; since 2: shards, eppz; since 3: race, researched2 });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
     /// acquises sont retirées) ; ne fait rien si une recherche est en cours.
     pub fn start_queued(&mut self) {
-        let done = self.researched;
-        let has = |t: u8| t == 0 || done & (1u64 << t) != 0;
+        let (lo, hi) = (self.researched, self.researched2);
+        let has = |t: u8| t == 0 || if t < 64 { lo & (1u64 << t) != 0 } else { hi & (1u64 << (t - 64)) != 0 };
         let mut q = std::mem::take(&mut self.research_queue);
         q.retain(|&t| !has(t));
         if self.research == 0 {
@@ -72,7 +76,20 @@ impl Player {
 
     #[inline]
     pub fn has_tech(&self, t: u8) -> bool {
-        t == 0 || self.researched & (1u64 << t) != 0
+        t == 0 || if t < 64 { self.researched & (1u64 << t) != 0 } else { t < 128 && self.researched2 & (1u64 << (t - 64)) != 0 }
+    }
+
+    /// Marque la recherche `t` comme acquise (et la recherche des Industriels qu'elle donne aussi).
+    pub fn set_tech(&mut self, t: u8) {
+        if t < 64 {
+            self.researched |= 1u64 << t;
+        } else if t < 128 {
+            self.researched2 |= 1u64 << (t - 64);
+        }
+        let also = TECHS.get(t as usize).map_or(0, |d| d.also);
+        if also != 0 && also != t {
+            self.set_tech(also);
+        }
     }
 }
 
@@ -236,8 +253,14 @@ pub struct UnitCold {
     pub reveal: u16,
     /// sortie d'une porte de transit : ticks pendant lesquels l'unité ne peut pas y rentrer à nouveau
     pub warp: u16,
+    /// chenillard des Transhumants : 0 au repos, PACK_DEPLOYING pendant le déploiement, PACK_FOLDING
+    /// pendant le repli ; `timer` compte les ticks (voir transhumants.rs)
+    pub pack: u8,
+    /// chenillard : recette du module replié (RECIPE_NONE : aucune) et combustible de son générateur
+    pub pack_recipe: u8,
+    pub pack_fuel: i32,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -434,8 +457,12 @@ pub struct Net {
     pub unlimited: bool,
     /// consommation permanente des tapis de la zone (kW)
     pub belt_demand: i32,
+    /// Souche : réserve du réseau de racines (sève, sels) et son plafond (voir souche.rs)
+    pub seve: i32,
+    pub sels: i32,
+    pub store: i32,
 }
-crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap, unlimited, belt_demand });
+crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap, unlimited, belt_demand; since 3: seve, sels, store });
 
 // Événements pour le rendu (non hachés, non sérialisés)
 pub const EV_BEAM: i32 = 2;
@@ -527,6 +554,8 @@ pub struct World {
     /// brouillard de guerre (réglage du salon, tiré de `params`) ; sans lui, chaque équipe voit toute la
     /// carte, et toute unité, même furtive ou immergée, est ciblable sans repérage
     pub fog: bool,
+    /// Transhumants : usure de chaque gisement (‰, indice de `map.spots`) par leurs foreuses
+    pub wear: Vec<u16>,
 }
 
 impl World {
@@ -573,6 +602,8 @@ impl World {
                 stock_cap: STOCK_BASE,
                 shards: 0,
                 eppz: 0,
+                race: 0,
+                researched2: 0,
             });
         }
         // faune : un joueur caché de plus, après les vrais joueurs
@@ -583,6 +614,11 @@ impl World {
         }
         // brouillard de guerre : après la faune ; absent (anciennes sauvegardes) : activé
         let fog = params.get(5 + np * 4).copied().unwrap_or(1) != 0;
+        // races : une par joueur, après le brouillard ; absentes (anciennes parties) : Industriels
+        for (i, pl) in players.iter_mut().enumerate().take(np) {
+            pl.race = params.get(6 + np * 4 + i).copied().unwrap_or(0).clamp(0, NUM_RACES as i32 - 1) as u8;
+            crate::races::start_stock(pl);
+        }
         let vis_w = map.w / 4;
         let nav = Nav::new(&map);
         let mut w = World {
@@ -623,10 +659,13 @@ impl World {
             attack_ev: Vec::new(),
             nature,
             fog,
+            wear: Vec::new(),
         };
+        w.wear = vec![0; w.map.spots.len()];
         for p in 0..np {
             let (sx, sy) = w.map.starts[p];
-            let id = w.spawn_unit(U_COMMANDER, p as u8, sx * TILE + TILE / 2, sy * TILE + TILE / 2);
+            let kind = crate::races::commander_kind(w.players[p].race);
+            let id = w.spawn_unit(kind, p as u8, sx * TILE + TILE / 2, sy * TILE + TILE / 2);
             w.players[p].commander = id;
         }
         w.update_vis_all();
@@ -637,6 +676,9 @@ impl World {
     /// commandant, avec un peu de combustible, et les nids de la faune (les tests partent d'un monde vide).
     pub fn place_start_buildings(&mut self) {
         for p in 0..self.map.starts.len() {
+            if crate::races::place_start(self, p) {
+                continue;
+            }
             let (sx, sy) = self.map.starts[p];
             // première place : celle que la carte prévoit (anneau de gisements, voir map::MAIN_GEN_SPOT)
             for &(dx, dy) in &[crate::map::MAIN_GEN_SPOT, (-5, -1), (-1, 3), (-1, -5), (3, 3), (-5, -5), (3, -5), (-5, 3)] {
@@ -648,6 +690,7 @@ impl World {
             }
         }
         crate::buildings::rebuild_power(self);
+        crate::souche::endow_start(self);
         crate::nature::place_initial_nests(self);
     }
 
@@ -712,6 +755,11 @@ impl World {
         if kind == U_COMMANDER {
             // le bouclier personnel vient de la recherche
             u.cold[slot].shield = 0;
+        }
+        u.cold[slot].pack_recipe = RECIPE_NONE;
+        let m = self.race_hp_mult(owner, kind);
+        if m != 1000 {
+            self.units.hp[slot] = (def.hp as i64 * m as i64 / 1000) as i32;
         }
         self.players[owner as usize].unit_count += 1;
         let id = slot as u32 | ((self.units.gen[slot] as u32) << SLOT_BITS);
@@ -786,7 +834,22 @@ impl World {
     /// Points de vie maximum d'une unité (vétérance comprise).
     #[inline]
     pub fn max_hp(&self, s: usize) -> i32 {
-        udef(self.units.kind[s]).hp * (100 + 10 * self.units.cold[s].lvl as i32) / 100
+        let base = udef(self.units.kind[s]).hp * (100 + 10 * self.units.cold[s].lvl as i32) / 100;
+        let m = self.race_hp_mult(self.units.owner[s], self.units.kind[s]);
+        if m == 1000 {
+            base
+        } else {
+            (base as i64 * m as i64 / 1000) as i32
+        }
+    }
+
+    /// Points de vie (‰) selon la race et ses recherches (mutations de la Souche, blindage des Transhumants).
+    pub fn race_hp_mult(&self, owner: u8, kind: u16) -> i32 {
+        match self.players.get(owner as usize).map_or(0, |p| p.race) {
+            RACE_SOUCHE => crate::souche::hp_mult(self, owner, kind),
+            RACE_TRANSH => crate::transhumants::hp_mult(self, owner, kind),
+            _ => 1000,
+        }
     }
 
     pub fn spawn_wreck(&mut self, x: i32, y: i32, cost: &[(u8, u16)], size: u8, model: u16, rot: u16) {
@@ -858,6 +921,8 @@ impl World {
         crate::belts::update_belts(self);
         crate::nature::update(self);
         crate::units::update_units(self);
+        crate::souche::update_units(self);
+        crate::transhumants::update(self);
         crate::combat::update_projectiles(self);
         crate::logistics::update_carriers(self);
         crate::combat::cleanup_dead(self);
@@ -946,6 +1011,9 @@ impl World {
                 h.add_i32(s);
             }
             h.add(p.researched);
+            if p.researched2 != 0 {
+                h.add(p.researched2);
+            }
             h.add(p.research as u64 | (p.tech_progress.iter().map(|&x| x as u64).sum::<u64>() << 8));
             for &q in &p.research_queue {
                 h.add(q as u64);
