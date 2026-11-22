@@ -83,15 +83,59 @@ pub fn start_deploy(w: &mut World, s: usize) {
         return;
     }
     crate::units::clear_orders(w, s);
-    let end = w.tick + DEPLOY_TICKS as u32;
-    let c = &mut w.units.cold[s];
-    if c.pack == PACK_DEPLOYING {
+    if w.units.cold[s].pack == PACK_DEPLOYING {
         // second ordre : annule
-        c.pack = 0;
+        w.units.cold[s].pack = 0;
     } else {
-        c.pack = PACK_DEPLOYING;
-        c.ready_tick = end;
+        begin_deploy(w, s);
     }
+}
+
+/// Début d'un déploiement : fin prévue, emplacement et sens du module (le plan), que le chenillard rejoint
+/// pendant l'animation pour finir exactement sur le module posé. Plan : `work` = (x + 1) | y << 16 de
+/// l'emplacement (0 : aucun, le chenillard reste sur place), `timer` = sens + 1.
+fn begin_deploy(w: &mut World, s: usize) {
+    let end = w.tick + DEPLOY_TICKS as u32;
+    let (kind, owner) = (w.units.kind[s], w.units.owner[s]);
+    let bkind = udef(kind).deploys;
+    let plan = deploy_spot(w, owner, bkind, w.units.x[s], w.units.y[s]);
+    let (work, timer) = match plan {
+        Some((bx, by)) => {
+            let cur = (((w.units.facing[s] as u32 + 8192) / 16384) & 3) as u8;
+            let raw = if bdef(bkind).class == BClass::Extractor { w.map.deposit[w.map.idx(bx, by)] } else { 0 };
+            let recipe = if bdef(bkind).class == BClass::Extractor { raw } else { w.units.cold[s].pack_recipe };
+            let d = best_dir(w, owner, bkind, recipe, bx, by, cur);
+            ((bx as u32 + 1) | (by as u32) << 16, d as u16 + 1)
+        }
+        None => (0, 0),
+    };
+    let c = &mut w.units.cold[s];
+    c.pack = PACK_DEPLOYING;
+    c.ready_tick = end;
+    c.work = work;
+    c.timer = timer;
+}
+
+/// Pendant le déploiement : le chenillard glisse vers le centre de l'emplacement prévu et pivote vers le
+/// sens du module (au plus une demi-vitesse et un quart de tour en 2 s).
+fn align(w: &mut World, s: usize) {
+    let c = &w.units.cold[s];
+    if c.work == 0 || c.timer == 0 {
+        return;
+    }
+    let (bx, by) = ((c.work & 0xffff) as i32 - 1, (c.work >> 16) as i32);
+    let d = (c.timer - 1) as u8;
+    let bkind = udef(w.units.kind[s]).deploys;
+    let (bw, bh) = buildings::dims(bkind, 0);
+    let (tx, ty) = (bx * TILE + bw * TILE / 2, by * TILE + bh * TILE / 2);
+    let step = (unit_speed(w.units.kind[s]) / 2).max(1);
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    w.units.x[s] = x + (tx - x).clamp(-step, step);
+    w.units.y[s] = y + (ty - y).clamp(-step, step);
+    let want = buildings::bb_dir_angle(d) as u16;
+    let diff = want.wrapping_sub(w.units.facing[s]) as i16 as i32;
+    let turn = 400;
+    w.units.facing[s] = w.units.facing[s].wrapping_add(diff.clamp(-turn, turn) as u16);
 }
 
 /// Chenillard en cours de déploiement ou de repli (appelé à chaque tick par `update_units`, avant les
@@ -117,6 +161,7 @@ pub fn tick_unit(w: &mut World, s: usize) -> bool {
                 deploy(w, s);
                 return !w.units.alive[s];
             }
+            align(w, s);
             false
         }
         _ => false,
@@ -163,7 +208,10 @@ fn deploy(w: &mut World, s: usize) {
     let bkind = udef(kind).deploys;
     let (x, y) = (w.units.x[s], w.units.y[s]);
     w.units.cold[s].pack = 0;
-    let Some((bx, by)) = deploy_spot(w, owner, bkind, x, y) else {
+    // le plan du début du déploiement s'il tient toujours, sinon la place libre la plus proche
+    let (pw, pt) = (w.units.cold[s].work, w.units.cold[s].timer);
+    let planned = (pw != 0).then(|| ((pw & 0xffff) as i32 - 1, (pw >> 16) as i32)).filter(|&(bx, by)| buildings::can_place(w, owner, bkind, bx, by, 0));
+    let Some((bx, by)) = planned.or_else(|| deploy_spot(w, owner, bkind, x, y)) else {
         w.ev(EV_DEPLOY_FAILED, owner as i32, x, y, kind as i32);
         return;
     };
@@ -195,7 +243,14 @@ fn deploy(w: &mut World, s: usize) {
         let spot = spot_under(w, bx, by, bw, bh);
         w.buildings[b].link = spot;
     }
-    // sens logique : le module et ses voisins collés se tournent selon leurs liaisons
+    // sens logique : celui du plan (le chenillard s'y est tourné), puis le module et ses voisins collés se
+    // tournent selon leurs liaisons (à égalité, chacun garde le sien)
+    if pt != 0 {
+        w.buildings[b].dir = (pt - 1) as u8 & 3;
+        if def.class == BClass::Factory {
+            set_rally(w, b);
+        }
+    }
     orient(w, b);
     for o in glued(w, b) {
         orient(w, o);
@@ -233,12 +288,11 @@ pub fn glued(w: &World, b: usize) -> Vec<usize> {
 /// Intérêt d'une case devant la face avant du module `b` (orientation automatique) : un voisin qui reçoit
 /// ce que le module produit (foreuse, fabricant) attire la face avant ; une usine veut une sortie libre ;
 /// les autres modules se tournent vers le côté dégagé.
-fn front_score(w: &World, b: usize, fx: i32, fy: i32) -> i32 {
+fn front_score(w: &World, me: usize, owner: u8, kind: u16, recipe: u8, fx: i32, fy: i32) -> i32 {
     if !w.map.inside(fx, fy) {
         return -3;
     }
-    let bb = &w.buildings[b];
-    let class = bb.def().class;
+    let class = bdef(kind).class;
     let i = w.map.idx(fx, fy);
     let o = w.map.occ[i];
     if o == 0 {
@@ -249,15 +303,18 @@ fn front_score(w: &World, b: usize, fx: i32, fy: i32) -> i32 {
             _ => -2,
         };
     }
+    if (o - 1) as usize == me {
+        return 0;
+    }
     let nb = &w.buildings[(o - 1) as usize];
-    if nb.owner != bb.owner || !nb.alive {
+    if nb.owner != owner || !nb.alive {
         return -2;
     }
     let nc = nb.def().class;
     match class {
         // foreuse : son minerai va à une fonderie, une raffinerie, une soute (ou un générateur pour l'hydrocarbure)
         BClass::Extractor => {
-            let raw = bb.recipe;
+            let raw = recipe;
             let takes = match nc {
                 BClass::Depot => true,
                 BClass::Crafter => matches!((nb.def().crafter, raw), (Crafter::Furnace, IRON_ORE | COPPER_ORE | SILICON) | (Crafter::Refinery, HYDROCARBON | CRYSTAL)),
@@ -272,7 +329,7 @@ fn front_score(w: &World, b: usize, fx: i32, fy: i32) -> i32 {
         }
         // fabricant : son produit va à la soute, à l'atelier, ou à un fabricant dont la recette l'utilise
         BClass::Crafter => {
-            let out = if bb.recipe == RECIPE_NONE { 0 } else { RECIPES[bb.recipe as usize].output.0 };
+            let out = if recipe == RECIPE_NONE { 0 } else { RECIPES[recipe as usize].output.0 };
             let takes = match nc {
                 BClass::Depot | BClass::Factory => true,
                 BClass::Crafter => out != 0 && nb.recipe != RECIPE_NONE && RECIPES[nb.recipe as usize].inputs.iter().any(|x| x.0 == out),
@@ -304,30 +361,49 @@ pub fn orient(w: &mut World, b: usize) {
         return;
     }
     let (x, y, cur) = (bb.x, bb.y, bb.dir & 3);
+    let d = best_dir_at(w, b, bb.owner, bb.kind, bb.recipe, x, y, cur);
+    if d == cur {
+        return;
+    }
+    w.buildings[b].dir = d;
+    if w.buildings[b].def().class == BClass::Factory {
+        set_rally(w, b);
+    }
+    w.buildings_version = w.buildings_version.wrapping_add(1);
+}
+
+/// Point de ralliement d'un atelier : trois cases devant sa sortie.
+fn set_rally(w: &mut World, b: usize) {
+    let bb = &w.buildings[b];
+    let (bw, bh) = bb.size();
+    let d = bb.dir & 3;
+    let (fx, fy) = buildings::front_tile(bb.x, bb.y, bw, bh, d);
+    let (dx, dy) = crate::belts::DIRS[d as usize];
+    w.buildings[b].rally = (fx * TILE + TILE / 2 + dx * TILE * 3, fy * TILE + TILE / 2 + dy * TILE * 3);
+}
+
+/// Sens le plus logique d'un module de type `kind` posé en (x, y) (voir `front_score`) ; à égalité, `cur`.
+fn best_dir(w: &World, owner: u8, kind: u16, recipe: u8, x: i32, y: i32, cur: u8) -> u8 {
+    best_dir_at(w, usize::MAX, owner, kind, recipe, x, y, cur)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn best_dir_at(w: &World, me: usize, owner: u8, kind: u16, recipe: u8, x: i32, y: i32, cur: u8) -> u8 {
+    let (bw, bh) = buildings::dims(kind, 0);
     let mut best = (i32::MIN, cur);
     for d in [cur, 0, 1, 2, 3] {
         let n = buildings::front_count(bw, bh, d);
         let score: i32 = (0..n)
             .map(|k| {
                 let (fx, fy) = buildings::front_tile_k(x, y, bw, bh, d, k);
-                front_score(w, b, fx, fy)
+                front_score(w, me, owner, kind, recipe, fx, fy)
             })
             .sum();
         if score > best.0 {
             best = (score, d);
         }
     }
-    let d = best.1;
-    if d == cur {
-        return;
-    }
-    w.buildings[b].dir = d;
-    if w.buildings[b].def().class == BClass::Factory {
-        let (fx, fy) = buildings::front_tile(x, y, bw, bh, d);
-        let (dx, dy) = crate::belts::DIRS[d as usize];
-        w.buildings[b].rally = (fx * TILE + TILE / 2 + dx * TILE * 3, fy * TILE + TILE / 2 + dy * TILE * 3);
-    }
-    w.buildings_version = w.buildings_version.wrapping_add(1);
+    best.1
 }
 
 /// Ordre « déployer ici » : le chenillard roule jusqu'au point (x, y), puis se déploie (ses ordres suivants
@@ -338,9 +414,7 @@ pub fn deploy_at(w: &mut World, s: usize, x: i32, y: i32) {
         return;
     }
     crate::units::clear_orders(w, s);
-    let c = &mut w.units.cold[s];
-    c.pack = PACK_DEPLOYING;
-    c.ready_tick = w.tick + DEPLOY_TICKS as u32;
+    begin_deploy(w, s);
 }
 
 /// Ordre « Replier » sur un module déployé : il redevient un chenillard.

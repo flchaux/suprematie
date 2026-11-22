@@ -5,7 +5,7 @@ import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
 import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
-import { buildingScale, buildModel, fallbackModel, hatchFace, HATCH_Y, PLAYER_COLORS, withHatches } from "../models/generator.ts";
+import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -30,7 +30,7 @@ type Built = ReturnType<typeof buildModel>;
  */
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null }[] = [];
   cap = 0;
   n = 0;
   private builtV: Built | null;
@@ -103,7 +103,7 @@ class KindMesh {
       // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
       // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
       const slide = Number(/^chenille_p([\d.]+)/.exec(p.name)?.[1] ?? 0);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave, mode, slide };
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave, mode, slide, dep: parseDep(p.name) };
     });
     this.cap = cap;
   }
@@ -738,6 +738,8 @@ export class Entities {
       const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
       // les bras sortent pendant les 40 premiers % du déploiement (ancrage ensuite), rentrent au début du repli
       const stab = packing === 1 ? Math.min(1, packT / 0.4) : packing === 2 ? 1 - Math.min(1, packT / 0.4) : 0;
+      // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
+      const depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
       const sc = km.scale * (0.05 + 0.95 * emerge);
@@ -767,6 +769,9 @@ export class Entities {
           tmpM2.multiply(new THREE.Matrix4().makeRotationX(st.phase * 0.9));
         } else if (p.mode === 2 || p.mode === 5) {
           // pattes du droïde, stabilisateurs d'un chenillard : ils se déplient depuis leur point d'attache
+        } else if (p.dep) {
+          // déploiement décrit dans le modèle (rotations autour de l'origine du pivot, puis décalages)
+          tmpM2.multiply(depMatrix(p.dep, depP, sc));
         } else if (p.slide > 0) {
           // crampons de chenille : ils avancent avec la distance parcourue, d'un pas par période (brin supérieur)
           tmpM2.multiply(new THREE.Matrix4().makeTranslation(0, 0, ((((st.dist ?? 0) / Math.max(1e-6, sc)) % p.slide) - p.slide / 2) * sc));

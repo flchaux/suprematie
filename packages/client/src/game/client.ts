@@ -1877,7 +1877,7 @@ export class GameClient {
     const rest = units.filter((u) => u.id !== best.id);
     if (rest.length) this.cmd(Ord.move(rest, Math.round(x * TILE), Math.round(z * TILE), queue, false));
     this.scene?.addMarker(spot.x + 1, spot.y + 1, 0xff9a3c);
-    pushMessage(`Chenillard foreuse : il se rend sur le gisement de ${this.data!.items[spot.kind]?.name.toLowerCase() ?? "minerai"} et s'y déploie`, "info");
+    pushMessage(`Chariot foreuse : il se rend sur le gisement de ${this.data!.items[spot.kind]?.name.toLowerCase() ?? "minerai"} et s'y déploie`, "info");
     sfx.confirm();
     return true;
   }

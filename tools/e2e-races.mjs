@@ -170,8 +170,24 @@ if (target) {
   const cursor = await b.page.evaluate(() => window.__game.client.cursorKind);
   check(cursor === "harvest", "curseur sur le gisement avec le chenillard foreuse", cursor);
   await b.page.mouse.click(screen.x + 2, screen.y + 1, { button: "right", timeout: 120000 });
+  // en plein déploiement (mât qui se relève, vers 65 %) : capture rapprochée
+  const deploying = (id) => {
+    const f = window.__game.client.frame;
+    for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if (f.buf[o] >>> 0 === id) return ((f.buf[o + 1] >>> 29) & 1) === 1;
+    return false;
+  };
+  await b.page.waitForFunction(deploying, target.drill, { timeout: 900000 });
+  const td = await b.page.evaluate(() => window.__game.client.frame.tick);
+  await b.page.waitForFunction((t) => window.__game.client.frame.tick > t + 195, td, { timeout: 900000 });
+  await b.page.evaluate(([x, z]) => {
+    const sc = window.__game.client.scene;
+    sc.target.set(x, 0, z);
+    sc.distance = 11;
+    sc.updateCamera();
+  }, [target.x + 1, target.y + 1]);
+  await b.page.screenshot({ path: `${outDir}/races-foreuse-mi.png`, timeout: 120000 });
   const tq = await b.page.evaluate(() => window.__game.client.frame.tick);
-  // trajet puis 15 s de déploiement
+  // fin du déploiement
   await b.page.waitForFunction(([t, x, y]) => {
     const { client, ui } = window.__game;
     const k = ui.data.buildings.findIndex((d) => d.key === "t_drill");

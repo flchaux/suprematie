@@ -235,51 +235,154 @@ function vrille(x: number, z: number, y0: number, y1: number, r: number, pivot?:
   ];
 }
 
+// ——— Foreuse nomade : chariot et gréement de forage ———
+
+/** Point d'articulation du mât (pied du mât, à l'arrière du chariot) et longueur du mât. */
+const MAT_H: Vec3 = [0.3, 0.7, -1.15];
+const MAT_L = 2.1;
+/** Ancrage du vérin de levage sur le plateau. */
+const VERIN_A: Vec3 = [0.3, 0.6, 0.3];
+
+/**
+ * Foreuse nomade : chariot à chenilles (cabine à gauche, moteur, coffres), quatre stabilisateurs (bras
+ * coulissants, vérins et patins), mât de forage en treillis articulé à l'arrière du chariot, vérin de levage
+ * télescopique, tige de forage à vrille et tête motrice. Les pièces sont décrites dans la pose déployée (le
+ * bâtiment « t_drill »). Avec `chariot`, ce sont celles du chenillard foreuse : les chenilles roulent et chaque
+ * pièce mobile porte son animation de déploiement (pivots « dep|… », voir render/entities.ts), de 0 (replié)
+ * à 1 (déployé) en 15 s :
+ * - 0,08 → 0,3 : les bras sortent du châssis ;
+ * - 0,3 → 0,48 : les vérins descendent et posent les patins ;
+ * - 0,5 → 0,85 : le mât, couché sur le chariot, se relève (+90° autour de x), poussé par le vérin télescopique ;
+ * - 0,85 → 1 : la tige descend dans le sol.
+ * Sans `chariot`, la tige est le pivot « foret », qui tourne quand la foreuse travaille.
+ */
+function foreuseNomade(chariot: boolean): Part[] {
+  const [hx, hy, hz] = MAT_H;
+  const dep = (steps: string, nom: string): Partial<Part> => (chariot ? { pivot: `dep|${steps}#${nom}` } : {});
+  const mat = "r:x,90:0.5:0.85";
+  const p: Part[] = [
+    // ——— chariot ———
+    ...chenille(0.66, 2.5, 0.42, 0.32, 0, 0, 0.34, chariot),
+    { shape: "bevel", size: [1.0, 0.24, 2.5], pos: [0, 0.4, 0], bevel: 0.04, color: "dark" },
+    { shape: "box", size: [1.36, 0.05, 2.34], pos: [0, 0.55, -0.02], color: "metal" },
+    // jupes d'équipe et garde-boue
+    { shape: "box", size: [0.03, 0.2, 1.9], pos: [0.84, 0.32, 0], color: "faction", mirror: true },
+    { shape: "box", size: [0.34, 0.04, 0.22], pos: [0.66, 0.46, 1.16], color: "rust", mirror: true },
+    { shape: "box", size: [0.34, 0.04, 0.22], pos: [0.66, 0.46, -1.16], color: "rust", mirror: true },
+    // cabine à gauche, à l'avant : caisse, fente vitrée, toit de bâche, phares
+    { shape: "bevel", size: [0.6, 0.42, 0.52], pos: [-0.33, 0.78, 0.92], bevel: 0.04, color: "metal" },
+    { shape: "box", size: [0.48, 0.1, 0.03], pos: [-0.33, 0.88, 1.19], color: "glass" },
+    { shape: "box", size: [0.03, 0.1, 0.3], pos: [-0.64, 0.88, 0.92], color: "glass" },
+    { shape: "extrude", profile: voute(0.33, 0.12, 6), depth: 0.56, pos: [-0.33, 0.99, 0.92], color: "dry" },
+    { shape: "box", size: [0.1, 0.06, 0.03], pos: [-0.55, 0.66, 1.19], color: "amber" },
+    { shape: "box", size: [0.1, 0.06, 0.03], pos: [-0.11, 0.66, 1.19], color: "amber" },
+    // berceau du mât couché (avant droit)
+    { shape: "box", size: [0.05, 0.16, 0.06], pos: [0.16, 0.64, 0.95], color: "rust" },
+    { shape: "box", size: [0.05, 0.16, 0.06], pos: [0.44, 0.64, 0.95], color: "rust" },
+    { shape: "box", size: [0.36, 0.04, 0.08], pos: [0.3, 0.71, 0.95], color: "dark" },
+    // moteur arrière gauche sous bâche, échappement
+    { shape: "bevel", size: [0.56, 0.3, 0.6], pos: [-0.33, 0.72, -0.85], bevel: 0.03, color: "dark" },
+    ...bache(-0.33, 0.87, -0.85, 0.27, 0.18, 0.56, "dry", 1, false),
+    { shape: "tube", radius: 0.04, path: [[-0.6, 0.7, -1.02], [-0.6, 1.26, -1.02], [-0.56, 1.32, -0.98]], bend: 0.06, color: "rust" },
+    // réservoir hydraulique et coffres
+    { shape: "cylinder", sides: 10, radius: 0.12, height: 0.5, pos: [-0.33, 0.7, -0.2], rot: [90, 0, 0], color: "steel" },
+    ...coffre([-0.33, 0.66, 0.35], [0.4, 0.18, 0.34], "rust"),
+    // charnière du mât : chape sur le plateau arrière droit
+    { shape: "box", size: [0.46, 0.14, 0.2], pos: [hx, 0.62, hz], color: "steel" },
+    // ancrage du vérin de levage
+    { shape: "box", size: [0.2, 0.08, 0.16], pos: [VERIN_A[0], 0.59, VERIN_A[2]], color: "steel" },
+  ];
+  // ——— stabilisateurs : bras coulissants (et leur fourreau de vérin), vérins et patins ———
+  for (const sx of [1, -1]) {
+    const cote = sx > 0 ? "d" : "g";
+    for (const z of [0.85, -0.7]) {
+      p.push(
+        { shape: "box", size: [0.6, 0.1, 0.13], pos: [sx * 0.85, 0.44, z], color: "rust", ...dep(`t:${-sx * 0.6},0,0:0.08:0.3`, `bras_${cote}`) },
+        { shape: "box", size: [0.18, 0.11, 0.135], pos: [sx * 0.7, 0.445, z], color: "hazard", ...dep(`t:${-sx * 0.6},0,0:0.08:0.3`, `bras_${cote}`) },
+        { shape: "cylinder", sides: 6, radius: 0.08, height: 0.26, pos: [sx * 1.12, 0.5, z], color: "dark", ...dep(`t:${-sx * 0.6},0,0:0.08:0.3`, `bras_${cote}`) },
+        { shape: "cylinder", sides: 6, radius: 0.05, height: 0.42, pos: [sx * 1.12, 0.24, z], color: "steel", ...dep(`t:${-sx * 0.6},0,0:0.08:0.3|t:0,0.3,0:0.3:0.48`, `pied_${cote}`) },
+        { shape: "cylinder", sides: 6, radius: 0.17, radiusTop: 0.11, height: 0.06, pos: [sx * 1.12, 0.03, z], color: "dark", ...dep(`t:${-sx * 0.6},0,0:0.08:0.3|t:0,0.3,0:0.3:0.48`, `pied_${cote}`) },
+      );
+    }
+  }
+  // ——— mât de forage en treillis, articulé en MAT_H (pose déployée : vertical, derrière la charnière) ———
+  const m = dep(mat, "mat");
+  const zf = hz - 0.03; // face avant du mât
+  const zb = hz - 0.29; // face arrière
+  p.push({ shape: "cylinder", sides: 8, radius: 0.07, height: 0.5, pos: [hx, hy, hz], rot: [0, 0, 90], color: "steel", ...m });
+  for (const x of [hx - 0.16, hx + 0.16]) {
+    for (const z of [zf, zb]) {
+      p.push({ shape: "box", size: [0.045, MAT_L, 0.045], pos: [x, q(hy + MAT_L / 2), z], color: "rust", ...m });
+    }
+  }
+  for (let i = 0; i < 5; i++) {
+    const y = q(hy + 0.25 + i * 0.42);
+    p.push(
+      { shape: "box", size: [0.32, 0.035, 0.035], pos: [hx, y, zf], color: "dark", ...m },
+      { shape: "box", size: [0.32, 0.035, 0.035], pos: [hx, y, zb], color: "dark", ...m },
+    );
+    if (i < 4) p.push({ shape: "tube", radius: 0.014, sides: 4, path: [[hx - 0.16, y, zf], [hx + 0.16, q(y + 0.42), zf]], color: "metal", fine: true, ...m });
+  }
+  // moufle (tête du mât) d'équipe, poulie, feu de signalisation
+  const top = q(hy + MAT_L);
+  p.push(
+    { shape: "bevel", size: [0.44, 0.18, 0.4], pos: [hx, q(top + 0.06), q((zf + zb) / 2)], bevel: 0.03, color: "faction", ...m },
+    { shape: "cylinder", sides: 10, radius: 0.13, height: 0.07, pos: [hx, q(top + 0.02), q(zb - 0.04)], rot: [90, 0, 0], color: "steel", ...m },
+    { shape: "sphere", radius: 0.045, pos: [q(hx + 0.18), q(top + 0.18), zf], color: "amber", ...m },
+  );
+  // ——— tige de forage, à l'arrière du mât (elle descend dans le sol à la fin) ———
+  const tz = q(zb - 0.13);
+  // chariot : la tige suit le mât (ancre du pivot sur la charnière), puis descend ; foreuse déployée : la
+  // même tige tourne au travail (pivot « foret », origine sur son axe), la tête motrice reste fixe
+  const t = dep(`${mat}|t:0,0.9,0:0.85:1`, "tige");
+  const tete = chariot ? t : {};
+  if (chariot) p.push({ shape: "box", size: [0.02, 0.02, 0.02], pos: [hx, hy, hz], color: "dark", ...t });
+  const foret = chariot ? t : { pivot: "foret" };
+  p.push(
+    { shape: "lathe", sides: 10, pos: [hx, -0.35, tz], color: "dark", profile: [[0, 0], [0.04, 0.08], [0.07, 0.2], [0.07, 2.0], [0, 2.0]], ...foret },
+    { shape: "tube", radius: 0.02, sides: 4, path: heliceY(hx, tz, 0.1, -0.25, 1.2, 3, 18), bend: 0, color: "steel", ...foret },
+    { shape: "bevel", size: [0.3, 0.22, 0.26], pos: [hx, 1.72, tz], bevel: 0.03, color: "faction", ...tete },
+    { shape: "tube", radius: 0.025, sides: 5, path: [[q(hx - 0.1), 1.76, tz], [q(hx - 0.35), 1.4, q(tz + 0.2)], [q(hx - 0.3), 0.75, hz]], bend: 0.12, color: "copper", fine: true, ...tete },
+  );
+  // foreuse déployée : déblais de minerai autour du trou (teintés selon la ressource)
+  if (!chariot) p.push({ shape: "lathe", sides: 10, pos: [hx, 0, tz], color: "ore", profile: [[0.1, 0], [0.34, 0], [0.24, 0.07], [0.12, 0.05]] });
+  // ——— vérin de levage télescopique, du plateau (VERIN_A) au mât (à 0,9 de la charnière) ———
+  // pose déployée : vers B = (hx, hy + 0,9, hz - 0,16) ; replié, B tourne avec le mât (+90° autour de x)
+  const [ax, ay, az] = VERIN_A;
+  const by = hy + 0.9, bz = hz - 0.16;
+  const fy = hy + 0.16, fz = hz + 0.9; // B replié
+  const len = Math.hypot(by - ay, bz - az);
+  const len0 = Math.hypot(fy - ay, fz - az);
+  const u: Vec3 = [0, (by - ay) / len, (bz - az) / len];
+  const ang = q(((Math.atan2(by - ay, bz - az) - Math.atan2(fy - ay, fz - az)) * 180) / Math.PI);
+  const at = (d: number): Vec3 => [ax, q(ay + u[1] * d), q(az + u[2] * d)];
+  const seg = (d0: number, d1: number, r: number, color: C, retrait: number, nom: string): Part => ({
+    shape: "tube", radius: r, sides: 6, path: [at(d0), at(d1)], color,
+    ...(chariot ? { pivot: `dep|r:x,${ang}:0.5:0.85|t:0,${q(-u[1] * retrait)},${q(-u[2] * retrait)}:0.5:0.85#${nom}` } : {}),
+  });
+  // ancres des pivots du vérin (origine en A) : chaque étage tourne autour de A et rentre dans le précédent
+  const course = len - len0;
+  const st = len0 - 0.08;
+  const anchor = (nom: string, retrait: number): Part => ({ shape: "box", size: [0.01, 0.01, 0.01], pos: VERIN_A, color: "dark", ...(chariot ? { pivot: `dep|r:x,${ang}:0.5:0.85|t:0,${q(-u[1] * retrait)},${q(-u[2] * retrait)}:0.5:0.85#${nom}` } : {}) });
+  p.push(
+    anchor("verin0", 0),
+    seg(0, st, 0.065, "dark", 0, "verin0"),
+    anchor("verin1", course / 3),
+    seg(q(st - 0.05), q(2 * st - 0.05), 0.05, "steel", course / 3, "verin1"),
+    anchor("verin2", (2 * course) / 3),
+    seg(q(2 * st - 0.1), q(3 * st - 0.1), 0.04, "steel", (2 * course) / 3, "verin2"),
+    anchor("verin3", course),
+    seg(q(3 * st - 0.15), q(len), 0.03, "steel", course, "verin3"),
+  );
+  return p;
+}
+
 // ——— Bâtiments ———
 
 export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
-  // t_drill : foreuse nomade posée sur un gisement ; mât de forage relevé à deux rails rouille et entretoises,
-  // moufle au sommet, vérin de levage depuis l'arrière, tête motrice d'équipe et vrille tournante (pivot « foret »)
-  // plongeant dans un puits bordé de minerai ; moteur sous bâche à l'arrière, trémie et goulotte vers l'avant
-  t_drill: {
-    parts: [
-      ...socleNomade(2, 2),
-      // puits : lèvre de minerai (teintée selon la ressource), fond noir, éclats
-      { shape: "lathe", sides: 12, pos: [0, 0.62, 0.32], color: "ore", profile: [[0.2, 0], [0.36, 0], [0.36, 0.03], [0.3, 0.07], [0.24, 0.07], [0.2, 0.04]] },
-      { shape: "cylinder", sides: 12, radius: 0.22, height: 0.02, pos: [0, 0.635, 0.32], color: "black" },
-      { shape: "box", size: [0.09, 0.06, 0.07], pos: [0.3, 0.66, 0.6], rot: [12, 30, 8], color: "ore", fine: true },
-      { shape: "box", size: [0.08, 0.05, 0.08], pos: [-0.36, 0.66, 0.5], rot: [-8, 50, 10], color: "ore", fine: true },
-      // vrille (pivot)
-      ...vrille(0, 0.32, 0.62, 1.55, 0.3, "foret"),
-      // mât de forage : deux rails, entretoises, moufle et poulie
-      { shape: "box", size: [0.08, 2.0, 0.1], pos: [0.27, 1.6, 0.06], color: "rust", mirror: true },
-      ...[1.0, 1.55, 2.1].map((y): Part => ({ shape: "box", size: [0.5, 0.05, 0.05], pos: [0, y, 0.06], color: "dark" })),
-      ...[0.8, 1.35, 1.9].map((y): Part => ({ shape: "tube", radius: 0.018, sides: 4, path: [[-0.25, y, 0.06], [0.25, q(y + 0.45), 0.06]], color: "metal", fine: true })),
-      { shape: "bevel", size: [0.66, 0.16, 0.36], pos: [0, 2.65, 0.14], bevel: 0.03, color: "metal" },
-      { shape: "cylinder", sides: 10, radius: 0.12, height: 0.08, pos: [0, 2.65, 0.32], rot: [90, 0, 0], color: "steel" },
-      { shape: "sphere", radius: 0.04, pos: [0.3, 2.76, 0.14], color: "amber" },
-      // tête motrice d'équipe sur les rails, flexible de cuivre
-      { shape: "bevel", size: [0.5, 0.26, 0.34], pos: [0, 1.72, 0.3], bevel: 0.04, color: "faction" },
-      { shape: "cylinder", sides: 10, radius: 0.08, height: 0.2, pos: [0, 1.56, 0.32], color: "dark" },
-      { shape: "tube", radius: 0.03, sides: 5, path: [[0.2, 1.8, 0.2], [0.42, 1.6, -0.1], [0.45, 0.9, -0.45]], bend: 0.12, color: "copper", fine: true },
-      // vérin de levage du mât (depuis l'arrière du plateau)
-      { shape: "tube", radius: 0.06, path: [[0, 0.75, -0.62], [0, 1.4, 0.02]], color: "dark" },
-      { shape: "tube", radius: 0.04, path: [[0, 1.2, -0.17], [0, 1.85, 0.05]], color: "steel" },
-      // moteur sous bâche à l'arrière, échappement
-      { shape: "bevel", size: [0.9, 0.3, 0.5], pos: [0, 0.77, -0.6], bevel: 0.03, color: "metal" },
-      ...bache(0, 0.92, -0.6, 0.42, 0.26, 0.5, "dry", 1),
-      { shape: "tube", radius: 0.045, path: [[-0.55, 0.62, -0.75], [-0.55, 1.4, -0.75], [-0.5, 1.48, -0.72]], bend: 0.06, color: "rust" },
-      // trémie à minerai (avant droit) et goulotte vers la sortie
-      { shape: "lathe", sides: 4, pos: [0.44, 0.62, 0.12], rot: [0, 45, 0], color: "rust", profile: [[0.08, 0], [0.1, 0], [0.3, 0.34], [0.3, 0.38], [0.26, 0.38], [0.08, 0.06]] },
-      { shape: "box", size: [0.3, 0.02, 0.3], pos: [0.44, 0.97, 0.12], color: "ore" },
-      { shape: "box", size: [0.2, 0.05, 0.6], pos: [0.44, 0.55, 0.72], rot: [32, 0, 0], color: "metal" },
-      { shape: "box", size: [0.14, 0.02, 0.54], pos: [0.44, 0.58, 0.71], rot: [32, 0, 0], color: "ore", fine: true },
-      { shape: "lathe", sides: 6, pos: [0.44, 0, 0.86], color: "ore", profile: [[0, 0], [0.13, 0], [0.08, 0.07], [0, 0.1]] },
-      // coffres sanglés à gauche
-      ...coffre([-0.45, 0.74, 0.55], [0.32, 0.22, 0.36], "wood"),
-      ...coffre([-0.47, 0.73, 0.1], [0.28, 0.2, 0.32], "rust"),
-    ],
-  },
+  // t_drill : foreuse nomade déployée ; même gréement que le chenillard foreuse (voir foreuseNomade), dans sa
+  // pose finale : stabilisateurs posés, mât relevé à l'arrière, tige de forage plantée (pivot « foret »)
+  t_drill: { parts: foreuseNomade(false) },
   // t_furnace : fonderie nomade ; creuset tournant sur tourillons entre deux montants rouille, bain de fonte
   // ambre, bec verseur ; cheminée télescopique haubanée (trois tronçons), soufflerie à conduite de cuivre,
   // bac de charbon, coupe-vent de toile tendu à l'arrière
@@ -562,27 +665,6 @@ export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
 
 // ——— Unités ———
 
-/** Chargement du chenillard foreuse : mât de forage couché, vrille couchée à filet, tête motrice d'équipe. */
-function chDrill(): Part[] {
-  return [
-    // berceaux
-    ...[-1.05, 0.3].map((z): Part => ({ shape: "box", size: [0.7, 0.16, 0.12], pos: [0, 0.72, z], color: "dark" })),
-    // mât couché : deux rails, entretoises, moufle à l'arrière
-    { shape: "box", size: [0.07, 0.08, 1.8], pos: [0.27, 0.82, -0.38], color: "rust", mirror: true },
-    ...[-1.0, -0.4, 0.2].map((z): Part => ({ shape: "box", size: [0.5, 0.05, 0.05], pos: [0, 0.82, z], color: "dark" })),
-    { shape: "bevel", size: [0.66, 0.2, 0.3], pos: [0, 0.86, -1.18], bevel: 0.03, color: "metal" },
-    // vrille couchée (pointe vers l'avant) à filet sombre
-    { shape: "lathe", sides: 10, pos: [0, 1.04, -0.95], rot: [90, 0, 0], color: "steel", profile: [[0, 0], [0.14, 0], [0.15, 0.1], [0.14, 1.2], [0.06, 1.42], [0, 1.48]] },
-    { shape: "tube", radius: 0.026, sides: 4, path: heliceZ(0, 1.04, 0.16, -0.85, 0.35, 3.5, 24), bend: 0, color: "dark", fine: true },
-    // tête motrice
-    { shape: "bevel", size: [0.44, 0.3, 0.3], pos: [0, 1.04, -0.98], bevel: 0.04, color: "faction" },
-    { shape: "tube", radius: 0.03, sides: 5, path: [[0.2, 1.1, -1.05], [0.45, 0.9, -0.8], [0.5, 0.72, -0.4]], bend: 0.1, color: "copper", fine: true },
-    // vérin replié
-    { shape: "tube", radius: 0.05, path: [[-0.42, 0.74, -1.1], [-0.42, 0.74, 0.1]], color: "dark" },
-    { shape: "tube", radius: 0.035, path: [[-0.42, 0.74, 0.1], [-0.42, 0.74, 0.4]], color: "steel" },
-  ];
-}
-
 /** Chargement du chenillard fonderie : creuset couvert sur tourillons, cheminée couchée en tronçons, bac de charbon. */
 function chFurnace(): Part[] {
   return [
@@ -788,7 +870,8 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "sphere", radius: 0.04, pos: [-0.45, 2.96, 0.75], color: "amber", fine: true },
     ],
   },
-  ch_drill: { parts: [...chenillard(), ...chDrill()] },
+  // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade)
+  ch_drill: { parts: foreuseNomade(true) },
   ch_furnace: { parts: [...chenillard(), ...chFurnace()] },
   ch_assembler: { parts: [...chenillard(), ...chAssembler()] },
   ch_refinery: { parts: [...chenillard(), ...chRefinery()] },

@@ -493,3 +493,25 @@ fn deployed_modules_face_their_links() {
         assert_eq!(w.map.occ[w.map.idx(x, y)], 0, "sortie de l'atelier libre (sens {})", ab.dir);
     }
 }
+
+#[test]
+fn a_deploying_chenillard_settles_on_its_module_spot_and_direction() {
+    let (mut w, s, k) = nomads();
+    // décalé d'une case et tourné de travers : il doit rejoindre le centre de l'emplacement et le sens prévus
+    w.units.x[s] += TILE / 2;
+    w.units.facing[s] = 5000;
+    let id = w.unit_id(s) as i32;
+    order(&mut w, 0, O_DEPLOY, &[1, id]);
+    let (work, timer) = (w.units.cold[s].work, w.units.cold[s].timer);
+    assert!(work != 0 && timer != 0, "plan du déploiement");
+    let (bx, by) = ((work & 0xffff) as i32 - 1, (work >> 16) as i32);
+    let dir = (timer - 1) as u8;
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 - 2);
+    assert_eq!((w.units.x[s], w.units.y[s]), (bx * TILE + TILE, by * TILE + TILE), "centré sur l'emplacement");
+    assert_eq!(w.units.facing[s], crate::buildings::bb_dir_angle(dir) as u16, "tourné vers le sens du module");
+    steps(&mut w, 5);
+    let b = find_building(&w, 0, B_T_DRILL).expect("foreuse");
+    assert_eq!((w.buildings[b].x, w.buildings[b].y), (bx, by));
+    assert_eq!(w.buildings[b].dir, dir, "sens du plan (rien de collé ne le change)");
+    assert_eq!(w.buildings[b].link, k as u32);
+}
