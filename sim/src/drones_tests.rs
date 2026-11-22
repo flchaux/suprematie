@@ -494,3 +494,34 @@ fn commander_uses_his_hold_before_calling_a_depot() {
     }
     assert_eq!(has(&w.buildings[d].stash, IRON_PLATE), 200 - cost_of(B_GENERATOR, IRON_PLATE), "le dépôt n'a donné que le second");
 }
+
+/// Un chantier intact a des points de vie au moins à son avancement (sa barre de progression ne montre pas
+/// de dégâts) : les gains ne perdent pas leurs arrondis d'un pas à l'autre (`site_hp_gain`). Grand bâtiment
+/// (beaucoup de points de vie, des centaines de pas) et tapis (peu de points de vie, gros pas).
+#[test]
+fn intact_site_keeps_hp_up_with_its_progress() {
+    for (kind, x) in [(B_LAND_FACTORY, 110), (B_BELT1, 104)] {
+        let mut w = world(1);
+        depot(&mut w, 0, 100, 110, &[(IRON_PLATE, 500), (COPPER_PLATE, 300), (GEAR, 200), (CIRCUIT, 200), (STEEL, 200)]);
+        let (id, _) = engineer(&mut w, 100, 100);
+        build(&mut w, id, kind, x, 100);
+        let max = bdef(kind).hp as i64;
+        let mut seen = 0;
+        for _ in 0..6000 {
+            w.step(&[]);
+            let Some(b) = site(&w, kind, x, 100) else { continue };
+            let bb = &w.buildings[b];
+            if bb.complete() {
+                break;
+            }
+            if bb.build > 0 {
+                seen += 1;
+                // points de vie (sur le maximum) >= avancement (sur BUILD_FULL), à un point de vie près
+                assert!((bb.hp as i64 + 1) * BUILD_FULL as i64 >= max * bb.build as i64, "{kind} : {} PV sur {max} à {} / {}", bb.hp, bb.build, BUILD_FULL);
+            }
+        }
+        assert!(seen > 0, "{kind} : chantier commencé");
+        let b = site(&w, kind, x, 100).expect("chantier");
+        assert!(w.buildings[b].complete(), "{kind} terminé");
+    }
+}

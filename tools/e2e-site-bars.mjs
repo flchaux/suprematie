@@ -53,7 +53,7 @@ for (const [name, d] of [["pres", 45], ["loin", 200]]) {
   check(sites > 80, `${name} : chantiers dans l'image`, String(sites));
   // fond + part faite au moins, pour chaque chantier vu
   check(bars >= 2 * 80, `${name} : barres de chantier dessinées`, `${bars} instances`);
-  await page.screenshot({ path: `${outDir}/site-bars-${name}.png` });
+  await page.screenshot({ path: `${outDir}/site-bars-${name}.png`, timeout: 120000 });
   console.log(`capture : ${outDir}/site-bars-${name}.png`);
 }
 

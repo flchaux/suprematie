@@ -38,7 +38,7 @@ export function siteBarOf(buf: Int32Array, o: number, maxHp: number, belt: boole
 
 /** Épaisseur minimale d'une barre à l'écran, en pixels, et longueur minimale d'une barre de bâtiment. */
 export const BAR_MIN_PX = 4;
-export const BAR_MIN_LEN_PX = 22;
+export const BAR_MIN_LEN_PX = 12;
 
 /**
  * Taille d'une barre (en cases du monde) au-dessus d'un bâtiment de `w` × `h` cases, quand une case du

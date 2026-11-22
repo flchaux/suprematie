@@ -62,7 +62,9 @@ describe("taille des barres selon le zoom", () => {
       expect(s.thick).toBeGreaterThanOrEqual(Math.min(BAR_MIN_PX * px, small ? 0.7 : Infinity) - 1e-9);
     }
     // un bâtiment : la barre s'allonge pour rester lisible
-    expect(siteBarSize(2, 2, false, px).width / px).toBeGreaterThanOrEqual(20);
+    expect(siteBarSize(2, 2, false, px).width / px).toBeGreaterThanOrEqual(12);
+    // sans déborder sur le voisin : au plus la largeur de 2 cases pour un bâtiment de 2 × 2 vu à 200 cases (6 pixels la case)
+    expect(siteBarSize(2, 2, false, worldPerPixel(200, 40, H)).width).toBeLessThanOrEqual(2.1);
   });
 
   it("une petite pièce garde sa barre dans sa case (barres d'une file séparées)", () => {

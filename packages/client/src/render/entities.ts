@@ -137,10 +137,11 @@ const FITTED_HOLE = new THREE.Vector3(0.38 / 0.5, 0.2 / 0.3, 0.1);
 const UPGRADE_TINT = new THREE.Color(0xffc266);
 /** barres de chantier : 3 instances au plus par chantier (fond, part faite, part perdue) */
 const SITE_BARS_MAX = 16384;
-const SITE_BACK = new THREE.Color(0.08, 0.1, 0.12);
-const SITE_DONE = new THREE.Color(0.35, 0.85, 1);
-const SITE_LOST = new THREE.Color(0.9, 0.2, 0.15);
-const SITE_UPGRADE = new THREE.Color(1, 0.72, 0.25);
+// couleurs données en sRGB (comme à l'écran) : en linéaire, le cyan sortait presque blanc
+const SITE_BACK = new THREE.Color(0x0b0e12);
+const SITE_DONE = new THREE.Color(0x1fb8ff);
+const SITE_LOST = new THREE.Color(0xe8321f);
+const SITE_UPGRADE = new THREE.Color(0xffa41f);
 const CRAFTER_ASSEMBLER = 1;
 
 const tmpM = new THREE.Matrix4();

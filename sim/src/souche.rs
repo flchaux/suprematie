@@ -334,8 +334,8 @@ pub fn grow(w: &mut World, b: usize) {
     }
     let bb = &mut w.buildings[b];
     bb.stalled = false;
+    bb.hp = (bb.hp + crate::buildings::site_hp_gain(def.hp, bb.build, p2)).min(def.hp);
     bb.build = p2;
-    bb.hp = (bb.hp + (def.hp as i64 * delta as i64 / BUILD_FULL as i64) as i32).min(def.hp);
     if p2 >= BUILD_FULL {
         buildings::complete_building(w, b);
     }

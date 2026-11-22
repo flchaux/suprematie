@@ -345,6 +345,14 @@ fn can_place_with(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8, terr
     true
 }
 
+/// Points de vie gagnés par un chantier qui passe de l'avancement `from` à `to` (sur `BUILD_FULL`) : la part
+/// de `max_hp` entre les deux, calculée sur l'avancement total pour que les arrondis ne s'accumulent pas (un
+/// chantier intact garde des points de vie au moins à son avancement, ce que montre sa barre).
+pub fn site_hp_gain(max_hp: i32, from: u32, to: u32) -> i32 {
+    let part = |p: u32| (max_hp as i64 * p.min(BUILD_FULL) as i64 / BUILD_FULL as i64) as i32;
+    part(to) - part(from)
+}
+
 pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
     if !can_place(w, owner, kind, x, y, dir) {
         return None;

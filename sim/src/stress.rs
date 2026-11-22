@@ -838,7 +838,7 @@ pub fn chantiers_demo() -> World {
         let b = place_building(w, 0, kind, x, y, dir)?;
         let bb = &mut w.buildings[b];
         bb.build = (BUILD_FULL as u64 * f as u64 / 1000) as u32;
-        bb.hp = ((bb.def().hp as i64 * f as i64 / 1000) as i32).max(1);
+        bb.hp = ((bb.def().hp as i64 * f as i64 + 999) / 1000).max(1) as i32;
         Some(b)
     };
     // bâtiments des Industriels, puis organes de la Souche
