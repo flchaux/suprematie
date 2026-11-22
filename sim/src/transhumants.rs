@@ -195,6 +195,152 @@ fn deploy(w: &mut World, s: usize) {
         let spot = spot_under(w, bx, by, bw, bh);
         w.buildings[b].link = spot;
     }
+    // sens logique : le module et ses voisins collés se tournent selon leurs liaisons
+    orient(w, b);
+    for o in glued(w, b) {
+        orient(w, o);
+    }
+}
+
+/// Modules des Transhumants du même joueur, terminés, collés à une face du bâtiment `b`, par indice croissant.
+pub fn glued(w: &World, b: usize) -> Vec<usize> {
+    let bb = &w.buildings[b];
+    let owner = bb.owner;
+    let (x, y) = (bb.x, bb.y);
+    let (bw, bh) = bb.size();
+    let (cx, cy) = bb.center();
+    let mut near: Vec<usize> = Vec::new();
+    w.grid.query_buildings(cx, cy, 5 * TILE, |o| {
+        if o == b {
+            return;
+        }
+        let ob = &w.buildings[o];
+        if !ob.alive || ob.owner != owner || !ob.complete() || ob.def().race != RACE_TRANSH {
+            return;
+        }
+        let (ow, oh) = ob.size();
+        // collés par une face (pas seulement par un coin)
+        let touch_x = (ob.x + ow == x || x + bw == ob.x) && ob.y < y + bh && y < ob.y + oh;
+        let touch_y = (ob.y + oh == y || y + bh == ob.y) && ob.x < x + bw && x < ob.x + ow;
+        if touch_x || touch_y {
+            near.push(o);
+        }
+    });
+    near.sort_unstable();
+    near
+}
+
+/// Intérêt d'une case devant la face avant du module `b` (orientation automatique) : un voisin qui reçoit
+/// ce que le module produit (foreuse, fabricant) attire la face avant ; une usine veut une sortie libre ;
+/// les autres modules se tournent vers le côté dégagé.
+fn front_score(w: &World, b: usize, fx: i32, fy: i32) -> i32 {
+    if !w.map.inside(fx, fy) {
+        return -3;
+    }
+    let bb = &w.buildings[b];
+    let class = bb.def().class;
+    let i = w.map.idx(fx, fy);
+    let o = w.map.occ[i];
+    if o == 0 {
+        let free = w.map.passable(fx, fy, crate::units::pass_mask(Layer::Land));
+        return match (class, free) {
+            (BClass::Factory, true) => 4,
+            (_, true) => 1,
+            _ => -2,
+        };
+    }
+    let nb = &w.buildings[(o - 1) as usize];
+    if nb.owner != bb.owner || !nb.alive {
+        return -2;
+    }
+    let nc = nb.def().class;
+    match class {
+        // foreuse : son minerai va à une fonderie, une raffinerie, une soute (ou un générateur pour l'hydrocarbure)
+        BClass::Extractor => {
+            let raw = bb.recipe;
+            let takes = match nc {
+                BClass::Depot => true,
+                BClass::Crafter => matches!((nb.def().crafter, raw), (Crafter::Furnace, IRON_ORE | COPPER_ORE | SILICON) | (Crafter::Refinery, HYDROCARBON | CRYSTAL)),
+                BClass::Power => raw == HYDROCARBON,
+                _ => false,
+            };
+            if takes {
+                10
+            } else {
+                -1
+            }
+        }
+        // fabricant : son produit va à la soute, à l'atelier, ou à un fabricant dont la recette l'utilise
+        BClass::Crafter => {
+            let out = if bb.recipe == RECIPE_NONE { 0 } else { RECIPES[bb.recipe as usize].output.0 };
+            let takes = match nc {
+                BClass::Depot | BClass::Factory => true,
+                BClass::Crafter => out != 0 && nb.recipe != RECIPE_NONE && RECIPES[nb.recipe as usize].inputs.iter().any(|x| x.0 == out),
+                BClass::Power => out == FUEL,
+                _ => false,
+            };
+            if takes {
+                10
+            } else {
+                -1
+            }
+        }
+        // atelier : les unités sortent par l'avant
+        BClass::Factory => -6,
+        _ => -1,
+    }
+}
+
+/// Oriente un module déployé (ils sont carrés : tourner ne change pas l'emprise) dans le sens le plus
+/// logique d'après ses voisins (voir `front_score`) ; à égalité, il garde son sens. Le point de
+/// ralliement d'un atelier suit sa sortie.
+pub fn orient(w: &mut World, b: usize) {
+    let bb = &w.buildings[b];
+    if !bb.alive || bb.def().race != RACE_TRANSH {
+        return;
+    }
+    let (bw, bh) = bb.size();
+    if bw != bh {
+        return;
+    }
+    let (x, y, cur) = (bb.x, bb.y, bb.dir & 3);
+    let mut best = (i32::MIN, cur);
+    for d in [cur, 0, 1, 2, 3] {
+        let n = buildings::front_count(bw, bh, d);
+        let score: i32 = (0..n)
+            .map(|k| {
+                let (fx, fy) = buildings::front_tile_k(x, y, bw, bh, d, k);
+                front_score(w, b, fx, fy)
+            })
+            .sum();
+        if score > best.0 {
+            best = (score, d);
+        }
+    }
+    let d = best.1;
+    if d == cur {
+        return;
+    }
+    w.buildings[b].dir = d;
+    if w.buildings[b].def().class == BClass::Factory {
+        let (fx, fy) = buildings::front_tile(x, y, bw, bh, d);
+        let (dx, dy) = crate::belts::DIRS[d as usize];
+        w.buildings[b].rally = (fx * TILE + TILE / 2 + dx * TILE * 3, fy * TILE + TILE / 2 + dy * TILE * 3);
+    }
+    w.buildings_version = w.buildings_version.wrapping_add(1);
+}
+
+/// Ordre « déployer ici » : le chenillard roule jusqu'au point (x, y), puis se déploie (ses ordres suivants
+/// sont abandonnés : il devient un bâtiment). Bloqué en route, il se déploie là où il est.
+pub fn deploy_at(w: &mut World, s: usize, x: i32, y: i32) {
+    let arrived = crate::units::steer(w, s, x, y, x, y, TILE / 3);
+    if !arrived && w.units.cold[s].stuck <= 100 {
+        return;
+    }
+    crate::units::clear_orders(w, s);
+    let c = &mut w.units.cold[s];
+    c.pack = PACK_DEPLOYING;
+    c.ready_tick = w.tick + DEPLOY_TICKS as u32;
 }
 
 /// Ordre « Replier » sur un module déployé : il redevient un chenillard.
@@ -235,7 +381,11 @@ pub fn fold(w: &mut World, b: usize) {
             refund.push((it as u8, *n as i32));
         }
     }
+    let around = glued(w, b);
     buildings::remove_building(w, b, false);
+    for o in around {
+        orient(w, o);
+    }
     for (it, n) in refund {
         if n > 0 && (it as usize) < NUM_ITEMS {
             crate::drones::refund(w, owner as u8, cx, cy, it, n as u32);

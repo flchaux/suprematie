@@ -121,6 +121,76 @@ const gen = await b.page.evaluate(() => {
   return null;
 });
 check(!!gen, "chenillard générateur au départ");
+// clic droit d'un chenillard foreuse sur un gisement libre : il s'y rend et s'y déploie
+const target = await b.page.evaluate(() => {
+  const { client, ui } = window.__game;
+  const k = ui.data.units.findIndex((u) => u.key === "ch_drill");
+  const f = client.frame;
+  let drill = null;
+  for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) {
+    if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me) { drill = { id: f.buf[o] >>> 0, x: f.buf[o + 2] / 256, z: f.buf[o + 3] / 256 }; break; }
+  }
+  if (!drill) return null;
+  const busy = new Set();
+  for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) busy.add(f.buf[o + 2] >>> 0);
+  const spots = client.map.spots.filter((s) => s.kind >= 1 && s.kind <= 3).map((s) => ({ ...s, d: Math.hypot(s.x + 1 - drill.x, s.y + 1 - drill.z) })).filter((s) => s.d > 4 && s.d < 40).sort((a, b) => a.d - b.d);
+  const s = spots[0];
+  if (!s) return null;
+  client.selectIds([drill.id]);
+  const sc = client.scene;
+  sc.target.set(s.x + 1, 0, s.y + 1);
+  sc.distance = 26;
+  sc.updateCamera();
+  return { drill: drill.id, x: s.x, y: s.y, kind: s.kind };
+});
+check(!!target, "gisement libre près d'un chenillard foreuse");
+if (target) {
+  await b.page.waitForTimeout(1500);
+  const screen = await b.page.evaluate(([x, z]) => {
+    const { client } = window.__game;
+    const r = client.canvasEl.getBoundingClientRect();
+    let best = { x: 0, y: 0, d: Infinity };
+    for (let sy = 60; sy < r.height - 20; sy += 4) {
+      for (let sx = 20; sx < r.width - 20; sx += 4) {
+        const g = client.groundAt(sx, sy);
+        if (!g) continue;
+        const d = Math.hypot(g.x - x, g.z - z);
+        if (d >= best.d || d > 0.4) continue;
+        const el = document.elementFromPoint(sx + r.left, sy + r.top);
+        if (el !== client.canvasEl && !client.canvasEl.contains(el)) continue;
+        best = { x: sx + r.left, y: sy + r.top, d };
+      }
+    }
+    return best;
+  }, [target.x + 1, target.y + 1]);
+  await b.page.mouse.move(screen.x, screen.y);
+  await b.page.waitForTimeout(600);
+  await b.page.mouse.move(screen.x + 2, screen.y + 1);
+  await b.page.waitForTimeout(600);
+  const cursor = await b.page.evaluate(() => window.__game.client.cursorKind);
+  check(cursor === "harvest", "curseur sur le gisement avec le chenillard foreuse", cursor);
+  await b.page.mouse.click(screen.x + 2, screen.y + 1, { button: "right", timeout: 120000 });
+  const tq = await b.page.evaluate(() => window.__game.client.frame.tick);
+  // trajet puis 15 s de déploiement
+  await b.page.waitForFunction(([t, x, y]) => {
+    const { client, ui } = window.__game;
+    const k = ui.data.buildings.findIndex((d) => d.key === "t_drill");
+    const f = client.frame;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) {
+      if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === ui.me && (f.buf[o + 2] & 0xffff) === x && f.buf[o + 2] >>> 16 === y) return true;
+    }
+    return f.tick > t + 1500;
+  }, [tq, target.x, target.y], { timeout: 900000 });
+  const onSpot = await b.page.evaluate(([x, y]) => {
+    const { client, ui } = window.__game;
+    const k = ui.data.buildings.findIndex((d) => d.key === "t_drill");
+    const f = client.frame;
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) if ((f.buf[o + 1] & 0xff) === k && (f.buf[o + 2] & 0xffff) === x && f.buf[o + 2] >>> 16 === y) return true;
+    return false;
+  }, [target.x, target.y]);
+  check(onSpot, "foreuse déployée sur le gisement cliqué");
+  await b.page.screenshot({ path: `${outDir}/races-foreuse.png`, timeout: 120000 });
+}
 await b.page.evaluate(([id, x, y]) => {
   const { client } = window.__game;
   client.selectIds([id]);

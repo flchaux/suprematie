@@ -40,6 +40,8 @@ export const O = {
   HARVEST: 26,
   /** Transhumants : replier des modules déployés en chenillards : [n, réf. de bâtiment…] */
   PACK: 48,
+  /** chenillards : rouler jusqu'au point et s'y déployer : [drapeaux, x, y (sous-unités), n, unités…] */
+  DEPLOY_AT: 49,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -200,6 +202,10 @@ export function harvest(ids: number[], x: number, y: number, queue = false): Cmd
 }
 export function deploy(ids: number[]): Cmd {
   return [O.DEPLOY, ids.length, ...ids.map((x) => x | 0)];
+}
+/** Transhumants : chenillards qui roulent jusqu'au point (x, y) (sous-unités) et s'y déploient. */
+export function deployAt(ids: number[], x: number, y: number, queue = false): Cmd {
+  return point(O.DEPLOY_AT, ids, x, y, queue);
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {
