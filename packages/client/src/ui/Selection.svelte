@@ -612,7 +612,7 @@
         {@const air = bdef.cls === BClass.CargoPad}
         {@const capa = d.carriers?.[air ? 1 : 0]?.capacity ?? (air ? 25 : 400)}
         {@const step = air ? 1 : 25}
-        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage au plus." : "Trains : sur les rails de l'équipe, 400 objets par voyage au plus."} Les bras déposent dans « À envoyer » et prennent dans « Reçus ». Une gare alliée peut être la destination.</span>
+        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage au plus." : "Trains : sur les rails de l'équipe, 400 objets par voyage au plus."} Bras et tapis entrants déposent dans « À envoyer » ; les « Reçus » sortent sur les tapis qui partent de ses faces et par les bras. Une gare alliée peut être la destination.</span>
         <div class="share">
           <div class="row">
             <span class="kicker">Objets par voyage</span>
