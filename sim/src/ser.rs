@@ -6,6 +6,8 @@ pub struct W {
 pub struct R<'a> {
     pub buf: &'a [u8],
     pub pos: usize,
+    /// version du format lu (voir save.rs) : les champs ajoutés depuis prennent leur valeur par défaut
+    pub version: u32,
 }
 
 impl W {
@@ -37,7 +39,7 @@ impl W {
 
 impl<'a> R<'a> {
     pub fn new(buf: &'a [u8]) -> R<'a> {
-        R { buf, pos: 0 }
+        R { buf, pos: 0, version: crate::save::VERSION }
     }
     #[inline]
     pub fn u8(&mut self) -> u8 {
@@ -204,6 +206,15 @@ macro_rules! ser_struct {
         impl $crate::ser::Ser for $t {
             fn ser(&self, w: &mut $crate::ser::W) { $( $crate::ser::Ser::ser(&self.$f, w); )* }
             fn de(r: &mut $crate::ser::R) -> Self { $t { $( $f: $crate::ser::Ser::de(r), )* } }
+        }
+    };
+    // champs ajoutés à la version `v` du format : absents des sauvegardes plus anciennes (valeur par défaut)
+    ($t:ident { $($f:ident),* ; since $v:literal : $($n:ident),* $(,)? }) => {
+        impl $crate::ser::Ser for $t {
+            fn ser(&self, w: &mut $crate::ser::W) { $( $crate::ser::Ser::ser(&self.$f, w); )* $( $crate::ser::Ser::ser(&self.$n, w); )* }
+            fn de(r: &mut $crate::ser::R) -> Self {
+                $t { $( $f: $crate::ser::Ser::de(r), )* $( $n: if r.version >= $v { $crate::ser::Ser::de(r) } else { Default::default() }, )* }
+            }
         }
     };
 }

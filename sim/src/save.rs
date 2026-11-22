@@ -8,11 +8,21 @@ use crate::rng::Rng;
 use crate::ser::{Ser, R, W};
 use crate::world::*;
 
-const MAGIC: u32 = 0x5355_5052; // "SUPR"
+/// Sauvegardes de la version 1 du format (sans numéro de version), jusqu'au 21 novembre 2026.
+const MAGIC_V1: u32 = 0x5355_5052; // "SUPR"
+/// Sauvegardes versionnées : "SUP2", puis le numéro de version du format.
+const MAGIC: u32 = 0x5355_5032; // "SUP2"
+/// Version actuelle du format. À augmenter quand on ajoute des champs sauvegardés, en les déclarant
+/// « since N » dans ser_struct! : les sauvegardes plus anciennes restent lisibles.
+/// - 2 : allure des déplacements en formation, cadence / fragments / pureté des bâtiments, fragments
+///   et EPPZ des joueurs, sortie de porte des unités, état des nids (riposte, ponte d'urgence, espèce),
+///   ruines et naissances de réplicateurs.
+pub const VERSION: u32 = 2;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     let mut o = W::new();
     MAGIC.ser(&mut o);
+    VERSION.ser(&mut o);
     w.params.ser(&mut o);
     w.tick.ser(&mut o);
     w.rng.state.ser(&mut o);
@@ -39,8 +49,15 @@ pub fn snapshot(w: &World) -> Vec<u8> {
 
 pub fn restore(bytes: &[u8]) -> Option<World> {
     let mut r = R::new(bytes);
-    if u32::de(&mut r) != MAGIC {
-        return None;
+    match u32::de(&mut r) {
+        MAGIC_V1 => r.version = 1,
+        MAGIC => {
+            r.version = u32::de(&mut r);
+            if r.version == 0 || r.version > VERSION {
+                return None;
+            }
+        }
+        _ => return None,
     }
     let params: Vec<i32> = Ser::de(&mut r);
     let mut w = World::new(&params);

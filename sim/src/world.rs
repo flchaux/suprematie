@@ -52,7 +52,7 @@ pub struct Player {
     /// EPPZ en réserve (capturés dans les ruines des Anciens, posés dans un socle)
     pub eppz: u32,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap, shards, eppz });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, stock, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, stock_cap; since 2: shards, eppz });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -167,7 +167,8 @@ impl Ser for Order {
         let i = |r: &mut crate::ser::R| i32::de(r);
         let u = |r: &mut crate::ser::R| u32::de(r);
         match c {
-            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2, eta: u(r) },
+            // l'allure (formation) n'existe qu'à partir de la version 2 du format
+            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2, eta: if r.version >= 2 { u(r) } else { 0 } },
             3 => Order::Patrol { x: i(r), y: i(r), ox: i(r), oy: i(r) },
             4 => Order::Attack { target: u(r) },
             5 => Order::AttackGround { x: i(r), y: i(r) },
@@ -236,7 +237,7 @@ pub struct UnitCold {
     /// sortie d'une porte de transit : ticks pendant lesquels l'unité ne peut pas y rentrer à nouveau
     pub warp: u16,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal, warp });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -332,7 +333,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split, clock, shards, purity
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity
 });
 
 impl Building {

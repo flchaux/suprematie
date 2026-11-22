@@ -101,7 +101,7 @@ pub struct Nest {
     /// espèce : 0 mordeurs (nid), 1 réplicateurs (ruche)
     pub species: u8,
 }
-crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try, foe, counter, struck, burst, species });
+crate::ser_struct!(Nest { b, born, spawn, horde, alarm, ax, ay, next_try; since 2: foe, counter, struck, burst, species });
 
 /// Espèces de la faune.
 pub const SPECIES_BEASTS: u8 = 0;
@@ -175,7 +175,7 @@ pub struct Breed {
     pub author: u32,
 }
 crate::ser_struct!(Breed { x, y, author });
-crate::ser_struct!(Nature { level, owner, nests, raids, next_expand, max_nests, max_beasts, ruins, breed });
+crate::ser_struct!(Nature { level, owner, nests, raids, next_expand, max_nests, max_beasts; since 2: ruins, breed });
 
 impl Nature {
     pub fn new(level: u8, owner: u8, map_w: i32) -> Nature {

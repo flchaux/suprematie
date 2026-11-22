@@ -491,6 +491,7 @@ Tests automatiques :
 - Déterminisme : deux simulations reçoivent la même graine et la même suite d'ordres pendant 10 000 ticks. Leurs hash doivent être identiques à chaque tick.
 - Déterminisme entre Node.js et Chrome : le même scénario tourne dans Node.js et dans Chrome via Playwright. Les hash doivent être identiques.
 - Sauvegarde : après `snapshot()` puis `restore()`, la suite de la partie donne les mêmes hash que sans interruption.
+- Format des sauvegardes versionné (`save.rs`) : en-tête « SUP2 » puis `VERSION`. Un champ sauvegardé ajouté à une structure se déclare après « since N » dans `ser_struct!` (et `VERSION` passe à N) : les sauvegardes plus anciennes se chargent, le champ y prend sa valeur par défaut. Les sauvegardes sans numéro (« SUPR », jusqu'au 21 novembre 2026) sont lues comme la version 1. Ne jamais insérer un champ au milieu d'une structure ni en retirer un sans gérer les anciennes versions.
 - Partie entre bots : 8 bots jouent 30 minutes de jeu entre eux, sans désynchronisation ni blocage.
 - Tests unitaires Rust (`cargo test`) pour les tapis, les bâtiments, le déplacement et le combat.
 - Banc de performance (voir Objectifs de performance).
