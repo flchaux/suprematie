@@ -56,6 +56,8 @@ pub const O_ROTATE: i32 = 24;
 pub const O_CANCEL_PLAN: i32 = 25;
 /// commandant : récolter un gisement et fondre le minerai (fonderie intégrée) : [drapeaux, x, y (cases), n, unités…]
 pub const O_HARVEST: i32 = 26;
+/// Replier des modules des Transhumants : [n, réf. de bâtiment…] (voir transhumants::fold).
+pub const O_PACK: i32 = 48;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -84,6 +86,11 @@ fn own_building(w: &World, p: u8, r: i32) -> Option<usize> {
     } else {
         None
     }
+}
+
+/// Recherches acquises du joueur, sur 128 bits.
+fn researched_bits(pl: &crate::world::Player) -> u128 {
+    pl.researched as u128 | (pl.researched2 as u128) << 64
 }
 
 pub(crate) fn give(w: &mut World, s: usize, queue: bool, o: Order) {
@@ -207,7 +214,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
         O_BUILD => {
             let q = c.next() & 1 != 0;
             let (kind, x, y, dir) = (c.next(), c.next(), c.next(), c.next());
-            if kind < 0 || kind as usize >= BUILDINGS.len() || !w.players[p as usize].has_tech(bdef(kind as u16).tech) {
+            if kind < 0 || kind as usize >= BUILDINGS.len() || !w.players[p as usize].has_tech(bdef(kind as u16).tech) || !crate::races::building_ok(w, p, kind as u16) {
                 return;
             }
             for id in units_list(&mut c) {
@@ -236,7 +243,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             }
             let ud = udef(kind as u16);
             let bb = &w.buildings[b];
-            if bb.def().class != BClass::Factory || ud.factory != bb.def().factory || !w.players[p as usize].has_tech(ud.tech) {
+            if bb.def().class != BClass::Factory || ud.factory != bb.def().factory || !w.players[p as usize].has_tech(ud.tech) || !crate::races::unit_ok(w, p, kind as u16) {
                 return;
             }
             let front_before = bb.queue.first().map(|q| q.0);
@@ -367,7 +374,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 w.players[p as usize].research_queue.clear();
                 return;
             }
-            if pl.has_tech(t as u8) || !td.prereq.iter().all(|&q| pl.has_tech(q)) {
+            if pl.has_tech(t as u8) || !td.prereq.iter().all(|&q| pl.has_tech(q)) || !crate::races::tech_ok(w, p, t as u8) {
                 return;
             }
             let pl = &mut w.players[p as usize];
@@ -388,11 +395,11 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if let Some(k) = pl.research_queue.iter().position(|&q| q == t) {
                 // déjà en file : retirée, avec les recherches qui en dépendaient plus loin dans la file
                 pl.research_queue.remove(k);
-                let mut avail = pl.researched | if pl.research != 0 { 1u64 << pl.research } else { 0 };
+                let mut avail = researched_bits(pl) | if pl.research != 0 { 1u128 << pl.research } else { 0 };
                 let mut keep = Vec::new();
                 for &q in &pl.research_queue {
-                    if TECHS[q as usize].prereq.iter().all(|&r| avail & (1u64 << r) != 0) {
-                        avail |= 1u64 << q;
+                    if TECHS[q as usize].prereq.iter().all(|&r| avail & (1u128 << r) != 0) {
+                        avail |= 1u128 << q;
                         keep.push(q);
                     }
                 }
@@ -402,9 +409,14 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if pl.has_tech(t) || pl.research == t || pl.research_queue.len() >= 16 {
                 return;
             }
+            // race, choix exclusif de la Souche
+            if !crate::races::tech_ok(w, p, t) {
+                return;
+            }
+            let pl = &mut w.players[p as usize];
             // prérequis acquis, en cours ou plus tôt dans la file
-            let avail = pl.researched | if pl.research != 0 { 1u64 << pl.research } else { 0 } | pl.research_queue.iter().fold(0u64, |a, &q| a | 1u64 << q);
-            if !TECHS[t as usize].prereq.iter().all(|&r| avail & (1u64 << r) != 0) {
+            let avail = researched_bits(pl) | if pl.research != 0 { 1u128 << pl.research } else { 0 } | pl.research_queue.iter().fold(0u128, |a, &q| a | 1u128 << q);
+            if !TECHS[t as usize].prereq.iter().all(|&r| avail & (1u128 << r) != 0) {
                 return;
             }
             pl.research_queue.push(t);
@@ -435,7 +447,10 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
                     let k = w.units.kind[s];
-                    if k == U_SONDE || crate::combat::needs_deploy(k) {
+                    if udef(k).deploys != NO_KIND {
+                        // chenillard des Transhumants : il devient son module (voir transhumants.rs)
+                        crate::transhumants::start_deploy(w, s);
+                    } else if k == U_SONDE || crate::combat::needs_deploy(k) {
                         clear_orders(w, s);
                         let cd = &mut w.units.cold[s];
                         cd.deployed = !cd.deployed;
@@ -490,6 +505,15 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     if ok && w.units.kind[s] == crate::data::U_COMMANDER {
                         give(w, s, q, Order::Collect { target });
                     }
+                }
+            }
+        }
+        O_PACK => {
+            let n = c.next().clamp(0, 256);
+            for _ in 0..n {
+                let r = c.next();
+                if let Some(b) = own_building(w, p, r) {
+                    crate::transhumants::fold(w, b);
                 }
             }
         }

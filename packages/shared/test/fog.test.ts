@@ -18,18 +18,21 @@ function lobby(fog?: boolean): LobbyState {
 }
 
 describe("brouillard de guerre", () => {
-  it("dernier paramètre, après la faune ; absent : activé", () => {
+  it("paramètre après la faune (puis les races) ; absent : activé", () => {
     const on = simParams(lobby(true));
     const off = simParams(lobby(false));
-    expect(on.length).toBe(4 + 2 * 4 + 2);
-    expect(on.at(-1)).toBe(1);
-    expect(off.at(-1)).toBe(0);
-    expect(simParams(lobby(undefined)).at(-1)).toBe(1);
+    // graine, taille, eau, joueurs ; 4 par joueur ; faune, brouillard ; une race par joueur
+    expect(on.length).toBe(4 + 2 * 4 + 2 + 2);
+    const fogAt = 4 + 2 * 4 + 1;
+    expect(on[fogAt]).toBe(1);
+    expect(off[fogAt]).toBe(0);
+    expect(simParams(lobby(undefined))[fogAt]).toBe(1);
     expect(fogFromParams(on)).toBe(true);
     expect(fogFromParams(off)).toBe(false);
-    // anciennes parties : sans faune ni brouillard, ou faune seule
-    expect(fogFromParams(on.slice(0, -2))).toBe(true);
-    expect(fogFromParams(on.slice(0, -1))).toBe(true);
+    // anciennes parties : sans races, sans faune ni brouillard, ou faune seule
+    expect(fogFromParams(off.slice(0, -2))).toBe(false);
+    expect(fogFromParams(on.slice(0, -4))).toBe(true);
+    expect(fogFromParams(on.slice(0, -3))).toBe(true);
   });
 
   it("sans brouillard, la grille de vision envoyée au joueur est pleine", async () => {

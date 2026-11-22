@@ -38,6 +38,8 @@ export const O = {
   CANCEL_PLAN: 25,
   /** commandant : récolter un gisement et fondre le minerai (fonderie intégrée) : [drapeaux, x, y (cases), n, unités…] */
   HARVEST: 26,
+  /** Transhumants : replier des modules déployés en chenillards : [n, réf. de bâtiment…] */
+  PACK: 48,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -198,6 +200,10 @@ export function harvest(ids: number[], x: number, y: number, queue = false): Cmd
 }
 export function deploy(ids: number[]): Cmd {
   return [O.DEPLOY, ids.length, ...ids.map((x) => x | 0)];
+}
+/** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
+export function fold(refs: number[]): Cmd {
+  return [O.PACK, refs.length, ...refs.map((x) => x | 0)];
 }
 export function load(carrier: number, ids: number[]): Cmd {
   return [O.LOAD, carrier | 0, ids.length, ...ids.map((x) => x | 0)];

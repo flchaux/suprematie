@@ -27,7 +27,16 @@ pub const REFINED_CRYSTAL: u8 = 18;
 pub const ENERGY_CELL: u8 = 19;
 pub const ARM_PART: u8 = 20;
 pub const PACK1: u8 = 21;
-pub const NUM_ITEMS: usize = 27;
+/// Souche : sève et sels (réserve de chaque réseau de racines, voir souche.rs), ADN (recherche).
+pub const SEVE: u8 = 27;
+pub const SELS: u8 = 28;
+pub const ADN: u8 = 29;
+/// Transhumants : relevés (recherche par l'exploration, voir transhumants.rs).
+pub const RELEVES: u8 = 30;
+pub const NUM_ITEMS: usize = 31;
+/// Nombre d'objets des sauvegardes d'avant les races (format 2 et moins) : les tableaux d'objets
+/// sauvegardés n'avaient que ces cases (voir ser.rs).
+pub const NUM_ITEMS_V2: usize = 27;
 
 pub struct ItemDef {
     pub key: &'static str,
@@ -63,6 +72,30 @@ pub const ITEMS: [ItemDef; NUM_ITEMS] = [
     ItemDef { key: "pack4", name: "Données avancées", color: 0x4060e0 },
     ItemDef { key: "pack5", name: "Données cristallines", color: 0x50e0e0 },
     ItemDef { key: "pack6", name: "Données orbitales", color: 0xf0f0f0 },
+    ItemDef { key: "seve", name: "Sève", color: 0x7fc24a },
+    ItemDef { key: "sels", name: "Sels", color: 0xd9d2c0 },
+    ItemDef { key: "adn", name: "ADN", color: 0xc35bd6 },
+    ItemDef { key: "releves", name: "Relevés", color: 0xe8b84a },
+];
+
+// ---------- Races ----------
+/// Races jouables (voir docs/spec/races.md). Chaque bâtiment, unité et recherche appartient à une race ;
+/// un joueur ne pose, ne produit et ne recherche que ceux de la sienne.
+pub const RACE_INDUS: u8 = 0;
+pub const RACE_SOUCHE: u8 = 1;
+pub const RACE_TRANSH: u8 = 2;
+pub const NUM_RACES: usize = 3;
+
+pub struct RaceDef {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub desc: &'static str,
+}
+
+pub const RACES: [RaceDef; NUM_RACES] = [
+    RaceDef { key: "industriels", name: "Industriels", desc: "Tapis, bras, fonderies et assembleurs, électricité par zones, laboratoires et lots de recherche." },
+    RaceDef { key: "souche", name: "Souche", desc: "Base vivante : un réseau de racines met en commun sève et sels, les organes poussent seuls, la race évolue en digérant les cadavres." },
+    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration." },
 ];
 
 // ---------- Recettes ----------
@@ -275,7 +308,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 62] = [
+pub const WEAPONS: [WeaponDef; 75] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -342,6 +375,21 @@ pub const WEAPONS: [WeaponDef; 62] = [
     w!(26, 1, 14, Bite, 0, 0, M_LAND, prefer_buildings: true),          // 60 réplicateur
     // disrupteur : seule arme qui défait les réplicateurs (dégâts divisés par 5 contre le reste)
     w!(90, 16, 20, Ion, 30, 64, M_SURF),                                // 61 disrupteur
+    // ----- Souche (voir souche.rs) : morsures et crachats -----
+    w!(120, 18, 30, Spit, 18, 128, M_SURF | M_AIR),                     // 62 crachat de la Reine
+    w!(22, 1, 14, Bite, 0, 0, M_LAND),                                  // 63 rongeur
+    w!(60, 26, 50, Spit, 16, 320, M_SURF, min_range: 4),                // 64 cracheur (acide en cloche)
+    w!(120, 2, 24, Bite, 0, 0, M_LAND),                                 // 65 carapace
+    w!(8, 7, 80, Spit, 30, 0, M_LAND, stun: 50),                        // 66 liane : enlace et immobilise
+    w!(40, 22, 18, Spit, 30, 0, M_SURF | M_AIR),                        // 67 épine (défense)
+    w!(90, 4, 60, Spit, 10, 512, M_SURF),                               // 68 planeur à membranes (spores)
+    // ----- Transhumants (voir transhumants.rs) : canons cinétiques -----
+    w!(120, 24, 20, Bullet, 40, 128, M_SURF),                           // 69 canon de l'Arche
+    w!(9, 12, 10, Bullet, 40, 0, M_SURF),                               // 70 pisteur
+    w!(50, 20, 28, Bullet, 40, 0, M_SURF),                              // 71 cavalier
+    w!(90, 40, 90, Shell, 14, 384, M_SURF, min_range: 8),               // 72 canon tracté
+    w!(300, 2, 40, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 73 bélier : éperonne
+    w!(160, 30, 36, Bullet, 40, 128, M_SURF),                           // 74 bastion déployé
 ];
 pub const W_CMD_UP: u8 = 1;
 
@@ -354,11 +402,20 @@ pub struct TechDef {
     pub time: u16, // secondes par unité de recherche
     pub prereq: &'static [u8],
     pub desc: &'static str,
+    /// race qui peut la rechercher
+    pub race: u8,
+    /// choix exclusif (Souche) : recherche qu'elle interdit, et qui l'interdit (0 : aucune)
+    pub excl: u8,
+    /// recherche des Industriels acquise en même temps (recettes partagées ; 0 : aucune)
+    pub also: u8,
 }
 
 macro_rules! t {
     ($k:expr, $n:expr, $tier:expr, $c:expr, $time:expr, [$($p:expr),*], $d:expr) => {
-        TechDef { key: $k, name: $n, tier: $tier, count: $c, time: $time, prereq: &[$($p),*], desc: $d }
+        TechDef { key: $k, name: $n, tier: $tier, count: $c, time: $time, prereq: &[$($p),*], desc: $d, race: RACE_INDUS, excl: 0, also: 0 }
+    };
+    ($k:expr, $n:expr, $tier:expr, $c:expr, $time:expr, [$($p:expr),*], $d:expr, $($f:ident : $v:expr),*) => {
+        TechDef { $($f: $v,)* ..t!($k, $n, $tier, $c, $time, [$($p),*], $d) }
     };
 }
 
@@ -368,7 +425,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 48] = [
+pub const TECHS: [TechDef; 64] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur, collecteur de surplus ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -417,7 +474,42 @@ pub const TECHS: [TechDef; 48] = [
     t!("star_cruiser", "Cuirassé stellaire", 6, 90, 15, [36], "Cuirassé stellaire"),
     t!("electronic_warfare", "Guerre électronique", 4, 45, 12, [12, 13], "Commando furtif, brouilleur mobile, bombardier furtif, avion de guerre électronique"),
     t!("heavy_navy", "Marine lourde", 5, 60, 15, [22], "Porte-avions, cuirassé à canons de rail"),
+    // ----- Souche : chaque unité de recherche coûte `palier` ADN (voir souche.rs) -----
+    t!("s_spitters", "Cracheurs", 1, 10, 6, [], "Cracheur : artillerie acide", race: RACE_SOUCHE),
+    t!("s_shells", "Carapaces", 2, 15, 8, [48], "Carapace : char vivant", race: RACE_SOUCHE),
+    t!("s_vines", "Lianes", 2, 15, 8, [48], "Liane : enlace et immobilise les unités au sol", race: RACE_SOUCHE),
+    t!("s_membranes", "Membranes", 3, 20, 10, [49], "Planeur à membranes : bombes de spores", race: RACE_SOUCHE),
+    t!("s_scales", "Écailles", 2, 15, 8, [], "Mutation : +30 % de points de vie pour tous les organismes. Exclut Sève vive.", race: RACE_SOUCHE, excl: 53),
+    t!("s_quick_sap", "Sève vive", 2, 15, 8, [], "Mutation : régénération doublée sur le terreau, et 1 % par seconde hors du terreau. Exclut Écailles.", race: RACE_SOUCHE, excl: 52),
+    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
+    t!("s_fertility", "Fécondité", 3, 20, 10, [52, 53], "Mutation : couveuses et croissance des organes 50 % plus rapides. Exclut Acide.", race: RACE_SOUCHE, excl: 54),
+    t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : points de vie des organes doublés. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
+    t!("s_big_leaves", "Grandes frondaisons", 4, 25, 12, [54, 55], "Mutation : frondaisons et racines-puits +50 %. Exclut Racines profondes.", race: RACE_SOUCHE, excl: 56),
+    // ----- Transhumants : chaque unité de recherche coûte 3 × palier relevés (voir transhumants.rs) -----
+    t!("t_heavy_shop", "Atelier lourd", 1, 10, 6, [], "Canon tracté, bélier", race: RACE_TRANSH),
+    t!("t_refining", "Raffinage nomade", 1, 10, 6, [], "Chenillard raffinerie (carburant)", race: RACE_TRANSH),
+    t!("t_electronics", "Électronique nomade", 2, 20, 8, [], "Plaquettes, moteurs, processeurs", race: RACE_TRANSH, also: T_ELECTRONICS),
+    t!("t_bastion", "Bastion", 2, 15, 8, [58], "Chenillard bastion : tourelle lourde une fois déployé", race: RACE_TRANSH),
+    t!("t_armor", "Blindage", 3, 25, 10, [60], "Chenillards et Arche : +50 % de points de vie", race: RACE_TRANSH),
+    t!("t_crystal", "Cristal nomade", 4, 30, 12, [60], "Cristal raffiné, cellules d'énergie", race: RACE_TRANSH, also: T_CRYSTAL_REFINING),
 ];
+/// Recherches de la Souche et des Transhumants (indices dans TECHS).
+pub const T_S_SPITTERS: u8 = 48;
+pub const T_S_SHELLS: u8 = 49;
+pub const T_S_VINES: u8 = 50;
+pub const T_S_MEMBRANES: u8 = 51;
+pub const T_S_SCALES: u8 = 52;
+pub const T_S_QUICK_SAP: u8 = 53;
+pub const T_S_ACID: u8 = 54;
+pub const T_S_FERTILITY: u8 = 55;
+pub const T_S_DEEP_ROOTS: u8 = 56;
+pub const T_S_BIG_LEAVES: u8 = 57;
+pub const T_T_HEAVY_SHOP: u8 = 58;
+pub const T_T_REFINING: u8 = 59;
+pub const T_T_ELECTRONICS: u8 = 60;
+pub const T_T_BASTION: u8 = 61;
+pub const T_T_ARMOR: u8 = 62;
+pub const T_T_CRYSTAL: u8 = 63;
 pub const T_ELECTRONIC_WARFARE: u8 = 46;
 pub const T_HEAVY_NAVY: u8 = 47;
 
@@ -461,6 +553,8 @@ pub enum BClass {
     Nest,
     /// Ruine des Anciens : garde un EPPZ, qu'un joueur capture en y stationnant (voir nature.rs).
     Ruin,
+    /// Organe de la Souche : produit ou garde la sève et les sels de son réseau (voir souche.rs).
+    Organ,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -500,6 +594,8 @@ pub struct BuildingDef {
     pub reach: u8,
     /// tapis collecteur de surplus : les objets à l'arrêt sur sa case partent au dépôt le plus proche
     pub collect: bool,
+    /// race qui le pose (voir RACES)
+    pub race: u8,
 }
 
 const BD: BuildingDef = BuildingDef {
@@ -528,6 +624,7 @@ const BD: BuildingDef = BuildingDef {
     passable: false,
     reach: 1,
     collect: false,
+    race: RACE_INDUS,
 };
 
 pub const B_EXTRACTOR: u16 = 0;
@@ -598,8 +695,28 @@ pub const B_HIVE: u16 = 49;
 pub const B_RUIN: u16 = 50;
 /// Socle à EPPZ : énorme production d'énergie, sans combustible, pour qui a capturé un EPPZ.
 pub const B_EPPZ_SOCKET: u16 = 51;
+// Souche (voir souche.rs)
+pub const B_SEED_HEART: u16 = 52;
+pub const B_ROOT: u16 = 53;
+pub const B_LEAVES: u16 = 54;
+pub const B_TAPROOT: u16 = 55;
+pub const B_BULB: u16 = 56;
+pub const B_BROOD: u16 = 57;
+pub const B_MATRIX: u16 = 58;
+pub const B_THORN: u16 = 59;
+pub const B_BLOOM: u16 = 60;
+// Transhumants : modules déployés des chenillards (voir transhumants.rs)
+pub const B_T_DRILL: u16 = 61;
+pub const B_T_FURNACE: u16 = 62;
+pub const B_T_ASSEMBLER: u16 = 63;
+pub const B_T_REFINERY: u16 = 64;
+pub const B_T_GENERATOR: u16 = 65;
+pub const B_T_HOLD: u16 = 66;
+pub const B_T_LAB: u16 = 67;
+pub const B_T_WORKSHOP: u16 = 68;
+pub const B_T_BASTION: u16 = 69;
 
-pub const BUILDINGS: [BuildingDef; 52] = [
+pub const BUILDINGS: [BuildingDef; 70] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -661,6 +778,26 @@ pub const BUILDINGS: [BuildingDef; 52] = [
     BuildingDef { key: "ancient_ruin", name: "Ruine des Anciens", size: (3, 3), hp: 1_000_000, class: BClass::Ruin, vision: 0, ..BD },
     // socle à EPPZ : demande un EPPZ capturé (Player::eppz), produit sans combustible
     BuildingDef { key: "eppz_socket", name: "Socle à EPPZ", size: (2, 2), hp: 3000, power_prod: 25000, cost: &[(STEEL, 20), (CIRCUIT, 10)], build: 15, class: BClass::Power, supply: 14, connect: 30, ..BD },
+    // ----- Souche : organes, posés sur le terreau d'un réseau de racines, qui poussent seuls -----
+    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 4000, build: 90, class: BClass::Organ, supply: 6, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "root", name: "Racine", hp: 150, cost: &[(SEVE, 4)], build: 2, class: BClass::Pylon, supply: 3, connect: 5, passable: true, vision: 0, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "leaves", name: "Frondaison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 10)], build: 8, class: BClass::Organ, vision: 6, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "taproot", name: "Racine-puits", size: (2, 2), hp: 600, cost: &[(SEVE, 60)], build: 10, class: BClass::Organ, deposit: 255, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "bulb", name: "Bulbe", size: (2, 2), hp: 800, cost: &[(SEVE, 50), (SELS, 20)], build: 8, class: BClass::Organ, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "brood", name: "Couveuse", size: (3, 3), hp: 3000, cost: &[(SEVE, 150), (SELS, 50)], build: 20, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "matrix", name: "Matrice", size: (2, 2), hp: 600, cost: &[(SEVE, 100), (SELS, 40)], build: 12, class: BClass::Lab, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "thorn", name: "Épine", size: (2, 2), hp: 1400, cost: &[(SEVE, 80), (SELS, 30)], build: 8, class: BClass::Turret, weapon: 67, vision: 24, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "bloom", name: "Floraison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 20)], build: 6, class: BClass::Radar, radar: 55, vision: 14, race: RACE_SOUCHE, ..BD },
+    // ----- Transhumants : modules déployés des chenillards ; ils ne se construisent pas (voir transhumants.rs) -----
+    BuildingDef { key: "t_drill", name: "Foreuse nomade", size: (2, 2), hp: 600, power_use: 120, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, class: BClass::Extractor, deposit: 255, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_furnace", name: "Fonderie nomade", size: (2, 2), hp: 500, power_use: 90, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, class: BClass::Crafter, crafter: Crafter::Furnace, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_assembler", name: "Assembleur nomade", size: (2, 2), hp: 600, power_use: 100, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, class: BClass::Crafter, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_refinery", name: "Raffinerie nomade", size: (2, 2), hp: 800, power_use: 200, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], build: 14, class: BClass::Crafter, crafter: Crafter::Refinery, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_generator", name: "Générateur nomade", size: (2, 2), hp: 900, power_prod: 600, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 10), (GEAR, 6)], build: 10, class: BClass::Power, supply: 9, connect: 22, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_hold", name: "Soute", size: (2, 2), hp: 1200, cost: &[(IRON_PLATE, 16), (GEAR, 4)], build: 8, class: BClass::Depot, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_lab", name: "Laboratoire nomade", size: (2, 2), hp: 600, power_use: 60, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, class: BClass::Lab, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_workshop", name: "Atelier", size: (3, 3), hp: 5000, power_use: 400, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_bastion", name: "Bastion", size: (2, 2), hp: 4000, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, class: BClass::Turret, weapon: 74, vision: 30, race: RACE_TRANSH, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -725,6 +862,14 @@ pub struct UnitDef {
     pub shield_hp: i32,
     pub tier: u8,
     pub altitude: i32, // en 1/256 de case, pour le rendu
+    /// race qui la produit (voir RACES)
+    pub race: u8,
+    /// unité de commandement : unique, sa destruction élimine le joueur
+    pub commander: bool,
+    /// organisme vivant (Souche) : famille d'armure « vivant » (voir combat::family_mult)
+    pub bio: bool,
+    /// chenillard des Transhumants : bâtiment qu'il devient une fois déployé (NO_KIND : aucun)
+    pub deploys: u16,
 }
 
 const UD: UnitDef = UnitDef {
@@ -750,7 +895,13 @@ const UD: UnitDef = UnitDef {
     shield_hp: 0,
     tier: 1,
     altitude: 0,
+    race: RACE_INDUS,
+    commander: false,
+    bio: false,
+    deploys: NO_KIND,
 };
+/// Pas de type (bâtiment ou unité).
+pub const NO_KIND: u16 = u16::MAX;
 
 pub const U_COMMANDER: u16 = 0;
 pub const U_ENG1: u16 = 1;
@@ -790,13 +941,37 @@ pub const U_BEAST_L: u16 = 51;
 pub const U_ROLL_DROID: u16 = 52;
 pub const U_REPLICATOR: u16 = 53;
 pub const U_DISRUPTOR: u16 = 54;
+// Souche
+pub const U_QUEEN: u16 = 55;
+pub const U_SOWER: u16 = 56;
+pub const U_GNAWER: u16 = 57;
+pub const U_SPITTER: u16 = 58;
+pub const U_SHELL: u16 = 59;
+pub const U_VINE: u16 = 60;
+pub const U_MEMBRANE: u16 = 61;
+// Transhumants
+pub const U_ARK: u16 = 62;
+pub const U_CH_DRILL: u16 = 63;
+pub const U_CH_FURNACE: u16 = 64;
+pub const U_CH_ASSEMBLER: u16 = 65;
+pub const U_CH_REFINERY: u16 = 66;
+pub const U_CH_GENERATOR: u16 = 67;
+pub const U_CH_HOLD: u16 = 68;
+pub const U_CH_LAB: u16 = 69;
+pub const U_CH_WORKSHOP: u16 = 70;
+pub const U_CH_BASTION: u16 = 71;
+pub const U_TRACKER: u16 = 72;
+pub const U_RIDER: u16 = 73;
+pub const U_HARROW: u16 = 74;
+pub const U_TOWED_GUN: u16 = 75;
+pub const U_RAM: u16 = 76;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 55] = [
-    UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, ..UD },
+pub const UNITS: [UnitDef; 77] = [
+    UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
     UnitDef { key: "eng5", name: "Drone ingénieur suprême", layer: Layer::Hover, hp: 1400, speed: 50, radius: 120, cost: &[(STEEL, 8), (PROCESSOR, 4), (ENGINE, 4)], build: 14, tech: T_LOGISTICS3, build_power: 50, drones: 4, supply: 45, hold: 160, tier: 5, altitude: 180, ..UD },
@@ -855,6 +1030,30 @@ pub const UNITS: [UnitDef; 55] = [
     // réplicateur : faune mécanique, insensible à toute arme sauf celle du disrupteur (voir combat.rs)
     UnitDef { key: "replicator", name: "Réplicateur", hp: 300, speed: 44, radius: 100, weapons: &[60], vision: 16, factory: FactoryKind::None, tier: 2, ..UD },
     UnitDef { key: "disruptor", name: "Disrupteur", hp: 450, speed: 32, radius: 120, weapons: &[61], cost: &[(IRON_PLATE, 8), (GEAR, 2), (CIRCUIT, 3)], build: 6, tech: 2, tier: 1, ..UD },
+    // ----- Souche : organismes vivants, nés dans les couveuses (voir souche.rs) -----
+    UnitDef { key: "queen", name: "Reine", hp: 10000, speed: 18, radius: 220, weapons: &[62], vision: 26, factory: FactoryKind::None, build_power: 15, tier: 0, commander: true, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "sower", name: "Semeur", hp: 250, speed: 34, radius: 90, cost: &[(SEVE, 30), (SELS, 5)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "gnawer", name: "Rongeur", hp: 260, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 25), (SELS, 4)], build: 4, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "spitter", name: "Cracheur", hp: 320, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 50), (SELS, 20)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "shell", name: "Carapace", hp: 2200, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 120), (SELS, 40)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, ..UD },
+    // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
+    UnitDef { key: "ark", name: "Arche", hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ch_drill", name: "Chenillard foreuse", hp: 1200, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
+    UnitDef { key: "ch_furnace", name: "Chenillard fonderie", hp: 1000, speed: 20, radius: 200, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_FURNACE, ..UD },
+    UnitDef { key: "ch_assembler", name: "Chenillard assembleur", hp: 1200, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_ASSEMBLER, ..UD },
+    UnitDef { key: "ch_refinery", name: "Chenillard raffinerie", hp: 1400, speed: 20, radius: 200, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], build: 14, tech: T_T_REFINING, race: RACE_TRANSH, deploys: B_T_REFINERY, ..UD },
+    UnitDef { key: "ch_generator", name: "Chenillard générateur", hp: 1400, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 10), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_GENERATOR, ..UD },
+    UnitDef { key: "ch_hold", name: "Chenillard soute", hp: 2000, speed: 20, radius: 200, cost: &[(IRON_PLATE, 16), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_HOLD, ..UD },
+    UnitDef { key: "ch_lab", name: "Chenillard laboratoire", hp: 1000, speed: 20, radius: 200, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, race: RACE_TRANSH, deploys: B_T_LAB, ..UD },
+    UnitDef { key: "ch_workshop", name: "Chenillard atelier", hp: 6000, speed: 16, radius: 300, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, race: RACE_TRANSH, deploys: B_T_WORKSHOP, ..UD },
+    UnitDef { key: "ch_bastion", name: "Chenillard bastion", hp: 3000, speed: 18, radius: 200, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, tech: T_T_BASTION, tier: 2, race: RACE_TRANSH, deploys: B_T_BASTION, ..UD },
+    UnitDef { key: "tracker", name: "Pisteur", hp: 220, speed: 70, radius: 100, weapons: &[70], vision: 40, cost: &[(IRON_PLATE, 5), (GEAR, 2)], build: 3, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "rider", name: "Cavalier", hp: 800, speed: 40, radius: 140, weapons: &[71], cost: &[(STEEL, 4), (GEAR, 3), (CIRCUIT, 2)], build: 7, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "harrow", name: "Herse", hp: 400, speed: 32, radius: 130, weapons: &[6], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2), (AMMO, 2)], build: 7, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "towed_gun", name: "Canon tracté", hp: 420, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 5), (GEAR, 3), (AMMO, 3)], build: 9, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ram", name: "Bélier", hp: 2800, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 10), (GEAR, 6), (CIRCUIT, 2)], build: 12, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.
@@ -913,6 +1112,13 @@ pub fn data_json() -> String {
         }
         s.push_str(&format!("{{\"key\":{},\"name\":{},\"color\":{}}}", js(it.key), js(it.name), it.color));
     }
+    s.push_str("],\"races\":[");
+    for (i, r) in RACES.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str(&format!("{{\"key\":{},\"name\":{},\"desc\":{}}}", js(r.key), js(r.name), js(r.desc)));
+    }
     s.push_str("],\"recipes\":[");
     for (i, r) in RECIPES.iter().enumerate() {
         if i > 0 {
@@ -941,8 +1147,8 @@ pub fn data_json() -> String {
         }
         let p: Vec<String> = t.prereq.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"tier\":{},\"count\":{},\"time\":{},\"prereq\":[{}],\"desc\":{}}}",
-            js(t.key), js(t.name), t.tier, t.count, t.time, p.join(","), js(t.desc)
+            "{{\"key\":{},\"name\":{},\"tier\":{},\"count\":{},\"time\":{},\"prereq\":[{}],\"desc\":{},\"race\":{},\"excl\":{}}}",
+            js(t.key), js(t.name), t.tier, t.count, t.time, p.join(","), js(t.desc), t.race, t.excl
         ));
     }
     s.push_str("],\"buildings\":[");
@@ -951,9 +1157,9 @@ pub fn data_json() -> String {
             s.push(',');
         }
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"w\":{},\"h\":{},\"hp\":{},\"powerUse\":{},\"powerProd\":{},\"cost\":{},\"build\":{},\"tech\":{},\"cls\":{},\"speed\":{},\"crafter\":{},\"factory\":{},\"weapon\":{},\"supply\":{},\"connect\":{},\"radar\":{},\"shieldR\":{},\"deposit\":{},\"water\":{},\"passable\":{},\"reach\":{},\"collect\":{}}}",
+            "{{\"key\":{},\"name\":{},\"w\":{},\"h\":{},\"hp\":{},\"powerUse\":{},\"powerProd\":{},\"cost\":{},\"build\":{},\"tech\":{},\"cls\":{},\"speed\":{},\"crafter\":{},\"factory\":{},\"weapon\":{},\"supply\":{},\"connect\":{},\"radar\":{},\"shieldR\":{},\"deposit\":{},\"water\":{},\"passable\":{},\"reach\":{},\"collect\":{},\"race\":{}}}",
             js(b.key), js(b.name), b.size.0, b.size.1, b.hp, b.power_use, b.power_prod, cost_js(b.cost), b.build, b.tech,
-            b.class as u8, b.speed, b.crafter as u8, b.factory as u8, b.weapon, b.supply, b.connect, b.radar, b.shield_r, b.deposit, b.water, b.passable, b.reach, b.collect
+            b.class as u8, b.speed, b.crafter as u8, b.factory as u8, b.weapon, b.supply, b.connect, b.radar, b.shield_r, b.deposit, b.water, b.passable, b.reach, b.collect, b.race
         ));
     }
     s.push_str("],\"units\":[");
@@ -963,9 +1169,9 @@ pub fn data_json() -> String {
         }
         let ws: Vec<String> = u.weapons.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{}}}",
+            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{}}}",
             js(u.key), js(u.name), u.layer as u8, u.hp, u.speed, u.radius, ws.join(","), u.vision, u.radar, cost_js(u.cost), u.build, u.tech,
-            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude
+            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }
         ));
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();

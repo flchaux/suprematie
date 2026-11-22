@@ -253,9 +253,9 @@ fn v2_save_converts_reserve_to_a_depot() {
             crate::buildings::remove_building(&mut w, b, false);
         }
     }
-    w.players[0].old_stock[IRON_PLATE as usize] = 321;
-    w.players[0].old_stock[GEAR as usize] = 12;
-    w.players[1].old_stock[COPPER_PLATE as usize] = 70_000;
+    w.players[0].purse[IRON_PLATE as usize] = 321;
+    w.players[0].purse[GEAR as usize] = 12;
+    w.players[1].purse[COPPER_PLATE as usize] = 70_000;
     let (sx, sy) = w.map.starts[1];
     let mut wh = None;
     'find: for r in 4..20 {
@@ -274,7 +274,7 @@ fn v2_save_converts_reserve_to_a_depot() {
     let mut a = crate::save::restore(&bytes).expect("lecture d'une sauvegarde de version 2");
     let mut b = crate::save::restore(&bytes).unwrap();
     for p in 0..2usize {
-        assert!(a.players[p].old_stock.iter().all(|&n| n == 0), "ancienne réserve vidée");
+        assert!(a.players[p].purse.iter().all(|&n| n == 0), "ancienne réserve vidée");
     }
     let d0 = (0..a.buildings.len()).find(|&k| a.buildings[k].alive && a.buildings[k].owner == 0 && a.buildings[k].kind == B_DEPOT).expect("dépôt converti");
     assert!(a.buildings[d0].complete());
@@ -350,7 +350,7 @@ fn unversioned_save_is_read_as_v2_and_converted() {
             crate::buildings::remove_building(&mut w, b, false);
         }
     }
-    w.players[0].old_stock[STEEL as usize] = 77;
+    w.players[0].purse[STEEL as usize] = 77;
     let v2 = crate::save::write(&w, 2, &[]);
     // en-tête « SUP2 » + version (5 + 1 octets) remplacé par « SUPR » seul
     let mut o = W::new();

@@ -143,13 +143,18 @@ impl<T: Ser> Ser for Option<T> {
 
 impl<T: Ser + Copy + Default, const N: usize> Ser for [T; N] {
     fn ser(&self, w: &mut W) {
-        for x in self {
+        // écriture d'un format d'avant les races (tests des anciennes sauvegardes) : objets d'alors
+        let n = if N == crate::data::NUM_ITEMS && w.version < 3 { crate::data::NUM_ITEMS_V2 } else { N };
+        for x in self.iter().take(n) {
             x.ser(w);
         }
     }
     fn de(r: &mut R) -> Self {
         let mut a = [T::default(); N];
-        for x in a.iter_mut() {
+        // tableaux d'objets (stocks, compteurs) : les sauvegardes d'avant les races (format 2 et
+        // moins) en avaient moins ; les objets ajoutés depuis valent zéro
+        let n = if N == crate::data::NUM_ITEMS && r.version < 3 { crate::data::NUM_ITEMS_V2 } else { N };
+        for x in a.iter_mut().take(n) {
             *x = T::de(r);
         }
         a
@@ -219,6 +224,19 @@ macro_rules! ser_struct {
             fn ser(&self, w: &mut $crate::ser::W) { $( $crate::ser::Ser::ser(&self.$f, w); )* $( $( if w.version >= $v { $crate::ser::Ser::ser(&self.$n, w); } )* )+ }
             fn de(r: &mut $crate::ser::R) -> Self {
                 $t { $( $f: $crate::ser::Ser::de(r), )* $( $( $n: if r.version >= $v { $crate::ser::Ser::de(r) } else { Default::default() }, )* )+ }
+            }
+        }
+    };
+    // champs ajoutés à deux versions successives du format
+    ($t:ident { $($f:ident),* ; since $v:literal : $($n:ident),* ; since $v2:literal : $($m:ident),* $(,)? }) => {
+        impl $crate::ser::Ser for $t {
+            fn ser(&self, w: &mut $crate::ser::W) { $( $crate::ser::Ser::ser(&self.$f, w); )* $( $crate::ser::Ser::ser(&self.$n, w); )* $( $crate::ser::Ser::ser(&self.$m, w); )* }
+            fn de(r: &mut $crate::ser::R) -> Self {
+                $t {
+                    $( $f: $crate::ser::Ser::de(r), )*
+                    $( $n: if r.version >= $v { $crate::ser::Ser::de(r) } else { Default::default() }, )*
+                    $( $m: if r.version >= $v2 { $crate::ser::Ser::de(r) } else { Default::default() }, )*
+                }
             }
         }
     };

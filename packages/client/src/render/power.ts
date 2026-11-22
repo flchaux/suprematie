@@ -49,6 +49,8 @@ export interface NetInfo {
   /** autonomie en s (-1 : rien ne brûle) */
   autonomy: number;
   dead: boolean;
+  /** réseau de racines de la Souche (prod : sève, demand : sels, cap : plafond) */
+  roots?: boolean;
 }
 
 export class PowerCoverage {
@@ -101,7 +103,8 @@ export class PowerCoverage {
   setZones(z: PowerZones, connect: (kind: number) => number, height: (x: number, z: number) => number): void {
     const nets = new Map<number, NetInfo>();
     const minRef = new Map<number, number>();
-    for (const n of z.nets) nets.set(n[0], { id: n[0], color: 0, prod: n[2], demand: n[3], cap: n[4], sat: n[5], autonomy: n[7], dead: n[2] <= 0 });
+    // réseau de racines de la Souche (n[8] = 1) : prod = sève, demand = sels, cap = plafond ; à sec sans sève
+    for (const n of z.nets) nets.set(n[0], { id: n[0], color: 0, prod: n[2], demand: n[3], cap: n[4], sat: n[5], autonomy: n[7], dead: n[2] <= 0, roots: n[8] === 1 });
     for (const p of z.poles) if (p[5] > 0) minRef.set(p[5], Math.min(minRef.get(p[5]) ?? Infinity, p[9] >>> 0));
     this.colorOf.clear();
     for (const n of nets.values()) {

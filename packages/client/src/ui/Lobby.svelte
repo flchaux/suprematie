@@ -5,7 +5,12 @@
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
   import type { SaveMeta, Fauna } from "@supreme/shared";
-  import { FAUNA_LEVELS, FAUNA_NAMES } from "@supreme/shared";
+  import { FAUNA_LEVELS, FAUNA_NAMES, RACE_NAMES } from "@supreme/shared";
+  const RACE_DESC = [
+    "Tapis, bras, fonderies et assembleurs ; électricité par zones ; recherche par lots en laboratoire",
+    "Base vivante : racines qui mettent en commun sève et sels, organes qui poussent seuls ; recherche par l'ADN des cadavres digérés",
+    "Industrie montée sur des chenillards qui se déploient et se replient ; recherche par l'exploration",
+  ];
   const FAUNA_DESC: Record<Fauna, string> = {
     none: "Pas de nids sur la carte",
     peaceful: "Les bêtes ne se défendent que si on les attaque",
@@ -133,6 +138,16 @@
                     {/if}
                   {:else}
                     <div class="dim small">Commandant · {PLAYER_COLOR_NAMES[p.slot % 8]}</div>
+                    {#if !loaded && !lobby.running && (p.slot === ui.slot || isHost)}
+                      <div class="opts">
+                        <select value={p.race ?? 0} title={RACE_DESC[p.race ?? 0]} onchange={(e) => client.lobbyAction("setRace", { slot: p.slot, race: Number((e.target as HTMLSelectElement).value) })}>
+                          {#each RACE_NAMES as r, i}<option value={i}>{r}</option>{/each}
+                        </select>
+                      </div>
+                      <div class="dim small race">{RACE_DESC[p.race ?? 0]}</div>
+                    {:else}
+                      <div class="dim small">Race : <b>{RACE_NAMES[p.race ?? 0]}</b></div>
+                    {/if}
                     {#if loaded && !lobby.running && !p.connected && p.slot !== ui.slot}
                       <div><button class="icon-btn" onclick={() => client.lobbyAction("claimSlot", { slot: p.slot })}><Icon name="user" size={13} /> Prendre cette place</button></div>
                     {/if}
@@ -270,6 +285,7 @@
   .set span { color: var(--text); }
   .set input[type="number"] { width: 110px; }
   .fauna { margin: 4px 0 0; line-height: 1.35; }
+  .race { line-height: 1.35; max-width: 380px; }
   .set.ro b { color: var(--text); font-weight: 600; }
   .grow { flex: 1; }
   .launch { padding: 12px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }

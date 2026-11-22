@@ -7,10 +7,11 @@ import { randomOrders } from "./scenario.mjs";
 
 const TICKS = Number(process.argv[2] ?? 10000);
 const bytes = readFileSync(new URL("../packages/client/public/sim.wasm", import.meta.url));
-// trois configurations : sans faune (comme les parties d'avant), avec une faune agressive, puis
+// quatre configurations : sans faune (comme les parties d'avant), avec une faune agressive,
 // sans brouillard de guerre (paramètre après la faune : 0)
 const base = [12345, 512, 1, 4, 0, 0, 100, 100, 1, 0, 100, 100, 2, 0, 100, 100, 3, 0, 100, 100];
-for (const [label, params] of [["sans faune", base], ["faune agressive", [...base, 3]], ["sans brouillard", [...base, 2, 0]]]) {
+// puis des races (une par joueur, après le brouillard) : Souche, Transhumants, Industriels, Souche
+for (const [label, params] of [["sans faune", base], ["faune agressive", [...base, 3]], ["sans brouillard", [...base, 2, 0]], ["races", [...base, 2, 1, 1, 2, 0, 1]]]) {
   await check(label, params);
 }
 

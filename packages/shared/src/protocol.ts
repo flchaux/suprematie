@@ -8,6 +8,8 @@ export interface LobbyPlayer {
   aix?: number; // multiplicateur AIx en %, 100 = normal
   level?: string; // difficulté de l'IA : "facile" | "normal" | "difficile"
   team: number;
+  /** race (0 Industriels, 1 Souche, 2 Transhumants ; voir data.races) ; les bots jouent les Industriels */
+  race?: number;
   connected: boolean;
   host: boolean;
   /** partie chargée : nom du joueur qui occupait cette place dans la sauvegarde */
@@ -32,7 +34,7 @@ export interface SaveMeta {
   fauna?: Fauna;
   /** brouillard de guerre ; absent (sauvegardes d'avant le réglage) : activé */
   fog?: boolean;
-  players: { name: string; bot: boolean; team: number; personality?: string; aix?: number; level?: string }[];
+  players: { name: string; bot: boolean; team: number; personality?: string; aix?: number; level?: string; race?: number }[];
 }
 
 export interface LobbyState {
@@ -87,7 +89,7 @@ export interface StatSample {
 
 export type ClientMsg =
   | { t: "hello"; name: string; token: string; key: string }
-  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot"; slot?: number; team?: number; mapSize?: number; water?: boolean; seed?: number; fauna?: Fauna; fog?: boolean; personality?: string; aix?: number; level?: string; id?: string }
+  | { t: "lobby"; action: "addBot" | "removeSlot" | "setTeam" | "setMap" | "start" | "setBot" | "loadSave" | "unloadSave" | "deleteSave" | "claimSlot" | "setRace"; slot?: number; team?: number; race?: number; mapSize?: number; water?: boolean; seed?: number; fauna?: Fauna; fog?: boolean; personality?: string; aix?: number; level?: string; id?: string }
   | { t: "save" }
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
@@ -129,7 +131,20 @@ export function simParams(lobby: LobbyState): number[] {
   p.push(Math.max(0, FAUNA_LEVELS.indexOf(lobby.fauna ?? "none")));
   // brouillard de guerre : après la faune (1 activé, 0 désactivé ; absent : activé)
   p.push(lobby.fog === false ? 0 : 1);
+  // races : une par joueur, après le brouillard (absentes : Industriels) ; les bots jouent les Industriels
+  for (const pl of lobby.players) p.push(pl.bot ? 0 : (pl.race ?? 0));
   return p;
+}
+
+/** Nombre de races jouables (voir sim/src/data.rs, RACES). */
+export const RACE_COUNT = 3;
+/** Noms des races, dans l'ordre de la simulation. */
+export const RACE_NAMES = ["Industriels", "Souche", "Transhumants"];
+
+/** Race de chaque joueur d'une partie, lue dans ses paramètres d'init (absente : Industriels), comme la simulation. */
+export function racesFromParams(params: number[]): number[] {
+  const np = params[3] ?? 0;
+  return Array.from({ length: np }, (_, i) => params[6 + np * 4 + i] ?? 0);
 }
 
 /** Brouillard de guerre d'une partie, lu dans ses paramètres d'init (absent : activé), comme la simulation. */

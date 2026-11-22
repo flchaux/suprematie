@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ui } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
-  import { PACK1, GAME_SPEEDS } from "@supreme/shared";
+  import { PACK1, GAME_SPEEDS, SEVE, SELS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
   import Shortcuts from "./Shortcuts.svelte";
@@ -23,8 +23,21 @@
 
 <div class="top">
   <div class="panel left">
-    {#if ui.me >= 0}
+    {#if ui.me >= 0 && ui.race === RACE_SOUCHE}
+      <!-- Souche : pas de réserve commune ; la sève et les sels sont dans les réseaux de racines -->
       <div class="stock">
+        {#each [[SEVE, ui.seve], [SELS, ui.sels]] as [id, n]}
+          {@const fill = ui.store > 0 ? Math.min(1, n / ui.store) : 0}
+          <span class="tip res" class:full={fill >= 1}><Item {id} {n} size={20} /><span class="cap"><span style:width={fill * 100 + "%"}></span></span><span class="tt"><b>{ui.data?.items[id].name}</b><br /><span class="num">{n}</span> dans l'ensemble de vos réseaux de racines (plafond total <span class="num">{ui.store}</span>)<br /><span class="dim">Chaque réseau a sa propre réserve : un organe ne pousse qu'avec celle de son réseau. Une racine coupée partage la réserve entre les morceaux.</span></span></span>
+        {/each}
+        <span class="tip res"><Item id={ADN} n={ui.stock[ADN] ?? 0} size={20} /><span class="tt"><b>ADN</b><br />Recherche des matrices. Vient des ennemis et des bêtes digérés sur votre terreau.</span></span>
+      </div>
+      <div class="sep"></div>
+    {:else if ui.me >= 0}
+      <div class="stock">
+        {#if ui.race === RACE_TRANSH}
+          <span class="tip res"><Item id={RELEVES} n={ui.stock[RELEVES] ?? 0} size={20} /><span class="tt"><b>Relevés</b><br />Recherche des laboratoires nomades. Viennent de l'exploration et des ennemis détruits.</span></span>
+        {/if}
         {#each SHOWN as id}
           {#if id <= 12 || (ui.stock[id] ?? 0) > 0}
             {@const fill = ui.stockCap > 0 ? Math.min(1, (ui.stock[id] ?? 0) / ui.stockCap) : 0}
@@ -33,6 +46,9 @@
         {/each}
       </div>
       <div class="sep"></div>
+    {/if}
+    {#if ui.me >= 0}
+      {#if ui.race !== RACE_SOUCHE}
       <span class="tip gauge" class:bad={ui.powerUse > ui.powerProd}>
         <Icon name="power" size={15} />
         <span class="g">
@@ -42,11 +58,12 @@
         <span class="tt"><b>Énergie</b><br />Consommée / produite. Un bâtiment hors réseau ou sous-alimenté ralentit.</span>
       </span>
       <div class="sep"></div>
+      {/if}
       <span class="tip stat"><Icon name="units" size={15} /><span class="num">{ui.unitCount}<span class="faint">/1000</span></span><span class="tt">Limite de 1 000 unités par joueur</span></span>
       <div class="sep"></div>
       <button class="research" class:idle={!tech} onclick={() => (ui.showResearch = !ui.showResearch)} title={t("Recherche", "research")}>
         {#if tech}
-          <Item id={PACK1 + tech.tier - 1} size={18} />
+          <Item id={ui.race === RACE_SOUCHE ? ADN : ui.race === RACE_TRANSH ? RELEVES : PACK1 + tech.tier - 1} size={18} />
           <span class="rt">
             <span class="rn">{tech.name}</span>
             <span class="bar amber"><span style:width={(ui.researchProgress / tech.count) * 100 + "%"}></span></span>

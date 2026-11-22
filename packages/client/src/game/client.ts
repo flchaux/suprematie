@@ -17,7 +17,7 @@ import { sfx, setVolume } from "../audio/sound.ts";
 import { initMusic, setMusicVolume } from "../audio/music.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
-import { BUILD_CATS, factoryUnitKinds } from "./catalog.ts";
+import { buildCats, factoryUnitKinds } from "./catalog.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
 import { isMachine, machineRow } from "./machineRow.ts";
 import * as Belts from "./belts.ts";
@@ -379,7 +379,8 @@ export class GameClient {
     const pv = keymap.held("powerView", this.keys);
     if (pv !== ui.powerView) ui.powerView = pv;
     const placing = ui.mode === "build" && ui.buildKind >= 0 ? this.data?.buildings[ui.buildKind] : undefined;
-    const placingPower = !!placing && (placing.supply > 0 || placing.powerUse > 0);
+    // Souche : tout organe se pose sur le terreau, montré comme les zones électriques
+    const placingPower = !!placing && (placing.supply > 0 || placing.powerUse > 0 || (placing.race ?? 0) === 1);
     const showZones = pv || placingPower;
     // les zones servent aussi à la mini-carte et aux jauges : requête toutes les 2 s, toutes les 0,4 s affichées
     if (this.frame && ui.me >= 0 && now - this.lastZonesQuery > (showZones ? 400 : 2000)) {
@@ -566,6 +567,15 @@ export class GameClient {
             sfx.research();
           } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a capturé un EPPZ`, "alert");
           break;
+        case EV.DEPLOY_FAILED:
+          // chenillard des Transhumants qui n'a pas trouvé la place de se déployer
+          if (a === ui.me) {
+            const u = this.data!.units[e];
+            const drill = (u?.deploys ?? -1) >= 0 && this.data!.buildings[u.deploys].deposit !== 0;
+            pushMessage(`${u?.name ?? "Chenillard"} : pas la place de se déployer ici${drill ? " (une foreuse se déploie sur un gisement, à 3 cases au plus)" : " (terrain plat et libre)"}`, "alert");
+            sfx.error();
+          }
+          break;
         case EV.SHARDS:
           // nid détruit : fragments d'énergie gagnés
           if (a === ui.me) {
@@ -692,6 +702,12 @@ export class GameClient {
       ui.researchProgress = me.researchProgress;
       ui.researchedLo = me.researchedLo;
       ui.researchedHi = me.researchedHi;
+      ui.researched2Lo = me.researched2Lo;
+      ui.researched2Hi = me.researched2Hi;
+      ui.race = me.race;
+      ui.seve = me.seve;
+      ui.sels = me.sels;
+      ui.store = me.store;
     }
     // la faune (joueur caché, le dernier) n'apparaît pas parmi les joueurs
     ui.players = realPlayers(f.players).map((p, i) => ({ name: ui.names[i] ?? `Joueur ${i + 1}`, alive: p.alive, team: p.team, units: p.unitCount, kills: p.kills, losses: p.losses, bot: p.bot, power: p.powerProd }));
@@ -1258,14 +1274,14 @@ export class GameClient {
     }
     if (e.repeat) return true;
     if (kb.buildStep === "cat") {
-      if (n <= BUILD_CATS.length) {
+      if (n <= buildCats(ui.race).length) {
         kb.buildCat = n - 1;
         kb.buildStep = "item";
         sfx.click();
       } else sfx.error();
       return true;
     }
-    const key = BUILD_CATS[kb.buildCat]?.[2][n - 1];
+    const key = buildCats(ui.race)[kb.buildCat]?.[2][n - 1];
     const idx = key && this.data ? this.data.buildings.findIndex((b) => b.key === key) : -1;
     if (idx < 0) {
       sfx.error();
@@ -1294,7 +1310,7 @@ export class GameClient {
   private queueSlot(slot: number, delta: number): void {
     const fac = this.myFactory();
     if (!fac || !this.data) return;
-    const kind = factoryUnitKinds(this.data, fac.factory)[slot];
+    const kind = factoryUnitKinds(this.data, fac.factory, ui.race)[slot];
     if (kind === undefined) return;
     const me = this.frame?.players[ui.me];
     const u = this.data.units[kind];
@@ -1634,7 +1650,7 @@ export class GameClient {
       return;
     }
     const id = g.ids[0];
-    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null } | null>("unit", [id]).then((r) => {
+    void this.query<{ hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pack?: number; packLeft?: number } | null>("unit", [id]).then((r) => {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });
@@ -1958,6 +1974,12 @@ export class GameClient {
   deploySelected(): void {
     const ids = this.selectedUnits().map((u) => u.id);
     if (ids.length) this.cmd(Ord.deploy(ids));
+  }
+  /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */
+  packSelected(): void {
+    if (!this.data) return;
+    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2).map((b) => b.ref);
+    if (refs.length) this.cmd(Ord.fold(refs));
   }
 
   // ---------- placement des bâtiments ----------

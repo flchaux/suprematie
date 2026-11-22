@@ -15,7 +15,7 @@ pub const RECIPE_SCALE: u32 = 100 * 1024;
 fn needs_tick(c: BClass) -> bool {
     matches!(
         c,
-        BClass::Extractor | BClass::Depot | BClass::Power | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport | BClass::Nest
+        BClass::Extractor | BClass::Depot | BClass::Power | BClass::Inserter | BClass::Crafter | BClass::Lab | BClass::Factory | BClass::Turret | BClass::Shield | BClass::Silo | BClass::AntiMissile | BClass::Orbital | BClass::Gate | BClass::Transfer | BClass::Radar | BClass::Beacon | BClass::Station | BClass::CargoPad | BClass::Router | BClass::Portal | BClass::Roboport | BClass::Nest | BClass::Organ
     )
 }
 
@@ -260,7 +260,8 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
         return false;
     }
     let def = bdef(kind);
-    if !w.players[owner as usize].has_tech(def.tech) {
+    // race : sauf dans les démos et les tests (réseau partout), qui posent tout pour le même joueur
+    if !w.players[owner as usize].has_tech(def.tech) || (!w.infinite_grid && !crate::races::building_ok(w, owner, kind)) {
         return false;
     }
     // un nid (ou une ruine des Anciens) n'appartient qu'à la faune, et la faune ne pose que ceux-là
@@ -303,6 +304,10 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
             }
         }
     }
+    // Souche : sur le terreau de son réseau (sauf la graine-mère)
+    if def.race == RACE_SOUCHE && !w.infinite_grid && !crate::souche::can_place(w, owner, kind, x, y, bw, bh) {
+        return false;
+    }
     if def.deposit != 0 {
         let ok = w.map.spots.iter().any(|s| ((def.deposit == 255 && s.kind != GEYSER) || s.kind == def.deposit) && s.x >= x && s.y >= y && s.x + 2 <= x + bw && s.y + 2 <= y + bh);
         if !ok {
@@ -330,7 +335,7 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     };
     let gen = w.buildings[slot].gen.wrapping_add(1);
     let mut recipe = RECIPE_NONE;
-    if def.class == BClass::Extractor {
+    if def.class == BClass::Extractor || (def.class == BClass::Organ && def.deposit != 0) {
         recipe = w.map.deposit[w.map.idx(x, y)];
         for ty in y..y + bh {
             for tx in x..x + bw {
@@ -384,10 +389,15 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         let team = w.team_of(owner);
         w.grid.add_building(slot as u32, x, y, bw, bh, team);
     }
-    if needs_tick(def.class) || def.collect {
+    // la Souche : chaque organe pousse seul (voir souche::grow), il a donc un tick
+    if needs_tick(def.class) || def.collect || def.race == RACE_SOUCHE {
         if let Err(p) = w.active.binary_search(&(slot as u32)) {
             w.active.insert(p, slot as u32);
         }
+    }
+    if def.race == RACE_SOUCHE {
+        // son réseau (la réserve qui le fait pousser) au prochain calcul des zones
+        w.power_dirty = true;
     }
     w.buildings_version = w.buildings_version.wrapping_add(1);
     Some(slot)
@@ -421,7 +431,7 @@ pub fn complete_building(w: &mut World, b: usize) {
         bb.shield = def.shield_hp / 2;
     }
     let (x, y, owner, kind) = (bb.x, bb.y, bb.owner, bb.kind);
-    if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 {
+    if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 || def.race == RACE_SOUCHE {
         w.power_dirty = true;
     }
     if def.class == BClass::Belt {
@@ -465,10 +475,11 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     if def.class == BClass::Belt {
         belts::rebuild_around(w, &[(x, y)]);
     }
-    if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 {
+    if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 || def.race == RACE_SOUCHE {
         w.power_dirty = true;
     }
-    if with_wreck && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
+    // un organe de la Souche ne laisse pas d'épave (il est digéré, voir souche::digest)
+    if with_wreck && def.race != RACE_SOUCHE && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
         let (cx, cy) = w.buildings[b].center();
         let (kind, dir) = (w.buildings[b].kind, w.buildings[b].dir & 3);
         w.spawn_wreck(cx, cy, def.cost, (bw.max(bh)) as u8, WRECK_BUILDING | kind, dir as u16 * 16384);
@@ -598,6 +609,8 @@ pub fn max_supply() -> i32 {
 
 pub fn rebuild_power(w: &mut World) {
     w.power_dirty = false;
+    // Souche : réserves des réseaux de racines, partagées entre les nouveaux réseaux (voir souche.rs)
+    let pools = crate::souche::old_pools(w);
     let np = w.players.len();
     w.nets.clear();
     w.nets.push(Net::default());
@@ -626,13 +639,20 @@ pub fn rebuild_power(w: &mut World) {
             }
             r
         }
+        // Souche : deux poteaux sont reliés quand leurs terreaux se touchent
+        let souche = w.players[owner as usize].race == RACE_SOUCHE;
         for i in 0..poles.len() {
             let (ax, ay) = w.buildings[poles[i]].center();
             let ca = connect_of(&w.buildings[poles[i]]);
             for j in (i + 1)..poles.len() {
                 let (bx, by) = w.buildings[poles[j]].center();
                 let r = ca.min(connect_of(&w.buildings[poles[j]])) * TILE;
-                if crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64) {
+                let linked = if souche {
+                    crate::souche::zones_touch(&w.buildings[poles[i]], &w.buildings[poles[j]])
+                } else {
+                    crate::fixed::dist2(ax, ay, bx, by) <= (r as i64) * (r as i64)
+                };
+                if linked {
                     let (ra, rb) = (find(&mut parent, i), find(&mut parent, j));
                     if ra != rb {
                         let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
@@ -668,7 +688,8 @@ pub fn rebuild_power(w: &mut World) {
                 continue;
             }
             let def = b.def();
-            if def.power_use == 0 && def.power_prod == 0 && def.supply == 0 {
+            // les organes de la Souche rejoignent le réseau de leur terreau, même sans électricité
+            if def.power_use == 0 && def.power_prod == 0 && def.supply == 0 && def.race != RACE_SOUCHE {
                 w.buildings[bi].net = 0;
                 continue;
             }
@@ -708,6 +729,9 @@ pub fn rebuild_power(w: &mut World) {
         for &pb in &poles {
             pole_net[pb] = 0;
         }
+    }
+    if let Some(old) = pools {
+        crate::souche::split_pools(w, old);
     }
 }
 
@@ -1229,7 +1253,12 @@ pub fn factory_trim(w: &mut World, b: usize) {
         let extra = bb.stash[it].saturating_sub(factory_limit(bb, it as u8));
         if extra > 0 {
             w.buildings[b].stash[it] -= extra;
-            crate::drones::refund_at(w, owner, b, it as u8, extra as u32);
+            if w.buildings[b].def().race == RACE_SOUCHE {
+                let net = w.buildings[b].net;
+                crate::souche::refund(w, net, it as u8, extra as i32);
+            } else {
+                crate::drones::refund_at(w, owner, b, it as u8, extra as u32);
+            }
         }
     }
 }
@@ -1731,7 +1760,14 @@ pub fn update_buildings(w: &mut World) {
         let b = w.active[i] as usize;
         i += 1;
         let bb = &w.buildings[b];
-        if !bb.alive || !bb.complete() || w.tick < bb.wake {
+        if !bb.alive || w.tick < bb.wake {
+            continue;
+        }
+        if !bb.complete() {
+            // Souche : l'organe pousse seul
+            if bb.def().race == RACE_SOUCHE {
+                crate::souche::grow(w, b);
+            }
             continue;
         }
         if bb.stun > 0 {
@@ -1750,7 +1786,15 @@ pub fn update_buildings(w: &mut World) {
         }
         match bb.def().class {
             BClass::Extractor => tick_extractor(w, b),
+            // soute des Transhumants : elle alimente les fabricants collés (pas de sorties filtrées)
+            BClass::Depot if bb.kind == B_T_HOLD => {
+                w.buildings[b].wake = w.tick + DEPOT_FEED_PERIOD;
+                crate::transhumants::feed_crafters(w, b);
+            }
             BClass::Depot => tick_depot(w, b),
+            BClass::Organ => crate::souche::tick_organ(w, b),
+            // racine de la Souche (les relais des Industriels n'ont pas de tick)
+            BClass::Pylon => crate::souche::tick_root(w, b),
             BClass::Belt if bb.def().collect => tick_collector(w, b),
             BClass::Inserter => tick_inserter(w, b),
             BClass::Crafter => tick_crafter(w, b),
@@ -2156,10 +2200,13 @@ fn tick_extractor(w: &mut World, b: usize) {
     let mult = w.players[owner].res_mult as u32;
     // pureté du gisement : 50 % (impur), 100 % ou 200 % (pur)
     let purity = purity_of(&w.buildings[b]);
+    // foreuse nomade des Transhumants : deux fois plus vite, moins l'usure du gisement
+    let nomad = if w.buildings[b].kind == B_T_DRILL { crate::transhumants::drill_speed(w, b) } else { 1000 };
     let bb = &mut w.buildings[b];
     bb.working = s > 0;
     // niveau d'amélioration : vitesse en % du niveau 0
-    bb.progress += s as u32 * mult * lvl.speed / 100 * purity / 100 * clock_of(bb) / 100;
+    let gain = s as u32 * mult * lvl.speed / 100 * purity / 100 * clock_of(bb) / 100;
+    bb.progress += if nomad == 1000 { gain } else { (gain as u64 * nomad as u64 / 1000) as u32 };
     if bb.progress >= 30 * RECIPE_SCALE {
         bb.progress -= 30 * RECIPE_SCALE;
         bb.out += 1;
@@ -2387,15 +2434,27 @@ fn tick_lab(w: &mut World, b: usize) {
             w.buildings[b].wake = w.tick + 20;
             return;
         }
-        let tier = TECHS[t as usize].tier as usize;
-        let has = (0..tier).all(|k| w.buildings[b].inv[k] > 0);
-        if !has {
-            w.buildings[b].wake = w.tick + SLEEP;
-            return;
-        }
-        for k in 0..tier {
-            w.buildings[b].inv[k] -= 1;
-            w.players[owner].consumed[PACK1 as usize + k] += 1;
+        // Souche : ADN ; Transhumants : relevés ; Industriels : un lot de chaque palier
+        let race = w.players[owner].race;
+        if race == RACE_SOUCHE {
+            if !crate::souche::lab_start(w, b, t) {
+                return;
+            }
+        } else if race == RACE_TRANSH {
+            if !crate::transhumants::lab_start(w, b, t) {
+                return;
+            }
+        } else {
+            let tier = TECHS[t as usize].tier as usize;
+            let has = (0..tier).all(|k| w.buildings[b].inv[k] > 0);
+            if !has {
+                w.buildings[b].wake = w.tick + SLEEP;
+                return;
+            }
+            for k in 0..tier {
+                w.buildings[b].inv[k] -= 1;
+                w.players[owner].consumed[PACK1 as usize + k] += 1;
+            }
         }
         let bb = &mut w.buildings[b];
         bb.working = true;
@@ -2403,7 +2462,7 @@ fn tick_lab(w: &mut World, b: usize) {
         bb.tech = t;
         wake_watchers(w, b);
     }
-    let s = use_power(w, b, bdef(B_LAB).power_use);
+    let s = use_power(w, b, w.buildings[b].def().power_use);
     let bb = &mut w.buildings[b];
     bb.progress += s as u32 * 100;
     let t = bb.tech;
@@ -2415,7 +2474,7 @@ fn tick_lab(w: &mut World, b: usize) {
         if p.research == t && !p.has_tech(t) {
             p.tech_progress[t as usize] += 1;
             if p.tech_progress[t as usize] >= TECHS[t as usize].count {
-                p.researched |= 1u64 << t;
+                p.set_tech(t);
                 p.research = 0;
                 p.start_queued();
                 w.ev(EV_RESEARCH, owner as i32, t as i32, 0, 0);
@@ -2438,6 +2497,10 @@ fn tick_factory(w: &mut World, b: usize) {
         w.buildings[b].wake = w.tick + SLEEP;
         return;
     };
+    if w.buildings[b].def().race == RACE_SOUCHE {
+        // couveuse : le coût de l'unité vient du réseau de racines
+        crate::souche::feed_factory(w, b);
+    }
     share_with_twins(w, b);
     let def = udef(kind);
     if !w.buildings[b].working {
@@ -2470,7 +2533,10 @@ fn tick_factory(w: &mut World, b: usize) {
     }
     let use_ = w.buildings[b].def().power_use;
     let s = use_power(w, b, use_);
-    let mult = w.players[owner].build_mult as u32;
+    let mut mult = w.players[owner].build_mult as u32;
+    if w.buildings[b].def().race == RACE_SOUCHE {
+        mult = mult * crate::souche::brood_speed(w, owner as u8) / 100;
+    }
     w.buildings[b].progress += s as u32 * mult;
     if w.buildings[b].progress >= def.build as u32 * 20 * RECIPE_SCALE {
         w.buildings[b].working = false;

@@ -6,8 +6,8 @@ use crate::fixed::TILE;
 use crate::world::*;
 
 pub const HEADER: usize = 16;
-/// ... + plafond total des dépôts, fragments, EPPZ
-pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 3;
+/// ... + plafond total des dépôts, fragments, EPPZ, race, recherches 64 à 127, réserves de la Souche
+pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 9;
 pub const CARRIER_WORDS: usize = 5;
 pub const UNIT_WORDS: usize = 9;
 pub const BUILDING_WORDS: usize = 8;
@@ -55,7 +55,7 @@ fn stock_totals(w: &World) -> (Vec<[i32; NUM_ITEMS]>, Vec<i32>, Vec<[i32; NUM_IT
 
 fn player_block(w: &World, out: &mut Vec<i32>) {
     let (stock, cap, team) = stock_totals(w);
-    for (pi, p) in w.players.iter().enumerate() {
+    for (i, p) in w.players.iter().enumerate() {
         let prog = if p.research != 0 { p.tech_progress[p.research as usize] as i32 } else { 0 };
         out.extend_from_slice(&[
             p.alive as i32,
@@ -72,8 +72,9 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
             p.losses as i32,
             p.is_bot as i32,
         ]);
-        // stock : dépôts et soutes du joueur (il n'y a pas de réserve commune, voir drones.rs)
-        out.extend(stock[pi].iter().copied());
+        // stock : dépôts et soutes du joueur (il n'y a pas de réserve commune, voir drones.rs), et sa
+        // bourse (monnaies de race : ADN, relevés)
+        out.extend(stock[i].iter().zip(p.purse.iter()).map(|(&a, &b)| a + b));
         out.extend(p.produced.iter().map(|&x| x as i32));
         out.extend(p.consumed.iter().map(|&x| x as i32));
         // stock des entrepôts de l'équipe
@@ -81,9 +82,15 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
             Some(ts) => out.extend(ts.iter().copied()),
             None => out.extend(std::iter::repeat_n(0, NUM_ITEMS)),
         }
-        out.push(cap[pi]);
+        out.push(cap[i]);
         out.push(p.shards as i32);
         out.push(p.eppz as i32);
+        // races : race, recherches 64 à 127, réserves des réseaux de la Souche (sève, sels, plafond)
+        out.push(p.race as i32);
+        out.push(p.researched2 as u32 as i32);
+        out.push((p.researched2 >> 32) as u32 as i32);
+        let (sv, sl, st) = if p.race == crate::data::RACE_SOUCHE { crate::souche::totals(w, i as u8) } else { (0, 0, 0) };
+        out.extend_from_slice(&[sv, sl, st]);
     }
 }
 
@@ -93,7 +100,8 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     if c.stun > 0 {
         flags |= 8;
     }
-    if c.deployed {
+    // déployé ; chenillard des Transhumants en train de se déployer ou de se replier
+    if c.deployed || c.pack != 0 {
         flags |= 16;
     }
     if c.shield > 0 && c.shield_down == 0 {
@@ -535,14 +543,15 @@ pub fn info_building(w: &World, r: u32) -> String {
         None => "null".to_string(),
     };
     format!(
-        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{},\"ruin\":{},\"missing\":{},\"storeCap\":{},\"drones\":{}}}",
-        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b), missing, store_cap, drones
+        "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{},\"ruin\":{},\"missing\":{},\"storeCap\":{},\"drones\":{}{}}}",
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b), missing, store_cap, drones, race_info(w, b)
     )
 }
 
 /// Zones électriques des joueurs de l'équipe de `player` (vue électrique, mini-carte, pose) :
 /// `nets` : [id, joueur, production, demande, puissance installée, satisfaction, combustible total,
-/// autonomie en s (-1 : rien ne brûle)] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
+/// autonomie en s (-1 : rien ne brûle), 0] ; réseau de racines de la Souche : [id, joueur, sève, sels,
+/// plafond, 1024, 0, -1, 1] ; `poles` : [x, y, largeur, hauteur, portée d'alimentation,
 /// réseau (0 : aucun), genre (0 relais, 1 générateur), combustible en millièmes du réservoir (-1 : relais),
 /// joueur, référence, type de bâtiment, portée de liaison]. Portée et liaison suivent le niveau (générateur
 /// principal amélioré). Un générateur à sec garde sa portée mais n'a pas de réseau.
@@ -554,10 +563,15 @@ pub fn power_zones(w: &World, player: i32) -> String {
         if n.unlimited || !mine(n.owner) {
             continue;
         }
+        // Souche : réseau de racines, [id, joueur, sève, sels, plafond, 1024, 0, -1, 1] (à sec : sans sève)
+        if w.players.get(n.owner as usize).is_some_and(|p| p.race == crate::data::RACE_SOUCHE) {
+            nets.push(format!("[{},{},{},{},{},1024,0,-1,1]", i, n.owner, n.seve, n.sels, n.store));
+            continue;
+        }
         let fuel: i64 = n.gens.iter().map(|&g| w.buildings[g as usize].fuel.max(0) as i64).sum();
         let burn = n.demand.min(n.prod) as i64;
         let autonomy = if burn > 0 { fuel / burn / 20 } else { -1 };
-        nets.push(format!("[{},{},{},{},{},{},{},{}]", i, n.owner, n.prod, n.demand, n.cap, n.sat, fuel, autonomy));
+        nets.push(format!("[{},{},{},{},{},{},{},{},0]", i, n.owner, n.prod, n.demand, n.cap, n.sat, fuel, autonomy));
     }
     let mut poles = Vec::new();
     for (b, bb) in w.buildings.iter().enumerate() {
@@ -581,6 +595,15 @@ pub fn power_zones(w: &World, player: i32) -> String {
     format!("{{\"nets\":[{}],\"poles\":[{}]}}", nets.join(","), poles.join(","))
 }
 
+/// Champs de fiche propres à une race : réserve du réseau (Souche), chenillard et usure (Transhumants).
+fn race_info(w: &World, b: usize) -> String {
+    match w.buildings[b].def().race {
+        crate::data::RACE_SOUCHE => crate::souche::info(w, b),
+        crate::data::RACE_TRANSH => crate::transhumants::info(w, b),
+        _ => String::new(),
+    }
+}
+
 pub fn info_unit(w: &World, id: u32) -> String {
     let Some(s) = w.unit(id) else { return "null".into() };
     let c = &w.units.cold[s];
@@ -589,7 +612,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -608,7 +631,9 @@ pub fn info_unit(w: &World, id: u32) -> String {
         js_list(c.hold.iter()),
         reach,
         drones,
-        w.building(c.supply_at).is_some()
+        w.building(c.supply_at).is_some(),
+        c.pack,
+        if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 }
     )
 }
 

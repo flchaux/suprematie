@@ -10,7 +10,7 @@ Le projet est un jeu de stratégie en temps réel multijoueur, jouable dans le n
 
 - Les joueurs extraient des ressources, construisent des chaînes de production reliées par des tapis roulants et produisent des armées qui s'affrontent sur la même carte.
 - Une partie réunit jusqu'à 8 joueurs, humains ou bots. Les bots reprennent le fonctionnement de l'IA d'escarmouche de Supreme Commander.
-- Le jeu a une seule faction.
+- Le jeu a trois races jouables : les Industriels, la Souche et les Transhumants (voir [races.md](spec/races.md)).
 - Le jeu se lance depuis un lien, sans installation et sans compte. Il est prévu pour Chrome uniquement. Il reste privé, hébergé sur le VPS, et le serveur n'héberge qu'une partie à la fois.
 - Il n'y a pas de mods ni de version Steam.
 - Le style visuel est en 3D avec peu de polygones, en vue de dessus inclinable, avec un zoom continu de l'unité à la carte entière.
@@ -29,6 +29,7 @@ La partie de référence, qui sert d'objectif de performance, réunit 8 joueurs,
 | [faune.md](spec/faune.md) | Nids, hordes, attaques, parades, réplicateurs | Faune, PNJ |
 | [contenu.md](spec/contenu.md) | Arbre technologique, unités, déplacements en formation, bâtiments | Ajout ou équilibrage d'unités, de bâtiments, de recherches |
 | [architecture.md](spec/architecture.md) | Pile technique, architecture, simulation déterministe, algorithmes de performance, réseau, objectifs de performance | Architecture, réseau, simulation, performance |
+| [races.md](spec/races.md) | Races jouables : socle commun, Souche, Transhumants | Tout ce qui dépend de la race du joueur |
 | [bots.md](spec/bots.md) | IA d'escarmouche | Bots |
 | [rendu.md](spec/rendu.md) | Rendu, interface, sons, modèles 3D | Client, affichage, modèles |
 | [processus.md](spec/processus.md) | Tests et règles pour Claude Code, format des sauvegardes, maîtrise du coût, étapes, questions ouvertes, sources | Tests, sauvegardes, organisation du travail |

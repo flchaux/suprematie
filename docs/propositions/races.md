@@ -1,6 +1,6 @@
 # Propositions : cinq races jouables
 
-Nov 22, 2026 · document de conception, rien n'est codé.
+Nov 22, 2026 · document de conception. Depuis : le socle commun, la Souche et les Transhumants sont réalisés en version réduite (voir [docs/spec/races.md](../spec/races.md)) ; les Copistes ont leurs règles détaillées ([copistes.md](copistes.md)).
 
 Le jeu n'a qu'une faction, appelée ici **les Industriels** : gisements, extracteurs, tapis et bras, fonderies et assembleurs, électricité par zones, réserve commune alimentée par les dépôts, drones ingénieurs, laboratoires et lots, usines terrestres, aériennes et navales (voir [economie.md](../spec/economie.md), [energie.md](../spec/energie.md), [contenu.md](../spec/contenu.md)).
 
@@ -28,6 +28,8 @@ Règles suivies pour toutes les races :
 ## 1. Les Copistes (réplication)
 
 **Principe.** Une race de machines faites de briques identiques qui se recopient : chaque unité est à la fois soldat, usine et réserve de matière.
+
+Règles détaillées, chiffres, déroulé d'une partie et plan de réalisation : [copistes.md](copistes.md).
 
 ### Économie
 

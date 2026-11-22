@@ -2,9 +2,9 @@
 import { NATURE_TEAM } from "./data.ts";
 
 export const HEADER = 16;
-export const NUM_ITEMS = 27;
+export const NUM_ITEMS = 31;
 /** ... + plafond de la réserve (dernier mot) */
-export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 3;
+export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 9;
 export const UNIT_WORDS = 9;
 export const BUILDING_WORDS = 8;
 export const ITEM_WORDS = 3;
@@ -16,7 +16,7 @@ export const CARRIER_WORDS = 5;
 
 export const EV = {
   BEAM: 2, EXPLOSION: 3, UNIT_DIED: 4, BUILDING_DIED: 5, BUILT: 6, RESEARCH: 7, NUKE: 8, ELIMINATED: 9,
-  UNIT_CREATED: 10, SHIELD_HIT: 11, TELEPORT: 12, FIRE: 13, INTERCEPT: 14, ORBITAL: 15, GAME_OVER: 16, PROMOTED: 17, GIFT: 18, ATTACKED: 19, FACTORY_STARVED: 20, FUEL_LOW: 41, FUEL_DRY: 42, SHARDS: 43, EPPZ: 44,
+  UNIT_CREATED: 10, SHIELD_HIT: 11, TELEPORT: 12, FIRE: 13, INTERCEPT: 14, ORBITAL: 15, GAME_OVER: 16, PROMOTED: 17, GIFT: 18, ATTACKED: 19, FACTORY_STARVED: 20, FUEL_LOW: 41, FUEL_DRY: 42, SHARDS: 43, EPPZ: 44, DEPLOY_FAILED: 45,
 } as const;
 
 export const UF = { FIRING: 1, WORKING: 2, CHARGING: 4, STUNNED: 8, DEPLOYED: 16, SHIELD: 32, IDLE: 64, CARGO: 128 } as const;
@@ -34,6 +34,15 @@ export interface PlayerView {
   shards: number;
   /** EPPZ en réserve (capturés dans les ruines des Anciens) */
   eppz: number;
+  /** race (voir data.races) */
+  race: number;
+  /** recherches 64 à 127 */
+  researched2Lo: number;
+  researched2Hi: number;
+  /** Souche : réserve totale de ses réseaux de racines (sève, sels) et plafond total */
+  seve: number;
+  sels: number;
+  store: number;
 }
 
 export interface Frame {
@@ -67,7 +76,8 @@ export function realPlayers<T extends { team: number }>(players: T[]): T[] {
 
 export function hasTech(p: PlayerView, t: number): boolean {
   if (t === 0) return true;
-  return t < 32 ? ((p.researchedLo >>> t) & 1) === 1 : ((p.researchedHi >>> (t - 32)) & 1) === 1;
+  const w = t < 32 ? p.researchedLo : t < 64 ? p.researchedHi : t < 96 ? p.researched2Lo : p.researched2Hi;
+  return ((w >>> (t % 32)) & 1) === 1;
 }
 
 export function parseFrame(buf: Int32Array): Frame {
@@ -86,6 +96,12 @@ export function parseFrame(buf: Int32Array): Frame {
       stockCap: buf[o + 13 + 4 * NUM_ITEMS],
       shards: buf[o + 14 + 4 * NUM_ITEMS],
       eppz: buf[o + 15 + 4 * NUM_ITEMS],
+      race: buf[o + 16 + 4 * NUM_ITEMS],
+      researched2Lo: buf[o + 17 + 4 * NUM_ITEMS],
+      researched2Hi: buf[o + 18 + 4 * NUM_ITEMS],
+      seve: buf[o + 19 + 4 * NUM_ITEMS],
+      sels: buf[o + 20 + 4 * NUM_ITEMS],
+      store: buf[o + 21 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }
@@ -143,6 +159,12 @@ export function parseBotDump(buf: Int32Array): BotView {
       stockCap: buf[o + 13 + 4 * NUM_ITEMS],
       shards: buf[o + 14 + 4 * NUM_ITEMS],
       eppz: buf[o + 15 + 4 * NUM_ITEMS],
+      race: buf[o + 16 + 4 * NUM_ITEMS],
+      researched2Lo: buf[o + 17 + 4 * NUM_ITEMS],
+      researched2Hi: buf[o + 18 + 4 * NUM_ITEMS],
+      seve: buf[o + 19 + 4 * NUM_ITEMS],
+      sels: buf[o + 20 + 4 * NUM_ITEMS],
+      store: buf[o + 21 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }

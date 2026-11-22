@@ -417,7 +417,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
 /// Unité qui ne tire que déployée (elle se déploie seule à l'arrêt quand elle a une cible).
 #[inline]
 pub fn needs_deploy(kind: u16) -> bool {
-    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID)
+    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID | U_TOWED_GUN)
 }
 
 /// Blindage : Gardien touché de face (dans un cône de ±60° autour de sa direction) : -45 % ;
@@ -487,8 +487,11 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
         if w.units.cold[s].cooldown[i] == 0 {
             w.units.cold[s].cooldown[i] = WEAPONS[wi].cooldown;
             w.units.cold[s].flags |= UF_FIRING;
-            // vétérance : +5 % de dégâts par niveau
-            let mult = 100 + 5 * w.units.cold[s].lvl as i32;
+            // vétérance : +5 % de dégâts par niveau ; mutations de la Souche
+            let mut mult = 100 + 5 * w.units.cold[s].lvl as i32;
+            if def.bio {
+                mult = mult * crate::souche::dmg_mult(w, owner, kind) / 100;
+            }
             let me = w.unit_id(s);
             if kind == U_COMMANDO {
                 // le tir trahit le commando pendant 5 s
@@ -622,11 +625,15 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     }
     let raw = dmg;
     // réplicateurs : seul le disrupteur les blesse (et il blesse peu le reste)
-    let dmg = crate::nature::replicator_damage(w, w.units.kind[s] == U_REPLICATOR, dmg);
+    let mut dmg = crate::nature::replicator_damage(w, w.units.kind[s] == U_REPLICATOR, dmg);
+    // organismes vivants (Souche) : le feu leur fait plus de mal
+    if udef(w.units.kind[s]).bio {
+        dmg = dmg * crate::races::family_mult(w.hit_weapon, true) / 1000;
+    }
     w.units.hp[s] -= dmg;
     if raw > 0 {
         let (o, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
-        w.note_attacked(o, attacker, x, y, w.units.kind[s] == U_COMMANDER);
+        w.note_attacked(o, attacker, x, y, crate::races::is_commander(w.units.kind[s]));
         if w.team_of(o) == crate::nature::NATURE_TEAM && w.team_of(attacker) != crate::nature::NATURE_TEAM {
             let id = w.unit_id(s);
             crate::nature::on_hit(w, x, y, id, attacker);
@@ -663,10 +670,14 @@ pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
             crate::nature::on_hit(w, cx, cy, r, attacker);
         }
     }
+    let dmg = crate::souche::building_damage(w, b, dmg);
     let bb = &mut w.buildings[b];
     bb.hp -= dmg;
     if bb.hp <= 0 {
         w.dead_buildings.push(b as u32);
+        // un bâtiment détruit sur le terreau de la Souche est digéré
+        let (cx, cy, o) = (w.buildings[b].center().0, w.buildings[b].center().1, w.buildings[b].owner);
+        crate::souche::digest(w, cx, cy, o, 1);
         // dévoré par un réplicateur : un autre naît sur place
         if w.team_of(w.buildings[b].owner) != crate::nature::NATURE_TEAM {
             let (cx, cy) = w.buildings[b].center();
@@ -1002,6 +1013,9 @@ fn credit_kill(w: &mut World, victim: usize) {
     }
     let gain = udef(w.units.kind[victim]).hp.max(1) as u32;
     let own = udef(w.units.kind[k]).hp.max(1) as u32;
+    // Transhumants : un ennemi détruit donne des relevés
+    let (killer, tier) = (w.units.owner[k], udef(w.units.kind[victim]).tier);
+    crate::transhumants::kill_credit(w, killer, tier);
     let c = &mut w.units.cold[k];
     c.xp = c.xp.saturating_add(gain);
     let lvl = ((c.xp / (2 * own)) as u8).min(MAX_LVL);
@@ -1041,12 +1055,16 @@ fn kill_unit(w: &mut World, s: usize) {
     w.units.free.push(s as u32);
     w.players[owner as usize].unit_count = w.players[owner as usize].unit_count.saturating_sub(1);
     w.players[owner as usize].losses += 1;
-    // une bête de la faune ne laisse pas d'épave
-    if (def.layer != Layer::Air || def.tier == 6) && w.team_of(owner) != crate::nature::NATURE_TEAM {
+    // une bête de la faune ne laisse pas d'épave, un organisme de la Souche non plus
+    if (def.layer != Layer::Air || def.tier == 6) && w.team_of(owner) != crate::nature::NATURE_TEAM && !def.bio {
         let rot = w.units.facing[s];
         w.spawn_wreck(x, y, def.cost, (def.radius / TILE + 1) as u8, kind + 1, rot);
     }
-    if kind == U_COMMANDER {
+    // cadavre tombé sur le terreau de la Souche : digéré
+    if def.layer != Layer::Air {
+        crate::souche::digest(w, x, y, owner, def.tier);
+    }
+    if def.commander {
         w.ev(EV_EXPLOSION, x, y, 12 * TILE, 3);
         area_damage(w, x, y, 12 * TILE, 6000, owner, M_SURF, true);
         eliminate(w, owner);
@@ -1120,10 +1138,13 @@ pub fn update_visibility(w: &mut World) {
             *c &= 8;
         }
     }
-    let stamp = |vis: &mut Vec<u8>, x: i32, y: i32, r_tiles: i32, bit: u8| {
+    // cases de vision découvertes à ce passage, par équipe (relevés des Transhumants)
+    let mut found = vec![0u32; w.vis.len()];
+    let stamp = |vis: &mut Vec<u8>, x: i32, y: i32, r_tiles: i32, bit: u8| -> u32 {
         if r_tiles <= 0 {
-            return;
+            return 0;
         }
+        let mut new = 0;
         let cx = x / (4 * TILE);
         let cy = y / (4 * TILE);
         let rc = (r_tiles + 3) / 4;
@@ -1138,9 +1159,14 @@ pub fn update_visibility(w: &mut World) {
                 if xx < 0 || xx >= vw || (dx * dx + dy * dy) as i64 > r2 {
                     continue;
                 }
-                vis[(yy * vw + xx) as usize] |= bit;
+                let c = &mut vis[(yy * vw + xx) as usize];
+                if bit & 8 != 0 && *c & 8 == 0 {
+                    new += 1;
+                }
+                *c |= bit;
             }
         }
+        new
     };
     for s in 0..w.units.alive.len() {
         if !w.units.alive[s] || w.units.cold[s].carried_by != NONE {
@@ -1154,7 +1180,7 @@ pub fn update_visibility(w: &mut World) {
         let d = udef(k);
         let (x, y) = (w.units.x[s], w.units.y[s]);
         let vis = &mut w.vis[team];
-        stamp(vis, x, y, d.vision, 1 | 8);
+        found[team] += stamp(vis, x, y, d.vision, 1 | 8);
         // détection rapprochée : un commando camouflé est repéré à quelques cases
         if d.vision > 0 {
             stamp(vis, x, y, 3, VIS_NEAR);
@@ -1187,12 +1213,17 @@ pub fn update_visibility(w: &mut World) {
         }
         let (x, y) = bb.center();
         let vis = &mut w.vis[team];
-        stamp(vis, x, y, def.vision, 1 | 8);
+        found[team] += stamp(vis, x, y, def.vision, 1 | 8);
         if def.vision > 0 {
             stamp(vis, x, y, 3, VIS_NEAR);
         }
         if def.radar > 0 && bb.complete() && bb.working {
             stamp(vis, x, y, def.radar, 2);
+        }
+    }
+    if w.tick > 0 {
+        for (team, n) in found.into_iter().enumerate() {
+            crate::transhumants::explored(w, team, n);
         }
     }
 }

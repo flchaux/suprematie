@@ -41,6 +41,14 @@ export const ui = $state({
   researchProgress: 0,
   researchedLo: 0,
   researchedHi: 0,
+  researched2Lo: 0,
+  researched2Hi: 0,
+  /** race du joueur local (0 Industriels, 1 Souche, 2 Transhumants) */
+  race: 0,
+  /** Souche : réserve totale de ses réseaux de racines (sève, sels) et plafond total */
+  seve: 0,
+  sels: 0,
+  store: 0,
   players: [] as { name: string; alive: boolean; team: number; units: number; kills: number; losses: number; bot: boolean; power: number }[],
   // sélection
   selUnits: [] as SelUnitGroup[],
@@ -54,7 +62,7 @@ export const ui = $state({
   /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
   selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
-  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null },
+  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number },
   buildingInfo: null as null | Record<string, unknown>,
   canBuild: false,
   mode: "" as string,
@@ -85,7 +93,7 @@ export const ui = $state({
   /** vue électrique (touche maintenue) */
   powerView: false,
   /** réseaux électriques de l'équipe (légende de la vue électrique) */
-  powerNets: [] as { id: number; color: number; prod: number; demand: number; cap: number; sat: number; autonomy: number; dead: boolean }[],
+  powerNets: [] as { id: number; color: number; prod: number; demand: number; cap: number; sat: number; autonomy: number; dead: boolean; roots?: boolean }[],
   chatOpen: false,
   volume: 0.5,
   music: 0.35,
@@ -120,5 +128,6 @@ export function pushMessage(text: string, kind: Message["kind"] = "info"): void 
 
 export function hasTechUI(t: number): boolean {
   if (t === 0) return true;
-  return t < 32 ? ((ui.researchedLo >>> t) & 1) === 1 : ((ui.researchedHi >>> (t - 32)) & 1) === 1;
+  const w = t < 32 ? ui.researchedLo : t < 64 ? ui.researchedHi : t < 96 ? ui.researched2Lo : ui.researched2Hi;
+  return ((w >>> (t % 32)) & 1) === 1;
 }
