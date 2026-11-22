@@ -46,6 +46,17 @@ pub const EV_LOOT: i32 = 49;
 pub const LOOT_PCT: u32 = 25;
 /// Bâtiment détruit : pillé par l'unité des Transhumants la plus proche, à cette distance au plus (cases).
 pub const LOOT_RANGE: i32 = 15;
+/// Chariots de convoi qu'une soute peut avoir attelés en même temps.
+pub const CARTS_PER_HOLD: usize = 6;
+/// Navette d'un chariot : au module, attente (ticks) avant de rentrer avec un chargement incomplet ; en
+/// livraison, avant de rentrer avec ce que le fabricant ne prend pas.
+pub const HAUL_WAIT: u32 = 100;
+/// Distance (sous-unités) au bord d'un bâtiment à laquelle un chariot charge ou décharge.
+const HAUL_REACH: i32 = 2 * TILE;
+/// Phases de la navette (bit 0 de `UnitCold::timer`) : vers le premier arrêt (le module, ou la soute en livraison),
+/// puis vers le second.
+const HAUL_OUT: u16 = 0;
+const HAUL_BACK: u16 = 1;
 /// Poteaux relais qu'un générateur nomade peut avoir plantés en même temps.
 pub const POLES_PER_GEN: usize = 10;
 
@@ -252,6 +263,12 @@ fn deploy(w: &mut World, s: usize) {
     }
     if def.class == BClass::Depot {
         bb.stash = stock;
+    }
+    // soute : ses chariots de convoi ressortent (déjà payés)
+    if bkind == B_T_HOLD {
+        for _ in 0..fuel.clamp(0, CARTS_PER_HOLD as i32) {
+            spawn_cart(w, b);
+        }
     }
     if def.class == BClass::Extractor {
         let (bw, bh) = buildings::dims(bkind, 0);
@@ -469,6 +486,8 @@ pub fn fold(w: &mut World, b: usize) {
     if def.class == BClass::Extractor && bb.recipe != 0 && bb.recipe != RECIPE_NONE {
         refund.push((bb.recipe, bb.out as i32));
     }
+    // soute : ses chariots de convoi rentrent avec elle (nombre gardé à bord, dans `pack_fuel`)
+    let carts = if bb.kind == B_T_HOLD { stow_carts(w, b) } else { 0 };
     let aboard = if def.class == BClass::Depot { std::mem::take(&mut w.buildings[b].stash) } else { Vec::new() };
     for (it, n) in w.buildings[b].stash.iter().enumerate() {
         if *n > 0 {
@@ -494,7 +513,7 @@ pub fn fold(w: &mut World, b: usize) {
         c.pack = PACK_FOLDING;
         c.ready_tick = w.tick + FOLD_TICKS as u32;
         c.pack_recipe = recipe;
-        c.pack_fuel = fuel;
+        c.pack_fuel = if ukind == U_CH_HOLD { carts } else { fuel };
         c.hold = aboard;
         w.units.hp[s] = ((max as i64 * ratio as i64 / 1000) as i32).clamp(1, max);
     }
@@ -539,6 +558,224 @@ pub fn pull_poles(w: &mut World, g: usize) {
     for b in poles_of(w, g) {
         buildings::remove_building(w, b, false);
     }
+}
+
+/// Chariots de convoi attelés à la soute `h` (leur `UnitCold::parent` est sa référence de bâtiment, que les
+/// unités ignorent : `World::unit` ne la résout pas), par indice croissant.
+pub fn carts_of(w: &World, h: usize) -> Vec<usize> {
+    let r = w.building_ref(h);
+    (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_T_CART && w.units.cold[s].parent == r).collect()
+}
+
+/// Apparition d'un chariot de convoi attelé à la soute `h`, à côté d'elle.
+fn spawn_cart(w: &mut World, h: usize) -> Option<usize> {
+    let (owner, (cx, cy)) = (w.buildings[h].owner, w.buildings[h].center());
+    if w.players[owner as usize].unit_count >= UNIT_CAP {
+        return None;
+    }
+    let (x, y) = buildings::free_spot_near(w, cx, cy, crate::units::pass_mask(Layer::Land));
+    let id = w.spawn_unit(U_T_CART, owner, x, y);
+    let s = w.unit(id)?;
+    w.units.cold[s].parent = w.building_ref(h);
+    Some(s)
+}
+
+/// Ordre « Atteler un chariot » sur une soute déployée : un chariot de convoi de plus (CARTS_PER_HOLD au
+/// plus), payé avec le stock de cette soute. Renvoie vrai s'il est attelé.
+pub fn hitch(w: &mut World, h: usize) -> bool {
+    let bb = &w.buildings[h];
+    if !bb.alive || bb.kind != B_T_HOLD || !bb.complete() || carts_of(w, h).len() >= CARTS_PER_HOLD {
+        return false;
+    }
+    let cost = udef(U_T_CART).cost;
+    if cost.iter().any(|&(it, n)| crate::drones::has(&w.buildings[h].stash, it) < n) {
+        return false;
+    }
+    if spawn_cart(w, h).is_none() {
+        return false;
+    }
+    for &(it, n) in cost {
+        crate::drones::take(&mut w.buildings[h].stash, it, n);
+    }
+    true
+}
+
+/// Le chariot peut-il faire la navette avec le bâtiment `b` du joueur `p` ? Ramassage : un extracteur ou un
+/// fabricant terminé ; livraison (`feed`) : un fabricant terminé qui a une recette.
+pub fn haul_ok(w: &World, p: u8, b: usize, feed: bool) -> bool {
+    let bb = &w.buildings[b];
+    if !bb.alive || bb.owner != p || !bb.complete() {
+        return false;
+    }
+    match bb.def().class {
+        BClass::Crafter => !feed || bb.recipe != RECIPE_NONE,
+        BClass::Extractor => !feed,
+        _ => false,
+    }
+}
+
+/// Soute d'un chariot : la sienne, ou, s'il n'en a plus (détruite), la soute déployée la plus proche qui a une
+/// place libre, à laquelle il s'attelle.
+fn cart_hold(w: &mut World, s: usize) -> Option<usize> {
+    let owner = w.units.owner[s];
+    if let Some(h) = w.building(w.units.cold[s].parent) {
+        if w.buildings[h].kind == B_T_HOLD && w.buildings[h].owner == owner {
+            return Some(h);
+        }
+    }
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    let best = (0..w.buildings.len())
+        .filter(|&h| {
+            let bb = &w.buildings[h];
+            bb.alive && bb.kind == B_T_HOLD && bb.owner == owner && bb.complete() && carts_of(w, h).len() < CARTS_PER_HOLD
+        })
+        .min_by_key(|&h| {
+            let (cx, cy) = w.buildings[h].center();
+            (dist2(x, y, cx, cy), h)
+        })?;
+    w.units.cold[s].parent = w.building_ref(best);
+    Some(best)
+}
+
+/// Le chariot `s` est-il au bord du bâtiment `b` ? Sinon il y roule. Renvoie vrai s'il y est.
+fn cart_at(w: &mut World, s: usize, b: usize) -> bool {
+    let (tx, ty) = w.buildings[b].center();
+    let (bw, bh) = w.buildings[b].size();
+    let reach = bw.max(bh) * TILE / 2 + HAUL_REACH;
+    if crate::fixed::dist(w.units.x[s], w.units.y[s], tx, ty) > reach {
+        crate::units::steer(w, s, tx, ty, tx, ty, reach - TILE);
+        return false;
+    }
+    crate::units::clear_goal(w, s);
+    true
+}
+
+/// Attente d'un chariot (au module, ou au fabricant qui ne prend plus rien) : compte les ticks dans les bits
+/// hauts de `UnitCold::timer` (remis à zéro à chaque ordre) ; vrai quand HAUL_WAIT ticks sont passés.
+fn waited(w: &mut World, s: usize) -> bool {
+    let c = &mut w.units.cold[s];
+    let n = (c.timer >> 1) + 1;
+    c.timer = (c.timer & 1) | (n.min(HAUL_WAIT as u16) << 1);
+    n as u32 >= HAUL_WAIT
+}
+
+/// Phase de la navette (bit 0 de `UnitCold::timer`), attente remise à zéro.
+fn set_phase(w: &mut World, s: usize, phase: u16) {
+    w.units.cold[s].timer = phase;
+}
+
+/// Un pas de la navette d'un chariot de convoi (ordre Haul). Ramassage : il charge ce qui sort du module (20
+/// objets au plus), repart plein ou après HAUL_WAIT ticks d'attente s'il a quelque chose, et décharge tout dans
+/// sa soute ; puis recommence. Livraison (`feed`) : il prend dans sa soute les ingrédients de la recette du
+/// fabricant (part égale de sa cale pour chacun), les y porte et les y met à mesure qu'il les accepte ; il rentre
+/// quand sa cale est vide, ou après HAUL_WAIT ticks sans que rien ne passe.
+pub fn haul_step(w: &mut World, s: usize, site: u32, feed: bool) {
+    let owner = w.units.owner[s];
+    let Some(b) = w.building(site).filter(|&b| haul_ok(w, owner, b, feed)) else {
+        crate::units::pop_order(w, s);
+        return;
+    };
+    let Some(h) = cart_hold(w, s) else {
+        crate::units::pop_order(w, s);
+        return;
+    };
+    let cap = udef(U_T_CART).hold as u32;
+    let phase = w.units.cold[s].timer & 1;
+    let carried = crate::drones::total(&w.units.cold[s].hold);
+    if !feed {
+        if phase == HAUL_OUT {
+            if !cart_at(w, s, b) {
+                return;
+            }
+            let it = buildings::output_of(&w.buildings[b]);
+            let k = if it != 0 { (w.buildings[b].out as u32).min(cap.saturating_sub(carried)) as u16 } else { 0 };
+            if k > 0 {
+                w.buildings[b].out -= k;
+                w.buildings[b].wake = 0;
+                crate::drones::put(&mut w.units.cold[s].hold, it, k);
+            }
+            let now = carried + k as u32;
+            if now >= cap || (now > 0 && waited(w, s)) {
+                set_phase(w, s, HAUL_BACK);
+            }
+            return;
+        }
+        if !cart_at(w, s, h) {
+            return;
+        }
+        unload(w, s, h);
+        if crate::drones::total(&w.units.cold[s].hold) == 0 {
+            set_phase(w, s, HAUL_OUT);
+        }
+        return;
+    }
+    // livraison : la soute d'abord, puis le fabricant
+    if phase == HAUL_OUT {
+        if !cart_at(w, s, h) {
+            return;
+        }
+        let inputs = RECIPES[w.buildings[b].recipe as usize].inputs;
+        let share = (cap / inputs.len().max(1) as u32).max(1) as u16;
+        for &(it, _) in inputs {
+            let want = share.saturating_sub(crate::drones::has(&w.units.cold[s].hold, it));
+            let k = want.min(crate::drones::has(&w.buildings[h].stash, it));
+            if k > 0 {
+                crate::drones::take(&mut w.buildings[h].stash, it, k);
+                crate::drones::put(&mut w.units.cold[s].hold, it, k);
+            }
+        }
+        // il part dès qu'il a quelque chose ; une cale vide attend que la soute en ait
+        if crate::drones::total(&w.units.cold[s].hold) > 0 {
+            set_phase(w, s, HAUL_BACK);
+        }
+        return;
+    }
+    if !cart_at(w, s, b) {
+        return;
+    }
+    let mut moved = false;
+    for it in 1..NUM_ITEMS as u8 {
+        while crate::drones::has(&w.units.cold[s].hold, it) > 0 && buildings::accepts(w, b, it) {
+            crate::drones::take(&mut w.units.cold[s].hold, it, 1);
+            buildings::insert_item(w, b, it);
+            moved = true;
+        }
+    }
+    if crate::drones::total(&w.units.cold[s].hold) == 0 {
+        set_phase(w, s, HAUL_OUT);
+    } else if moved {
+        set_phase(w, s, HAUL_BACK);
+    } else if waited(w, s) {
+        set_phase(w, s, HAUL_OUT);
+    }
+}
+
+/// Le chariot `s` met dans la soute `h` tout ce qu'elle a la place de prendre.
+fn unload(w: &mut World, s: usize, h: usize) {
+    let st = crate::drones::Store::B(h);
+    for it in 1..NUM_ITEMS as u8 {
+        let k = crate::drones::has(&w.units.cold[s].hold, it).min(st.room(w, it));
+        if k > 0 {
+            crate::drones::take(&mut w.units.cold[s].hold, it, k);
+            st.put(w, it, k);
+        }
+    }
+}
+
+/// Repli de la soute `h` : ses chariots rentrent (leur chargement va dans son stock) ; renvoie leur nombre,
+/// gardé à bord du chenillard.
+fn stow_carts(w: &mut World, h: usize) -> i32 {
+    let carts = carts_of(w, h);
+    for &s in &carts {
+        let cargo = std::mem::take(&mut w.units.cold[s].hold);
+        for (it, &n) in cargo.iter().enumerate() {
+            if n > 0 {
+                crate::drones::put(&mut w.buildings[h].stash, it as u8, n);
+            }
+        }
+        vanish(w, s);
+    }
+    carts.len() as i32
 }
 
 /// Vitesse (‰) d'une foreuse nomade : deux fois un extracteur, moins l'usure de son gisement.
@@ -726,6 +963,9 @@ pub fn info(w: &World, b: usize) -> String {
     let poles = if bb.kind == B_T_GENERATOR {
         let at: Vec<String> = poles_of(w, b).iter().map(|&p| format!("[{},{}]", w.buildings[p].x, w.buildings[p].y)).collect();
         format!(",\"poles\":[{}],\"polesMax\":{},\"poleReach\":{},\"at\":[{},{}]", at.join(","), POLES_PER_GEN, bdef(B_T_POLE).connect, bb.x, bb.y)
+    } else if bb.kind == B_T_HOLD {
+        let cost: Vec<String> = udef(U_T_CART).cost.iter().map(|&(it, n)| format!("[{},{}]", it, n)).collect();
+        format!(",\"carts\":{},\"cartsMax\":{},\"cartCost\":[{}]", carts_of(w, b).len(), CARTS_PER_HOLD, cost.join(","))
     } else {
         String::new()
     };

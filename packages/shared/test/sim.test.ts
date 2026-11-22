@@ -16,8 +16,8 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 80 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 15 des Transhumants), 71 bâtiments (52, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
-    expect(data.units.length).toBe(80);
+  it("contient 81 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 16 des Transhumants), 71 bâtiments (52, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
+    expect(data.units.length).toBe(81);
     expect(data.buildings.length).toBe(71);
     expect(data.buildings.filter((b) => b.race === 2).length).toBe(10);
     expect(data.techs.length).toBe(64);
@@ -28,7 +28,7 @@ describe("données", () => {
     expect(eggs.map((u) => u.key)).toEqual(["egg_s", "egg_m", "egg_l"]);
     for (const u of eggs) expect([u.factory, u.litter, u.speed, u.weapons.length]).toEqual([0, 0, 0, 0]);
     expect(data.units.filter((u) => u.litter > 0).map((u) => [u.key, u.litter])).toEqual([["sower", 3], ["gnawer", 6], ["spitter", 4], ["shell", 3], ["vine", 4], ["membrane", 3]]);
-    expect(data.units.filter((u) => u.race === 2).length).toBe(15);
+    expect(data.units.filter((u) => u.race === 2).length).toBe(16);
     // une unité de commandement par race
     expect(data.units.filter((u) => u.commander).map((u) => u.key)).toEqual(["commander", "queen", "ark"]);
     expect(data.units[0].key).toBe("commander");

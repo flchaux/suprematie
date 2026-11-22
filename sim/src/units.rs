@@ -1004,6 +1004,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             }
             NONE
         }
+        Order::Haul { site, feed } => {
+            crate::transhumants::haul_step(w, s, site, feed);
+            NONE
+        }
         Order::Tame { target } => {
             crate::souche::tame_step(w, s, target);
             NONE

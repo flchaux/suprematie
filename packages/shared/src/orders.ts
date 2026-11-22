@@ -50,6 +50,10 @@ export const O = {
   TAME: 52,
   /** Transhumants : le générateur nomade plante un poteau relais : [réf. du générateur, x, y (cases)] */
   PLANT_POLE: 53,
+  /** Transhumants : la soute attelle un chariot de convoi (coût pris dans son stock) : [réf. de la soute] */
+  HITCH: 54,
+  /** chariots de convoi : navette avec un module : [drapeaux (1 : en file, 2 : livrer depuis la soute), réf. du module, n, unités…] */
+  HAUL: 55,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -234,6 +238,17 @@ export function tame(ids: number[], nest: number, queue = false): Cmd {
 /** Transhumants : le générateur nomade `gen` plante un poteau relais sur la case (x, y). */
 export function plantPole(gen: number, x: number, y: number): Cmd {
   return [O.PLANT_POLE, gen | 0, x | 0, y | 0];
+}
+/** Transhumants : la soute `hold` attelle un chariot de convoi. */
+export function hitch(hold: number): Cmd {
+  return [O.HITCH, hold | 0];
+}
+/**
+ * Chariots de convoi : navette avec le module `site` ; `feed` : de la soute vers ce fabricant (ingrédients de sa
+ * recette), sinon de ce module vers la soute (ce qui en sort).
+ */
+export function haul(ids: number[], site: number, feed: boolean, queue = false): Cmd {
+  return [O.HAUL, (queue ? 1 : 0) | (feed ? 2 : 0), site | 0, ids.length, ...ids.map((x) => x | 0)];
 }
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {

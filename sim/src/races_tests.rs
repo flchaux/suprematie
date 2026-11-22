@@ -5,7 +5,7 @@
 use crate::buildings::{complete_building, place_building, remove_building};
 use crate::data::*;
 use crate::fixed::TILE;
-use crate::orders::{O_BUILD, O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_MOVE, O_PACK, O_PLANT_POLE, O_RESEARCH, O_RESEARCH_QUEUE, O_TAME};
+use crate::orders::{O_BUILD, O_DEPLOY, O_DEPLOY_AT, O_FACTORY_QUEUE, O_HAUL, O_HITCH, O_MOVE, O_PACK, O_PLANT_POLE, O_RESEARCH, O_RESEARCH_QUEUE, O_TAME};
 use crate::world::*;
 
 /// Paramètres d'une partie à deux joueurs (équipes 0 et 1), sans faune, avec brouillard, et leurs races.
@@ -851,4 +851,135 @@ fn transhumants_loot_a_quarter_of_what_they_destroy() {
     let rs = w.unit(rider).unwrap();
     kill_unit_by(&mut w, rs, tk);
     assert_eq!(stock(&w, 1), p1, "un Industriel ne prend pas de butin");
+}
+
+// ---------- Chariots de convoi ----------
+
+#[test]
+fn nomades_demo_carts_shuttle_goods() {
+    let mut w = crate::stress::nomades_demo();
+    let h = find_building(&w, 0, B_T_HOLD).expect("soute");
+    assert_eq!(crate::transhumants::carts_of(&w, h).len(), 3);
+    let g = find_building(&w, 0, B_T_GENERATOR).expect("générateur");
+    assert_eq!(crate::transhumants::poles_of(&w, g).len(), 3);
+    let plates = crate::drones::has(&w.buildings[h].stash, IRON_PLATE);
+    steps(&mut w, 1200);
+    let a = find_building(&w, 0, B_T_ASSEMBLER).unwrap();
+    assert!(w.buildings[a].inv[0] > 0 || w.players[0].produced[GEAR as usize] > 0, "l'assembleur éloigné est livré");
+    assert_ne!(crate::drones::has(&w.buildings[h].stash, IRON_PLATE), plates, "les navettes font bouger le stock");
+}
+
+fn recipe(key: &str) -> u8 {
+    RECIPES.iter().position(|r| r.key == key).unwrap() as u8
+}
+
+/// Soute déployée sur un terrain plat qui s'étend vers le centre de la carte, avec du fer et des engrenages
+/// en stock ; renvoie la soute et le sens du terrain.
+fn hold_camp() -> (World, usize, i32) {
+    let mut w = game(RACE_TRANSH, RACE_INDUS);
+    let h = find_unit(&w, 0, U_CH_HOLD).unwrap();
+    let (tx, ty) = (w.units.x[h] / TILE, w.units.y[h] / TILE);
+    let sx = if tx < w.map.w / 2 { 1 } else { -1 };
+    flatten(&mut w, (tx - 8).min(tx + sx * 30), ty - 10, (tx + 8).max(tx + sx * 30), ty + 10);
+    let id = w.unit_id(h) as i32;
+    order(&mut w, 0, O_DEPLOY, &[1, id]);
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 5);
+    let hb = find_building(&w, 0, B_T_HOLD).expect("soute déployée");
+    crate::drones::put(&mut w.buildings[hb].stash, IRON_PLATE, 200);
+    crate::drones::put(&mut w.buildings[hb].stash, GEAR, 100);
+    (w, hb, sx)
+}
+
+fn carts(w: &World) -> Vec<usize> {
+    (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_T_CART).collect()
+}
+
+/// Module des Transhumants posé terminé à `dx` cases de la soute.
+fn module_at(w: &mut World, hb: usize, kind: u16, dx: i32, rec: u8) -> usize {
+    let (hx, hy) = (w.buildings[hb].x, w.buildings[hb].y);
+    let b = place_building(w, 0, kind, hx + dx, hy, 0).expect("module");
+    complete_building(w, b);
+    w.buildings[b].recipe = rec;
+    b
+}
+
+#[test]
+fn a_hold_hitches_six_carts_at_most_paid_from_its_stock() {
+    let (mut w, hb, _) = hold_camp();
+    let (fe, ge) = (crate::drones::has(&w.buildings[hb].stash, IRON_PLATE), crate::drones::has(&w.buildings[hb].stash, GEAR));
+    let r = w.building_ref(hb) as i32;
+    for _ in 0..8 {
+        order(&mut w, 0, O_HITCH, &[r]);
+    }
+    assert_eq!(carts(&w).len(), crate::transhumants::CARTS_PER_HOLD, "six chariots par soute");
+    assert_eq!(crate::drones::has(&w.buildings[hb].stash, IRON_PLATE), fe - 36);
+    assert_eq!(crate::drones::has(&w.buildings[hb].stash, GEAR), ge - 12);
+    // sans de quoi le payer, pas de chariot
+    let (mut w, hb, _) = hold_camp();
+    w.buildings[hb].stash = Vec::new();
+    let r = w.building_ref(hb) as i32;
+    order(&mut w, 0, O_HITCH, &[r]);
+    assert!(carts(&w).is_empty(), "pas de chariot sans fer ni engrenages");
+}
+
+#[test]
+fn a_cart_brings_a_distant_module_output_back_to_its_hold() {
+    let (mut w, hb, sx) = hold_camp();
+    let f = module_at(&mut w, hb, B_T_FURNACE, sx * 16, recipe("iron_plate"));
+    w.buildings[f].out = 30;
+    let r = w.building_ref(hb) as i32;
+    order(&mut w, 0, O_HITCH, &[r]);
+    let c = carts(&w)[0];
+    let before = crate::drones::has(&w.buildings[hb].stash, IRON_PLATE);
+    let id = w.unit_id(c) as i32;
+    let fr = w.building_ref(f) as i32;
+    order(&mut w, 0, O_HAUL, &[0, fr, 1, id]);
+    steps(&mut w, 1600);
+    // deux voyages : 20 plaques (cale pleine), puis les 10 qui restent après l'attente
+    assert_eq!(crate::drones::has(&w.buildings[hb].stash, IRON_PLATE) - before, 30, "plaques rapportées à la soute (sortie {})", w.buildings[f].out);
+    assert_eq!(w.buildings[f].out, 0);
+    assert!(matches!(w.units.cold[c].orders.first(), Some(Order::Haul { .. })), "la navette continue");
+}
+
+#[test]
+fn a_cart_feeds_a_distant_crafter_from_its_hold() {
+    let (mut w, hb, sx) = hold_camp();
+    let a = module_at(&mut w, hb, B_T_ASSEMBLER, sx * 16, recipe("gear"));
+    let r = w.building_ref(hb) as i32;
+    order(&mut w, 0, O_HITCH, &[r]);
+    let c = carts(&w)[0];
+    let before = crate::drones::has(&w.buildings[hb].stash, IRON_PLATE);
+    let (id, ar) = (w.unit_id(c) as i32, w.building_ref(a) as i32);
+    order(&mut w, 0, O_HAUL, &[2, ar, 1, id]);
+    steps(&mut w, 900);
+    let taken = before - crate::drones::has(&w.buildings[hb].stash, IRON_PLATE);
+    assert!(taken >= 20, "plaques prises dans la soute : {taken}");
+    let fed = w.buildings[a].inv[0] as u32 + w.buildings[a].progress.min(1) + w.players[0].produced[GEAR as usize];
+    assert!(fed > 0, "l'assembleur éloigné reçoit ses plaques (stock {}, engrenages faits {})", w.buildings[a].inv[0], w.players[0].produced[GEAR as usize]);
+    // un fabricant sans recette ne se livre pas
+    let b = module_at(&mut w, hb, B_T_ASSEMBLER, sx * 20, RECIPE_NONE);
+    assert!(!crate::transhumants::haul_ok(&w, 0, b, true));
+}
+
+#[test]
+fn a_folding_hold_takes_its_carts_and_their_load_and_brings_them_back() {
+    let (mut w, hb, _) = hold_camp();
+    let r = w.building_ref(hb) as i32;
+    for _ in 0..3 {
+        order(&mut w, 0, O_HITCH, &[r]);
+    }
+    let c = carts(&w)[0];
+    crate::drones::put(&mut w.units.cold[c].hold, COPPER_PLATE, 7);
+    let copper = w.stock(0, COPPER_PLATE);
+    order(&mut w, 0, O_PACK, &[1, r]);
+    assert!(carts(&w).is_empty(), "les chariots rentrent dans la soute repliée");
+    assert_eq!(w.stock(0, COPPER_PLATE), copper, "leur chargement reste à bord");
+    let ch = find_unit(&w, 0, U_CH_HOLD).expect("chenillard soute");
+    assert_eq!(w.units.cold[ch].pack_fuel, 3);
+    steps(&mut w, crate::transhumants::FOLD_TICKS as u32 + 2);
+    let id = w.unit_id(ch) as i32;
+    order(&mut w, 0, O_DEPLOY, &[1, id]);
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 5);
+    let hb2 = find_building(&w, 0, B_T_HOLD).expect("soute redéployée");
+    assert_eq!(crate::transhumants::carts_of(&w, hb2).len(), 3, "ses chariots ressortent");
 }
