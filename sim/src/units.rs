@@ -166,7 +166,7 @@ pub fn clear_orders(w: &mut World, s: usize) {
 
 /// Déplace l'unité vers (tx, ty). Renvoie vrai à l'arrivée (à moins de `stop`).
 pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: i32) -> bool {
-    steer_paced(w, s, tx, ty, gx, gy, stop, i32::MAX, 20)
+    steer_paced(w, s, tx, ty, gx, gy, stop, i32::MAX, 20, false)
 }
 
 /// Allure d'une unité dans un déplacement en formation (`Order::Move::eta`, voir
@@ -194,10 +194,27 @@ pub fn formation_pace(w: &mut World, s: usize, x: i32, y: i32, eta: u32) -> i32 
     ((d + left - 1) / left).max(1) as i32
 }
 
+/// Formation en file : à la fin d'un segment, le suivant (s'il n'a pas commencé) compte sa durée à
+/// partir du tick d'arrivée prévu pour le groupe, pas du tick où cette unité arrive. Tout le groupe
+/// partage ainsi la même horloge d'un point à l'autre : une unité en retard rattrape, une en avance
+/// ralentit, et la disposition se garde sur toute la file.
+fn chain_eta(w: &mut World, s: usize) {
+    let o = &mut w.units.cold[s].orders;
+    if let (Some(&Order::Move { eta: e0, .. }), Some(Order::Move { eta: e1, .. })) = (o.first(), o.get(1)) {
+        if e0 != 0 && e0 & ETA_PENDING == 0 && e1 & ETA_PENDING != 0 {
+            let at = e0.saturating_add(e1 & !ETA_PENDING).min(ETA_PENDING - 1);
+            if let Some(Order::Move { eta, .. }) = o.get_mut(1) {
+                *eta = at;
+            }
+        }
+    }
+}
+
 /// Comme `steer`, à une vitesse d'au plus `cap` sous-unités par tick (allure d'un groupe en formation).
 /// `patience` : ticks sans rapprochement, près du but, avant de s'arrêter là (foule autour du but).
 #[allow(clippy::too_many_arguments)]
-pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: i32, cap: i32, patience: u16) -> bool {
+/// `form` : déplacement en formation (la place (tx, ty) garde son écart au but du groupe (gx, gy)).
+pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: i32, cap: i32, patience: u16, form: bool) -> bool {
     let kind = w.units.kind[s];
     let def = udef(kind);
     let (x, y) = (w.units.x[s], w.units.y[s]);
@@ -222,14 +239,26 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
         // le champ de flux mène au but du groupe ; une unité dont la place est loin de ce but (grand
         // groupe, formation) la rejoint en ligne droite dès qu'elle en est aussi près que sa place,
         // sinon elle tournerait autour du but du groupe sans jamais atteindre sa place
-        let far = d > 5 * TILE && ((tx == gx && ty == gy) || dist(x, y, gx, gy) > dist(tx, ty, gx, gy) + 5 * TILE);
+        // En formation, l'unité lit le champ là où serait le but du groupe si elle était à sa place
+        // (sa position moins son écart dans la formation) : elle suit un chemin parallèle à celui du
+        // centre du groupe, et le groupe garde sa disposition en route au lieu de se resserrer sur le
+        // chemin le plus court. Bloquée (passage étroit) ou hors du champ, elle lit sa propre case.
+        let far = d > 5 * TILE && (form || (tx == gx && ty == gy) || dist(x, y, gx, gy) > dist(tx, ty, gx, gy) + 5 * TILE);
         if far {
             if w.units.cold[s].goal == 0 {
                 let key = flow::acquire_goal(w, class, gx / TILE, gy / TILE);
                 w.units.cold[s].goal = key;
             }
             let key = w.units.cold[s].goal;
-            let (fd, fan) = flow::flow_cell(w, key, x / TILE, y / TILE);
+            let (vx, vy) = (x - (tx - gx), y - (ty - gy));
+            let mut cell = (NO_DIR, 0);
+            if form && w.units.cold[s].stuck < 10 && (vx, vy) != (x, y) {
+                cell = flow::flow_cell(w, key, vx.div_euclid(TILE), vy.div_euclid(TILE));
+            }
+            if cell.0 == NO_DIR {
+                cell = flow::flow_cell(w, key, x / TILE, y / TILE);
+            }
+            let (fd, fan) = cell;
             if fd != NO_DIR && fd != AT_GOAL {
                 // le champ ne connaît que 8 directions ; si la ligne droite vers la destination passe
                 // entre deux directions qui sont toutes deux sur un plus court chemin, l'unité la suit
@@ -678,7 +707,8 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             // qu'un voisin qui croise son chemin se dégage ; sinon on s'arrête dès qu'on touche sa
             // place, et on renonce vite si la foule bloque, pour ne pas se bousculer autour d'un but commun
             let (stop, patience) = if eta != 0 { (TILE / 4, 100) } else { (def.radius + TILE / 2, 20) };
-            if steer_paced(w, s, x, y, gx, gy, stop, cap, patience) {
+            if steer_paced(w, s, x, y, gx, gy, stop, cap, patience, eta != 0) {
+                chain_eta(w, s);
                 pop_order(w, s);
             }
             NONE

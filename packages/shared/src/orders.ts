@@ -174,6 +174,18 @@ export function moveFormation(units: FormationUnit[], gx: number, gy: number, an
   return out;
 }
 
+/**
+ * Formation en file (Maj + clic droit, drapeau 8 de l'ordre MOVE) : la simulation range le groupe en
+ * rangées face au trajet au premier point de la file, puis garde sa disposition aux points suivants ;
+ * le groupe avance à la vitesse de sa plus lente (voir `sim/src/formation.rs`). Les places sont
+ * calculées par la simulation : chaque unité porte ici le but du groupe.
+ */
+export function moveQueuedFormation(ids: number[], gx: number, gy: number, attack = false): Cmd {
+  const out: Cmd = [O.MOVE, 1 | (attack ? 2 : 0) | 8, gx | 0, gy | 0, ids.length];
+  for (const id of ids) out.push(id | 0, gx | 0, gy | 0);
+  return out;
+}
+
 export function target(type: number, ids: number[], tgt: number, queue = false): Cmd {
   return [type, queue ? 1 : 0, tgt | 0, ids.length, ...ids.map((x) => x | 0)];
 }

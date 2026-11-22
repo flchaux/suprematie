@@ -153,15 +153,16 @@ const FORMATION_TURN_TICKS: u32 = 20;
 /// vitesse de son unité la plus lente et arrive ensemble. Durée prévue : la plus longue distance à
 /// parcourir (depuis la position actuelle, ou la fin du déplacement en file) divisée par la vitesse
 /// de la plus lente, plus une marge pour tourner ; chaque unité règle ensuite son allure pour finir à
-/// ce moment (units::formation_pace). Les unités volantes forment leur propre groupe (elles ne règlent
-/// pas leur allure sur des unités au sol), et les avions à voilure fixe gardent leur vitesse.
+/// ce moment (units::formation_pace). Chaque famille (terrestre, navale, aérienne : voir
+/// formation::family) règle son allure sur sa plus lente, et les avions à voilure fixe gardent leur
+/// vitesse. `turn` : marge ajoutée (ticks) pour tourner.
 /// Renvoie le champ `eta` de chaque ordre (`ETA_PENDING` | durée, 0 : pas d'allure imposée).
-fn formation_etas(w: &World, list: &[(usize, i32, i32)], queue: bool) -> Vec<u32> {
+fn formation_etas(w: &World, list: &[(usize, i32, i32)], queue: bool, turn: u32) -> Vec<u32> {
+    use crate::formation::family;
     use crate::units::fixed_wing;
-    let air = |s: usize| udef(w.units.kind[s]).layer == Layer::Air;
     let mut out = vec![0; list.len()];
-    for want_air in [false, true] {
-        let members: Vec<usize> = (0..list.len()).filter(|&k| air(list[k].0) == want_air && !fixed_wing(w.units.kind[list[k].0])).collect();
+    for fam in 0..3 {
+        let members: Vec<usize> = (0..list.len()).filter(|&k| family(w.units.kind[list[k].0]) == fam && !fixed_wing(w.units.kind[list[k].0])).collect();
         if members.len() < 2 {
             continue;
         }
@@ -178,12 +179,47 @@ fn formation_etas(w: &World, list: &[(usize, i32, i32)], queue: bool) -> Vec<u32
             let (sx, sy) = last.unwrap_or((w.units.x[s], w.units.y[s]));
             far = far.max(crate::fixed::dist(sx, sy, tx, ty));
         }
-        let dur = (far / vmin) as u32 + FORMATION_TURN_TICKS;
+        let dur = (far / vmin) as u32 + turn;
         for &k in &members {
             out[k] = ETA_PENDING | dur.min(ETA_PENDING - 1);
         }
     }
     out
+}
+
+/// Formation en file (Maj + clic droit, drapeau 8 de `O_MOVE`) : la simulation place le groupe en
+/// rangées au premier point, puis garde sa disposition aux points suivants (voir formation.rs). Chaque
+/// famille d'unités forme son propre bloc ; le groupe avance à la vitesse de sa plus lente.
+fn queued_formation(w: &mut World, mut list: Vec<(usize, i32, i32)>, gx: i32, gy: i32, queue: bool, attack: bool) {
+    use crate::formation::{drop_tail_face, family};
+    list.sort_by_key(|e| e.0);
+    list.dedup_by_key(|e| e.0);
+    if !queue {
+        // sans file : les ordres en cours sont annulés, la formation part des positions actuelles
+        for &(s, ..) in &list {
+            clear_orders(w, s);
+        }
+    }
+    let (mx, my) = (w.map.w * TILE - 1, w.map.h * TILE - 1);
+    for fam in 0..3 {
+        let members: Vec<usize> = list.iter().map(|e| e.0).filter(|&s| family(w.units.kind[s]) == fam).collect();
+        if members.is_empty() {
+            continue;
+        }
+        let (slots, a, cont) = crate::formation::plan(w, &members, gx, gy);
+        if cont {
+            for &s in &members {
+                drop_tail_face(w, s);
+            }
+        }
+        let placed: Vec<(usize, i32, i32)> = members.iter().zip(&slots).map(|(&s, &(x, y))| (s, x.clamp(0, mx), y.clamp(0, my))).collect();
+        // prolonger une formation : le groupe passe le point sans s'arrêter, demi-marge pour tourner
+        let etas = formation_etas(w, &placed, true, if cont { FORMATION_TURN_TICKS / 2 } else { FORMATION_TURN_TICKS });
+        for (k, &(s, tx, ty)) in placed.iter().enumerate() {
+            give(w, s, true, Order::Move { x: tx, y: ty, gx, gy, attack, eta: etas[k] });
+            give(w, s, true, Order::Face { a: a as i32 });
+        }
+    }
 }
 
 fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
@@ -204,7 +240,11 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 }
             }
             let queue = flags & 1 != 0;
-            let etas = if face.is_some() { formation_etas(w, &list, queue) } else { vec![0; list.len()] };
+            if flags & crate::formation::FLAG_QUEUED_FORMATION != 0 && face.is_none() {
+                queued_formation(w, list, gx.clamp(0, mx), gy.clamp(0, my), queue, flags & 2 != 0);
+                return;
+            }
+            let etas = if face.is_some() { formation_etas(w, &list, queue, FORMATION_TURN_TICKS) } else { vec![0; list.len()] };
             for (k, &(s, tx, ty)) in list.iter().enumerate() {
                 let o = Order::Move { x: tx, y: ty, gx: gx.clamp(0, mx), gy: gy.clamp(0, my), attack: flags & 2 != 0, eta: etas[k] };
                 give(w, s, queue, o);
