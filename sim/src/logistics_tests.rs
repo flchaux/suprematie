@@ -320,3 +320,21 @@ fn train_follows_rail_curve() {
     assert!(on_arc >= 1, "le train est passé dans le virage ({on_arc})");
     assert_eq!(w.buildings[b].stash[N + IRON_PLATE as usize], 300, "livré après le virage");
 }
+
+/// Gare : ses objets reçus partent sur les tapis qui partent de ses faces, comme les sorties d'un dépôt ;
+/// « à envoyer » reste pour le train.
+#[test]
+fn station_puts_received_items_on_outgoing_belts() {
+    let mut w = allies();
+    flatten(&mut w, 25, 90, 60, 110);
+    let s = station(&mut w, 0, B_STATION, 30, 100);
+    for x in 32..37 {
+        put(&mut w, 0, B_BELT1, x, 100); // tapis qui part de la face est de la gare
+    }
+    assert_eq!(crate::buildings::out_belts(&w, s).len(), 1);
+    w.buildings[s].stash[N + IRON_PLATE as usize] = 6;
+    w.buildings[s].stash[COPPER_PLATE as usize] = 10;
+    run(&mut w, 400);
+    assert_eq!(w.buildings[s].stash[N + IRON_PLATE as usize], 0, "les reçus sont sortis sur le tapis");
+    assert_eq!(w.buildings[s].stash[COPPER_PLATE as usize], 10, "« à envoyer » ne sort pas");
+}
