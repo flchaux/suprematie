@@ -12,7 +12,8 @@ import { move, load, point, target, factoryQueue, rally, O, Layer, BUILD_FULL } 
 import { TILE, dist2 } from "./util.ts";
 import { T, kindPowers } from "./intel.ts";
 import { arsenalDepot, arsenalWanted } from "./arsenal.ts";
-import { landComponents } from "./ai.ts";
+import { landComponents, landNear } from "./land.ts";
+import { newProject } from "./engineers.ts";
 import type { Placement } from "./layout.ts";
 import type { SkirmishAI, EngBuilder } from "./ai.ts";
 
@@ -164,7 +165,7 @@ function makeAirYard(ai: SkirmishAI) {
     plan.mod.use += ai.ctx.data.buildings[kind].powerUse;
     for (const p of power) plan.mod.prod += ai.ctx.data.buildings[p.kind].powerProd;
     S.yard = { x: pos[0], y: pos[1], dir: 0 };
-    return ai.newProject("airyard", [...power, ...places], {});
+    return newProject(ai, "airyard", [...power, ...places], {});
   }
   S.yardNext = ai.tick + 1800;
   return null;
@@ -339,7 +340,7 @@ function homeThink(ai: SkirmishAI, all: BotUnit[], out: Cmd[]): void {
 
 /** Case de notre terre de départ la plus proche d'un point. */
 function landSpot(ai: SkirmishAI, x: number, y: number): [number, number] {
-  return ai.landNear(x, y, ai.home[0] * TILE, ai.home[1] * TILE);
+  return landNear(ai, x, y, ai.home[0] * TILE, ai.home[1] * TILE);
 }
 
 /** Passager possible : de l'armée de terre, pas trop gros, pas au combat pour la base. */
@@ -529,7 +530,7 @@ function opThink(ai: SkirmishAI, op: LandingOp, mine: Map<number, BotUnit>, out:
     aboard++;
     // points de débarquement écartés de quelques cases, sur la même terre
     const a = k++ * 2.4;
-    const [px, py] = k === 1 ? [gx, gy] : ai.landNear(gx + Math.cos(a) * 4 * TILE, gy + Math.sin(a) * 4 * TILE, gx, gy);
+    const [px, py] = k === 1 ? [gx, gy] : landNear(ai, gx + Math.cos(a) * 4 * TILE, gy + Math.sin(a) * 4 * TILE, gx, gy);
     if (op.lastOrder < 0 || (c.nOrders === 0 && tick - op.lastOrder > 60)) out.push(point(O.UNLOAD, [c.id], px, py));
   }
   if (op.lastOrder < 0) op.lastOrder = tick;
