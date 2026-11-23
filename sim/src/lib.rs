@@ -569,6 +569,8 @@ mod drones_tests;
 #[cfg(test)]
 mod relays_tests;
 #[cfg(test)]
+mod separation_tests;
+#[cfg(test)]
 mod pickup_tests;
 #[cfg(test)]
 mod races_tests;

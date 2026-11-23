@@ -546,6 +546,26 @@ fn prof_now() -> u8 {
 #[inline(always)]
 fn prof_add(_i: usize, _t: u8) {}
 
+/// Distance de séparation entre deux alliés, en pour cent de la somme de leurs rayons : tous deux en
+/// marche, ou l'un des deux au moins à l'arrêt. Entre ennemis, et pour les très grosses unités : 100.
+pub const SEP_MARCH: i32 = 75;
+pub const SEP_REST: i32 = 90;
+/// Part du recouvrement (en huitièmes) qu'une unité en marche corrige face à un allié, un tick sur deux.
+/// À 6, deux unités en marche corrigeaient 150 % à elles deux : elles se repoussaient trop loin.
+const SEP_MARCH_PUSH: i64 = 3;
+
+/// Unité en marche : elle suit un ordre de déplacement et n'est pas arrêtée pour tirer. Ne dépend que de
+/// l'ordre, jamais du mouvement réel : une unité bousculée à l'arrêt ne passe pas pour une unité en marche.
+fn marching(units: &Units, s: usize) -> bool {
+    let c = &units.cold[s];
+    match c.orders.first() {
+        Some(Order::Move { attack, .. }) => !attack || c.wtarget[0] == NONE,
+        Some(Order::Patrol { .. } | Order::Attack { .. }) => c.wtarget[0] == NONE,
+        Some(Order::Enter { .. } | Order::DeployAt { .. } | Order::Haul { .. }) => true,
+        _ => false,
+    }
+}
+
 pub fn update_units(w: &mut World) {
     let t_sep = prof_now();
     let n = w.units.alive.len();
@@ -567,6 +587,8 @@ pub fn update_units(w: &mut World) {
         let air = def.layer == Layer::Air;
         let (x, y, r) = (w.units.x[s], w.units.y[s], def.radius);
         let moving = !w.units.cold[s].orders.is_empty();
+        let march = marching(&w.units, s);
+        let team = w.team_of(w.units.owner[s]);
         let big = r > 500;
         let mut px = 0i64;
         let mut py = 0i64;
@@ -589,10 +611,28 @@ pub fn update_units(w: &mut World) {
             if od.radius > 500 && !big {
                 return; // poussé par le gros
             }
+            // entre alliés, on se tolère de plus près : surtout en route, un peu à l'arrêt
+            let ally = w.team_of(units.owner[o]) == team;
+            let rr = if !ally || big {
+                rr
+            } else if march && marching(units, o) {
+                rr * SEP_MARCH / 100
+            } else {
+                rr * SEP_REST / 100
+            };
+            if d2 >= (rr as i64) * (rr as i64) {
+                return;
+            }
             let d = crate::fixed::isqrt(d2 as u64) as i64;
             let overlap = rr as i64 - d;
             let (ux, uy) = if d == 0 { (if s < o { -1 } else { 1 }, 0) } else { (dx * 64 / d, dy * 64 / d) };
-            let f = if moving { 6 } else { 8 };
+            let f = if march && ally {
+                SEP_MARCH_PUSH
+            } else if moving {
+                6
+            } else {
+                8
+            };
             px += ux * overlap * f / (64 * 8);
             py += uy * overlap * f / (64 * 8);
         });
