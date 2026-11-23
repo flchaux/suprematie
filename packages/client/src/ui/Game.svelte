@@ -45,6 +45,7 @@
     reclaim: ["reclaim", "Recyclage : cliquez une épave ou un de vos bâtiments, ou glissez un cadre pour tout recycler dans la zone"],
     assist: ["assist", "Escorte / assistance : cliquez une unité ou un bâtiment"],
     unload: ["unload", "Déchargement : cliquez la destination"],
+    tame: ["tame", "Apprivoiser : cliquez un nid de mordeurs sauvage ; la Reine s'en approche et le charme en 30 s"],
     ferryFrom: ["ferry", "Navette : cliquez le point d'embarquement (les unités de combat qui y attendent sont prises)"],
     ferryTo: ["ferry", "Navette : cliquez le point de débarquement"],
     ping: ["ping", "Ping : cliquez le point à signaler à votre équipe, sur la carte ou la minicarte"],
