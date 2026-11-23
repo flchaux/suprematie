@@ -13,6 +13,7 @@ import { BEAST_MODELS } from "./faune.ts";
 import { ANCIENT_UNIT_MODELS } from "./anciens.ts";
 import { SOUCHE_UNIT_MODELS } from "./souche.ts";
 import { SOUCHE_EGG_MODELS } from "./souche-oeufs.ts";
+import { SOUCHE_SWARM_MODELS } from "./souche-essaim.ts";
 import { TRANSH_UNIT_MODELS } from "./transhumants.ts";
 
 /**
@@ -1814,5 +1815,6 @@ export const UNIT_MODELS: Record<string, Model> = {
   ...ANCIENT_UNIT_MODELS,
   ...SOUCHE_UNIT_MODELS,
   ...SOUCHE_EGG_MODELS,
+  ...SOUCHE_SWARM_MODELS,
   ...TRANSH_UNIT_MODELS,
 };

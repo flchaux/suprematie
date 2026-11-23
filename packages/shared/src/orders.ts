@@ -56,6 +56,7 @@ export const O = {
   HAUL: 55,
   /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
   SET_PAUSE: 56,
+  ADAPT: 57,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -308,6 +309,10 @@ export function cancelPlan(x: number, y: number): Cmd {
 }
 export function rotate(refs: number[]): Cmd {
   return [O.ROTATE, refs.length, ...refs.map((r) => r | 0)];
+}
+/** Souche : fixe dans l'espèce la résistance à une famille d'armes (Mémoire du sang). */
+export function adapt(family: number): Cmd {
+  return [O.ADAPT, family | 0];
 }
 /** Met en pause (ou relance) des extracteurs, fabricants et usines d'unités. */
 export function setPause(refs: number[], on: boolean): Cmd {

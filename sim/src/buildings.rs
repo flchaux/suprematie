@@ -263,8 +263,7 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> bo
 /// se plante sur le terreau à venir de ses racines précédentes (elles poussent de proche en proche) : une
 /// case couverte par la zone d'une racine acceptée plus tôt dans la file compte comme du terreau.
 pub fn can_place_line(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> Vec<bool> {
-    let def = bdef(kind);
-    let chain = def.race == RACE_SOUCHE && def.supply > 0 && kind != B_SEED_HEART;
+    let chain = kind == B_ROOT;
     let mut done: Vec<(i32, i32)> = Vec::new();
     cells
         .iter()
@@ -470,6 +469,9 @@ pub fn complete_building(w: &mut World, b: usize) {
     if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 || def.race == RACE_SOUCHE {
         w.power_dirty = true;
     }
+    if def.race == RACE_SOUCHE && def.supply > 0 {
+        w.terreau_dirty = true;
+    }
     if def.class == BClass::Belt {
         belts::rebuild_around(w, &[(x, y)]);
     }
@@ -517,6 +519,9 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     }
     if def.power_use > 0 || def.power_prod > 0 || def.supply > 0 || def.race == RACE_SOUCHE {
         w.power_dirty = true;
+    }
+    if def.race == RACE_SOUCHE && def.supply > 0 {
+        w.terreau_dirty = true;
     }
     // un organe de la Souche ne laisse pas d'épave (il est digéré, voir souche::digest)
     if with_wreck && def.race != RACE_SOUCHE && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
@@ -1889,8 +1894,8 @@ pub fn update_buildings(w: &mut World) {
             }
             BClass::Depot => tick_depot(w, b),
             BClass::Organ => crate::souche::tick_organ(w, b),
-            // racine de la Souche (les relais des Industriels n'ont pas de tick)
-            BClass::Pylon => crate::souche::tick_root(w, b),
+            // racine, rhizome et ronce de la Souche (les relais et les murs des Industriels n'ont pas de tick)
+            BClass::Pylon | BClass::Wall => crate::souche::tick_root(w, b),
             BClass::Belt if bb.def().collect => tick_collector(w, b),
             BClass::Inserter => tick_inserter(w, b),
             BClass::Crafter => tick_crafter(w, b),
@@ -2652,6 +2657,10 @@ fn tick_factory(w: &mut World, b: usize) {
     let mut mult = w.players[owner].build_mult as u32;
     if w.buildings[b].def().race == RACE_SOUCHE {
         mult = mult * crate::souche::brood_speed(w, owner as u8) / 100;
+        // Reine enracinée : les couveuses de son réseau pondent plus vite
+        if w.buildings[b].net != 0 && crate::essaim::queen_net(w, owner as u8) == w.buildings[b].net {
+            mult = mult * crate::essaim::Q_BROOD / 100;
+        }
     }
     w.buildings[b].progress += s as u32 * mult;
     if w.buildings[b].progress >= factory_ticks(kind) * RECIPE_SCALE {
@@ -2752,6 +2761,11 @@ fn tick_ammo_builder(w: &mut World, b: usize, cost: &[(u8, u16)], max: u16, tick
 }
 
 fn tick_gate(w: &mut World, b: usize) {
+    // terrier de la Souche : pas d'énergie, il suit son réseau de racines
+    if w.buildings[b].kind == B_BURROW {
+        crate::souche::tick_burrow(w, b);
+        return;
+    }
     let open = w.buildings[b].enabled && w.building(w.buildings[b].link).is_some();
     if !open {
         // porte fermée ou non reliée : elle ne consomme rien

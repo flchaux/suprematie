@@ -103,7 +103,7 @@ pub fn fixed_wing(kind: u16) -> bool {
 pub fn legged(kind: u16) -> bool {
     matches!(
         udef(kind).key,
-        "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l"
+        "behemoth" | "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l"
     )
 }
 
@@ -222,6 +222,11 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
     if d <= stop && !fixed_wing(kind) {
         return true;
     }
+    if crate::essaim::rooted(w, s) {
+        // la Reine se déracine avant de bouger
+        crate::essaim::uproot(w, s, true);
+        return false;
+    }
     if w.units.cold[s].deployed {
         // une unité déployée se replie avant de bouger
         w.units.cold[s].deployed = false;
@@ -274,7 +279,8 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
         }
     }
     // une bête qui charge sa proie court plus vite ; en formation, l'allure du groupe (`cap`)
-    let speed = crate::nature::charge_speed(w, s, unit_speed(kind)).min(cap.max(1));
+    // sur le terreau de la Souche, plus lente (ennemie) ou plus rapide (organisme chez lui)
+    let speed = crate::essaim::speed(w, s, crate::nature::charge_speed(w, s, unit_speed(kind))).min(cap.max(1));
     let f = w.units.facing[s];
     let nf = turn_towards(f, heading, turn_rate(kind));
     w.units.facing[s] = nf;
@@ -545,7 +551,8 @@ pub fn update_units(w: &mut World) {
         let k = w.units.kind[s];
         // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe ni les œufs
         // (immobiles : ce sont les autres qui s'en écartent)
-        if fixed_wing(k) || crate::ponte::is_egg(k) || (w.tick + s as u32) & 1 == 1 {
+        // (ni un fouisseur enterré : on lui marche dessus)
+        if fixed_wing(k) || crate::ponte::is_egg(k) || (w.tick + s as u32) & 1 == 1 || crate::essaim::buried(w, s) {
             continue;
         }
         let def = udef(k);
@@ -557,7 +564,7 @@ pub fn update_units(w: &mut World) {
         let mut py = 0i64;
         let units = &w.units;
         w.grid.fine.query(x, y, r + 200, |o| {
-            if o == s {
+            if o == s || (units.kind[o] == U_BURROWER && units.cold[o].deployed) {
                 return;
             }
             let od = udef(units.kind[o]);
@@ -651,7 +658,8 @@ pub fn update_units(w: &mut World) {
             }
         }
         // chenillard des Transhumants : déploiement ou repli en cours
-        if w.units.cold[s].pack != 0 && crate::transhumants::tick_unit(w, s) {
+        // (Reine de la Souche : elle s'enracine ou se déracine)
+        if w.units.cold[s].pack != 0 && if kind == U_QUEEN { crate::essaim::tick_queen(w, s) } else { crate::transhumants::tick_unit(w, s) } {
             continue;
         }
         let t_ord = prof_now();
@@ -663,7 +671,7 @@ pub fn update_units(w: &mut World) {
         special(w, s);
         // séparation
         let (dx, dy) = push[s];
-        if dx != 0 || dy != 0 {
+        if (dx != 0 || dy != 0) && !crate::essaim::rooted(w, s) {
             let dx = dx.clamp(-60, 60);
             let dy = dy.clamp(-60, 60);
             try_move(w, s, dx, dy);
@@ -1261,7 +1269,16 @@ fn gate_check(w: &mut World, s: usize) {
         return;
     }
     let Some(t) = w.building(bb.link) else { return };
-    if !w.buildings[t].working {
+    // terrier de la Souche : sa sortie n'a pas besoin d'être ouverte en retour
+    let burrow = bb.kind == B_BURROW;
+    if burrow {
+        // on n'y entre que pour y aller : l'ordre de déplacement mène au terrier (on peut lui marcher dessus)
+        let meant = matches!(w.units.cold[s].orders.first(), Some(&Order::Move { gx, gy, .. }) if dist2(gx, gy, cx, cy) <= (2 * TILE as i64).pow(2));
+        if !meant || !crate::souche::burrow_fits(w.units.kind[s]) {
+            return;
+        }
+    }
+    if !w.buildings[t].working && !burrow {
         return;
     }
     // l'unité ressort de l'horizon de la porte d'arrivée, puis s'en écarte de quelques cases vers l'avant
@@ -1269,8 +1286,9 @@ fn gate_check(w: &mut World, s: usize) {
     let (fdx, fdy) = crate::belts::DIRS[(w.buildings[t].dir & 3) as usize];
     let m = pass_mask(udef(w.units.kind[s]).layer);
     let (ox, oy) = (tx + fdx * TILE / 2, ty + fdy * TILE / 2);
-    let (gx, gy) = buildings::free_spot_near(w, tx + fdx * 5 * TILE, ty + fdy * 5 * TILE, m);
-    w.ev(EV_TELEPORT, x, y, ox, oy);
+    let out = if burrow { 3 } else { 5 };
+    let (gx, gy) = buildings::free_spot_near(w, tx + fdx * out * TILE, ty + fdy * out * TILE, m);
+    w.ev(if burrow { crate::essaim::EV_BURROW } else { EV_TELEPORT }, x, y, ox, oy);
     w.units.x[s] = ox;
     w.units.y[s] = oy;
     w.units.px[s] = ox;
@@ -1340,6 +1358,7 @@ fn special(w: &mut World, s: usize) {
                 }
             }
         }
+        U_BURROWER => crate::essaim::burrow_step(w, s),
         U_COMMANDO => {
             let c = &mut w.units.cold[s];
             c.reveal = c.reveal.saturating_sub(1);

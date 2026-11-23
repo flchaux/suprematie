@@ -4,7 +4,7 @@
 // Le grain vient des textures du sol (terre nue et herbe dense, voir terreauLayers dans ground.ts) : même
 // définition que le reste du sol. La couverture est une carte à deux texels par case, adoucie (coins
 // arrondis), lue avec un décalage bruité ; le bord suit en plus le relief de la texture, au pixel près.
-// Recalculée seulement quand les poteaux poussés changent.
+// Recalculée seulement quand les poteaux poussés connus changent.
 import * as THREE from "three/webgpu";
 import { texture, positionWorld, vec2, vec3, mix, uniform, float, smoothstep, mx_noise_float, abs, clamp, fwidth } from "three/tsl";
 import { BUILDING_WORDS } from "@supreme/shared";
@@ -108,8 +108,13 @@ export class TerreauCover {
   private h: number;
   private tmp: Uint8Array;
   private version = -1;
-  private sig = -1;
   private wait = 0;
+  /**
+   * Poteaux poussés connus (référence -> emprise et portée ; `miss` : relevés où il manquait alors que sa
+   * case était à l'écran). La trame ne contient que la zone vue, et pas les racines de très loin : ce qui
+   * n'est plus à l'écran reste connu, le terreau ne se recalcule pas quand on promène la caméra.
+   */
+  private known = new Map<number, { x: number; z: number; w: number; h: number; s: number; miss: number }>();
 
   constructor(w: number, h: number) {
     this.w = w * RES;
@@ -125,39 +130,50 @@ export class TerreauCover {
     terreauShow.value = 0;
   }
 
-  /** Recalcule la couverture quand les bâtiments ont changé (ou au plus toutes les secondes). */
-  update(f: Frame, data: GameData, dt: number): void {
+  /**
+   * Recalcule la couverture quand les poteaux connus ont changé (relevé de la trame à chaque changement de
+   * bâtiments, et au plus toutes les 0,3 s). `view` : zone à l'écran [x0, z0, x1, z1] ; `detailed` : la trame
+   * contient les racines (pas la vue stratégique).
+   */
+  update(f: Frame, data: GameData, dt: number, view: [number, number, number, number], detailed: boolean): void {
     this.wait -= dt;
     if (f.buildingsVersion === this.version && this.wait > 0) return;
     this.version = f.buildingsVersion;
-    this.wait = 1;
+    this.wait = 0.3;
     const buf = f.buf;
-    // signature des poteaux poussés (position, taille, portée) : rien à refaire si elle n'a pas changé
-    let sig = 0;
-    let n = 0;
+    let dirty = false;
+    for (const p of this.known.values()) p.miss++;
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const d = data.buildings[buf[o + 1] & 0xff];
       if (!d || d.race !== 1 || d.supply <= 0 || buf[o + 4] < 65536) continue;
-      sig = (Math.imul(sig, 31) + (buf[o + 2] >>> 0) + d.supply) | 0;
-      n++;
+      const ref = buf[o] >>> 0;
+      const p = this.known.get(ref);
+      if (p) p.miss = 0;
+      else {
+        this.known.set(ref, { x: buf[o + 2] & 0xffff, z: (buf[o + 2] >>> 16) & 0xffff, w: d.w, h: d.h, s: d.supply, miss: 0 });
+        dirty = true;
+      }
     }
-    sig = (sig + n) | 0;
-    if (sig === this.sig) return;
-    this.sig = sig;
+    for (const [ref, p] of this.known) {
+      // absent de la trame alors qu'il devrait y être (trois relevés de suite : une trame peut être en retard
+      // sur la caméra) : il est mort
+      const inView = detailed && p.x > view[0] + 2 && p.x < view[2] - 2 && p.z > view[1] + 2 && p.z < view[3] - 2;
+      if (p.miss > 0 && !inView) p.miss = 0;
+      else if (p.miss >= 3) {
+        this.known.delete(ref);
+        dirty = true;
+      }
+    }
+    if (!dirty) return;
     const W = this.w;
     const H = this.h;
     const raw = this.tmp;
     raw.fill(0);
-    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-      const d = data.buildings[buf[o + 1] & 0xff];
-      if (!d || d.race !== 1 || d.supply <= 0 || buf[o + 4] < 65536) continue;
-      const bx = buf[o + 2] & 0xffff;
-      const bz = (buf[o + 2] >>> 16) & 0xffff;
-      const s = d.supply;
-      const x0 = Math.max(0, (bx - s) * RES);
-      const z0 = Math.max(0, (bz - s) * RES);
-      const x1 = Math.min(W, (bx + d.w + s) * RES);
-      const z1 = Math.min(H, (bz + d.h + s) * RES);
+    for (const p of this.known.values()) {
+      const x0 = Math.max(0, (p.x - p.s) * RES);
+      const z0 = Math.max(0, (p.z - p.s) * RES);
+      const x1 = Math.min(W, (p.x + p.w + p.s) * RES);
+      const z1 = Math.min(H, (p.z + p.h + p.s) * RES);
       for (let z = z0; z < z1; z++) raw.fill(255, z * W + x0, z * W + x1);
     }
     // adoucissement : moyenne glissante horizontale puis verticale (le bord droit reste à 0,5 sur la limite)
@@ -184,6 +200,6 @@ export class TerreauCover {
     }
     out.set(raw);
     this.tex.needsUpdate = true;
-    terreauShow.value = n > 0 ? 1 : 0;
+    terreauShow.value = this.known.size > 0 ? 1 : 0;
   }
 }

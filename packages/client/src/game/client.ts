@@ -18,6 +18,7 @@ import { initMusic, setMusicVolume } from "../audio/music.ts";
 import { keymap, kb, keysChanged, initLayout, keyOf } from "./keys.svelte.ts";
 import { groupKey, digitOf, isModifierCode, actionDef } from "./keymap.ts";
 import { buildCats, factoryUnitKinds } from "./catalog.ts";
+import { ADAPT_FAMILIES } from "./traits.ts";
 import { PlanTool, plans } from "./plans.svelte.ts";
 import { escapeAction, menuPauses, type MenuRole } from "./gameMenu.ts";
 import { isTextField, keyboardPan, syncModifiers, type FocusLike } from "./heldKeys.ts";
@@ -402,8 +403,9 @@ export class GameClient {
     if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers" || scene === "nomades") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
+    // ?demo=essaim : nouveaux organes et organismes de la Souche, Reine enracinée, flaques d'acide (joueur 0)
     // ?demo=relais : chaîne de relais logistiques qui ravitaille un chantier et une usine éloignés (joueur 0)
-    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "nomades" || scene === "relais";
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "nomades" || scene === "relais";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -767,8 +769,12 @@ export class GameClient {
           }
           break;
         case EV.DEPLOY_FAILED:
-          // chenillard des Transhumants qui n'a pas trouvé la place de se déployer
-          if (a === ui.me) {
+          // Reine de la Souche hors de son terreau, ou chenillard des Transhumants qui n'a pas trouvé la
+          // place de se déployer
+          if (a === ui.me && this.data!.units[e]?.key === "queen") {
+            pushMessage("La Reine ne s'enracine que sur votre terreau", "alert");
+            sfx.error();
+          } else if (a === ui.me) {
             const u = this.data!.units[e];
             const drill = (u?.deploys ?? -1) >= 0 && this.data!.buildings[u.deploys].deposit !== 0;
             pushMessage(`${u?.name ?? "Chenillard"} : pas la place de se déployer ici${drill ? " (une foreuse se déploie sur un gisement, à 3 cases au plus)" : " (terrain plat et libre)"}`, "alert");
@@ -819,12 +825,48 @@ export class GameClient {
           }
           break;
         }
+        case EV.ACID: {
+          // flaque d'acide de la Souche : nappe au sol pour toute sa durée
+          const x = a / TILE, z = c / TILE;
+          if (seen(x, z)) fx?.acid(x, z, d / TILE, (e >>> 8) / 20);
+          break;
+        }
+        case EV.ADAPTED:
+          if (a === ui.me) {
+            pushMessage(`Caractère acquis : toute l'espèce subit 20 % de dégâts en moins (${ADAPT_FAMILIES[c] ?? "?"})`, "good");
+            sfx.confirm();
+          }
+          break;
+        case EV.COCOON: {
+          // cocon mûr : il crève en gerbe, le Béhémoth en sort en grandissant
+          const x = a / TILE, z = c / TILE;
+          if (seen(x, z)) {
+            sc.entities?.addBirth(x, z, f.tick);
+            fx?.hatch(x, groundHeight(this.map!, x, z) + 1, z, 7, true);
+            fx?.warp(x, z);
+            sfx.hatch(near(x, z), pan(x, z));
+          }
+          pushMessage((e & 0xff) === ui.me ? "Le cocon s'est ouvert : un Béhémoth est né" : "Un Béhémoth vient de naître", (e & 0xff) === ui.me ? "good" : "alert");
+          this.alertPos = { x, z };
+          break;
+        }
+        case EV.DIGEST: {
+          const x = a / TILE, z = c / TILE;
+          if (seen(x, z)) fx?.digest(x, z, (d & 0xffff) + 1, ((d >>> 16) & 0xffff) + 1);
+          break;
+        }
+        case EV.BURROW:
+          // passage d'un terrier : la terre se soulève aux deux bouts
+          if (seen(a / TILE, c / TILE)) fx?.dirt(a / TILE, c / TILE);
+          if (seen(d / TILE, e / TILE)) fx?.dirt(d / TILE, e / TILE);
+          break;
         case EV.UNIT_DIED: {
           const owner = e;
           if (seen(a / TILE, c / TILE)) {
             const def = this.data!.units[d];
-            // un œuf de la Souche crève : la sève gicle, pas de débris
-            if (def?.egg) fx?.hatch(a / TILE, groundHeight(this.map!, a / TILE, c / TILE), c / TILE, Math.max(0.7, def.radius / 60), true);
+            // une vessie ou un œuf de la Souche crève : la sève gicle, pas de débris
+            if (def?.key === "burster") fx?.hatch(a / TILE, groundHeight(this.map!, a / TILE, c / TILE), c / TILE, 2.6, true);
+            else if (def?.egg) fx?.hatch(a / TILE, groundHeight(this.map!, a / TILE, c / TILE), c / TILE, Math.max(0.7, def.radius / 60), true);
             else if (def && def.layer !== Layer.Sub) fx?.wreckage(a / TILE, c / TILE, Math.max(0.5, (def.radius * 2) / TILE), new THREE.Color(ownerColor(owner, this.frame?.players)), false);
           }
           void owner;
@@ -2110,7 +2152,7 @@ export class GameClient {
     if (tb && tb.owner === ui.me) {
       const def = this.data.buildings[tb.kind];
       if (def.cls === BClass.Gate) {
-        this.cmd(Ord.move(units, (tb.x + 2) * TILE, (tb.y + 2) * TILE, queue, false, false));
+        this.cmd(Ord.move(units, (tb.x + def.w / 2) * TILE, (tb.y + def.h / 2) * TILE, queue, false, false));
         sfx.confirm();
         return;
       }
@@ -2554,7 +2596,7 @@ export class GameClient {
     // racines de la Souche : une file continue, case par case, orientée dans le sens du tracé (comme un
     // tapis) ; elles se relient par contact
     const isRoot = def.key === "root";
-    const step = def.cls === BClass.Pylon && !isRoot ? 7 : def.w;
+    const step = def.cls === BClass.Pylon && (def.race ?? 0) !== 1 ? 7 : def.w;
     const out: { x: number; y: number; dir: number }[] = [];
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -2673,7 +2715,7 @@ export class GameClient {
     // machines qui peuvent se jumeler : une rangée se pose en glissant
     const machine = isMachine(def.cls);
     // placement d'un module de chenillard : un seul fantôme, pas de file
-    const lineable = !this.deployUnits.length && !this.poleGen && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || def.cls === BClass.Pylon || machine);
+    const lineable = !this.deployUnits.length && !this.poleGen && (def.cls === BClass.Belt || def.cls === BClass.Rail || def.cls === BClass.Wall || (def.cls === BClass.Pylon && def.key !== "rhizome") || machine);
     const isBelt = def.cls === BClass.Belt;
     const belts = isBelt ? this.beltTiles() : new Map<number, { dir: number; owner: number }>();
     const splitters = isBelt ? this.splitterTiles() : new Map<number, { dir: number; outs: number; owner: number }>();
@@ -2836,18 +2878,35 @@ export class GameClient {
     }
     const have = (q: number) => hasTechUI(q) || ui.research === q || ui.researchQueue.includes(q);
     const chain: number[] = [];
+    let choice = -1;
     const visit = (q: number) => {
       if (have(q) || chain.includes(q)) return;
-      for (const r of d.techs[q].prereq) visit(r);
+      for (const r of d.techs[q].prereq) {
+        // mutations exclusives : l'une des deux suffit, et c'est au joueur de choisir laquelle
+        const x = d.techs[r].excl ?? 0;
+        if (x && have(x)) continue;
+        if (x && !have(r)) choice = r;
+        else visit(r);
+      }
       chain.push(q);
     };
     visit(t);
+    if (choice >= 0) {
+      pushMessage(`Choisissez d'abord une mutation : ${d.techs[choice].name} ou ${d.techs[d.techs[choice].excl].name}`, "alert");
+      sfx.error();
+      return;
+    }
     for (const q of chain) this.cmd(Ord.researchQueue(q));
     // affichage immédiat (la simulation confirme au prochain relevé)
     const rest = !ui.research ? chain.slice(1) : chain;
     if (!ui.research && chain.length) ui.research = chain[0];
     ui.researchQueue = [...ui.researchQueue, ...rest];
     sfx.confirm();
+  }
+  /** Souche : fixe dans l'espèce la résistance à une famille d'armes (Matrice, Mémoire du sang). */
+  adapt(family: number): void {
+    this.cmd(Ord.adapt(family));
+    sfx.click();
   }
   toggleBuilding(): void {
     if (ui.selBuilding) this.cmd(Ord.toggle(ui.selBuilding.ref));
