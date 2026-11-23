@@ -7,9 +7,9 @@
   import type { SaveMeta, Fauna } from "@supreme/shared";
   import { FAUNA_LEVELS, FAUNA_NAMES, RACE_NAMES } from "@supreme/shared";
   const RACE_DESC = [
-    "Tapis, bras, fonderies et assembleurs ; électricité par zones ; recherche par lots en laboratoire",
-    "Base vivante : racines qui mettent en commun sève et sels, organes qui poussent seuls ; recherche par l'ADN des cadavres digérés",
-    "Industrie montée sur des chenillards qui se déploient et se replient ; recherche par l'exploration ; pillent un quart de ce qu'ils détruisent",
+    "Usines à tapis, électricité par zones, recherche par lots",
+    "Base vivante : racines, sève et sels partagés, recherche par l'ADN",
+    "Industrie mobile qui se déploie, Arche à améliorer, recherche par l'exploration et butin",
   ];
   const FAUNA_DESC: Record<Fauna, string> = {
     none: "Pas de nids sur la carte",
@@ -17,7 +17,7 @@
     normal: "Les nids attaquent en horde les joueurs qui s'étendent trop près",
     aggressive: "Nids plus grands, bêtes plus tôt évoluées, attaques plus fréquentes",
   };
-  const FOG_DESC = "Désactivé : chacun voit toute la carte, unités et bâtiments ennemis compris, sans repérage";
+  const FOG_DESC = "Désactivé : toute la carte est visible";
 
   const lobby = $derived(ui.lobby);
   const isHost = $derived(!!lobby && lobby.players.some((p) => p.host && p.slot === ui.slot));

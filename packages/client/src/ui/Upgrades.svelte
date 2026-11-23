@@ -52,7 +52,7 @@
   const TUR = [
     { icon: "tur_gun", name: "Mitrailleuse", desc: "40 dégâts par seconde contre le sol, portée 18 cases." },
     { icon: "tur_aa", name: "Antiaérienne", desc: "60 dégâts par seconde en zone contre les avions, portée 28 cases." },
-    { icon: "tur_mortar", name: "Mortier", desc: "110 dégâts en zone toutes les 4 s, portée 32 cases ; ne tire pas à moins de 7 cases." },
+    { icon: "tur_mortar", name: "Mortier", desc: "110 dégâts en zone toutes les 4 s, de 7 à 32 cases." },
   ];
   const turText = (t: [number, number, number, number, number, number, number]): string => {
     const [kind, want, st, timer, hp, up] = t;
@@ -76,7 +76,7 @@
     {#each slots as sl, si}
       {@const cur = mods[mi.mods[si] ?? 0]}
       <div class="slot">
-        <div class="sn" title={isArk ? `Emplacement ${sl.name.toLowerCase()} : une seule branche à la fois` : "Un seul aménagement à la fois ; il est gardé au repli et au déploiement"}>
+        <div class="sn" title={isArk ? `Emplacement ${sl.name.toLowerCase()} : une seule branche à la fois` : "Un seul à la fois, gardé au repli"}>
           <Icon name={sl.icon} size={15} />
           <span class="st"><b>{sl.name}</b><span class="dim tiny">{mi.mods[si] ? cur.name : "vide"}</span></span>
         </div>
@@ -103,7 +103,7 @@
                   {#if s === "busy"}<span class="dim">Une installation est déjà en cours</span><br />{/if}
                   {#if s === "poor"}<span class="bad">Il manque des composants ou des relevés à portée (30 cases)</span><br />{/if}
                   {#if m.base && mi.mods[si] === m.base}<span class="dim">Remplace {mods[m.base].name} (palier suivant)</span>
-                  {:else if mi.mods[si] && !reached(i)}<span class="dim">Remplace {cur.name} : l'emplacement ne garde qu'une branche ; la moitié de ses composants est rendue</span>{/if}
+                  {:else if mi.mods[si] && !reached(i)}<span class="dim">Remplace {cur.name}, moitié rendue</span>{/if}
                 {/if}
               </div>
             </div>
@@ -126,8 +126,8 @@
       <div class="sub">
         <div class="mh">
           <span class="kicker">Tourelles</span><span class="dim small"><span class="num">{outN}</span> dehors sur <span class="num">{ark.turrets.length}</span></span>
-          <button class="icon-btn" class:on={ark.out} title={ark.out ? "Replier : elles se replient et reviennent à bord" : "Déployer : à l'arrêt, l'Arche les pose autour d'elle"} onclick={() => client.arkTurrets(ark.out ? 0 : 1)}><Icon name="deploy" size={14} /> {ark.out ? "Replier" : "Déployer"} {#if keyOf("deploy")}<span class="key">{keyOf("deploy")}</span>{/if}</button>
-          <button class="icon-btn" class:on={ark.hold} title={ark.hold ? "Consigne : tenir la place. Elles restent où elles sont quand l'Arche part, jusqu'au rappel. Cliquer : suivre l'Arche" : "Consigne : suivre. Quand l'Arche part, elles se replient, la rejoignent et se redéploient là où elle s'arrête. Cliquer : tenir la place"} onclick={() => client.arkTurrets(ark.hold ? 2 : 3)}><Icon name={ark.hold ? "defense" : "assist"} size={14} /> {ark.hold ? "Tiennent la place" : "Suivent l'Arche"}</button>
+          <button class="icon-btn" class:on={ark.out} title={ark.out ? "Replier à bord" : "Déployer autour de l'Arche"} onclick={() => client.arkTurrets(ark.out ? 0 : 1)}><Icon name="deploy" size={14} /> {ark.out ? "Replier" : "Déployer"} {#if keyOf("deploy")}<span class="key">{keyOf("deploy")}</span>{/if}</button>
+          <button class="icon-btn" class:on={ark.hold} title={ark.hold ? "Tiennent la place. Cliquer : suivre l'Arche" : "Suivent l'Arche. Cliquer : tenir la place"} onclick={() => client.arkTurrets(ark.hold ? 2 : 3)}><Icon name={ark.hold ? "defense" : "assist"} size={14} /> {ark.hold ? "Tiennent la place" : "Suivent l'Arche"}</button>
         </div>
         <div class="turs">
           {#each ark.turrets as t, k}
@@ -154,7 +154,7 @@
     {/if}
     {#if ark.shieldMax > 0}
       {@const sh = ui.unitInfo?.shield ?? 0}
-      <div class="row small" title="Le bouclier arrête les tirs venus du dehors qui visent ce qui est dans la bulle. Brisé, il revient après 10 s."><span class="kicker">Bouclier</span><span class="shb"><span style:width={(sh / ark.shieldMax) * 100 + "%"}></span></span><span class="num">{sh} / {ark.shieldMax}</span><span class="dim">· {ark.shieldR} cases</span></div>
+      <div class="row small" title="Arrête les tirs du dehors. Brisé, revient après 10 s."><span class="kicker">Bouclier</span><span class="shb"><span style:width={(sh / ark.shieldMax) * 100 + "%"}></span></span><span class="num">{sh} / {ark.shieldMax}</span><span class="dim">· {ark.shieldR} cases</span></div>
     {/if}
     {#if mods[mi.mods[4]]?.key === "ark_dynamo"}
       <div class="row small"><span class="kicker">Groupe</span><span class={ark.dock ? "good" : "dim"}>{ark.dock ? "posé : 500 kW sans combustible" : "à bord : posé après 3 s à l'arrêt"}</span></div>
@@ -178,7 +178,7 @@
         </div>
       </div>
     {/if}
-    {#if !ark.turrets.length && !workUnits.length && ark.shieldMax <= 0}<span class="dim small">Les tourelles, le bouclier et l'atelier embarqué se commandent ici, une fois installés. Les composants viennent de la soute de l'Arche et de vos réserves à moins de 30 cases ; les relevés, de l'exploration et des ennemis détruits.</span>{/if}
+    {#if !ark.turrets.length && !workUnits.length && ark.shieldMax <= 0}<span class="dim small">Tourelles, bouclier et atelier se commandent ici.</span>{/if}
    </div>
    {/if}
   </div>

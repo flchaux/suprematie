@@ -93,9 +93,9 @@ pub struct RaceDef {
 }
 
 pub const RACES: [RaceDef; NUM_RACES] = [
-    RaceDef { key: "industriels", name: "Industriels", desc: "Tapis, bras, fonderies et assembleurs, électricité par zones, laboratoires et lots de recherche." },
-    RaceDef { key: "souche", name: "Souche", desc: "Base vivante : un réseau de racines met en commun sève et sels, les organes poussent seuls, la race évolue en digérant les cadavres." },
-    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; tout se joue sur les améliorations, surtout celles de l'Arche (armes, bouclier, tourelles…) ; recherche par l'exploration ; butin : un quart de ce qu'ils détruisent." },
+    RaceDef { key: "industriels", name: "Industriels", desc: "Usines à tapis, électricité par zones, recherche par lots." },
+    RaceDef { key: "souche", name: "Souche", desc: "Base vivante : racines, sève et sels partagés, recherche par l'ADN." },
+    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie mobile qui se déploie, Arche à améliorer, recherche par l'exploration et butin." },
 ];
 
 // ---------- Recettes ----------
@@ -541,8 +541,8 @@ pub const TECHS: [TechDef; 92] = [
     t!("s_vines", "Lianes", 2, 15, 8, [48], "Liane : enlace et immobilise les unités au sol", race: RACE_SOUCHE),
     t!("s_membranes", "Membranes", 3, 20, 10, [49], "Planeur à membranes : bombes de spores", race: RACE_SOUCHE),
     t!("s_scales", "Écailles", 2, 15, 8, [], "Mutation : +30 % de points de vie pour tous les organismes. Exclut Sève vive.", race: RACE_SOUCHE, excl: 53),
-    t!("s_quick_sap", "Sève vive", 2, 15, 8, [], "Mutation : régénération doublée sur le terreau, et 1 % par seconde hors du terreau. Exclut Écailles.", race: RACE_SOUCHE, excl: 52),
-    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes ; les cracheurs laissent une flaque d'acide. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
+    t!("s_quick_sap", "Sève vive", 2, 15, 8, [], "Mutation : régénération doublée sur le terreau, 1 % par seconde ailleurs. Exclut Écailles.", race: RACE_SOUCHE, excl: 52),
+    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts, flaque d'acide des cracheurs. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
     t!("s_fertility", "Fécondité", 3, 20, 10, [52, 53], "Mutation : éclosion des œufs et croissance des organes 50 % plus rapides. Exclut Acide.", race: RACE_SOUCHE, excl: 54),
     t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : racines et organes subissent 40 % de dégâts en moins. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
     t!("s_big_leaves", "Grandes frondaisons", 4, 25, 12, [54, 55], "Mutation : frondaisons et racines-puits +50 %. Exclut Racines profondes.", race: RACE_SOUCHE, excl: 56),
@@ -554,35 +554,35 @@ pub const TECHS: [TechDef; 92] = [
     t!("t_armor", "Blindage", 3, 25, 10, [60], "Chenillards et Arche : +50 % de points de vie", race: RACE_TRANSH),
     t!("t_crystal", "Cristal nomade", 4, 30, 12, [60], "Cristal raffiné, cellules d'énergie", race: RACE_TRANSH, also: T_CRYSTAL_REFINING),
     // ----- Souche, suite (un prérequis à choix exclusif est satisfait par l'une des deux mutations : `has_prereq`) -----
-    t!("s_brambles", "Ronces", 1, 10, 6, [], "Ronce : mur vivant qui déchire ceux qui la mordent. Rhizome : gros nœud de racines à grand terreau.", race: RACE_SOUCHE),
+    t!("s_brambles", "Ronces", 1, 10, 6, [], "Ronce : mur vivant. Rhizome : gros nœud de racines.", race: RACE_SOUCHE),
     t!("s_darts", "Dards", 2, 15, 8, [48], "Dard : organisme antiaérien", race: RACE_SOUCHE),
     t!("s_bursters", "Vessies", 2, 15, 8, [48], "Vessie : court à l'ennemi et éclate en flaque d'acide", race: RACE_SOUCHE),
-    t!("s_burrowers", "Fouisseurs", 2, 15, 8, [48], "Fouisseur : s'enterre à l'arrêt, invisible, et surgit en frappant trois fois plus fort", race: RACE_SOUCHE),
-    t!("s_rootways", "Racines creuses", 2, 15, 8, [64], "Terrier : passage souterrain d'un bout à l'autre du réseau. Les organismes vont 20 % plus vite sur leur terreau.", race: RACE_SOUCHE),
-    t!("s_memory", "Mémoire du sang", 2, 15, 8, [], "La Matrice peut fixer dans l'espèce une résistance de 20 % à une famille d'armes qui l'a beaucoup blessée (trois au plus)", race: RACE_SOUCHE),
-    t!("s_sticky", "Terreau collant", 3, 20, 10, [64], "Mutation : les unités au sol ennemies vont 35 % moins vite sur votre terreau. Exclut Racines étrangleuses.", race: RACE_SOUCHE, excl: 71),
-    t!("s_strangle", "Racines étrangleuses", 3, 20, 10, [64], "Mutation : une racine collée à un bâtiment ennemi l'étrangle et lui prend de la sève. Exclut Terreau collant.", race: RACE_SOUCHE, excl: 70),
+    t!("s_burrowers", "Fouisseurs", 2, 15, 8, [48], "Fouisseur : s'enterre, invisible, et surgit en force.", race: RACE_SOUCHE),
+    t!("s_rootways", "Racines creuses", 2, 15, 8, [64], "Terrier : passage souterrain du réseau. Organismes 20 % plus rapides sur leur terreau.", race: RACE_SOUCHE),
+    t!("s_memory", "Mémoire du sang", 2, 15, 8, [], "La Matrice peut donner à l'espèce 20 % de résistance à une famille d'armes, trois fois au plus.", race: RACE_SOUCHE),
+    t!("s_sticky", "Terreau collant", 3, 20, 10, [64], "Mutation : ennemis au sol 35 % plus lents sur votre terreau. Exclut Racines étrangleuses.", race: RACE_SOUCHE, excl: 71),
+    t!("s_strangle", "Racines étrangleuses", 3, 20, 10, [64], "Mutation : vos racines collées à un bâtiment ennemi le blessent et en tirent de la sève. Exclut Terreau collant.", race: RACE_SOUCHE, excl: 70),
     t!("s_nurses", "Nourrices", 3, 20, 10, [67], "Nourrice : les organismes proches guérissent comme sur le terreau", race: RACE_SOUCHE),
     t!("s_sporangia", "Sporanges", 3, 20, 10, [64], "Sporange : mortier à spores à très longue portée ; chaque tir coûte de la sève", race: RACE_SOUCHE),
     t!("s_tides", "Marées", 3, 20, 10, [49], "Frayère (organe d'eau), murène", race: RACE_SOUCHE),
     t!("s_hornets", "Frelons", 4, 25, 12, [51], "Frelon : chasseur volant, naît par quatre", race: RACE_SOUCHE),
     t!("s_leviathan", "Léviathan", 5, 35, 15, [74], "Léviathan : géant amphibie, dévore ce qu'il tue pour guérir", race: RACE_SOUCHE),
-    t!("s_acid_blood", "Sang acide", 5, 30, 15, [56, 57], "Mutation : un organisme qui meurt au sol laisse une flaque d'acide. Exclut Carapaces d'épines.", race: RACE_SOUCHE, excl: 78),
-    t!("s_spines", "Carapaces d'épines", 5, 30, 15, [56, 57], "Mutation : un tiers des dégâts de morsure subis par vos organismes revient à l'agresseur. Exclut Sang acide.", race: RACE_SOUCHE, excl: 77),
+    t!("s_acid_blood", "Sang acide", 5, 30, 15, [56, 57], "Mutation : un organisme tué au sol laisse une flaque d'acide. Exclut Carapaces d'épines.", race: RACE_SOUCHE, excl: 78),
+    t!("s_spines", "Carapaces d'épines", 5, 30, 15, [56, 57], "Mutation : renvoie un tiers des morsures subies. Exclut Sang acide.", race: RACE_SOUCHE, excl: 77),
     t!("s_behemoth", "Métamorphose", 6, 60, 15, [77, 78], "Cocon : organe géant dont sort un Béhémoth", race: RACE_SOUCHE),
     // améliorations (voir ameliorations.rs) : ces recherches débloquent des choix à installer depuis les fiches
     t!("t_armory", "Armurerie de l'Arche", 1, 8, 6, [], "Arche, armement : canon lourd, batterie de roquettes, batterie antiaérienne", race: RACE_TRANSH),
-    t!("t_fittings", "Modules aménagés", 1, 8, 6, [], "Deux améliorations au choix par foreuse, fonderie, assembleur, générateur et chariot de convoi", race: RACE_TRANSH),
+    t!("t_fittings", "Modules aménagés", 1, 8, 6, [], "Deux améliorations au choix pour les modules de base et le chariot", race: RACE_TRANSH),
     t!("t_mounts", "Affûts en étoile", 2, 15, 8, [80], "Arche, pont : 3 tourelles déployables", race: RACE_TRANSH),
     t!("t_bubble", "Bulle de convoi", 2, 15, 8, [60], "Arche, coque : bouclier de convoi, blindage lourd, blindage réactif", race: RACE_TRANSH),
     t!("t_drive", "Trains de roulement", 2, 12, 8, [], "Arche, mobilité : moteurs jumelés, éperon, surcharge", race: RACE_TRANSH),
     t!("t_onboard", "Ateliers de bord", 2, 15, 8, [81], "Arche : atelier embarqué, soutes de pont, groupe électrogène", race: RACE_TRANSH),
-    t!("t_gear", "Équipement de guerre", 2, 12, 8, [58], "Deux équipements au choix par pisteur, cavalier, herse, canon tracté et bélier", race: RACE_TRANSH),
-    t!("t_fittings2", "Modules lourds", 2, 15, 8, [81], "Deux améliorations au choix par raffinerie, soute, laboratoire, atelier et bastion", race: RACE_TRANSH),
+    t!("t_gear", "Équipement de guerre", 2, 12, 8, [58], "Deux équipements au choix par unité de combat et pour le pisteur", race: RACE_TRANSH),
+    t!("t_fittings2", "Modules lourds", 2, 15, 8, [81], "Deux améliorations au choix pour les autres modules", race: RACE_TRANSH),
     t!("t_recon", "Guerre de mouvement", 3, 20, 10, [84], "Arche, soutien : radar de crête, brouilleur, grues de pillage", race: RACE_TRANSH),
-    t!("t_bubble2", "Bulle renforcée", 3, 20, 10, [83], "Arche, coque : bouclier de 8 cases et 5 000 points", race: RACE_TRANSH),
+    t!("t_bubble2", "Bulle renforcée", 3, 20, 10, [83], "Arche, coque : bouclier renforcé", race: RACE_TRANSH),
     t!("t_rail", "Canon à rail", 4, 25, 12, [80, 63], "Arche, armement : canon à rail", race: RACE_TRANSH),
-    t!("t_crown", "Couronne de tourelles", 4, 30, 12, [82, 89], "Arche : 9 tourelles déployables (pont), grande bulle de 11 cases et 9 000 points (coque)", race: RACE_TRANSH),
+    t!("t_crown", "Couronne de tourelles", 4, 30, 12, [82, 89], "Arche : 9 tourelles (pont), grande bulle (coque)", race: RACE_TRANSH),
 ];
 /// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
 pub const T_T_ARMORY: u8 = 80;

@@ -76,16 +76,16 @@
     <span class="zn">{label}</span>
     <span class="tt">
       {#if !z || z.zone === 0}
-        <b>Hors zone</b><br />Le centre de l'écran n'est dans aucune de vos {souche ? "zones de terreau" : "zones électriques"}. Centrez la vue sur une de vos bases pour voir ses ressources.
+        <b>Hors zone</b><br />Centrez la vue sur une de vos bases.
       {:else if souche}
-        <b>Réseau de racines au centre de l'écran</b><br />Sa réserve de sève et de sels, et les débits maximaux de ses organes. Vue des racines : touche K.
+        <b>Réseau de racines au centre de l'écran</b><br />Sa réserve et ses débits. Vue des racines : K.
       {:else}
-        <b>{dead ? "Zone éteinte" : "Zone électrique"} au centre de l'écran</b><br />La couleur est celle de la zone dans la vue électrique (touche K).{#if dead} Aucun générateur n'y a de combustible : ses machines sont à l'arrêt.{/if}<br /><span class="num">{z.machines ?? 0}</span> machine{(z.machines ?? 0) > 1 ? "s" : ""} comptée{(z.machines ?? 0) > 1 ? "s" : ""}.
+        <b>{dead ? "Zone éteinte" : "Zone électrique"} au centre de l'écran</b><br />Vue électrique : K.{#if dead} Plus de combustible : machines à l'arrêt.{/if}<br /><span class="num">{z.machines ?? 0}</span> machine{(z.machines ?? 0) > 1 ? "s" : ""} comptée{(z.machines ?? 0) > 1 ? "s" : ""}.
       {/if}
     </span>
   </span>
   {#if z && z.zone !== 0}
-    <button class="ghost fold" class:shut={!open} onclick={toggle} title={open ? "Replier les débits (production, consommation, solde)" : "Déplier les débits (production, consommation, solde)"} aria-expanded={open}><Icon name="chevron" size={12} /></button>
+    <button class="ghost fold" class:shut={!open} onclick={toggle} title={open ? "Replier les débits" : "Déplier les débits"} aria-expanded={open}><Icon name="chevron" size={12} /></button>
   {/if}
   </span>
   {#if z && z.zone !== 0}
@@ -108,18 +108,18 @@
           <b>{ui.data?.items[id].name}</b><br />
           {#if ui.data}{@html itemTip(ui.data, id, ui.race, false)}<br /><br />{/if}
           {#if id === ADN || id === RELEVES}
-            <span class="num">{n}</span> en réserve (pour tout votre camp)<br />
+            <span class="num">{n}</span> en réserve, partout<br />
           {:else if souche}
             <span class="num">{n}</span> dans la réserve de ce réseau (plafond <span class="num">{z.cap ?? 0}</span>)<br />
           {:else}
-            <span class="num">{n}</span> dans les dépôts de cette zone et les soutes de vos unités qui s'y trouvent<br />
-            Capacité des dépôts de la zone (soute du commandant comprise s'il y est) : <span class="num">{z.cap ?? 0}</span> de chaque objet{#if fill >= 1} <b class="bad">pleins</b>{/if}<br />
+            <span class="num">{n}</span> dans cette zone<br />
+            Capacité : <span class="num">{z.cap ?? 0}</span> de chaque objet{#if fill >= 1} <b class="bad">pleins</b>{/if}<br />
             {#if team > 0}<span class="num">{team}</span> dans les entrepôts de l'équipe<br />{/if}
           {/if}
           Production maximale : <span class="num">{rate(p)}</span> par minute<br />
           Consommation maximale : <span class="num">{rate(c)}</span> par minute<br />
           Solde : <span class="num" class:good={net > 0 && !rounded(net)} class:bad={net < 0 && !rounded(net)}>{net < 0 ? "−" : "+"}{rate(net)}</span> par minute<br />
-          <span class="dim">Toutes les machines de la zone à pleine vitesse (cadence, pureté, niveau compris), sans pénurie ni sortie bloquée ; les chantiers ne comptent pas. En pratique le stock ne monte ni ne descend sans fin : une machine s'arrête quand plus rien ne sort ou que ses ingrédients manquent.</span>
+          <span class="dim">Débits à pleine vitesse, sans pénurie.</span>
         </span>
       </span>
       {#if open}
@@ -132,8 +132,8 @@
       <button class="tip more" class:open={all} onclick={toggleAll} aria-expanded={all}>
         <span>{all ? "‹" : "›"}</span>{#if !all && extra.length > 0}<span class="n num">+{extra.length}</span>{/if}
         <span class="tt">
-          {#if all}<b>Replier</b><br />Ne montrer que les ressources de base (plaques, acier, engrenages, câbles, circuits).
-          {:else}<b>Déplier</b><br />Montrer aussi les minerais et les autres objets de la zone{#if extra.length > 0} ({extra.length} avec un stock ou un débit){/if}.{/if}
+          {#if all}<b>Replier</b><br />Seulement les ressources de base.
+          {:else}<b>Déplier</b><br />Toutes les ressources de la zone.{/if}
         </span>
       </button>
     {/if}
