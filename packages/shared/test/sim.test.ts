@@ -16,18 +16,20 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 81 unités (55 des Industriels et de la faune, 10 de la Souche dont 3 œufs, 16 des Transhumants), 72 bâtiments (53 dont le relais logistique, 9, 10 : neuf modules et le poteau nomade) et 64 recherches (48, 10, 6)", () => {
-    expect(data.units.length).toBe(81);
-    expect(data.buildings.length).toBe(72);
+  it("contient 89 unités (55 des Industriels et de la faune, 18 de la Souche dont 3 œufs, 16 des Transhumants), 79 bâtiments (53 dont le relais logistique, 16, 10 : neuf modules et le poteau nomade) et 80 recherches (48, 26, 6)", () => {
+    expect(data.units.length).toBe(89);
+    expect(data.buildings.length).toBe(79);
+    expect(data.buildings.filter((b) => b.race === 1).length).toBe(16);
     expect(data.buildings.filter((b) => b.race === 2).length).toBe(10);
-    expect(data.techs.length).toBe(64);
+    expect(data.techs.length).toBe(80);
+    expect(data.techs.filter((t) => t.race === 1).length).toBe(26);
     expect(data.races.map((r) => r.key)).toEqual(["industriels", "souche", "transhumants"]);
-    expect(data.units.filter((u) => u.race === 1).length).toBe(10);
+    expect(data.units.filter((u) => u.race === 1).length).toBe(18);
     // Souche : les organismes naissent par portées de 3 à 6 œufs ; un œuf ne sort d'aucune usine
     const eggs = data.units.filter((u) => u.egg);
     expect(eggs.map((u) => u.key)).toEqual(["egg_s", "egg_m", "egg_l"]);
     for (const u of eggs) expect([u.factory, u.litter, u.speed, u.weapons.length]).toEqual([0, 0, 0, 0]);
-    expect(data.units.filter((u) => u.litter > 0).map((u) => [u.key, u.litter])).toEqual([["sower", 3], ["gnawer", 6], ["spitter", 4], ["shell", 3], ["vine", 4], ["membrane", 3]]);
+    expect(data.units.filter((u) => u.litter > 0).map((u) => [u.key, u.litter])).toEqual([["sower", 3], ["gnawer", 6], ["spitter", 4], ["shell", 3], ["vine", 4], ["membrane", 3], ["burster", 5], ["dart", 4], ["burrower", 4], ["nurse", 3], ["hornet", 4]]);
     expect(data.units.filter((u) => u.race === 2).length).toBe(16);
     // une unité de commandement par race
     expect(data.units.filter((u) => u.commander).map((u) => u.key)).toEqual(["commander", "queen", "ark"]);

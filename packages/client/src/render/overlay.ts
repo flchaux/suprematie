@@ -19,6 +19,8 @@ export const ORDER_COLORS: Record<number, number> = {
   8: 0xd8b060, 9: 0xc07dff, 10: 0xc07dff, 11: 0xff70e0, 12: 0xff70e0, 13: 0xc07dff,
   // ramassage d'un tapis, récolte, déploiement, ramassage d'une sortie, livraison au dépôt
   15: 0xffd060, 16: 0xff9a3c, 17: 0xff9a3c, 18: 0xffd060, 19: 0xffd060,
+  // navette de transport
+  23: 0xc07dff,
 };
 
 export class CommandOverlay {

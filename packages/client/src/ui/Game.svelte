@@ -43,6 +43,9 @@
     reclaim: ["reclaim", "Recyclage : cliquez une épave ou un de vos bâtiments, ou glissez un cadre pour tout recycler dans la zone"],
     assist: ["assist", "Escorte / assistance : cliquez une unité ou un bâtiment"],
     unload: ["unload", "Déchargement : cliquez la destination"],
+    ferryFrom: ["ferry", "Navette : cliquez le point d'embarquement (les unités de combat qui y attendent sont prises)"],
+    ferryTo: ["ferry", "Navette : cliquez le point de débarquement"],
+    ping: ["ping", "Ping : cliquez le point à signaler à votre équipe, sur la carte ou la minicarte"],
     teleport: ["teleport", "Téléportation : cliquez la destination"],
     jump: ["jump", "Saut hyperespace : cliquez une balise"],
     launch: ["target", "Missile stratégique : cliquez la cible"],
@@ -66,6 +69,7 @@
     <div class="bottom">
       <div class="panel minimap">
         <canvas bind:this={mini} width="220" height="220"></canvas>
+        {#if ui.me >= 0}<button class="pingbtn" class:on={ui.mode === "ping"} title={`Ping : signaler un point à votre équipe${keyOf("ping") ? ` (${keyOf("ping")} : sous la souris)` : ""}, ou Alt+clic`} onclick={() => (ui.mode === "ping" ? client.cancelMode() : client.setMode("ping"))}><Icon name="ping" size={15} /></button>{/if}
         <span class="corner tl"></span><span class="corner br"></span>
       </div>
       <Selection />
@@ -167,7 +171,9 @@
   .selbox { position: absolute; display: none; border: 1px solid var(--accent); background: rgba(62, 240, 255, 0.07); box-shadow: 0 0 12px rgba(62, 240, 255, 0.35), inset 0 0 18px rgba(62, 240, 255, 0.08); pointer-events: none; }
   .bottom { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 8px; align-items: flex-end; pointer-events: none; }
   .bottom > :global(*) { pointer-events: auto; }
-  .minimap { padding: 5px; line-height: 0; flex-shrink: 0; }
+  .pingbtn { position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; background: rgba(5, 10, 16, 0.75); border: 1px solid var(--line); color: var(--accent); cursor: pointer; }
+  .pingbtn:hover, .pingbtn.on { color: var(--amber); border-color: var(--amber); }
+  .minimap { position: relative; padding: 5px; line-height: 0; flex-shrink: 0; }
   .minimap canvas { width: 220px; height: 220px; cursor: crosshair; image-rendering: pixelated; }
   .corner { position: absolute; width: 14px; height: 14px; border-color: var(--accent); border-style: solid; pointer-events: none; filter: drop-shadow(0 0 4px var(--accent)); }
   .corner.tl { top: 3px; left: 3px; border-width: 2px 0 0 2px; }

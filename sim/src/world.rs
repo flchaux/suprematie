@@ -58,8 +58,12 @@ pub struct Player {
     pub race: u8,
     /// recherches acquises d'indice 64 à 127 (les 64 premières sont dans `researched`)
     pub researched2: u64,
+    /// Souche : dégâts subis par ses organismes, par famille d'armes, et familles auxquelles l'espèce est
+    /// devenue résistante (un bit par famille ; voir essaim.rs, « Caractères acquis »)
+    pub scars: [u32; crate::essaim::FAMILIES],
+    pub adapt: u8,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, purse, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz; since 3: race, researched2 });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, purse, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz; since 3: race, researched2; since 7: scars, adapt });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -70,7 +74,7 @@ impl Player {
         let mut q = std::mem::take(&mut self.research_queue);
         q.retain(|&t| !has(t));
         if self.research == 0 {
-            if let Some(k) = q.iter().position(|&t| TECHS[t as usize].prereq.iter().all(|&r| has(r))) {
+            if let Some(k) = q.iter().position(|&t| crate::races::prereq_ok(t, has)) {
                 self.research = q.remove(k);
             }
         }
@@ -139,6 +143,9 @@ pub enum Order {
     /// chariot de convoi des Transhumants : navette entre sa soute et le module `site` ; `feed` : de la soute
     /// vers le fabricant (ingrédients de sa recette), sinon du module vers la soute (ce qui sort)
     Haul { site: u32, feed: bool },
+    /// transport volant : navette sans fin entre A (embarquement des unités de combat qui y attendent) et B
+    /// (débarquement ; voir units::ferry_step)
+    Ferry { ax: i32, ay: i32, bx: i32, by: i32 },
 }
 
 impl Order {
@@ -166,6 +173,7 @@ impl Order {
             Order::Deliver { .. } => 19,
             Order::Tame { .. } => 21,
             Order::Haul { .. } => 22,
+            Order::Ferry { .. } => 23,
         }
     }
 }
@@ -180,6 +188,12 @@ impl Ser for Order {
                 gx.ser(w);
                 gy.ser(w);
                 eta.ser(w);
+            }
+            Order::Ferry { ax, ay, bx, by } => {
+                ax.ser(w);
+                ay.ser(w);
+                bx.ser(w);
+                by.ser(w);
             }
             Order::Patrol { x, y, ox, oy } => {
                 x.ser(w);
@@ -239,6 +253,7 @@ impl Ser for Order {
             20 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
             21 => Order::Tame { target: u(r) },
             22 => Order::Haul { site: u(r), feed: u8::de(r) != 0 },
+            23 => Order::Ferry { ax: i(r), ay: i(r), bx: i(r), by: i(r) },
             _ => Order::Enter { target: u(r) },
         }
     }
@@ -313,7 +328,7 @@ pub struct UnitCold {
     pub mod_job: u8,
     pub mod_left: u16,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 7: mods, mod_job, mod_left });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 8: mods, mod_job, mod_left });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -415,7 +430,7 @@ pub struct Building {
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity; since 7: mods, mod_job, mod_left, mod_n
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity; since 8: mods, mod_job, mod_left, mod_n
 });
 
 impl Building {
@@ -617,6 +632,12 @@ pub struct World {
     pub fog: bool,
     /// Transhumants : usure de chaque gisement (‰, indice de `map.spots`) par leurs foreuses
     pub wear: Vec<u16>,
+    /// Souche : flaques d'acide, de la plus ancienne à la plus récente (voir essaim.rs)
+    pub acid: Vec<crate::essaim::Acid>,
+    /// Souche : terreau par case, un bit par joueur (dérivé, vide si personne ne le lit ; voir
+    /// essaim::refresh_terreau), à recalculer
+    pub terreau: Vec<u8>,
+    pub terreau_dirty: bool,
     /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
     pub arks: Vec<crate::ameliorations::Ark>,
 }
@@ -661,6 +682,8 @@ impl World {
                 eppz: 0,
                 race: 0,
                 researched2: 0,
+                scars: [0; crate::essaim::FAMILIES],
+                adapt: 0,
             });
         }
         // faune : un joueur caché de plus, après les vrais joueurs
@@ -718,6 +741,9 @@ impl World {
             nature,
             fog,
             wear: Vec::new(),
+            acid: Vec::new(),
+            terreau: Vec::new(),
+            terreau_dirty: true,
             arks: Vec::new(),
         };
         w.wear = vec![0; w.map.spots.len()];
@@ -989,8 +1015,10 @@ impl World {
         crate::drones::plan(self);
         crate::belts::update_belts(self);
         crate::nature::update(self);
+        crate::essaim::refresh_terreau(self);
         crate::units::update_units(self);
-        crate::souche::update_units(self);
+        crate::essaim::update_units(self);
+        crate::souche::regen_organs(self);
         crate::transhumants::update(self);
         crate::ameliorations::update(self);
         crate::combat::update_projectiles(self);
@@ -1074,10 +1102,19 @@ impl World {
             if p.researched2 != 0 {
                 h.add(p.researched2);
             }
+            // caractères acquis de la Souche (hash inchangé sans eux)
+            if p.adapt != 0 {
+                h.add(p.adapt as u64);
+            }
             h.add(p.research as u64 | (p.tech_progress.iter().map(|&x| x as u64).sum::<u64>() << 8));
             for &q in &p.research_queue {
                 h.add(q as u64);
             }
+        }
+        for a in &self.acid {
+            h.add_i32(a.x);
+            h.add_i32(a.y);
+            h.add(a.until as u64 | (a.dmg as u64) << 32);
         }
         for pr in &self.projectiles {
             h.add_i32(pr.tx);

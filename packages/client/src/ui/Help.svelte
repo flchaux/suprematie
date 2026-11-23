@@ -60,6 +60,7 @@
             <tr><td>Clic gauche / glisser</td><td>Sélectionner / sélection par cadre (Maj : ajouter)</td></tr>
             <tr><td>Double-clic</td><td>Toutes les unités du même type à l'écran</td></tr>
             <tr><td>Clic droit</td><td>Déplacer, attaquer, assister, recycler, charger, ralliement (selon la cible)</td></tr>
+            <tr><td>² ou Alt + clic</td><td>Ping : signaler un point à son équipe (carte ou minicarte)</td></tr>
             <tr><td>Maj + ordre</td><td>Mettre l'ordre en file</td></tr>
             <tr><td>Molette</td><td>Zoom continu (vue stratégique avec icônes de loin)</td></tr>
             <tr><td>J maintenu</td><td>Vue logistique : remplissage de chaque tapis (vide, fluide, chargé, saturé) et bâtiments bloqués, affamés ou sans énergie</td></tr>

@@ -76,7 +76,7 @@ export const ui = $state({
   /** construction prévue sélectionnée (fantôme : ordre non commencé ou bâtiment à reconstruire) */
   selPlan: null as null | { kind: number; x: number; y: number; dir: number },
   /** points de vie de l'unité sélectionnée (sélection d'une seule unité étrangère) */
-  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pickup?: PickupInfo | null; deliver?: DeliverInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number; /** œuf de la Souche : espèce portée, ticks avant l'éclosion, durée de l'incubation */ egg?: { kind: number; left: number; total: number } | null; shield?: number; /** Transhumants : améliorations */ mods?: ModInfo | null },
+  unitInfo: null as null | { hp: number; maxHp: number; lvl: number; cloaked?: boolean; radarStealth?: boolean; harvest?: HarvestInfo | null; pickup?: PickupInfo | null; deliver?: DeliverInfo | null; /** chenillard : 1 déploiement, 2 repli ; ticks restants */ pack?: number; packLeft?: number; /** Reine de la Souche : sur son terreau, enracinée */ soil?: boolean; deployed?: boolean; /** œuf de la Souche : espèce portée, ticks avant l'éclosion, durée de l'incubation */ egg?: { kind: number; left: number; total: number } | null; shield?: number; /** Transhumants : améliorations */ mods?: ModInfo | null },
   buildingInfo: null as null | Record<string, unknown>,
   /** Transhumants : améliorations du premier des porteurs sélectionnés (plusieurs unités ou modules du même type) */
   groupMods: null as null | { info: ModInfo; refs: number[] },

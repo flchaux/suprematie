@@ -15,6 +15,14 @@
     const x = d?.techs[i].excl ?? 0;
     return x > 0 && (hasTechUI(x) || ui.research === x || ui.researchQueue.includes(x));
   };
+  /** prérequis acquis : d'une paire de mutations exclusives, l'une des deux suffit */
+  const met = (p: number): boolean => hasTechUI(p) || ((d?.techs[p].excl ?? 0) > 0 && hasTechUI(d!.techs[p].excl));
+  /** prérequis en clair : « Écailles ou Sève vive » pour une paire de mutations exclusives */
+  const prereqText = (ps: number[]): string =>
+    ps
+      .filter((p) => !(d!.techs[p].excl && ps.includes(d!.techs[p].excl) && d!.techs[p].excl < p))
+      .map((p) => (d!.techs[p].excl ? `${d!.techs[p].name} ou ${d!.techs[d!.techs[p].excl].name}` : d!.techs[p].name))
+      .join(", ");
   /** coût d'une unité de recherche selon la race */
   const unitCost = (tier: number): string => (ui.race === RACE_SOUCHE ? `${tier} ADN` : ui.race === RACE_TRANSH ? `${3 * tier} relevés` : "");
 </script>
@@ -44,7 +52,7 @@
             {#each mine.filter(({ t }) => t.tier === tier) as { t, i }}
               {@const done = hasTechUI(i)}
               {@const excluded = !done && barred(i)}
-              {@const avail = !done && !excluded && t.prereq.every((p) => hasTechUI(p))}
+              {@const avail = !done && !excluded && t.prereq.every(met)}
               {@const cur = ui.research === i}
               {@const qn = ui.researchQueue.indexOf(i) + 1}
               <button class="tech" class:done class:cur class:avail class:queued={qn > 0} class:excluded disabled={done || excluded || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
@@ -53,7 +61,7 @@
                   {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if qn}<span class="qn num" title="Position dans la file">{qn}</span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
                 </span>
                 <span class="desc">{t.desc}</span>
-                <span class="meta num">{t.count} × {t.time} s{#if unitCost(t.tier)} · {t.count} × {unitCost(t.tier)}{/if}{#if excluded}<span class="faint"> · exclue par {d.techs[t.excl].name}</span>{/if}{#if t.prereq.length}<span class="faint"> · après {t.prereq.map((p) => d.techs[p].name).join(", ")}</span>{/if}</span>
+                <span class="meta num">{t.count} × {t.time} s{#if unitCost(t.tier)} · {t.count} × {unitCost(t.tier)}{/if}{#if excluded}<span class="faint"> · exclue par {d.techs[t.excl].name}</span>{/if}{#if t.prereq.length}<span class="faint"> · après {prereqText(t.prereq)}</span>{/if}</span>
                 {#if cur}<span class="bar amber"><span style:width={(ui.researchProgress / t.count) * 100 + "%"}></span></span>{/if}
               </button>
             {/each}

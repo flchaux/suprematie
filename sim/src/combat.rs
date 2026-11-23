@@ -115,10 +115,10 @@ fn vis_at(w: &World, team: usize, x: i32, y: i32) -> u8 {
     w.vis.get(team).map(|v| v[(cy * vw + cx) as usize]).unwrap_or(0)
 }
 
-/// Commando furtif camouflé (il n'a pas tiré depuis quelques secondes).
+/// Commando furtif camouflé (il n'a pas tiré depuis quelques secondes), ou fouisseur de la Souche enterré.
 #[inline]
 pub fn cloaked(w: &World, s: usize) -> bool {
-    w.units.kind[s] == U_COMMANDO && w.units.cold[s].reveal == 0
+    (w.units.kind[s] == U_COMMANDO && w.units.cold[s].reveal == 0) || crate::essaim::buried(w, s)
 }
 
 /// Unité absente des radars ennemis : bombardier furtif, ou unité dans une bulle de brouillage alliée.
@@ -361,7 +361,12 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         w.shooter = src;
         w.hit_from = (x, y);
         w.hit_weapon = wi as u8;
-        hit_ref(w, t, dmg, owner, 0);
+        if wd.aoe > 0 {
+            // griffes qui balaient (béhémoth)
+            area_damage(w, tx, ty, wd.aoe, dmg, owner, wd.mask, false);
+        } else {
+            hit_ref(w, t, dmg, owner, 0);
+        }
         w.shooter = NONE;
         w.hit_from = (i32::MIN, 0);
         w.hit_weapon = 255;
@@ -450,6 +455,8 @@ fn armor(w: &World, s: usize, dmg: i32) -> i32 {
             }
         }
         U_DEPLOY_TURRET if w.units.cold[s].deployed => dmg * 70 / 100,
+        // Reine de la Souche enracinée
+        U_QUEEN if w.units.cold[s].deployed => dmg * crate::essaim::Q_ARMOR / 100,
         _ => dmg,
     }
 }
@@ -523,12 +530,27 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
             continue;
         }
         if w.units.cold[s].cooldown[i] == 0 {
+            // vessie de la Souche : elle se jette sur sa cible et éclate (voir kill_unit)
+            if kind == U_BURSTER {
+                w.units.hp[s] = 0;
+                w.dead_units.push(s as u32);
+                return;
+            }
             w.units.cold[s].cooldown[i] = WEAPONS[wi].cooldown;
             w.units.cold[s].flags |= UF_FIRING;
             // vétérance : +5 % de dégâts par niveau ; mutations de la Souche
             let mut mult = 100 + 5 * w.units.cold[s].lvl as i32;
             if def.bio {
                 mult = mult * crate::souche::dmg_mult(w, owner, kind) / 100;
+                if crate::essaim::rooted(w, s) {
+                    mult = mult * crate::essaim::Q_DMG / 100;
+                }
+                // fouisseur : il surgit, son premier coup frappe trois fois plus fort
+                if crate::essaim::buried(w, s) {
+                    w.units.cold[s].deployed = false;
+                    w.units.cold[s].timer = 0;
+                    mult *= 3;
+                }
             }
             let me = w.unit_id(s);
             if kind == U_COMMANDO {
@@ -569,7 +591,8 @@ pub fn building_weapon(w: &mut World, b: usize) {
     if let Some((tx, ty)) = target_point(w, t) {
         w.buildings[b].turret = w.trig.atan2((ty - y) as i64, (tx - x) as i64);
     }
-    if w.buildings[b].cooldown == 0 {
+    // (sporange de la Souche : chaque tir coûte de la sève)
+    if w.buildings[b].cooldown == 0 && crate::souche::pay_shot(w, b) {
         w.buildings[b].cooldown = WEAPONS[wi].cooldown;
         fire(w, owner, wi, x, y, t, 100, NONE);
     }
@@ -689,6 +712,8 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     // organismes vivants (Souche) : le feu leur fait plus de mal
     if udef(w.units.kind[s]).bio {
         dmg = dmg * crate::races::family_mult(w.hit_weapon, true) / 1000;
+        // caractères acquis (Mémoire du sang)
+        dmg = crate::essaim::adapt_damage(w, w.units.owner[s], attacker, dmg);
     }
     w.units.hp[s] -= dmg;
     if raw > 0 {
@@ -707,6 +732,11 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
         if (attacker as usize) < w.players.len() {
             w.players[attacker as usize].kills += 1;
         }
+    }
+    // carapaces d'épines : une part de la morsure revient à l'agresseur
+    let o = w.units.owner[s];
+    if udef(w.units.kind[s]).bio && crate::essaim::spiny(w, o) {
+        crate::essaim::thorns(w, dmg, o);
     }
 }
 
@@ -731,6 +761,11 @@ pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
         }
     }
     let dmg = crate::souche::building_damage(w, b, dmg);
+    // ronce de la Souche : elle déchire qui la mord
+    if w.buildings[b].kind == B_BRAMBLE {
+        let o = w.buildings[b].owner;
+        crate::essaim::thorns(w, dmg, o);
+    }
     let dmg = crate::ameliorations::building_armor(&w.buildings[b], dmg);
     let bb = &mut w.buildings[b];
     bb.hp -= dmg;
@@ -956,6 +991,10 @@ fn impact(w: &mut World, p: &Projectile) {
     let size = if p.aoe > 0 { p.aoe } else { 64 };
     w.ev(EV_EXPLOSION, p.tx, p.ty, size, if p.aoe > 600 { 1 } else { 0 });
     if p.aoe > 0 {
+        // acide de la Souche : flaque
+        if wd.proj == Proj::Spit {
+            crate::essaim::spill_from(w, p.weapon, p.owner, p.tx, p.ty);
+        }
         area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
         if wd.stun > 0 {
             // étourdit les ennemis de la zone que l'arme peut viser (les avions au-dessus passent)
@@ -1082,6 +1121,7 @@ fn credit_kill(w: &mut World, victim: usize) {
     let (killer, tier) = (w.units.owner[k], udef(w.units.kind[victim]).tier);
     crate::transhumants::kill_credit(w, killer, tier);
     crate::transhumants::loot_unit(w, killer, k, victim);
+    crate::essaim::devour(w, k, gain as i32);
     let c = &mut w.units.cold[k];
     c.xp = c.xp.saturating_add(gain);
     let lvl = ((c.xp / (2 * own)) as u8).min(MAX_LVL);
@@ -1129,6 +1169,8 @@ fn kill_unit(w: &mut World, s: usize) {
         let rot = w.units.facing[s];
         w.spawn_wreck(x, y, def.cost, (def.radius / TILE + 1) as u8, kind + 1, rot);
     }
+    // vessie qui éclate, sang acide
+    crate::essaim::on_death(w, kind, owner, x, y);
     // cadavre tombé sur le terreau de la Souche : digéré
     if def.layer != Layer::Air {
         crate::souche::digest(w, x, y, owner, def.tier);

@@ -2321,3 +2321,40 @@ fn belt_contents_per_tile_and_line() {
     assert!(crate::belts::belt_contents(&w, depot).is_none());
     assert!(crate::render::info_building(&w, w.building_ref(depot)).starts_with(r#"{"belt":null,"#));
 }
+
+/// Navette : le transport prend les unités de combat qui attendent au point A (pas l'ingénieur), les dépose au
+/// point B, revient, et part avec un chargement incomplet après 5 s. L'ordre survit à une sauvegarde.
+#[test]
+fn transport_ferry_shuttles_waiting_units() {
+    let mut w = world(&[0]);
+    flatten(&mut w, 60, 90, 160, 130);
+    let (a, b) = ((75 * TILE, 110 * TILE), (140 * TILE, 110 * TILE));
+    let id = w.spawn_unit(U_TRANSPORT, 0, 80 * TILE, 112 * TILE);
+    let t = w.unit(id).unwrap();
+    let cap = udef(U_TRANSPORT).carry as usize;
+    let n = cap + 3;
+    let units: Vec<u32> = (0..n).map(|i| w.spawn_unit(U_LIGHT_TANK, 0, a.0 + (i as i32 % 5 - 2) * TILE, a.1 + (i as i32 / 5 - 1) * TILE)).collect();
+    let eng = w.spawn_unit(U_ENG1, 0, a.0, a.1 + 3 * TILE);
+    // trop proches : refusée
+    w.step(&[9, crate::orders::O_FERRY, 0, 0, a.0, a.1, a.0 + TILE, a.1, 1, id as i32]);
+    assert!(w.units.cold[t].orders.is_empty());
+    w.step(&[9, crate::orders::O_FERRY, 0, 0, a.0, a.1, b.0, b.1, 1, id as i32]);
+    assert!(matches!(w.units.cold[t].orders.first(), Some(Order::Ferry { .. })));
+    let near_b = |w: &World| units.iter().filter(|&&u| w.unit(u).is_some_and(|s| w.units.cold[s].carried_by == NONE && crate::fixed::dist(w.units.x[s], w.units.y[s], b.0, b.1) < 10 * TILE)).count();
+    let mut full = false;
+    for _ in 0..20 * 40 {
+        w.step(&[]);
+        full |= w.units.cold[t].cargo.len() == cap;
+    }
+    assert!(full, "le premier voyage part plein");
+    // sauvegarde en pleine navette
+    let data = crate::save::snapshot(&w);
+    let mut w = crate::save::restore(&data).unwrap();
+    for _ in 0..20 * 60 {
+        w.step(&[]);
+    }
+    assert_eq!(near_b(&w), n, "tous débarqués en B");
+    let e = w.unit(eng).unwrap();
+    assert!(crate::fixed::dist(w.units.x[e], w.units.y[e], a.0, a.1) < 8 * TILE, "l'ingénieur reste");
+    assert!(matches!(w.units.cold[t].orders.first(), Some(Order::Ferry { .. })), "la navette continue");
+}

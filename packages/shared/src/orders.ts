@@ -56,6 +56,9 @@ export const O = {
   HAUL: 55,
   /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
   SET_PAUSE: 56,
+  ADAPT: 57,
+  /** transports volants : navette sans fin de A (embarquement) à B (débarquement) : [drapeaux, ax, ay, bx, by (sous-unités), n, unités…] */
+  FERRY: 58,
   /** Transhumants : installer une amélioration : [amélioration, n, réf. d'unité ou de module…] */
   MOD_INSTALL: 60,
   /** annuler une installation en cours (remboursée) : [n, réf…] */
@@ -306,6 +309,10 @@ export function arkQueue(ark: number, kind: number, delta: number): Cmd {
 export function load(carrier: number, ids: number[]): Cmd {
   return [O.LOAD, carrier | 0, ids.length, ...ids.map((x) => x | 0)];
 }
+/** Navette de transports entre A (embarquement) et B (débarquement), en sous-unités. */
+export function ferry(ids: number[], ax: number, ay: number, bx: number, by: number, queue = false): Cmd {
+  return [O.FERRY, queue ? 1 : 0, ax | 0, ay | 0, bx | 0, by | 0, ids.length, ...ids.map((v) => v | 0)];
+}
 export function special(src: number, x: number, y: number, tgt: number): Cmd {
   return [O.SPECIAL, src | 0, x | 0, y | 0, tgt | 0];
 }
@@ -343,6 +350,10 @@ export function cancelPlan(x: number, y: number): Cmd {
 }
 export function rotate(refs: number[]): Cmd {
   return [O.ROTATE, refs.length, ...refs.map((r) => r | 0)];
+}
+/** Souche : fixe dans l'espèce la résistance à une famille d'armes (Mémoire du sang). */
+export function adapt(family: number): Cmd {
+  return [O.ADAPT, family | 0];
 }
 /** Met en pause (ou relance) des extracteurs, fabricants et usines d'unités. */
 export function setPause(refs: number[], on: boolean): Cmd {

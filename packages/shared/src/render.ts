@@ -23,6 +23,16 @@ export const EV = {
   HATCH: 48,
   /** Transhumants : butin pris sur une victime détruite : (x, y, joueur, objets récupérés) */
   LOOT: 49,
+  /** Souche : flaque d'acide (x, y, rayon, joueur | durée en ticks << 8) */
+  ACID: 50,
+  /** Souche : caractère acquis (joueur, famille d'armes, nombre acquis) */
+  ADAPTED: 51,
+  /** Souche : cocon qui s'ouvre (x, y, type de l'unité, joueur | orientation << 8) */
+  COCOON: 52,
+  /** Souche : épave digérée par une panse (x, y, case de la panse x | y << 16, joueur) */
+  DIGEST: 53,
+  /** Souche : passage d'un terrier (x, y, x de sortie, y de sortie) */
+  BURROW: 54,
   /** Transhumants : amélioration installée : (joueur, amélioration, x, y) ; tourelle d'Arche détruite : (joueur, x, y, type d'unité) ; surcharge de l'Arche : (x, y, joueur) */
   MOD_DONE: 70, TURRET_LOST: 71, ARK_BOOST: 72,
 } as const;

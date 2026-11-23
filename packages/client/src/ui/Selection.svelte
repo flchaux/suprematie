@@ -1,11 +1,11 @@
 <script lang="ts">
   import { ui, hasTechUI } from "../game/state.svelte.ts";
-  import { UNIT_TRAITS } from "../game/traits.ts";
+  import { UNIT_TRAITS, ADAPT_FAMILIES } from "../game/traits.ts";
   import SplitIcon from "./SplitIcon.svelte";
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
-  import { BClass, RECIPE_NONE, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, ADN, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
   import Upgrades from "./Upgrades.svelte";
@@ -26,11 +26,15 @@
   const mine = $derived(!!sb && sb.owner === ui.me);
   const kinds = $derived(ui.selUnits.map((g) => g.kind));
   const has = (key: string) => !!d && kinds.some((k) => d.units[k].key === key);
+  const anyFerry = $derived(!!d && kinds.some((k) => d.units[k].carry > 0 && d.units[k].layer === 4));
   const anyCarrier = $derived(!!d && kinds.some((k) => d.units[k].carry > 0));
   const anyEng = $derived(!!d && kinds.some((k) => d.units[k].buildPower > 0));
   // déploiement : sonde, artillerie lourde, canon tracté, chenillards des Transhumants (ils deviennent leur module)
   const chenillards = $derived(!!d && kinds.some((k) => (d.units[k].deploys ?? -1) >= 0));
-  const deployable = $derived(has("sonde") || has("heavy_artillery") || has("towed_gun") || chenillards);
+  // Reine de la Souche : « Enraciner » (sur son terreau) ou « Déraciner »
+  const queen = $derived(has("queen"));
+  const rooted = $derived(queen && !!ui.unitInfo?.deployed);
+  const deployable = $derived(queen || has("sonde") || has("heavy_artillery") || has("towed_gun") || chenillards);
   // même ordre que la rangée de touches de l'usine (factory1, factory2…)
   const factoryUnits = $derived(bdef && d && bdef.cls === BClass.Factory ? factoryUnitKinds(d, bdef.factory, bdef.race ?? 0).map((i) => ({ u: d.units[i], i })) : []);
   // amélioration possible (extracteur : niveau suivant ; assembleur : modèle suivant)
@@ -124,7 +128,7 @@
       const how = empty ? `vos dépôts à moins de ${d.depot?.factorySupply ?? 30} cases n'en ont pas assez : amenez-en, ou un tapis` : "ses drones les apportent";
       if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
-    if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
+    if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: `En attente ${bdef.race === 1 ? "d'ADN" : bdef.race === 2 ? "de relevés" : "de lots de recherche"}`, kind: "warn" };
     const low = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON) && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
     // en marche : performance de la dernière minute (débit réel rapporté au maximum de la machine)
     const perf = info.flowMax > 0 && (bdef.cls === BClass.Crafter || bdef.cls === BClass.Extractor) ? Math.min(100, Math.round((info.flow / info.flowMax) * 100)) : null;
@@ -303,6 +307,28 @@
             <Item id={27} size={16} /> <span class="num">{sv.seve}</span> <Item id={28} size={16} /> <span class="num">{sv.sels}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
           {:else}<b class="bad">hors du terreau : rien ne pousse</b>{/if}
         </div>
+        {#if sv.hatch >= 0}
+          <div class="row small"><span class="kicker">Éclosion</span> <b>Béhémoth</b> <span class="num">{sv.hatch > 0 ? `dans ${Math.ceil(sv.hatch / 20)} s` : "dès qu'il y a de la place sous la limite d'unités"}</span></div>
+          <div class="upbar"><span style="width: {100 - sv.hatch / 4}%"></span></div>
+        {/if}
+        {#if info.adapt?.known}
+          {@const ad = info.adapt}
+          {@const got = [0, 1, 2, 3, 4].filter((k) => ad.bits & (1 << k)).length}
+          {@const adn = ui.stock[ADN] ?? 0}
+          <div class="adapt">
+            <div class="row small" title="L'espèce entière devient résistante ({ad.pct} % de dégâts en moins) à une famille d'armes qui a assez blessé vos organismes. Trois familles au plus, pour toute la partie."><span class="kicker">Caractères acquis</span> <span class="num">{got} / {ad.max}</span>{#if got < ad.max}<span class="dim">· prochain : <Item id={ADN} n={ad.cost} size={14} /></span>{/if}</div>
+            {#each ADAPT_FAMILIES as name, k}
+              {@const own = (ad.bits & (1 << k)) !== 0}
+              {@const pct = Math.min(100, Math.floor((ad.scars[k] / ad.min) * 100))}
+              <div class="row small fam">
+                <span class="fname" class:good={own}>{name}</span>
+                {#if own}<span class="good">−{ad.pct} %</span>
+                {:else if pct < 100}<span class="dim num" title="Dégâts de cette famille subis par vos organismes">{ad.scars[k].toLocaleString("fr-FR")} / {ad.min.toLocaleString("fr-FR")}</span>
+                {:else}<button class="icon-btn" disabled={got >= ad.max || adn < ad.cost} title={got >= ad.max ? "Trois caractères acquis au plus" : adn < ad.cost ? `Il faut ${ad.cost} ADN` : "Fixer cette résistance dans l'espèce"} onclick={() => client.adapt(k)}>Fixer</button>{/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
         {#if sv.rateSeve || sv.rateSels}
           <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if bdef.key === "leaves"}<span class="dim"> · les frondaisons voisines (4 cases) se font de l'ombre</span>{/if}</div>
         {/if}
@@ -501,7 +527,7 @@
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
         <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}</button></div>
-        <div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} size={20} />{/each}</div>
+        {#if (bdef.race ?? 0) === 0}<div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} size={20} />{/each}</div>{/if}
       {:else if bdef.cls === BClass.Silo}
         <div class="row">Missiles prêts : <b class="num">{info.ammo}</b> <button class="icon-btn primary" disabled={!info.ammo} onclick={() => client.setMode("launch")}><Icon name="target" size={14} /> Lancer</button></div>
         <div class="row"><span class="kicker">Composants</span>{#each d.missileCost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} size={16} />{/each}</div>
@@ -512,6 +538,10 @@
         <div class="row">Charge : <b class="num">{Math.floor((info.charge / (60 * 20 * 1024)) * 100)} %</b> <button class="icon-btn primary" disabled={info.charge < 60 * 20 * 1024} onclick={() => client.setMode("fire")}><Icon name="target" size={14} /> Tirer</button></div>
       {:else if bdef.cls === BClass.Transfer}
         <div class="row"><button class="icon-btn" disabled={info.cooldown > 0} onclick={() => client.setMode("transfer")}><Icon name="teleport" size={14} /> Transférer les unités proches</button>{#if info.cooldown > 0}<span class="dim num">{Math.ceil(info.cooldown / 20)} s</span>{/if}</div>
+      {:else if bdef.key === "burrow"}
+        <!-- terrier de la Souche : sa sortie est un autre terrier du même réseau -->
+        <div class="row"><button class="icon-btn" onclick={() => client.setMode("link")} title="Puis cliquez sur un autre de vos terriers, sur le même réseau de racines"><Icon name="link" size={14} /> Choisir la sortie</button></div>
+        <div class="status {info.working ? 'good' : info.link >= 0 ? 'warn' : 'idle'}"><span class="led"></span>{info.working ? "Ouvert : clic droit dessus pour y envoyer des organismes" : info.link >= 0 ? "Fermé : sa sortie n'est plus sur le même réseau de racines" : "Sans sortie"}</div>
       {:else if bdef.cls === BClass.Gate}
         <div class="row"><button class="icon-btn" onclick={() => client.setMode("link")}><Icon name="link" size={14} /> Relier à une autre porte</button><button onclick={() => client.toggleBuilding()}>{info.enabled ? "Fermer" : "Ouvrir"}</button></div>
         <span class="dim small">{info.link >= 0 ? (info.working ? "Ouverte" : "Ouverture… (forte consommation)") : "Non reliée"}</span>
@@ -746,7 +776,15 @@
       {#if tr}<span class="dim small">{tr}</span>{/if}
       {#if ui.unitInfo.cloaked}<span class="good small">Camouflé : invisible pour l'ennemi</span>{:else if d.units[ui.selUnits[0].kind].key === "commando"}<span class="bad small">Repérable : il vient de tirer</span>{/if}
       {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
-      {#if ui.unitInfo.pack}
+      {#if queen && (ui.unitInfo.pack === 3 || ui.unitInfo.pack === 4)}
+        <div class="row small"><span class="kicker">{ui.unitInfo.pack === 3 ? "S'enracine" : "Se déracine"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span></div>
+        <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / 60) * 100}%"></span></div>
+      {:else if rooted}
+        <div class="status {ui.unitInfo.soil ? 'good' : 'warn'}"><span class="led"></span>{ui.unitInfo.soil ? "Enracinée : +5 sève/s à son réseau, organes et couveuses plus rapides, −40 % de dégâts subis, +50 % infligés" : "Enracinée hors de tout terreau : elle ne nourrit aucun réseau"}</div>
+      {:else if queen}
+        <span class="dim small">{ui.unitInfo.soil ? "Sur votre terreau : elle peut s'y enraciner" : "Hors du terreau : elle ne peut pas s'enraciner ici"}</span>
+      {/if}
+      {#if ui.unitInfo.pack && !queen}
         <!-- chenillard des Transhumants : déploiement (15 s) ou repli (10 s) en cours -->
         {@const total = d.units[ui.selUnits[0].kind].turret ? (ui.unitInfo.pack === 1 ? 40 : 30) : ui.unitInfo.pack === 1 ? 300 : 200}
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
@@ -845,8 +883,9 @@
         <button class="cmd" onclick={() => client.setMode("assist")} title="Escorter / assister"><Icon name="assist" size={17} /><span class="key">{keyOf("assist")}</span></button>
         <button class="cmd" onclick={() => client.setMode("attackGround")} title="Tir au sol"><Icon name="ground" size={17} /></button>
         {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
-        {#if deployable}<button class="cmd" onclick={() => client.deploySelected()} title={chenillards ? "Déployer : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
+        {#if deployable}<button class="cmd" class:on={rooted} onclick={() => client.deploySelected()} title={queen ? (rooted ? "Déraciner la Reine (3 s)" : "Enraciner la Reine sur votre terreau (3 s) : elle nourrit son réseau, résiste et frappe mieux, mais ne bouge plus") : chenillards ? "Déployer : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
+        {#if anyFerry}<button class="cmd" onclick={() => client.setMode("ferryFrom")} title="Navette : le transport fait des allers-retours entre deux points, il embarque les unités de combat qui attendent au premier et les dépose au second"><Icon name="ferry" size={17} /><span class="key">{keyOf("ferry")}</span></button>{/if}
         {#if has("commander")}<button class="cmd" onclick={() => client.setMode("harvest")} title="Récolter un gisement : le commandant extrait le minerai et le fond dans sa fonderie intégrée (aussi : clic droit sur un gisement libre)"><Icon name="harvest" size={17} /><span class="key">{keyOf("harvest")}</span></button>{/if}
         {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
         {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
@@ -892,6 +931,8 @@
 <style>
   /* pas de défilement : les infobulles doivent pouvoir sortir du panneau */
   .sel { padding: 11px 13px; min-width: 280px; max-width: 520px; display: flex; flex-direction: column; gap: 8px; }
+  .adapt { display: flex; flex-direction: column; gap: 3px; }
+  .adapt .fam { justify-content: space-between; min-height: 22px; }
   .head { display: flex; gap: 11px; align-items: center; }
   .thumb { width: 56px; height: 56px; flex-shrink: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--pc) 30%, transparent), transparent 70%); border: 1px solid var(--line); }
   .thumb img { width: 52px; height: 52px; object-fit: contain; }
@@ -981,6 +1022,7 @@
   .cmds { display: flex; flex-wrap: wrap; gap: 4px; }
   .cmd { position: relative; width: 40px; height: 36px; display: grid; place-items: center; padding: 0; color: var(--accent); }
   .cmd:hover:not(:disabled) { color: #fff; }
+  .cmd.on { color: var(--accent-ink, #04121a); }
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
   .sel :global(.key:empty) { display: none; }
   @keyframes blink { 50% { opacity: 0.3; } }

@@ -243,6 +243,8 @@ pub fn nature_player() -> Player {
         eppz: 0,
         race: 0,
         researched2: 0,
+        scars: [0; crate::essaim::FAMILIES],
+        adapt: 0,
     }
 }
 

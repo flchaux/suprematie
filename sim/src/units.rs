@@ -103,7 +103,7 @@ pub fn fixed_wing(kind: u16) -> bool {
 pub fn legged(kind: u16) -> bool {
     matches!(
         udef(kind).key,
-        "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l"
+        "behemoth" | "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l"
     )
 }
 
@@ -222,6 +222,11 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
     if d <= stop && !fixed_wing(kind) {
         return true;
     }
+    if crate::essaim::rooted(w, s) {
+        // la Reine se déracine avant de bouger
+        crate::essaim::uproot(w, s, true);
+        return false;
+    }
     if w.units.cold[s].deployed {
         // une unité déployée se replie avant de bouger
         w.units.cold[s].deployed = false;
@@ -274,7 +279,8 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
         }
     }
     // une bête qui charge sa proie court plus vite ; en formation, l'allure du groupe (`cap`)
-    let speed = crate::nature::charge_speed(w, s, crate::ameliorations::speed(w, s)).min(cap.max(1));
+    // sur le terreau de la Souche, plus lente (ennemie) ou plus rapide (organisme chez lui)
+    let speed = crate::essaim::speed(w, s, crate::nature::charge_speed(w, s, crate::ameliorations::speed(w, s))).min(cap.max(1));
     let f = w.units.facing[s];
     let nf = turn_towards(f, heading, turn_rate(kind));
     w.units.facing[s] = nf;
@@ -545,8 +551,8 @@ pub fn update_units(w: &mut World) {
         let k = w.units.kind[s];
         // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe ni les œufs
         // (immobiles : ce sont les autres qui s'en écartent)
-        // (une tourelle d'Arche déployée non plus)
-        let fixed = crate::ponte::is_egg(k) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k));
+        // (ni une tourelle d'Arche déployée, ni un fouisseur enterré : on lui marche dessus)
+        let fixed = crate::ponte::is_egg(k) || crate::essaim::buried(w, s) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k));
         if fixed_wing(k) || fixed || (w.tick + s as u32) & 1 == 1 {
             continue;
         }
@@ -559,7 +565,7 @@ pub fn update_units(w: &mut World) {
         let mut py = 0i64;
         let units = &w.units;
         w.grid.fine.query(x, y, r + 200, |o| {
-            if o == s {
+            if o == s || (units.kind[o] == U_BURROWER && units.cold[o].deployed) {
                 return;
             }
             let od = udef(units.kind[o]);
@@ -658,7 +664,8 @@ pub fn update_units(w: &mut World) {
             }
         }
         // chenillard des Transhumants : déploiement ou repli en cours
-        if w.units.cold[s].pack != 0 && crate::transhumants::tick_unit(w, s) {
+        // (Reine de la Souche : elle s'enracine ou se déracine)
+        if w.units.cold[s].pack != 0 && if kind == U_QUEEN { crate::essaim::tick_queen(w, s) } else { crate::transhumants::tick_unit(w, s) } {
             continue;
         }
         let t_ord = prof_now();
@@ -670,7 +677,7 @@ pub fn update_units(w: &mut World) {
         special(w, s);
         // séparation
         let (dx, dy) = push[s];
-        if dx != 0 || dy != 0 {
+        if (dx != 0 || dy != 0) && !crate::essaim::rooted(w, s) {
             let dx = dx.clamp(-60, 60);
             let dy = dy.clamp(-60, 60);
             try_move(w, s, dx, dy);
@@ -1139,6 +1146,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             }
             NONE
         }
+        Order::Ferry { ax, ay, bx, by } => {
+            ferry_step(w, s, ax, ay, bx, by);
+            NONE
+        }
         Order::Teleport { x, y } => {
             let p = &w.players[owner as usize];
             if kind != U_COMMANDER || !p.has_tech(T_CMD_TELEPORT) || w.tick < w.units.cold[s].ready_tick {
@@ -1211,19 +1222,24 @@ fn has_target_in_range(w: &World, s: usize) -> bool {
     w.units.cold[s].wtarget.iter().any(|&t| t != NONE)
 }
 
-pub fn load_unit(w: &mut World, carrier: usize, t: usize) {
+/// Le transport `carrier` peut-il embarquer l'unité `t` (place à bord, même joueur, taille, couche) ?
+pub fn can_load(w: &World, carrier: usize, t: usize) -> bool {
     let cap = udef(w.units.kind[carrier]).carry as usize;
     let tk = w.units.kind[t];
     let td = udef(tk);
     if cap == 0 || w.units.cold[carrier].cargo.len() >= cap || w.units.owner[carrier] != w.units.owner[t] {
-        return;
+        return false;
     }
     // le transport lourd emporte aussi les unités lourdes (marcheurs, artillerie lourde), jamais les expérimentales
     let max_r = if w.units.kind[carrier] == U_HEAVY_TRANSPORT { 520 } else { 300 };
     if !matches!(td.layer, Layer::Land | Layer::Hover) || td.radius > max_r || td.tier == 6 {
-        return;
+        return false;
     }
-    if w.units.kind[carrier] == U_SIEGE_WALKER && tk != U_LINE_ROBOT {
+    w.units.kind[carrier] != U_SIEGE_WALKER || tk == U_LINE_ROBOT
+}
+
+pub fn load_unit(w: &mut World, carrier: usize, t: usize) {
+    if !can_load(w, carrier, t) {
         return;
     }
     clear_orders(w, t);
@@ -1231,6 +1247,101 @@ pub fn load_unit(w: &mut World, carrier: usize, t: usize) {
     let tid = w.unit_id(t);
     w.units.cold[t].carried_by = cid;
     w.units.cold[carrier].cargo.push(tid);
+}
+
+/// Navette : rayon autour du point d'embarquement où les unités qui attendent sont prises (sous-unités).
+pub const FERRY_R: i32 = 8 * TILE;
+/// Navette : attente sans nouveau passager avant de partir avec ce qui est à bord (ticks).
+const FERRY_WAIT: u16 = 100;
+
+/// Navette possible : les deux points assez éloignés (un débarqué ne doit pas être repris aussitôt), et
+/// de la terre ferme près de l'un et de l'autre.
+pub fn ferry_ok(w: &World, ax: i32, ay: i32, bx: i32, by: i32) -> bool {
+    let land = |x: i32, y: i32| {
+        let (fx, fy) = buildings::free_spot_near(w, x, y, P_LAND);
+        w.map.passable(fx / TILE, fy / TILE, P_LAND)
+    };
+    dist(ax, ay, bx, by) > 2 * FERRY_R && land(ax, ay) && land(bx, by)
+}
+
+/// Transport en navette en route vers le débarquement (bit 0 de `UnitCold::timer`) ?
+pub fn ferry_loaded(w: &World, s: usize) -> bool {
+    w.units.cold[s].timer & 1 != 0
+}
+
+/**
+ * Navette d'un transport : au point A, il embarque les unités de combat terrestres de son joueur qui y attendent
+ * sans ordre (ni constructeur, ni commandant, ni unité déployée), la plus proche de lui d'abord ; plein, ou après
+ * 5 s sans nouveau passager, il va les déposer au point B, puis revient. Phase dans le bit 0 de `UnitCold::timer`
+ * (1 : en route vers B), attente dans les bits suivants.
+ */
+fn ferry_step(w: &mut World, s: usize, ax: i32, ay: i32, bx: i32, by: i32) {
+    let def = udef(w.units.kind[s]);
+    let cap = def.carry as usize;
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    w.units.cold[s].stuck = 0;
+    if ferry_loaded(w, s) {
+        if steer(w, s, bx, by, bx, by, TILE) || dist(x, y, bx, by) < 2 * TILE {
+            unload_all(w, s);
+            clear_goal(w, s);
+            w.units.cold[s].timer = 0;
+        }
+        return;
+    }
+    if w.units.cold[s].cargo.len() >= cap {
+        clear_goal(w, s);
+        w.units.cold[s].timer = 1;
+        return;
+    }
+    let da = dist(x, y, ax, ay);
+    if da > FERRY_R + 4 * TILE {
+        steer(w, s, ax, ay, ax, ay, TILE);
+        return;
+    }
+    let owner = w.units.owner[s];
+    let mut best: Option<(i64, usize)> = None;
+    w.grid.fine.query(ax, ay, FERRY_R, |t| {
+        let u = &w.units;
+        if !u.alive[t] || u.owner[t] != owner || u.hp[t] <= 0 {
+            return;
+        }
+        let c = &u.cold[t];
+        let d = udef(u.kind[t]);
+        // une unité qui attend : sans ordre, pas à bord, pas en batterie, pas un chenillard qui se déploie
+        if !c.orders.is_empty() || c.carried_by != NONE || c.deployed || c.pack != 0 {
+            return;
+        }
+        if d.commander || d.build_power > 0 || d.deploys != NO_KIND || d.speed == 0 || d.weapons.is_empty() {
+            return;
+        }
+        if dist2(u.x[t], u.y[t], ax, ay) > (FERRY_R as i64).pow(2) || !can_load(w, s, t) {
+            return;
+        }
+        let k = (dist2(u.x[t], u.y[t], x, y), t);
+        if best.is_none_or(|b| k < b) {
+            best = Some(k);
+        }
+    });
+    if let Some((_, t)) = best {
+        let (tx, ty) = (w.units.x[t], w.units.y[t]);
+        if dist(x, y, tx, ty) <= 2 * TILE + def.radius {
+            load_unit(w, s, t);
+            w.units.cold[s].timer = 0;
+        } else {
+            steer(w, s, tx, ty, tx, ty, TILE);
+        }
+        return;
+    }
+    if da > 2 * TILE {
+        steer(w, s, ax, ay, ax, ay, TILE);
+    }
+    if !w.units.cold[s].cargo.is_empty() {
+        w.units.cold[s].timer += 2;
+        if w.units.cold[s].timer >= 2 * FERRY_WAIT {
+            clear_goal(w, s);
+            w.units.cold[s].timer = 1;
+        }
+    }
 }
 
 pub fn unload_all(w: &mut World, carrier: usize) {
@@ -1268,7 +1379,16 @@ fn gate_check(w: &mut World, s: usize) {
         return;
     }
     let Some(t) = w.building(bb.link) else { return };
-    if !w.buildings[t].working {
+    // terrier de la Souche : sa sortie n'a pas besoin d'être ouverte en retour
+    let burrow = bb.kind == B_BURROW;
+    if burrow {
+        // on n'y entre que pour y aller : l'ordre de déplacement mène au terrier (on peut lui marcher dessus)
+        let meant = matches!(w.units.cold[s].orders.first(), Some(&Order::Move { gx, gy, .. }) if dist2(gx, gy, cx, cy) <= (2 * TILE as i64).pow(2));
+        if !meant || !crate::souche::burrow_fits(w.units.kind[s]) {
+            return;
+        }
+    }
+    if !w.buildings[t].working && !burrow {
         return;
     }
     // l'unité ressort de l'horizon de la porte d'arrivée, puis s'en écarte de quelques cases vers l'avant
@@ -1276,8 +1396,9 @@ fn gate_check(w: &mut World, s: usize) {
     let (fdx, fdy) = crate::belts::DIRS[(w.buildings[t].dir & 3) as usize];
     let m = pass_mask(udef(w.units.kind[s]).layer);
     let (ox, oy) = (tx + fdx * TILE / 2, ty + fdy * TILE / 2);
-    let (gx, gy) = buildings::free_spot_near(w, tx + fdx * 5 * TILE, ty + fdy * 5 * TILE, m);
-    w.ev(EV_TELEPORT, x, y, ox, oy);
+    let out = if burrow { 3 } else { 5 };
+    let (gx, gy) = buildings::free_spot_near(w, tx + fdx * out * TILE, ty + fdy * out * TILE, m);
+    w.ev(if burrow { crate::essaim::EV_BURROW } else { EV_TELEPORT }, x, y, ox, oy);
     w.units.x[s] = ox;
     w.units.y[s] = oy;
     w.units.px[s] = ox;
@@ -1347,6 +1468,7 @@ fn special(w: &mut World, s: usize) {
                 }
             }
         }
+        U_BURROWER => crate::essaim::burrow_step(w, s),
         U_COMMANDO => {
             let c = &mut w.units.cold[s];
             c.reveal = c.reveal.saturating_sub(1);

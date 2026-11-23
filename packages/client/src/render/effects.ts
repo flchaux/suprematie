@@ -2,7 +2,7 @@
 // débris, traces de brûlure au sol, ondes de choc, éclairs de tir, traînées de missiles, bâtiments en feu.
 // Particules : pools en tableaux plats, affichées en un InstancedMesh par pool, face à la caméra.
 import * as THREE from "three/webgpu";
-import { instancedBufferAttribute, uv, float, length, mx_noise_float, vec3, smoothstep, pow } from "three/tsl";
+import { instancedBufferAttribute, uv, float, length, mix, mx_noise_float, vec3, smoothstep, pow, uniform } from "three/tsl";
 import { groundHeight, type MapData } from "./terrain.ts";
 
 const tmpM = new THREE.Matrix4();
@@ -203,6 +203,9 @@ class DebrisPool {
   }
 }
 
+/** horloge des nappes d'acide (bouillonnement) */
+const acidTime = uniform(0);
+
 /** Disques plats posés sur le sol : traces de brûlure et ondes de choc. */
 class DecalPool {
   cursor = 0;
@@ -211,7 +214,7 @@ class DecalPool {
   mesh: THREE.InstancedMesh;
   pa: THREE.InstancedBufferAttribute;
   static S = 10;
-  constructor(public max: number, kind: "scorch" | "wave") {
+  constructor(public max: number, kind: "scorch" | "wave" | "acid") {
     this.alive = new Uint8Array(max);
     this.f = new Float32Array(max * DecalPool.S);
     this.pa = new THREE.InstancedBufferAttribute(new Float32Array(max * 2), 2).setUsage(THREE.DynamicDrawUsage) as THREE.InstancedBufferAttribute;
@@ -222,6 +225,16 @@ class DecalPool {
       const nz = mx_noise_float(vec3(uv().mul(5), pa.y));
       mat.colorNode = vec3(0.05, 0.04, 0.035);
       mat.opacityNode = smoothstep(1.0, 0.35, d.add(nz.mul(0.25))).mul(pa.x).mul(0.75);
+    } else if (kind === "acid") {
+      // nappe d'acide : bord déchiqueté, croûte sombre, sève vive qui bouillonne au cœur
+      const p = uv().mul(6);
+      const edge = mx_noise_float(vec3(p, pa.y));
+      const boil = mx_noise_float(vec3(p.mul(1.7), pa.y.add(acidTime)));
+      const bubble = smoothstep(0.42, 0.62, mx_noise_float(vec3(p.mul(3.1), pa.y.sub(acidTime.mul(1.6)))));
+      const r = d.add(edge.mul(0.28));
+      const core = smoothstep(0.95, 0.45, r);
+      mat.colorNode = mix(vec3(0.05, 0.09, 0.01), vec3(0.34, 0.95, 0.09), smoothstep(-0.25, 0.55, boil).mul(core)).add(vec3(0.5, 1.1, 0.15).mul(bubble).mul(core));
+      mat.opacityNode = smoothstep(1.0, 0.82, r).mul(pa.x).mul(0.82);
     } else {
       mat.blending = THREE.AdditiveBlending;
       mat.colorNode = vec3(2.2, 1.7, 1.1);
@@ -231,9 +244,16 @@ class DecalPool {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
-    this.mesh.renderOrder = kind === "scorch" ? 1 : 3;
+    this.mesh.renderOrder = kind === "scorch" ? 1 : kind === "acid" ? 2 : 3;
   }
-  spawn(x: number, y: number, z: number, s0: number, s1: number, life: number, normal: THREE.Vector3): void {
+  /** Prolonge le disque `i` (toujours le même) : `life` secondes encore. */
+  extend(i: number, life: number): void {
+    if (!this.alive[i]) return;
+    const o = i * DecalPool.S;
+    this.f[o + 3] = this.f[o + 4];
+    this.f[o + 6] = this.f[o + 5] + life;
+  }
+  spawn(x: number, y: number, z: number, s0: number, s1: number, life: number, normal: THREE.Vector3): number {
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % this.max;
     this.alive[i] = 1;
@@ -241,6 +261,7 @@ class DecalPool {
     const f = this.f;
     f[o] = x; f[o + 1] = y; f[o + 2] = z; f[o + 3] = s0; f[o + 4] = s1; f[o + 5] = 0; f[o + 6] = life;
     f[o + 7] = normal.x; f[o + 8] = normal.y; f[o + 9] = normal.z;
+    return i;
   }
   update(dt: number, fade: (t: number) => number): void {
     const f = this.f;
@@ -275,6 +296,9 @@ export class Effects {
   smoke: ParticlePool;
   debris: DebrisPool;
   scorch: DecalPool;
+  /** nappes d'acide de la Souche : (x, z, rayon, secondes restantes) pour les bulles et les vapeurs */
+  acidPool: DecalPool;
+  private pools: { x: number; z: number; r: number; left: number; decal: number }[] = [];
   waves: DecalPool;
   /** 1 : effets complets, 0.4 : réduits */
   quality = 1;
@@ -288,7 +312,8 @@ export class Effects {
     this.debris = new DebrisPool(1500, map);
     this.scorch = new DecalPool(500, "scorch");
     this.waves = new DecalPool(64, "wave");
-    this.group.add(this.scorch.mesh, this.debris.mesh, this.smoke.mesh, this.fire.mesh, this.waves.mesh);
+    this.acidPool = new DecalPool(220, "acid");
+    this.group.add(this.scorch.mesh, this.acidPool.mesh, this.debris.mesh, this.smoke.mesh, this.fire.mesh, this.waves.mesh);
   }
 
   get count(): number {
@@ -407,6 +432,68 @@ export class Effects {
     }
     for (let i = 0, n = this.n(burst ? 3 : 2); i < n; i++) {
       this.smoke.spawn({ x: x + rnd(-0.1, 0.1), y: y + 0.3 * size, z: z + rnd(-0.1, 0.1), vx: rnd(-0.4, 0.4), vy: rnd(0.3, 0.8), vz: rnd(-0.4, 0.4), life: rnd(0.6, 1.1), s0: 0.3 * size, s1: 0.9 * size, c0: [0.42, 0.46, 0.22], a: 0.4, drag: 1.4 });
+    }
+  }
+
+  /** Nappe d'acide de la Souche au sol, de rayon `r` (cases), pendant `life` secondes. */
+  acid(x: number, z: number, r: number, life: number): void {
+    const p = this.pools.find((p) => Math.hypot(p.x - x, p.z - z) < r * 0.5);
+    if (p) {
+      // ravivée : la nappe déjà là dure plus longtemps
+      if (p.left < life) {
+        p.left = life;
+        this.acidPool.extend(p.decal, life);
+      }
+      return;
+    }
+    const g = groundHeight(this.map, x, z);
+    this.pools.push({ x, z, r, left: life, decal: this.acidPool.spawn(x, g + 0.07, z, r * 1.4, r * 2.3, life, this.normalAt(x, z)) });
+    if (!this.inView(x, z, r)) return;
+    for (let i = 0, n = this.n(4 + r * 4); i < n; i++) {
+      const a = rnd(0, Math.PI * 2);
+      this.fire.spawn({ x, y: g + 0.2, z, vx: Math.cos(a) * rnd(0.5, 2.2) * r, vy: rnd(1.5, 4), vz: Math.sin(a) * rnd(0.5, 2.2) * r, life: rnd(0.3, 0.6), s0: 0.16, s1: 0.04, c0: [0.9, 2.2, 0.25], grav: -12 });
+    }
+  }
+
+  /** Nappes d'acide : bulles qui crèvent et vapeurs vertes, tant qu'elles durent. */
+  private updateAcid(dt: number): void {
+    for (let i = this.pools.length - 1; i >= 0; i--) {
+      const p = this.pools[i];
+      p.left -= dt;
+      if (p.left <= 0) {
+        this.pools.splice(i, 1);
+        continue;
+      }
+      if (!this.inView(p.x, p.z, p.r) || Math.random() > dt * 5 * p.r * this.quality) continue;
+      const a = rnd(0, Math.PI * 2);
+      const q = Math.sqrt(Math.random()) * p.r * 0.8;
+      const x = p.x + Math.cos(a) * q;
+      const z = p.z + Math.sin(a) * q;
+      const y = groundHeight(this.map, x, z) + 0.1;
+      if (Math.random() < 0.5) this.fire.spawn({ x, y, z, vy: rnd(0.6, 1.4), life: rnd(0.25, 0.45), s0: 0.14, s1: 0.03, c0: [0.6, 1.7, 0.2], grav: -4 });
+      else this.smoke.spawn({ x, y, z, vx: rnd(-0.2, 0.2), vy: rnd(0.3, 0.6), vz: rnd(-0.2, 0.2), life: rnd(0.9, 1.6), s0: 0.2, s1: 0.7, c0: [0.26, 0.4, 0.12], c1: [0.4, 0.5, 0.25], a: 0.3, drag: 1 });
+    }
+  }
+
+  /** Panse de la Souche : gouttes de matière arrachées à une épave, tirées vers elle. */
+  digest(x: number, z: number, mx: number, mz: number): void {
+    if (!this.inView(x, z, 3)) return;
+    const y = groundHeight(this.map, x, z) + 0.4;
+    const d = Math.max(0.5, Math.hypot(mx - x, mz - z));
+    for (let i = 0, n = this.n(6); i < n; i++) {
+      const v = d / rnd(0.7, 1.1);
+      this.fire.spawn({ x: x + rnd(-0.4, 0.4), y: y + rnd(0, 0.3), z: z + rnd(-0.4, 0.4), vx: ((mx - x) / d) * v, vy: rnd(1.2, 2.4), vz: ((mz - z) / d) * v, life: rnd(0.7, 1), s0: 0.13, s1: 0.07, c0: [0.5, 1.5, 0.2], grav: -4 });
+    }
+    this.smoke.spawn({ x, y, z, vy: 0.5, life: rnd(0.7, 1.2), s0: 0.3, s1: 0.9, c0: [0.28, 0.36, 0.16], a: 0.4, drag: 1.2 });
+  }
+
+  /** Terre soulevée (terrier, fouisseur qui surgit). */
+  dirt(x: number, z: number, big = 1): void {
+    if (!this.inView(x, z, 2)) return;
+    const y = groundHeight(this.map, x, z) + 0.1;
+    for (let i = 0, n = this.n(7); i < n; i++) {
+      const a = rnd(0, Math.PI * 2);
+      this.smoke.spawn({ x, y, z, vx: Math.cos(a) * rnd(0.4, 1.5) * big, vy: rnd(1, 2.6), vz: Math.sin(a) * rnd(0.4, 1.5) * big, life: rnd(0.5, 1), s0: 0.2 * big, s1: 0.7 * big, c0: [0.2, 0.14, 0.1], c1: [0.34, 0.27, 0.2], a: 0.7, drag: 1.5, grav: -3 });
     }
   }
 
@@ -550,5 +637,8 @@ export class Effects {
     this.debris.update(dt);
     this.scorch.update(dt, (t) => (t > 0.7 ? (1 - t) / 0.3 : 1));
     this.waves.update(dt, (t) => (1 - t) * (1 - t));
+    acidTime.value += dt * 0.7;
+    this.acidPool.update(dt, (t) => Math.min(1, t * 20) * (t > 0.75 ? (1 - t) / 0.25 : 1));
+    this.updateAcid(dt);
   }
 }

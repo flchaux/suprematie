@@ -2,7 +2,7 @@
 
 export interface ItemDef { key: string; name: string; color: number }
 export interface RecipeDef { key: string; crafter: number; inputs: [number, number][]; output: [number, number]; time: number; tech: number }
-export interface WeaponDef { dmg: number; range: number; cooldown: number; proj: number; aoe: number; mask: number; salvo: number; /** rayon prolongé : durée en ticks, dégâts infligés à chaque tick (0 : tir ordinaire) */ sustain: number }
+export interface WeaponDef { dmg: number; range: number; cooldown: number; proj: number; aoe: number; mask: number; salvo: number; /** rayon prolongé : durée en ticks, dégâts infligés à chaque tick (0 : tir ordinaire) */ sustain: number; /** portée minimale (cases) */ minRange?: number }
 export interface TechDef {
   key: string; name: string; tier: number; count: number; time: number; prereq: number[]; desc: string;
   /** race qui peut la rechercher ; choix exclusif (Souche) : recherche qu'elle interdit (0 : aucune) */

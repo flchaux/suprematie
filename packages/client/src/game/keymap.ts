@@ -50,6 +50,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "harvest", label: "Récolter un gisement (commandant, fonderie intégrée)", group: "Ordres", ctx: "units" },
   { id: "deploy", label: "Déployer", group: "Ordres", ctx: "units" },
   { id: "unload", label: "Décharger", group: "Ordres", ctx: "units" },
+  { id: "ferry", label: "Navette de transport : cliquez l'embarquement, puis le débarquement", group: "Ordres", ctx: "units" },
   { id: "buildMenu", label: "Menu de construction (puis catégorie, puis bâtiment)", group: "Ordres", ctx: "units" },
   { id: "rotate", label: "Tourner le bâtiment ou le plan à poser (file de tapis en cours de tracé : sa fin ; tapis ou bras sélectionné : le tourner)", group: "Ordres", ctx: "build" },
   { id: "copyPlan", label: "Plan : copier une zone de vos bâtiments (glisser un cadre)", group: "Ordres", ctx: "global" },
@@ -83,6 +84,7 @@ export const ACTIONS: ActionDef[] = [
   { id: "perf", label: "Détail des performances", group: "Interface", ctx: "global" },
   { id: "speedUp", label: "Accélérer le jeu (partie solo)", group: "Interface", ctx: "global" },
   { id: "speedDown", label: "Ralentir le jeu (partie solo)", group: "Interface", ctx: "global" },
+  { id: "ping", label: "Ping : signaler à son équipe le point sous la souris (aussi Alt+clic, sur la carte ou la minicarte)", group: "Interface", ctx: "global" },
   { id: "pause", label: "Pause / reprendre (partie solo, ou hôte)", group: "Interface", ctx: "global" },
   ...Array.from({ length: FACTORY_SLOTS }, (_, i): ActionDef => ({ id: `factory${i + 1}`, label: `Unité ${i + 1} (Maj : ×5)`, group: "Usine", ctx: "factory", shiftFree: true })),
 ];
@@ -180,6 +182,7 @@ export function defaultBindings(layout: Layout): Record<string, Chord[]> {
     harvest: k("m"),
     deploy: k("f"),
     unload: k("u"),
+    ferry: k("u", { shift: true }),
     buildMenu: k("b"),
     rotate: k("r"),
     copyPlan: k("c", { ctrl: true }),
@@ -212,6 +215,8 @@ export function defaultBindings(layout: Layout): Record<string, Chord[]> {
     chat: [named("Enter")],
     // F3 sert aux marque-pages : les performances passent sur F9
     perf: [named("F9")],
+    // touche sous Échap (² en AZERTY)
+    ping: [named("Backquote")],
     speedUp: [named("NumpadMultiply")],
     speedDown: [named("NumpadDivide")],
     pause: [named("Pause"), named("F10")],

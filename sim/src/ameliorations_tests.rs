@@ -692,6 +692,8 @@ fn saves_from_before_the_upgrades_still_load() {
     let (mut w, _) = ark_game(false);
     steps(&mut w, 20);
     let mut v6 = crate::save::write(&w, 6, &[]);
+    let w7 = crate::save::restore(&crate::save::write(&w, 7, &[])).expect("version 7");
+    assert_eq!((w7.arks.len(), w7.units.cold.len()), (1, w.units.cold.len()));
     let w6 = crate::save::restore(&v6).expect("version 6");
     assert_eq!(w6.arks.len(), 1, "état de l'Arche recréé");
     assert_eq!(w6.units.alive.len(), w.units.alive.len());
