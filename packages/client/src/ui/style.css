@@ -247,6 +247,7 @@ tbody tr:hover { background: rgba(62, 240, 255, 0.04); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), var(--glow);
   pointer-events: none;
 }
+.tt-float .more { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--dim); }
 .tt-float b { font-weight: 600; letter-spacing: 0.04em; }
 
 /* ---------- défilement ---------- */

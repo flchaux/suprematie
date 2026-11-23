@@ -8,7 +8,8 @@
   const fmt = (v: number) => (v >= 100000 ? Math.round(v / 1000) + "k" : v >= 10000 ? (v / 1000).toFixed(1) + "k" : String(v));
 </script>
 
-<span class="item" title={it?.name}>
+<!-- title vide : l'infobulle de la ressource (tooltips.ts) remplace celle de l'élément qui la contient, et la reprend -->
+<span class="item" data-item={id} title="" aria-label={it?.name}>
   {#if src}<img class="ico" {src} alt="" width={size} height={size} style:--c={col} />{:else}<span class="sw" style:background={col}></span>{/if}
   {#if n !== null}<span class="num" class:bad={need !== null && n < need}>{fmt(n)}{#if need !== null}<span class="faint">/{need}</span>{/if}</span>{/if}
   {#if need !== null && n === null}<span class="num">{need}</span>{/if}

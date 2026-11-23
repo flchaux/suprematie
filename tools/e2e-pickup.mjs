@@ -171,7 +171,7 @@ check(hold0 > 0, "plaques de fer dans la soute du commandant", String(hold0));
 await page.evaluate(() => { const { client } = window.__game; client.centerOnCommander(); client.scene.distance = 30; });
 await page.waitForTimeout(800);
 await page.screenshot({ path: `${out}/e2e-pickup-soute.png` });
-const btn = page.locator("button.hitem").filter({ has: page.locator(".item[title='Plaque de fer']") });
+const btn = page.locator("button.hitem").filter({ has: page.locator(".item[aria-label='Plaque de fer']") });
 check((await btn.count()) === 1, "plaque de fer cliquable dans l'inventaire");
 await btn.first().click();
 await page.waitForTimeout(1500);
