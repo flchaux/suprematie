@@ -19,6 +19,7 @@ export interface SimExports {
   zone_economy(player: number, tx: number, ty: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
+  formation_preview(nWords: number): number;
   reach_stock(nWords: number): number;
   can_place_line(nWords: number): number;
   line_cost(nWords: number): number;
@@ -159,6 +160,13 @@ export class Sim {
    */
   twinPreview(args: number[]): Int32Array {
     return this.outI32(this.ex.twin_preview(this.writeI32(args)));
+  }
+  /**
+   * Places d'une formation orientée (aperçu du clic droit glissé) : `args` = [joueur, x, y (but, sous-unités),
+   * angle (16 bits), en file (0 ou 1), puis identifiants…] ; renvoie id, x, y par unité.
+   */
+  formationPreview(args: number[]): Int32Array {
+    return this.outI32(this.ex.formation_preview(this.writeI32(args)));
   }
   /**
    * Disponible pour payer en un point (couleur des coûts) : `args` = [joueur, x, y (case), rayon (cases),
