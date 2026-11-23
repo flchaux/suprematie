@@ -8,23 +8,31 @@ import { texture, uniform, vec2, vec3, float, fract, floor, mod, dFdx, dFdy, abs
 
 type N = ReturnType<typeof float>;
 
-/** Cases de l'atlas, dans l'ordre de tools/textures/manifest.mjs. */
-export const MATERIAL_KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete"] as const;
+/**
+ * Cases de l'atlas, dans l'ordre de tools/textures/manifest.mjs : six matières de machines, puis les
+ * quatre matières vivantes de la Souche (chitine, écorce, chair, os). Une matière s'ajoute à la fin :
+ * les cases déjà prises ne bougent pas.
+ */
+export const MATERIAL_KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete", "chitin", "bark", "flesh", "bone"] as const;
 /** Matière « sans texture » (pièces lumineuses). */
 export const NO_TEXTURE = 5;
 /**
- * Case de l'atlas de chaque matière (attribut « mat », voir MATERIAL_LAYER du générateur) : les cinq
- * premières ont la leur, le caoutchouc reprend le métal sombre, le cuivre le métal, le béton sa case.
+ * Case de l'atlas de chaque matière (attribut « mat », voir MATERIAL_LAYER et SKIN_LAYER du générateur) :
+ * les cinq premières ont la leur, le caoutchouc reprend le métal sombre, le cuivre le métal, le béton sa
+ * case ; les couches 9 à 12 (Souche) ont chacune la leur.
  */
-const LAYER_CELL = [0, 1, 2, 3, 4, 0, 2, 1, 5];
+export const LAYER_CELL = [0, 1, 2, 3, 4, 0, 2, 1, 5, 6, 7, 8, 9];
 
 const files = import.meta.glob("../assets/textures/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 
 const TILE = 512;
 const PAD = 32;
 const CELL = TILE + 2 * PAD;
+// 3 colonnes : les six premières cases gardent leur place d'avant les matières de la Souche (2 rangées)
 const COLS = 3;
-const ROWS = 2;
+const ROWS = 4;
+/** Taille de l'atlas en cases (12 cases, 10 prises). */
+export const ATLAS_CELLS = COLS * ROWS;
 
 const placeholder = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
 placeholder.needsUpdate = true;

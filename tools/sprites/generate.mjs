@@ -6,7 +6,7 @@
 //
 // Une image déjà générée n'est pas redemandée (sauf --force).
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
-import { STYLE, ITEM_STYLE, ITEMS, BUILDINGS, UNITS, ART, DECOR, DECOR_STYLE } from "./manifest.mjs";
+import { STYLE, ITEM_STYLE, ITEMS, BUILDINGS, UNITS, ART, DECOR, DECOR_STYLE, SOUCHE_STYLE, SOUCHE_ITEM_STYLE, SOUCHE_ITEMS, SOUCHE_BUILDINGS, SOUCHE_UNITS } from "./manifest.mjs";
 
 const ROOT = new URL("./raw/", import.meta.url).pathname;
 const KEY = process.env.OPENAI_API_KEY;
@@ -37,6 +37,10 @@ const add = (cat, key, prompt, size = "1024x1024", background = "transparent") =
 for (const [k, s] of Object.entries(ITEMS)) add("items", k, `${ITEM_STYLE} Subject: ${s}.`);
 for (const [k, s] of Object.entries(BUILDINGS)) add("buildings", k, `${STYLE} Subject: ${s}.`);
 for (const [k, s] of Object.entries(UNITS)) add("units", k, `${STYLE} Subject: ${s}.`);
+// la Souche : mêmes catégories (le client cherche l'icône par clé), style organique
+for (const [k, s] of Object.entries(SOUCHE_ITEMS)) add("items", k, `${SOUCHE_ITEM_STYLE} Subject: ${s}.`);
+for (const [k, s] of Object.entries(SOUCHE_BUILDINGS)) add("buildings", k, `${SOUCHE_STYLE} Subject: ${s}.`);
+for (const [k, s] of Object.entries(SOUCHE_UNITS)) add("units", k, `${SOUCHE_STYLE} Subject: ${s}.`);
 for (const [k, a] of Object.entries(ART)) add("art", k, a.prompt, a.size, a.background);
 for (const [k, s] of Object.entries(DECOR)) add("decor", k, `${DECOR_STYLE} Subject: ${s}.`);
 

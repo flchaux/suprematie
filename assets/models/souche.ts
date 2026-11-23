@@ -5,7 +5,8 @@
 // d'os (dry : crocs, mandibules en croissant, griffes en faux, épines, côtes) et de sève lumineuse (amber :
 // yeux, sacs, veines, œufs). Silhouettes agressives : corps bas tendus vers l'avant, têtes allongées, pattes
 // arquées. La couleur du joueur tient les grandes plaques dorsales, crêtes et collerettes (lisible de loin).
-// Ni métal ni panneaux techniques.
+// Ni métal ni panneaux techniques : tous les modèles de la Souche sont marqués `skin: "souche"` (voir `vivants`),
+// et le générateur leur donne des matières vivantes (chitine, écorce, chair, os) pour les mêmes couleurs.
 //
 // Bâtiments (unités de case, centrés, sol à y = 0, sortie vers +z) : graine-mère, racine (nœud au centre de
 // la case ; le jeu ajoute un `root_seg` vers chaque voisin relié, comme les murs), frondaison, racine-puits,
@@ -50,6 +51,13 @@ export const add = (a: Vec3, b: Vec3, k = 1): Vec3 => V(a[0] + b[0] * k, a[1] + 
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 /** Point sur un cercle horizontal : angle `a` en degrés (0 : vers +z, 90 : vers +x). */
 export const pol = (r: number, a: number, y: number): Vec3 => V(r * Math.sin(a * D), y, r * Math.cos(a * D));
+
+/**
+ * Marque des modèles comme vivants (`skin: "souche"`, types.ts) : le générateur remplace pour eux les matières
+ * des machines (plaques boulonnées, grilles) par celles de la Souche. Tous les modèles de la Souche y passent.
+ */
+export const vivants = (models: Record<string, Model>): Record<string, Model> =>
+  Object.fromEntries(Object.entries(models).map(([key, m]): [string, Model] => [key, { ...m, skin: "souche" }]));
 
 // ---------- pièces organiques ----------
 /** Boule lisse (sphère fine lissée), étirée par `sc`. */
@@ -526,7 +534,7 @@ const bloom: Model = {
   ],
 };
 
-export const SOUCHE_BUILDING_MODELS: Record<string, Model> = {
+export const SOUCHE_BUILDING_MODELS: Record<string, Model> = vivants({
   seed_heart: seedHeart,
   root,
   root_seg: rootSeg,
@@ -537,7 +545,7 @@ export const SOUCHE_BUILDING_MODELS: Record<string, Model> = {
   matrix,
   thorn,
   bloom,
-};
+});
 
 // =====================================================================================================
 // Unités
@@ -781,7 +789,7 @@ const membrane: Model = {
   ],
 };
 
-export const SOUCHE_UNIT_MODELS: Record<string, Model> = {
+export const SOUCHE_UNIT_MODELS: Record<string, Model> = vivants({
   queen,
   sower,
   gnawer,
@@ -789,4 +797,4 @@ export const SOUCHE_UNIT_MODELS: Record<string, Model> = {
   shell,
   vine,
   membrane,
-};
+});

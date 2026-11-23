@@ -77,6 +77,7 @@ Code : `sim/src/souche.rs` (réseau, organes), `sim/src/essaim.rs` (organismes, 
   - Limite : un nid greffé, plus un par mutation acquise (`souche::den_limit`). À la limite, l'apprivoisement n'avance pas (et l'interface refuse l'ordre avec un message).
   - Fiche d'un nid sauvage : joueur qui l'apprivoise et avancement ; fiche d'un nid greffé : bêtes du nid, prochaine portée, nids greffés et limite (`nature::nest_info`).
 - **Allure** (`assets/models/souche.ts`) : race extraterrestre menaçante, chitine noire luisante, plaques d'os, crocs, mandibules, épines et sacs bioluminescents de sève vert acide (couleur `acid`, lumineuse comme `glow` et `amber`) ; la couleur d'équipe sur les plaques et les crêtes. Reine : grande reine d'essaim sur six pattes arquées, abdomen pondeur à œufs lumineux, faux d'os, crête en éventail. Graine-mère : cœur monstrueux à lobes gainé de plaques et serré de griffes d'os, artères béantes. Couveuse : cage de côtes d'os et mâchoires autour d'une chambre de ponte et d'œufs lumineux.
+- **Matières et icônes** : les modèles de la Souche portent des matières vivantes (chitine, écorce, chair, os) à la place des plaques boulonnées et des grilles des machines, et ses bâtiments, unités et objets ont leurs icônes dans un style organique (voir Modèles 3D et Icônes générées dans [rendu.md](rendu.md)).
 
 ## Transhumants
 
@@ -157,7 +158,7 @@ Code : `sim/src/ameliorations.rs` (table `MODS`, effets, installation, Arche). T
 ## À faire
 
 - Bots pour la Souche et les Transhumants.
-- Icônes de la barre de construction et des usines pour les nouvelles clés (générées par `tools/sprites`, qui passe par un service d'images externe).
+- Icônes de la barre de construction et des usines pour les clés des Transhumants (générées par `tools/sprites`, qui passe par un service d'images externe) ; celles de la Souche sont faites.
 - Arrimage explicite entre chenillards, production en roulant des modules : prévus dans les propositions, pas réalisés (l'Arche, elle, produit en roulant avec l'atelier embarqué).
 - Équilibrage des améliorations des Transhumants : valeurs de départ, pas encore jouées contre un adversaire. Images (`tools/sprites`) des trois tourelles et du groupe de l'Arche : à générer.
 - Équilibrage de la suite de la Souche (organes, organismes, flaques, caractères acquis) : valeurs de départ, pas encore jouées contre un adversaire.

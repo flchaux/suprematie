@@ -1,5 +1,6 @@
 // Matières des modèles 3D : une texture répétable par catégorie de couleur des pièces
-// (assets/models/types.ts, ColorName). L'ordre est celui des couches du tableau de textures.
+// (assets/models/types.ts, ColorName). L'ordre est celui des cases de l'atlas du client
+// (MATERIAL_KEYS de packages/client/src/render/textures.ts) : une matière s'ajoute à la fin.
 
 /** Style commun : texture de détail en gris neutre (la couleur vient de la pièce ou du joueur). */
 export const STYLE =
@@ -14,7 +15,20 @@ export const MATERIALS = [
   { key: "hazard", colors: ["hazard"], desc: "diagonal hazard stripes, alternating light grey and near-black bands of equal width, painted on worn metal with chipped edges." },
   { key: "glass", colors: ["glass"], desc: "dark tinted glass panels separated by a thin metal frame grid, with faint diagonal reflection streaks." },
   { key: "concrete", colors: ["concrete"], desc: "poured industrial concrete slabs with a few straight expansion joints, small air pores, faint formwork marks and light weathering stains." },
+  // Matières vivantes de la Souche : elles remplacent les précédentes sur les modèles marqués
+  // `skin: "souche"` (SKIN_LAYER du générateur), pour les couleurs de pièce citées ici.
+  { key: "chitin", skin: "souche", style: "organic", colors: ["faction", "black"], desc: "glossy insect chitin carapace seen very close: about five large overlapping smooth shell plates across the image with soft rounded edges and thin dark grooves between them, fine curved growth ridges following the edge of each plate, tiny pits and a few hairline scratches." },
+  { key: "bark", skin: "souche", style: "organic", colors: ["wood"], desc: "gnarled bark of a thick old tree root: twisted woody fibres and cords running roughly in one direction, deep irregular furrows between them, a few knots and thin rootlets crossing over." },
+  { key: "flesh", skin: "souche", style: "organic", colors: ["rust", "leaf_dark", "leaf", "flower", "rubber"], desc: "living alien skin membrane: smooth damp leathery skin with a network of fine branching veins slightly raised under the surface, shallow wrinkles between them, small pores and a few soft bumps." },
+  { key: "bone", skin: "souche", style: "organic", colors: ["dry"], desc: "old bone and horn: fine parallel growth striations, small pores, hairline cracks and a few faint ridges across them, matte surface." },
 ];
+
+/** Style des matières vivantes (entrées `style: "organic"`) : même cadrage, sans détail de machine. */
+export const ORGANIC_STYLE =
+  "Seamless tileable texture for the living alien swarm faction of a real-time strategy game, flat orthographic top-down macro view of an organic surface, " +
+  "perfectly even diffuse lighting, no perspective, no vanishing point, no cast shadows, no vignette, no text, no logos, no eyes, no mouths, no whole creature, " +
+  "greyscale only, neutral desaturated mid-grey tones with moderate contrast, natural organic detail evenly distributed over the whole image, no single large feature, " +
+  "no metal, no machinery, the pattern repeats seamlessly on all four edges.";
 
 /**
  * Style des textures du sol : en COULEUR (contrairement aux modèles), vues de haut, petits détails

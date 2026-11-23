@@ -40,10 +40,25 @@ export const PALETTE: Record<ColorName, number> = {
 
 /**
  * Matière de chaque couleur de pièce (voir render/textures.ts et render/materials.ts) : 0 blindage, 1 métal,
- * 2 métal sombre, 3 danger, 4 verre, 5 lumineux (sans texture), 6 caoutchouc, 7 cuivre, 8 béton.
+ * 2 métal sombre, 3 danger, 4 verre, 5 lumineux (sans texture), 6 caoutchouc, 7 cuivre, 8 béton. Les couches
+ * 9 à 12 (chitine, écorce, chair, os) ne viennent que de SKIN_LAYER.
  */
 export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, steel: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5,
   leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5, rubber: 6, copper: 7, concrete: 8, acid: 5 };
+
+/** Nombre de couches de matière : longueur des tables par couche (LAYER_CELL de render/textures.ts, LAYER_METAL et LAYER_ROUGH de render/materials.ts). */
+export const LAYER_COUNT = 13;
+
+/**
+ * Matières des modèles marqués `skin` (assets/models/types.ts) : pour eux seulement, les couleurs citées
+ * prennent cette couche à la place de celle de MATERIAL_LAYER ; les autres (pièces lumineuses) gardent la
+ * leur. Un modèle sans `skin` ne lit jamais cette table : son maillage est le même qu'avant elle.
+ * Souche : 9 chitine (plaques noires ou à la couleur du joueur), 10 écorce (racines, tertres), 11 chair
+ * (chairs, feuilles, membranes), 12 os (crocs, griffes, côtes, épines).
+ */
+export const SKIN_LAYER: Record<NonNullable<Model["skin"]>, Partial<Record<ColorName, number>>> = {
+  souche: { faction: 9, black: 9, wood: 10, rust: 11, leaf_dark: 11, leaf: 11, flower: 11, rubber: 11, dry: 12 },
+};
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
 export const PLAYER_COLOR_NAMES = ["Bleu", "Rouge", "Vert", "Jaune", "Violet", "Orange", "Cyan", "Rose"];
@@ -536,7 +551,7 @@ function flatten(parts: Part[], parentMatrix: THREE.Matrix4, out: Flat[], inheri
   }
 }
 
-function colorize(g: THREE.BufferGeometry, color: ColorName, smooth = false): THREE.BufferGeometry {
+function colorize(g: THREE.BufferGeometry, color: ColorName, smooth = false, skin?: Partial<Record<ColorName, number>>): THREE.BufferGeometry {
   let ng = g.index ? g.toNonIndexed() : g;
   const normal = ng.getAttribute("normal");
   ng = new THREE.BufferGeometry().setAttribute("position", ng.getAttribute("position"));
@@ -550,8 +565,10 @@ function colorize(g: THREE.BufferGeometry, color: ColorName, smooth = false): TH
   // « mat » = (couche de matière, occlusion ambiante) dans un seul tampon : WebGPU limite un maillage à
   // 8 tampons de sommets, et les unités en utilisent déjà 7 sans celui-ci (instances comprises)
   const mat = new Float32Array(n * 2);
+  // matière de la pièce : celle du jeu de matières du modèle (Souche) si la couleur y figure, sinon la commune
+  const layer = skin?.[color] ?? MATERIAL_LAYER[color] ?? 1;
   for (let i = 0; i < n; i++) {
-    mat[i * 2] = MATERIAL_LAYER[color] ?? 1;
+    mat[i * 2] = layer;
     mat[i * 2 + 1] = 1;
   }
   const isFaction = color === "faction" ? 1 : 0;
@@ -590,6 +607,7 @@ interface Assembled {
 function assemble(model: Model, lo: boolean): Assembled {
   const flats: Flat[] = [];
   flatten(model.parts, new THREE.Matrix4(), flats, {}, 0, lo);
+  const skin = model.skin ? SKIN_LAYER[model.skin] : undefined;
   const origins = new Map<string, THREE.Vector3>();
   for (const f of flats) if (f.pivotPos && f.pivot && !origins.has(f.pivot)) origins.set(f.pivot, f.pivotPos);
   const bodyParts: THREE.BufferGeometry[] = [];
@@ -600,7 +618,7 @@ function assemble(model: Model, lo: boolean): Assembled {
   const colored: { g: THREE.BufferGeometry; self: number; f: Flat }[] = [];
   flats.forEach((f, i) => {
     if (!f.geo.getAttribute("position")) return;
-    const g = colorize(f.geo, f.color, f.smooth);
+    const g = colorize(f.geo, f.color, f.smooth, skin);
     g.computeBoundingBox();
     // pièce d'une amélioration (pivot « si:… ») : elle ne compte pas dans la taille du modèle
     if (g.boundingBox && !parseCond(f.pivot ?? f.parent ?? "")?.on) box.union(g.boundingBox);

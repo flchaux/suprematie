@@ -10,7 +10,7 @@
 // Pivots : pattes « jambe… » ; « tourelle » (faisceau du dard, tête de la murène et du léviathan, torse du
 // béhémoth) ; anneaux « ondule… » de la murène. Le frelon et la nourrice n'ont ni tourelle ni ailes animées.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
-import { D, type M3, Rx, Ry, Rz, add, along, app, bille, blob, corne, effile, eul, frame, lame, mul, patte, plaque, pol, quatrePattes, r3, sixPattes, sub, unit, V, yeux } from "./souche.ts";
+import { D, type M3, Rx, Ry, Rz, add, along, app, bille, blob, corne, effile, eul, frame, lame, mul, patte, plaque, pol, quatrePattes, r3, sixPattes, sub, unit, V, vivants, yeux } from "./souche.ts";
 
 // ---------- aides propres à l'essaim ----------
 type Prof = [number, number][];
@@ -643,7 +643,7 @@ const behemoth: Model = {
   ],
 };
 
-export const SOUCHE_SWARM_MODELS: Record<string, Model> = {
+export const SOUCHE_SWARM_MODELS: Record<string, Model> = vivants({
   burster,
   dart,
   burrower,
@@ -652,4 +652,4 @@ export const SOUCHE_SWARM_MODELS: Record<string, Model> = {
   moray,
   leviathan,
   behemoth,
-};
+});

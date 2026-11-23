@@ -9,7 +9,7 @@
 // - frayère : posée sur l'eau, y = 0 est la surface (le récif descend dessous) ;
 // - cocon : chrysalide géante du Béhémoth.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
-import { D, V, add, along, app, bille, blob, corne, courbe, eul, feuille, grappe, lame, meridien, mul, plaque, pol, r3, Rx, Ry, sub, tertre, unit } from "./souche.ts";
+import { D, V, add, along, app, bille, blob, corne, courbe, eul, feuille, grappe, lame, meridien, mul, plaque, pol, r3, Rx, Ry, sub, tertre, unit, vivants } from "./souche.ts";
 
 const fin = (ps: Part[]): Part[] => ps.map((p): Part => ({ ...p, fine: true }));
 
@@ -412,7 +412,7 @@ const cocoon: Model = {
   ],
 };
 
-export const SOUCHE_ORGAN_MODELS: Record<string, Model> = {
+export const SOUCHE_ORGAN_MODELS: Record<string, Model> = vivants({
   bramble,
   bramble_seg: brambleSeg,
   rhizome,
@@ -421,4 +421,4 @@ export const SOUCHE_ORGAN_MODELS: Record<string, Model> = {
   sporangium,
   spawnery,
   cocoon,
-};
+});

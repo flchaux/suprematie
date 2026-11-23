@@ -9,6 +9,7 @@
 // lumineux (sève) ne se voit, œuf fermé, que par les fentes entre les lèvres. La couleur du
 // joueur est sur la collerette et la nervure de chaque lèvre.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
+import { vivants } from "./souche.ts";
 
 const D = Math.PI / 180;
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -90,8 +91,8 @@ function oeuf(coque: ColorName, bosses: number, epines: number): Model {
   return { parts };
 }
 
-export const SOUCHE_EGG_MODELS: Record<string, Model> = {
+export const SOUCHE_EGG_MODELS: Record<string, Model> = vivants({
   egg_s: oeuf("leaf_dark", 0, 0),
   egg_m: oeuf("leaf_dark", 6, 0),
   egg_l: oeuf("wood", 0, 8),
-};
+});

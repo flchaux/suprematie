@@ -158,6 +158,154 @@ export const UNITS = {
   disruptor: "a stocky robot soldier carrying a long rifle with glowing blue coils",
 };
 
+/**
+ * Style des icônes de la Souche (race vivante) : même cadrage que STYLE, mais ni métal ni panneaux.
+ * Matières des modèles (assets/models/souche*.ts) : chitine noire luisante, os, écorce de racine, chair
+ * verte ou rouille, sève vert acide lumineuse. Les plaques à la couleur du joueur sont rendues en chitine
+ * gris ardoise (l'icône est la même pour tous les joueurs) ; un contre-jour clair détache les formes
+ * sombres du fond sombre de l'interface.
+ */
+export const SOUCHE_STYLE =
+  "Single game icon for a sci-fi real-time strategy game interface, showing one living organism of an alien insectoid swarm faction that grows its buildings and its soldiers. " +
+  "Clean stylized 3D creature render with simple chunky shapes, three-quarter top-down view, glossy black chitin carapace with lighter slate-grey dorsal plates and crests, " +
+  "tan ivory bone spikes, claws and ribs, dark brown gnarled root bark, dark green and rust-red flesh, bioluminescent acid green (#9DFF3A) sap sacs, veins and eggs, " +
+  "no metal, no machinery, no armor panels, no technology, bright cool rim light outlining the dark shapes so they stand out on a dark interface, " +
+  "high contrast readable silhouette, centered, subject fills about 80% of the frame, " +
+  "isolated on a fully transparent background, no text, no letters, no numbers, no border, no frame, no ground, no cast shadow.";
+
+/** Style des objets de la Souche (sève, sels, ADN) : petits objets organiques, lisibles à 18 pixels. */
+export const SOUCHE_ITEM_STYLE =
+  "Single resource item icon for a sci-fi strategy game interface, one small organic object from a living alien swarm faction. " +
+  "Clean stylized 3D render with a very simple bold shape, three-quarter view, soft studio light with a thin pale rim light, " +
+  "high contrast readable silhouette, centered, fills about 75% of the frame, isolated on a fully transparent background, " +
+  "no text, no letters, no border, no frame, no ground, no cast shadow.";
+
+/** Objets de la Souche (couleurs de sim/src/data.rs). */
+export const SOUCHE_ITEMS = {
+  seve: "a single fat glossy drop of thick glowing green plant sap (#7fc24a), teardrop shape, hanging from the tip of a short dark brown root",
+  sels: "a small cluster of pale beige cubic mineral salt crystals (#d9d2c0), matte and angular, gripped by two thin dark brown rootlets",
+  adn: "a short chunky double helix of DNA made of two twisted purple strands (#c35bd6) joined by glowing pink rungs, organic and fleshy",
+};
+
+/**
+ * Organes de la Souche. Chaque description suit le modèle 3D (souche.ts, souche-organes.ts) ; deux
+ * voisins du menu se distinguent par la silhouette (menu : racine, rhizome, graine-mère, frondaison,
+ * racine-puits, bulbe, terrier ; couveuse, matrice, panse, frayère, cocon ; épine, ronce, sporange, floraison).
+ */
+export const SOUCHE_BUILDINGS = {
+  seed_heart:
+    "a monstrous heart half buried in a low mound: a tall bulbous rust-red flesh heart with fleshy lobes on top, sheathed in six bulging chitin plates, " +
+    "gripped by tall curved bone claws that rise around it and bend over its top, glowing acid green veins between the plates, three open artery tubes with glowing green mouths at the summit, " +
+    "six black clawed roots plunging outward into the ground",
+  root:
+    "one small low root knot: a flat knotted lump of twisted brown bark with one round smooth bead of glowing acid green sap bulging on top (a plain bead, no pupil, no arrow, no symbol), " +
+    "three small black chitin scales around the bead, and two thick gnarled root cables leaving the knot in opposite directions, left and right, " +
+    "each with a thin glowing green vein along its top and a few small bone thorns, very simple wide and flat shape",
+  rhizome:
+    "a big knot of roots: a fat gnarled brown tuber half buried in the ground, ringed by a crown of upright slate-grey chitin plates, with four very thick sinuous roots like tree trunks " +
+    "crawling out to the four corners in an X shape and diving into the ground, black scales and bone spines on their backs, small glowing acid green vents on top of the tuber",
+  leaves:
+    "a short bark stump carrying a flat rosette of eight large broad pointed green leaves spread out like a star seen from above, alternately light and dark green with a pale midrib, " +
+    "three small upright fronds in the centre and three tiny glowing spores on thin stalks",
+  taproot:
+    "a swollen bottle-shaped trunk of brown bark planted upright in the ground like a drilling well: wide belly narrowing to a thin neck, two bands of slate-grey chitin around the belly, " +
+    "four glowing acid green veins climbing up its sides, a glowing green sucking mouth at the very top under four small leaves, six roots diving into a mound of dry earth around its foot",
+  bulb:
+    "a big round sap storage sac, a translucent yellow-green balloon glowing from inside, held in a net of eight dark green ribs, a collar of slate-grey chitin at its narrow neck with three tiny leaves, " +
+    "cupped by six dark green sepals at the base, with two small glowing acid green satellite bulbs beside it",
+  burrow:
+    "a gaping round tunnel mouth lying flat at ground level seen from above: a thick ring of rust-red flesh armoured with chitin plates, two concentric crowns of bone fangs curved inward, " +
+    "a black ringed throat going straight down with a faint acid green glow at the bottom, four anchor claws at the corners, nothing rising above it",
+  brood:
+    "an egg nest inside a cage of six large curved bone ribs that rise from a round rim of slate-grey chitin and bend inward like a rib cage, open at the front between two tall bone jaw blades, " +
+    "at the back a rust-red flesh egg-laying sac with an ovipositor tube leaning over the nest, and inside five dark leathery eggs with glowing acid green tips plus a few fully glowing green eggs",
+  matrix:
+    "a tall organic double helix: two thick twisted strands, one green and one brown, spiralling up around a thin central stem like a DNA spiral, joined by glowing cyan rungs with small glowing beads, " +
+    "standing on a small bark mound with three roots, topped by a glowing seed held by three small leaves",
+  maw:
+    "an upright stomach sac leaning forward: a fat veined rust-red flesh bag squeezed by bone ribs, its wide round mouth open to the sky and filled with a pool of bright glowing acid green liquid, " +
+    "thick fleshy lips ringed with small teeth, four black chitin mandibles with bone tips standing around the mouth, a second pouch and a gut trailing on the ground behind, swollen glowing sacs at its foot",
+  spawnery:
+    "a ring of living coral reef floating on a small disc of dark water, open at the front: a dark birthing pool arched over by large bone ribs like a rib cage, " +
+    "a large slate-grey fan-shaped hood standing at the back, clusters of translucent eggs with dark embryos on the reef, two tentacles guarding the opening, a few seaweed fronds",
+  cocoon:
+    "a giant upright chrysalis: a tall ringed egg of rust-red flesh gripped by six enormous curved bone claws with dark membranes stretched between them, its skin split open at the front on a bright acid green glow " +
+    "where a folded monster pushes through, lowered horned skull and two crossed bone scythes, armoured slate-grey shoulders, a glowing green ember at the very top",
+  thorn:
+    "a living gun turret: a fleshy dark green pod sitting on a small bark mound with a collar of leaves, one big sharp bone thorn sticking forward out of its round mouth like a cannon barrel, " +
+    "a few smaller bone spikes around the mouth, a slate-grey crest on its back, two glowing acid green sacs on its flanks, two tiny amber eyes",
+  bramble:
+    "a short section of living thorn wall: thick twisted bramble stems, black chitin and rust-red, woven together horizontally like a hedge of giant barbed wire, " +
+    "bristling with long bone thorns pointing outward on both sides, a glowing acid green sap vein visible between the stems, one slate-grey bud on top",
+  sporangium:
+    "a living spore mortar: a squat stump armoured with chitin plates and ringed with glowing green spore sacs at its foot, carrying one large ringed chitin tube angled steeply up and forward like a mortar barrel, " +
+    "its muzzle opening into a corolla of six pointed rust-red petals with glowing green spores inside",
+  bloom:
+    "a tall alien flower on a single curved dark green stem with three leaves at its foot: one large tilted dish-shaped corolla facing the sky like a radar dish, six big yellow petals and six small rust-red petals, " +
+    "a glowing acid green heart with five thin stamens",
+};
+
+/**
+ * Organismes de la Souche. Chaque description suit le modèle 3D (souche.ts, souche-essaim.ts,
+ * souche-oeufs.ts) ; chaque espèce a sa silhouette, et les trois œufs se distinguent par la coque.
+ */
+export const SOUCHE_UNITS = {
+  queen:
+    "a great swarm queen standing on six long arched black chitin legs with bone spurs, a huge bulging egg-laying abdomen behind her ringed with chitin and carrying glowing acid green eggs on its flanks, " +
+    "two raised bone scythe arms in front, an elongated head crowned with a tall fan-shaped slate-grey crest bristling with bone spikes, crescent mandibles, amber eyes, glowing green maw",
+  sower:
+    "a small low hunched worker bug on six thin arched legs, carrying on its back one big leathery brown seed pod veined with glowing acid green sap and held by bone hooks, " +
+    "dark green abdomen, small elongated head with short mandibles and amber eyes, harmless looking",
+  gnawer:
+    "a small lean fast hunter bug stretched low and forward, rust-red flesh body under slate-grey dorsal plates, a row of long bone spines laid back along its spine, a thin tail ending in a stinger, " +
+    "a long black chitin head with two very large crescent mandibles wide open, four amber eyes, six long arched legs",
+  spitter:
+    "a four-legged acid artillery creature: a large glowing acid green sac swelling on its back under a small chitin cap, held by black ribs, a long neck raised forward and up " +
+    "carrying a fan-shaped collar frill bristling with bone spikes and a small head with a round glowing spitting mouth",
+  shell:
+    "a living tank: a heavy dark green dome shell like a giant pill bug, striped across with four broad black chitin bands, a ridge of big bone spikes along the top, " +
+    "an armoured head at the front with two curled ram horns of bone, six short massive legs, small glowing green vents under the rim of the shell",
+  vine:
+    "a carnivorous plant creature: a dark green bulb crowned with a ring of curved black chitin fangs around a glowing green throat, a bundle of four long rust-red flesh tentacles reaching forward, " +
+    "barbed with bone and ending in hooks, walking on six thin black tendrils",
+  membrane:
+    "a flying creature seen from above with wings spread wide: slim black chitin body, two large bat-like wings of rust-red membrane veined with glowing acid green sap, bone hooks at the wing tips, " +
+    "glowing green spore sacs at the shoulders, elongated head with mandibles, long thin tail ending in a stinger",
+  egg_s:
+    "one small closed alien egg: a smooth dark green leathery egg shaped like a closed tulip bud, a round cup below and four pointed lips closed into a tip above, " +
+    "thin glowing acid green slits between the lips, a thin raised collar of slate-grey chitin around its middle (organic, part of the shell, not a metal band), three tiny rootlets at its base",
+  egg_m:
+    "one closed alien egg: a dark green leathery egg shaped like a closed tulip bud, four pointed lips closed into a tip, thin glowing acid green slits between the lips, " +
+    "a thin raised collar of slate-grey chitin around its middle (organic, part of the shell, not a metal band), and six round tan bone studs like warts around its lower half",
+  egg_l:
+    "one big armoured closed alien egg: a thick brown bark-like egg shaped like a closed tulip bud, four pointed lips closed into a tip, glowing acid green slits between the lips, " +
+    "a thin raised collar of slate-grey chitin around its middle (organic, part of the shell, not a metal band) with a crown of eight bone spikes pointing outward all around it",
+  burster:
+    "a small six-legged insect carrying on its back a huge swollen bladder far bigger than itself, taut and about to burst, glowing acid green under a net of black veins with bulging blisters, " +
+    "a few slate-grey scales pushed apart along the top, tiny low head with mandibles",
+  dart:
+    "a stocky four-legged creature with armoured slate-grey shoulders carrying on its back a muscle pouch from which a tight bundle of long straight bone needles points up at the sky like a missile rack, " +
+    "glowing green venom sacs at the base of the needles, low ram-like head",
+  burrower:
+    "a long armoured centipede lying low on the ground: six overlapping carapace segments along its body alternately slate-grey and black, a row of very tall bone spines standing along its spine, " +
+    "a wedge-shaped head between two big digging arms ending in bone shovels with four claws, short legs, a pincer at the tail",
+  nurse:
+    "a gentle unarmed healer creature: a long swollen rust-red abdomen full of sap with two rows of glowing acid green teats along its flanks, a mossy green back, thin hanging tendrils each ending in a glowing drop, " +
+    "a wide round slate-grey collar frill around a smooth pale bone mask with no mouth and several small eyes, six short fleshy legs",
+  hornet:
+    "a winged hunter wasp seen from above: black chitin thorax, pinched waist, a striped wasp abdomen curled under onto a long bone stinger, two pairs of narrow swept-back wings veined with glowing acid green sap, " +
+    "a head with two huge glowing green compound eyes and antennae",
+  moray:
+    "a sea serpent swimming: a long ringed body undulating in three arched loops, dark flesh with dorsal scales and a serrated slate-grey dorsal sail fin with bone rays, a raised neck, " +
+    "a head with long gaping jaws full of fangs and a glowing green throat, a scythe-shaped tail fin",
+  leviathan:
+    "a giant amphibious sea monster: a broad low dark hull of flesh, its back armoured with large black chitin vaults under a spine of slate-grey shields with bone spikes, corals and barnacles encrusted on its flanks, " +
+    "four long flipper legs, a wide tail fluke, a head as wide as the body with a shovel-shaped lower jaw bristling with tusks, glowing green mouth, four eyes and two glowing lures, no outline stroke around the creature",
+  behemoth:
+    "the largest beast of the swarm: four pillar legs with bone knees carrying a mountain of large upright slate-grey and black scales pierced by glowing green spore chimneys, " +
+    "at the front an upright torso with a rib cage over a glowing sap heart, two gigantic bone scythe arms closing in front of it, a low head with a collar frill and a glowing maw with many mandibles",
+};
+
 /** Illustrations (pas d'arrière-plan transparent). */
 export const ART = {
   keyart: {

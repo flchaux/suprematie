@@ -24,7 +24,13 @@ RAW = HERE / "raw"
 OUT = HERE.parent.parent / "packages" / "client" / "src" / "assets" / "textures"
 SIZE = 512
 BAND = 0.14  # largeur de la bande de raccord (part de la taille)
-KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete"]
+KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete", "chitin", "bark", "flesh", "bone"]
+# Réglages par matière, quand ils diffèrent des valeurs ordinaires :
+#   blur   : lissage du relief en pixels (1,2). Sur une matière luisante, un relief fin éclate les reflets en
+#            paillettes : la chitine ne garde que la forme de ses plaques ;
+#   std    : écart type du détail (0,16). Les stries de l'os, discrètes, deviendraient des veines de bois ;
+#   relief : étendue du relief (1 : de 0 à 1 ; 0,5 : de 0,25 à 0,75).
+TUNING = {"chitin": {"blur": 4.0}, "bone": {"std": 0.1, "relief": 0.5}}
 
 
 def seamless(a: np.ndarray) -> np.ndarray:
@@ -63,12 +69,20 @@ def process(key: str) -> None:
         grain = periodic_noise(SIZE, 2.0, 2) - 0.5
         paint = np.where(chips, 0.3, stripe)
         lum = 0.2 + paint * 0.6 + grain * 0.12
+    tune = TUNING.get(key, {})
     # détail : moyenne 0,5, écart type 0,16
-    detail = 0.5 + (lum - lum.mean()) * (0.16 / max(1e-3, lum.std()))
+    detail = 0.5 + (lum - lum.mean()) * (tune.get("std", 0.16) / max(1e-3, lum.std()))
     # relief : luminance lissée, étendue à 0..1
-    h = Image.fromarray((np.clip(lum, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))
+    if "blur" in tune:
+        # lissage large : sur l'image répétée 3 x 3, pour que le relief reste raccordé aux bords
+        tiled = Image.fromarray((np.clip(np.tile(lum, (3, 3)), 0, 1) * 255).astype(np.uint8))
+        h = tiled.filter(ImageFilter.GaussianBlur(tune["blur"])).crop((SIZE, SIZE, 2 * SIZE, 2 * SIZE))
+    else:
+        h = Image.fromarray((np.clip(lum, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))
     height = np.asarray(h, dtype=np.float32) / 255.0
     height = (height - height.min()) / max(1e-3, height.max() - height.min())
+    if "relief" in tune:
+        height = 0.5 + (height - 0.5) * tune["relief"]
     rough = np.clip(0.5 + (lum.mean() - lum) * 1.2, 0, 1)
     rgb = np.stack([detail, height, rough], axis=-1)
     out = Image.fromarray((np.clip(rgb, 0, 1) * 255 + 0.5).astype(np.uint8), "RGB")
