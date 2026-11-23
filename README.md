@@ -39,6 +39,7 @@ Les icônes d'objets, de bâtiments et d'unités et les illustrations sont gén�
 
 | Commande | Rôle |
 | --- | --- |
+| `npm run setup` | Prépare un worktree : liens du code partagé, compilation de la simulation |
 | `npm run build` | Compile `sim.wasm` (Rust) puis le client (Vite) |
 | `npm test` | Tests Rust, Clippy, ESLint, Vitest, déterminisme sur 10 000 ticks avec snapshot/restore |
 | `npm run test:browser` | Déterminisme Node.js / Chrome |
@@ -56,5 +57,7 @@ Rust est installé par apt (`/usr/lib/rust-1.97/bin`). L'interface WebAssembly e
 ## Déploiement
 
 Service systemd `supreme` (port local 3060, `tools/supreme.service`), derrière Caddy (`/etc/caddy/Caddyfile`, bloc
-`supreme.chaux.me`, HTTPS automatique). Mise à jour : `npm run build && sudo systemctl restart supreme`.
+`supreme.chaux.me`, HTTPS automatique). Mise à jour : `npm run deploy` depuis le dossier principal, sur master : il
+refuse si une partie est en cours, construit le client à côté, le met en place, redémarre le service et vérifie que
+le site répond (`npm run deploy -- --etat` : dit seulement si on peut déployer).
 Replays : `data/replays/`. Rapports de désynchronisation : `data/desync/`.

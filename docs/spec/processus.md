@@ -28,48 +28,18 @@ Contrôles automatiques du code :
 - Clippy dans `sim/` : `float_arithmetic` interdit, et `disallowed_types` pour HashMap, HashSet, Instant et SystemTime.
 - ESLint dans `packages/shared` et dans le Worker : Math.random, Date.now et performance.now interdits.
 
-Fichier `CLAUDE.md` à la racine du dépôt :
+Ce qui guide Claude Code dans le dépôt :
 
-```markdown
-# Règles du projet
+- `CLAUDE.md` à la racine : les règles valables partout (lire la spécification, déterminisme de la simulation, worktrees, contrôles avant de terminer, déploiement, modèles 3D, fichiers à ne pas lire). Il reste court : il est chargé dans chaque session.
+- `sim/CLAUDE.md`, `packages/client/CLAUDE.md`, `packages/server/CLAUDE.md` : les contrôles à lancer et les pièges de chaque partie du code. Ils ne sont chargés que lorsque la session lit des fichiers de ce dossier.
+- `.claude/skills/` : les recettes qui reviennent, chargées à la demande. `ajouter-contenu` (unité, bâtiment, recherche, objet), `generer-images` (icônes et textures), `comparer-perf` (deux versions de la simulation en alternance), `essai-navigateur` (captures, WebGPU réel, client d'un worktree).
+- `.claude/settings.json` : interdit la lecture des fichiers lourds ou générés (`target/`, `dist/`, `node_modules/`, `.wasm`, `.glb`, `.gltf`) et autorise sans question les commandes de test et de contrôle du projet (tests Rust et Vitest, Clippy, ESLint, déterminisme, jalons des IA, `stress.ts`). Rien qui écrive hors des fichiers générés n'y figure : ni `npm run build`, ni `npm run bench`, ni git, ni le redémarrage du service.
 
-Lire docs/SPEC.md (index), puis les fichiers de docs/spec/ utiles à la tâche, avant toute tâche qui touche à l'architecture, au réseau ou à la simulation. Une règle nouvelle va dans le fichier de son thème.
+Outils de travail :
 
-## Simulation (dossier sim/)
-- Jamais de f32 ni de f64 dans l'état de la partie : entiers ou virgule fixe.
-- Jamais de HashMap ni de HashSet parcourus, jamais d'horloge, jamais d'aléatoire hors du générateur à graine de la partie.
-- Les entités sont traitées par identifiant croissant.
-- Pas d'instructions relaxed SIMD.
-
-## Avant de terminer une tâche
-- Lancer npm run test:determinism et npm run bench.
-- Ne jamais désactiver un test ou une règle de lint pour faire passer une modification.
-- Tests dans Chrome (tools/e2e-*.mjs, captures) : seulement si la modification change l'affichage ou une interaction que les tests Node ne couvrent pas. Un seul scénario court, une seule fois en fin de tâche (pas de nouveau passage après une fusion sans conflit). Toujours par tools/browser.mjs.
-
-## Modèles 3D
-- Écrire des descriptions de pièces dans assets/models/, jamais de sommets ni de fichiers .glb ou .gltf.
-- Vérifier le résultat avec npm run viewer:capture.
-
-## Fichiers à ne pas lire
-- target/, dist/, node_modules/, fichiers .wasm, .glb et .gltf.
-```
-
-Fichier `.claude/settings.json`, qui bloque la lecture des fichiers lourds ou générés :
-
-```json
-{
-  "permissions": {
-    "deny": [
-      "Read(./target/**)",
-      "Read(./**/dist/**)",
-      "Read(./**/node_modules/**)",
-      "Read(./**/*.wasm)",
-      "Read(./**/*.glb)",
-      "Read(./**/*.gltf)"
-    ]
-  }
-}
-```
+- `npm run setup` (`tools/setup.mjs`) : prépare un worktree en une commande. Un worktree n'a ni `node_modules` ni `sim.wasm` ; Node, Vite et Vitest trouvent les dépendances dans le dossier principal, mais « @supreme/shared » y mène au code partagé du dossier principal. Vite, Vitest et le visualiseur lisent donc le code partagé du dossier courant par un alias (`tools/shared-alias.mjs`), et le script crée pour Node un `node_modules` qui ne contient que des liens vers les paquets du worktree, puis compile la simulation.
+- `npm run deploy` (`tools/deploy.mjs`) : met master en production depuis le dossier principal. Il refuse si le dossier n'est pas sur master ou a des modifications non validées, et si une partie est en cours (code de sortie 2). Le client est construit à côté (`packages/client/dist.next`) et mis en place juste avant le redémarrage, après un second contrôle : une partie lancée pendant la construction n'est pas coupée et la production n'a pas changé. Il vérifie ensuite que le service est actif et que le site répond. Un seul déploiement à la fois sur la machine (verrou `~/.cache/supreme-deploy.lock`). `npm run deploy -- --etat` dit seulement si on peut déployer.
+- `npm run test:determinism` affiche l'empreinte de chaque scénario (hash du dernier tick) : un remaniement sans changement de comportement doit donner les mêmes empreintes qu'avant.
 
 ## Maîtrise du coût d'utilisation de Claude
 

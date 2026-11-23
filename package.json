@@ -5,6 +5,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "setup": "node tools/setup.mjs",
+    "deploy": "node tools/deploy.mjs",
     "build:sim": "node tools/build-sim.mjs",
     "build": "npm run build:sim && npm run build -w @supreme/client",
     "dev": "npm run build:sim && npm run dev -w @supreme/client",
