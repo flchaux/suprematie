@@ -3,6 +3,7 @@
 // Variables : MODS=ark_w_rail,ark_shield2 (améliorations des Transhumants installées), DEP=0.5 (avancement des animations de déploiement, 0 replié, 1 déployé), ZOOM=2 (caméra plus proche), ROT=180 (modèles tournés de 180°, vus de dos), LO=1 (niveau de détail réduit), SUFFIX=avant (nom de la capture), WEBGPU=1, UNIES=1
 import { launchBrowser } from "../browser.mjs";
 import { createServer } from "vite";
+import { sharedAlias } from "../shared-alias.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { Sim } from "../../packages/shared/src/sim.ts";
@@ -12,7 +13,7 @@ const set = process.argv[2] ?? "units";
 const only = process.argv[3];
 const sim = await Sim.load(readFileSync(root + "packages/client/public/sim.wasm"));
 writeFileSync(root + "tools/viewer/data.json", sim.dataJson());
-const server = await createServer({ root: root + "tools/viewer", configFile: false, server: { port: Number(process.env.VIEWER_PORT ?? 5199), fs: { allow: [root] } }, logLevel: "error" });
+const server = await createServer({ root: root + "tools/viewer", configFile: false, resolve: { alias: sharedAlias }, server: { port: Number(process.env.VIEWER_PORT ?? 5199), fs: { allow: [root] } }, logLevel: "error" });
 await server.listen();
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });

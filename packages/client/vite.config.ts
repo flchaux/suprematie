@@ -1,11 +1,14 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { fileURLToPath } from "node:url";
+import { sharedAlias } from "../../tools/shared-alias.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
 export default defineConfig({
   plugins: [svelte()],
+  // code partagé de ce dossier, même dans un worktree (voir tools/shared-alias.mjs)
+  resolve: { alias: sharedAlias },
   server: {
     port: 5173,
     fs: { allow: [root] },

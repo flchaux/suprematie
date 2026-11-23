@@ -1,6 +1,8 @@
 // Test de déterminisme : deux simulations reçoivent la même graine et la même suite d'ordres
 // aléatoires pendant N ticks ; leurs hash doivent être identiques à chaque tick.
 // Vérifie aussi snapshot()/restore() : la suite après restauration donne les mêmes hash.
+// L'empreinte affichée (hash du dernier tick) sert à comparer deux versions du code : un
+// remaniement qui ne change aucun comportement doit donner les mêmes empreintes qu'avant.
 import { readFileSync } from "node:fs";
 import { Sim } from "../packages/shared/src/sim.ts";
 import { randomOrders } from "./scenario.mjs";
@@ -26,6 +28,7 @@ async function check(label, params) {
   let snap = null;
   const hashesAfter = [];
   const ordersAfter = [];
+  let last = 0;
   for (let t = 0; t < TICKS; t++) {
     const orders = gen(t);
     const ha = a.step(orders);
@@ -34,6 +37,7 @@ async function check(label, params) {
       console.error(`DÉSYNCHRONISATION (${label}) au tick ${t} : ${ha} != ${hb}`);
       process.exit(1);
     }
+    last = ha;
     if (t === snapAt) snap = a.snapshot();
     if (t > snapAt) {
       hashesAfter.push(ha);
@@ -51,5 +55,5 @@ async function check(label, params) {
       process.exit(1);
     }
   }
-  console.log(`Déterminisme OK (${label}) : ${TICKS} ticks identiques (${(dt / TICKS / 2).toFixed(3)} ms/tick), snapshot ${snap.length} octets, restore OK.`);
+  console.log(`Déterminisme OK (${label}) : ${TICKS} ticks identiques (${(dt / TICKS / 2).toFixed(3)} ms/tick), snapshot ${snap.length} octets, restore OK, empreinte ${(last >>> 0).toString(16).padStart(8, "0")}.`);
 }
