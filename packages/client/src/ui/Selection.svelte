@@ -98,6 +98,7 @@
   const status = $derived.by(() => {
     // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
     if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
+    if (info.build >= 65536 && info.souche?.soil?.spent) return { text: `Épuisée : plus d'herbe autour, ${info.souche.soil.pct} % de sa production`, kind: "warn" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · en attente de matériaux" : ""), kind: info.stalled ? "warn" : "build" };
     if (paused) return { text: "En pause : ni énergie, ni ingrédients, ni production ; il reprendra là où il en était", kind: "paused" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : "arrêté"} pendant le chantier)`, kind: "build" };
@@ -309,6 +310,11 @@
           {:else}<b class="bad">hors du terreau : rien ne pousse</b>{/if}
         </div>
         {#if sv.far}<div class="row small" title="Racines et rhizomes coûtent 2 % de plus par case qui les sépare de la graine-mère la plus proche (fixé à la plantation)"><span class="kicker">Distance</span> <span class="num">{sv.far / 2}</span> cases de la graine-mère <span class="dim">· coût +{sv.far} %</span></div>{/if}
+        {#if sv.soil}
+          {@const so = sv.soil}
+          <div class="row small" title="Frondaisons et racines-puits mangent l'herbe (tout sol qui n'est pas du terreau) autour d'elles et en font du terreau. Sans herbe, elles ne donnent plus que {so.pct} % de leur production."><span class="kicker">Herbe autour</span> <b class="num" class:bad={so.left < 15}>{so.left}</b><span class="dim"> / <span class="num">{so.total}</span> cases{so.left ? ` · ≈ ${Math.max(1, Math.round((so.left * so.secs) / 60))} min` : ""}</span></div>
+          <div class="upbar"><span style="width: {(so.left / Math.max(1, so.total)) * 100}%"></span></div>
+        {/if}
         {#if sv.hatch >= 0}
           <div class="row small"><span class="kicker">Éclosion</span> <b>Béhémoth</b> <span class="num">{sv.hatch > 0 ? `dans ${Math.ceil(sv.hatch / 20)} s` : "dès qu'il y a de la place sous la limite d'unités"}</span></div>
           <div class="upbar"><span style="width: {100 - sv.hatch / 4}%"></span></div>

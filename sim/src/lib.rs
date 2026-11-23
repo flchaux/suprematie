@@ -23,6 +23,7 @@ pub mod render;
 pub mod rng;
 pub mod save;
 pub mod ser;
+pub mod soil;
 pub mod souche;
 pub mod transhumants;
 pub mod twins;
@@ -272,6 +273,20 @@ pub extern "C" fn can_place_line(n_words: u32) -> *const u8 {
         },
         Vec::new(),
     );
+    set_out_i32(&v)
+}
+
+/// Sol mangé par la Souche pour un joueur (voir soil::layer) : suites [longueur << 8 | joueur + 1].
+#[no_mangle]
+pub extern "C" fn soil_layer(player: i32) -> *const u8 {
+    let v = with_world(|w| soil::layer(w, player), Vec::new());
+    set_out_i32(&v)
+}
+
+/// Aperçu de pose d'une frondaison ou d'une racine-puits (voir soil::preview).
+#[no_mangle]
+pub extern "C" fn soil_preview(kind: i32, x: i32, y: i32) -> *const u8 {
+    let v = with_world(|w| if kind < 0 { Vec::new() } else { soil::preview(w, kind as u16, x, y) }, Vec::new());
     set_out_i32(&v)
 }
 
@@ -542,6 +557,8 @@ mod pickup_tests;
 mod races_tests;
 #[cfg(test)]
 mod essaim_tests;
+#[cfg(test)]
+mod soil_tests;
 #[cfg(test)]
 mod ponte_tests;
 #[cfg(test)]

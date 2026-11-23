@@ -122,6 +122,22 @@ await page.evaluate(() => window.__game.client.cancelMode());
 await page.mouse.move(640, 300);
 await select(null);
 
+// ---------- frondaison : herbe mangée, herbe à manger à la pose ----------
+await look(heart.x - 8, heart.z - 4, 34);
+check(await page.evaluate(([x, z]) => {
+  const { client } = window.__game;
+  return client.frame.soilN >= 45 && client.scene.terreau.at(Math.floor(x) - 9, Math.floor(z) - 5);
+}, [heart.x, heart.z]), "herbe mangée : du terreau au nord de la frondaison");
+await page.evaluate(() => window.__game.client.startBuild(window.__game.ui.data.buildings.findIndex((b) => b.key === "leaves")));
+await page.mouse.move(700, 420);
+await page.mouse.move(702, 421);
+await page.waitForFunction(() => window.__game.ui.grass, null, { timeout: 60000 }).catch(() => {});
+check(await page.evaluate(() => (window.__game.ui.grass?.total ?? 0) > 100 && document.querySelector(".mode")?.textContent.includes("herbe à manger")), "herbe à manger dans le bandeau de pose", JSON.stringify(await page.evaluate(() => window.__game.ui.grass)));
+await shot("herbe");
+await page.evaluate(() => window.__game.client.cancelMode());
+await page.mouse.move(640, 300);
+await select(null);
+
 // ---------- Matrice : caractère acquis ----------
 await look(heart.x + 4, heart.z + 2, 90);
 await select(at.matrix.ref);

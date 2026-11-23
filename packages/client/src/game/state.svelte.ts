@@ -33,6 +33,8 @@ export const ui = $state({
    * réseau des relais logistiques qui le couvrent et soute des constructeurs choisis ; null tant qu'inconnu.
    */
   buildReach: null as number[] | null,
+  /** Souche : herbe qu'aura à manger la frondaison ou la racine-puits à poser : cases, périmètre, secondes par case */
+  grass: null as null | { left: number; total: number; secs: number },
   /** Souche : racines ou rhizomes en cours de tracé : nombre posable, coût total [objet, quantité], supplément le plus fort (%) */
   lineCost: null as null | { n: number; cost: [number, number][]; pct: number },
   /** lieu de `buildReach` : « cursor » (fantôme), « builder » (constructeur choisi), « view » (centre de l'écran) */

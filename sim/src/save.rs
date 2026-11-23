@@ -26,7 +26,8 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 /// - 6 : relais logistiques (relais propriétaire d'un drone de ravitaillement, `Carrier::relay`).
 /// - 7 : Souche, suite (caractères acquis des joueurs, flaques d'acide).
 /// - 8 : améliorations des Transhumants (unités, modules, état des Arches).
-pub const VERSION: u32 = 8;
+/// - 9 : Souche, sol mangé.
+pub const VERSION: u32 = 9;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])
@@ -72,6 +73,9 @@ pub fn write(w: &World, version: u32, team_stock: &[[i32; crate::data::NUM_ITEMS
     }
     if version >= 8 {
         w.arks.ser(&mut o);
+    }
+    if version >= 9 {
+        crate::soil::write(&w.soil, &mut o);
     }
     o.buf
 }
@@ -153,6 +157,10 @@ fn read_world(r: &mut R) -> Option<(World, Vec<[i32; crate::data::NUM_ITEMS]>)> 
     }
     // l'état des Arches manquant (sauvegarde plus ancienne) est créé par `rebuild`
     w.arks = if r.version >= 8 { Ser::de(r) } else { Vec::new() };
+    if r.version >= 9 {
+        w.soil = crate::soil::read(r, (w.map.w * w.map.h) as usize);
+        w.soil_n = w.soil.iter().filter(|&&o| o != 0).count() as u32;
+    }
     Some((w, team_stock))
 }
 

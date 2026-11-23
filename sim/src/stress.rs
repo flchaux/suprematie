@@ -664,7 +664,7 @@ pub fn essaim_demo() -> World {
     put(&mut w, 0, B_SPORANGIUM, hx + 18, hy - 3);
     put(&mut w, 0, B_COCOON, hx + 8, hy - 5);
     put(&mut w, 0, B_MATRIX, hx - 4, hy - 2);
-    put(&mut w, 0, B_LEAVES, hx - 8, hy - 2);
+    let leaves = put(&mut w, 0, B_LEAVES, hx - 8, hy - 2);
     put(&mut w, 0, B_BROOD, hx + 4, hy + 3);
     let maw = put(&mut w, 0, B_MAW, hx - 6, hy + 3);
     let a = put(&mut w, 0, B_BURROW, hx + 3, hy - 3);
@@ -697,6 +697,10 @@ pub fn essaim_demo() -> World {
     }
     if let (Some(a), Some(b)) = (a, b) {
         crate::souche::link_burrow(&mut w, a, b);
+    }
+    // la frondaison a déjà mangé une partie de son herbe
+    if let Some(l) = leaves {
+        crate::soil::graze_now(&mut w, l, 45);
     }
     if let Some(m) = maw {
         let (cx, cy) = w.buildings[m].center();

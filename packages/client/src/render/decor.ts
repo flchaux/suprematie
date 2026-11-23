@@ -5,6 +5,7 @@
 // sont envoyés à la carte graphique, moins denses quand la caméra s'éloigne. Masquées en vue
 // stratégique, sous le brouillard non exploré et sous les bâtiments (connus par les images de la simulation).
 import * as THREE from "three/webgpu";
+import type { TerreauCover } from "./terreau.ts";
 import { attribute, positionGeometry, normalGeometry, uniform, vec3, float, sin, cos, mix, normalize, smoothstep, step, transformNormalToView } from "three/tsl";
 import type { Frame, GameData } from "@supreme/shared";
 import { BUILDING_WORDS } from "@supreme/shared";
@@ -40,6 +41,9 @@ const KINDS = DECOR_KINDS;
 type Kind = DecorKind;
 const KIND_KEYS = Object.keys(KINDS) as Kind[];
 const KIND_INDEX = Object.fromEntries(KIND_KEYS.map((k, i) => [k, i])) as Record<Kind, number>;
+
+/** Sortes qui sont des plantes : le terreau de la Souche les mange. */
+const PLANTS = KIND_KEYS.map((k) => !/rock|boulder|pillar|crystal|log|stump/.test(k));
 
 /** Zones : densité (décorations par case) et poids des sortes. */
 interface Zone { density: number; kinds: [Kind, number][] }
@@ -341,6 +345,9 @@ export class Decorations {
     }
   }
 
+  /** Terreau de la Souche : les plantes y disparaissent (les roches et les troncs restent). */
+  terreau: TerreauCover | null = null;
+
   /** Mise à jour par image : visibilité, morceaux vus, densité selon la distance, bâtiments. */
   update(f: Frame | null, _camera: THREE.Camera, distance: number, strategic: boolean, viewRect: [number, number, number, number], target: THREE.Vector3, time: number): void {
     if (f && !strategic) this.trackBuildings(f, viewRect);
@@ -358,7 +365,7 @@ export class Decorations {
     const r0 = Math.max(0, Math.floor(z0 / CHUNK));
     const c1 = Math.min(this.cw - 1, Math.floor(x1 / CHUNK));
     const r1 = Math.min(this.ch - 1, Math.floor(z1 / CHUNK));
-    const key = `${c0},${r0},${c1},${r1},${k},${this.coverVersion}`;
+    const key = `${c0},${r0},${c1},${r1},${k},${this.coverVersion},${this.terreau?.changes ?? 0}`;
     if (key !== this.fillKey) {
       this.fillKey = key;
       this.fill(c0, r0, c1, r1, k, target);
@@ -384,7 +391,7 @@ export class Decorations {
         const s = i * STRIDE;
         const kind = d[s + 8];
         const b = this.batches[kind];
-        if (!b) continue;
+        if (!b || (PLANTS[kind] && this.terreau?.at(Math.floor(d[s]), Math.floor(d[s + 2])))) continue;
         const j = counts[kind]++ * 4;
         const pos = b.pos.array as Float32Array;
         const info = b.info.array as Float32Array;
