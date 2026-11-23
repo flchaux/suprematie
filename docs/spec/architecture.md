@@ -79,6 +79,22 @@ Le module expose cinq fonctions :
 | `snapshot()` | Sérialise tout l'état en octets, de façon compacte |
 | `restore(octets)` | Recharge un état sérialisé |
 
+Code des bâtiments : `sim/src/buildings.rs` est une façade (boucle `update_buildings`, sommeil et réveil, pause) et le reste est rangé par thème dans `sim/src/buildings/`. Tout ce qui est public reste accessible par `crate::buildings::xxx` (ré-exports). Chaque module commence par `use super::*;` ; un élément privé qui sert à un autre module est `pub(super)`.
+
+| Module | Thème |
+| --- | --- |
+| `pose.rs` | Emprise et face avant, règles de pose (`can_place`), remplacement des tapis, fantômes à reconstruire, chantier, rotation, fin de chantier, retrait |
+| `energie.rs` | Combustible et générateurs, zones électriques (`rebuild_power`), tick du réseau (`power_tick`), consommation (`use_power`) |
+| `sorties.rs` | Sorties d'un bâtiment (bras, tapis de sortie, voisins collés), tour de rôle entre elles (`next_outlet`, `share_turn`), tick des bras |
+| `jumelles.rs` | Machines jumelles : partage des ingrédients, des produits et du combustible |
+| `objets.rs` | Ce qu'un bâtiment accepte, reçoit et rend (`accepts`, `insert_item`, `take_output`, `push_to`), tapis de contrôle |
+| `debits.rs` | Débits mesurés (`flow_add`, `flow_per_min`) et débit maximal (`flow_max`) |
+| `depot.rs` | Dépôts et collecteurs |
+| `production.rs` | Extracteur, fabricants, laboratoire, cadence |
+| `usine.rs` | Usines d'unités : réserve de composants, production de la file |
+| `niveaux.rs` | Améliorations sur place (`upgrade`) |
+| `speciaux.rs` | Bouclier, munitions (silo, antimissile), porte de transit |
+
 ## Algorithmes de performance
 
 Ces choix d'algorithmes pèsent plus sur la performance que le langage. Ils sont en place dès les premières versions, car les ajouter plus tard oblige à réécrire la simulation.
