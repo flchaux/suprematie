@@ -33,10 +33,32 @@ export interface UnitDef {
   litter: number;
   /** œuf de la Souche : unité immobile qui éclot en un organisme (voir sim/src/ponte.rs) */
   egg: boolean;
+  /** tourelle déployée par une Arche des Transhumants : elle ne reçoit pas d'ordres (voir sim/src/ameliorations.rs) */
+  turret: boolean;
 }
+/** Amélioration des Transhumants (voir sim/src/ameliorations.rs) : `host` : unité qui la porte (pour un module, son
+ * chenillard) ; `slot` : emplacement ; `rank`, `base` : palier et palier précédent exigé (0 : aucun) ; le coût compte
+ * les relevés ; `time` en secondes. */
+export interface ModDef {
+  key: string; name: string; desc: string; icon: string; host: number; slot: number; rank: number; base: number; tech: number;
+  cost: [number, number][]; time: number;
+}
+/** Fiche des améliorations d'une unité ou d'un module : installées (par emplacement), en cours (ticks restants, total),
+ * disponible à portée pour payer (relevés compris), état de l'Arche. */
+export interface ModInfo { host: number; mods: number[]; job: number; left: number; total: number; reach: number[]; ark: ArkInfo | null }
+/** État d'une Arche : tourelles [type, type voulu, état, ticks, PV ‰, déployée, unité], file de l'atelier embarqué… */
+export interface ArkInfo {
+  turrets: [number, number, number, number, number, number, number][];
+  out: boolean; hold: boolean; queue: [number, number][]; prog: number; paid: boolean; boost: number; boostReady: number;
+  shieldR: number; shieldMax: number; dock: boolean; cap: number;
+}
+/** États d'une tourelle d'Arche (comme TU_* dans ameliorations.rs). */
+export const TU = { ABOARD: 0, OUT: 1, RETURN: 2, LOST: 3, CONVERT: 4 } as const;
 export interface GameData {
   races: RaceDef[];
   items: ItemDef[]; recipes: RecipeDef[]; weapons: WeaponDef[]; techs: TechDef[]; buildings: BuildingDef[]; units: UnitDef[];
+  /** améliorations des Transhumants (indice 0 : rien), emplacements de l'Arche et des autres, types de tourelles (indices d'unités) */
+  mods: ModDef[]; arkSlots: { key: string; name: string; icon: string }[]; oneSlot: { key: string; name: string; icon: string }; turretKinds: number[];
   missileCost: [number, number][]; interceptorCost: [number, number][];
   /** niveaux d'un extracteur : vitesse et consommation en % du niveau 0, coût et recherche du passage à ce niveau */
   /** combustible des générateurs : énergie par unité (kW × ticks) et taille du réservoir (unités) */

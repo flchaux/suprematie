@@ -149,7 +149,7 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
     // un cycle de `ticks` ticks qui consomme ou produit `n` objets : n × 100 × 1200 / ticks centièmes par minute
     let per_cycle = |n: u64, ticks: u64| n * 100 * MIN / ticks.max(1);
     // pendant une amélioration, la machine ne travaille pas (le générateur principal reste en service)
-    if bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR {
+    if (bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR) || (bb.mod_job != 0 && bb.def().class != BClass::Power) {
         return;
     }
     match bb.def().class {
@@ -176,7 +176,7 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
         // une unité : build × 20 × RECIPE_SCALE de progrès, 1024 × build_mult par tick ; ses composants
         BClass::Factory => {
             let Some(&(kind, _)) = bb.queue.first() else { return };
-            let mut mult = pl.build_mult.max(0) as u64;
+            let mut mult = pl.build_mult.max(0) as u64 * crate::ameliorations::module_speed(bb) as u64 / 100;
             if bb.def().race == RACE_SOUCHE {
                 mult = mult * crate::souche::brood_speed(w, owner as u8) as u64 / 100;
             }
@@ -196,10 +196,10 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
                 return;
             }
             let tech = &TECHS[t as usize];
-            let ticks = tech.time as u64 * 20;
+            let ticks = tech.time as u64 * 2000 / crate::ameliorations::module_speed(bb) as u64;
             match pl.race {
                 RACE_SOUCHE => cons[ADN as usize] += per_cycle(tech.tier.max(1) as u64, ticks),
-                RACE_TRANSH => cons[RELEVES as usize] += per_cycle((crate::transhumants::RELEVES_PER_TIER * tech.tier.max(1) as i32) as u64, ticks),
+                RACE_TRANSH => cons[RELEVES as usize] += per_cycle(crate::transhumants::lab_need(bb, t) as u64, ticks),
                 _ => {
                     for k in 0..tech.tier as usize {
                         cons[PACK1 as usize + k] += per_cycle(1, ticks);
@@ -211,7 +211,8 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
         BClass::Power if !fuelless(bb.kind) => {
             let it = if bb.kind == B_CRYSTAL_REACTOR { ENERGY_CELL } else { HYDROCARBON };
             let e = crate::buildings::fuel_energy(bb.kind, it).max(1) as u64;
-            cons[it as usize] += power_prod_of(bb).max(0) as u64 * 100 * MIN / e;
+            let lean = if crate::ameliorations::fit(bb) == crate::ameliorations::M_GEN_LEAN { 2 } else { 1 };
+            cons[it as usize] += power_prod_of(bb).max(0) as u64 * 100 * MIN / e / lean;
         }
         // organe de la Souche : centièmes par seconde (tick_organ)
         BClass::Organ => {
@@ -281,7 +282,7 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
             }
             if zone_of(w, p, w.units.x[s].div_euclid(TILE), w.units.y[s].div_euclid(TILE), 1, 1, None) == z {
                 if store == Some(s) {
-                    cap += crate::drones::COMMANDER_CAP as i64;
+                    cap += crate::ameliorations::store_cap(w, s) as i64;
                 }
                 for (i, &n) in h.iter().enumerate().take(N) {
                     stock[i] += n as i64;

@@ -602,10 +602,11 @@ function assemble(model: Model, lo: boolean): Assembled {
     if (!f.geo.getAttribute("position")) return;
     const g = colorize(f.geo, f.color, f.smooth);
     g.computeBoundingBox();
-    if (g.boundingBox) box.union(g.boundingBox);
+    // pièce d'une amélioration (pivot « si:… ») : elle ne compte pas dans la taille du modèle
+    if (g.boundingBox && !parseCond(f.pivot ?? f.parent ?? "")?.on) box.union(g.boundingBox);
     colored.push({ g, self: i, f });
   });
-  if (!box.isEmpty()) bakeAO(colored, flats.map((f) => f.vol), box);
+  if (!box.isEmpty()) bakeAO(colored, flats.map((f) => (parseCond(f.pivot ?? f.parent ?? "") ? undefined : f.vol)), box);
   for (const { g, f } of colored) {
     triangles += g.getAttribute("position").count / 3;
     const key = f.pivot ?? f.parent;
@@ -673,6 +674,21 @@ export function buildModel(model: Model): BuiltModel {
   if (useLo) built.bodyLo = lo!.body;
   builtCache.set(model, built);
   return built;
+}
+
+/**
+ * Condition d'un pivot (améliorations des Transhumants) : « si:clé+clé#nom » n'est dessiné que si l'une de ces
+ * améliorations est installée, « sauf:clé+clé#nom » que si aucune ne l'est. `base` : le nom qui suit (« fixe… » : la
+ * pièce ne tourne pas).
+ */
+export interface PivotCond { on: boolean; keys: string[]; base: string }
+export function parseCond(name: string): PivotCond | null {
+  const m = /^(si|sauf):([^#]+)#(.*)$/.exec(name);
+  return m ? { on: m[1] === "si", keys: m[2].split("+"), base: m[3] } : null;
+}
+/** Le pivot est-il dessiné, avec ces améliorations (clés) installées ? */
+export function condShown(c: PivotCond | null, has: (key: string) => boolean): boolean {
+  return !c || c.keys.some(has) === c.on;
 }
 
 /**

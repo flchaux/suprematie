@@ -2,6 +2,7 @@
 //! Interface : init, step, render_buffer, snapshot, restore (+ fonctions d'aide pour l'interface et les bots).
 //! Les échanges passent par un tampon d'entrée (`in_buf`) et un tampon de sortie (`out_ptr`/`out_len`).
 
+pub mod ameliorations;
 pub mod belts;
 pub mod buildings;
 pub mod combat;
@@ -501,3 +502,5 @@ mod zone_eco_tests;
 #[cfg(test)]
 mod pause_tests;
 pub mod stress;
+#[cfg(test)]
+mod ameliorations_tests;

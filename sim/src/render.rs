@@ -9,6 +9,8 @@ pub const HEADER: usize = 16;
 /// ... + plafond total des dépôts, fragments, EPPZ, race, recherches 64 à 127, réserves de la Souche
 pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 9;
 pub const CARRIER_WORDS: usize = 5;
+/// Transhumants : améliorations d'une unité ou d'un module.
+pub const MOD_WORDS: usize = 3;
 pub const UNIT_WORDS: usize = 9;
 pub const BUILDING_WORDS: usize = 8;
 
@@ -43,8 +45,8 @@ fn stock_totals(w: &World) -> (Vec<[i32; NUM_ITEMS]>, Vec<i32>, Vec<[i32; NUM_IT
     }
     // la soute d'un commandant compte comme un dépôt
     for (p, c) in cap.iter_mut().enumerate() {
-        if crate::drones::commander_store(w, p as u8).is_some() {
-            *c += crate::drones::COMMANDER_CAP as i32;
+        if let Some(s) = crate::drones::commander_store(w, p as u8) {
+            *c += crate::ameliorations::store_cap(w, s) as i32;
         }
     }
     for s in 0..w.units.alive.len() {
@@ -393,10 +395,9 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
     let mut ns = 0;
     for &(x, y, r, team, rf) in &w.shields {
         let pct = if let Some(u) = w.unit(rf) {
-            let d = udef(w.units.kind[u]);
-            w.units.cold[u].shield * 100 / d.shield_hp.max(1)
+            w.units.cold[u].shield * 100 / crate::ameliorations::unit_shield(w, u).1.max(1)
         } else if let Some(b) = w.building(rf) {
-            w.buildings[b].shield * 100 / w.buildings[b].def().shield_hp.max(1)
+            w.buildings[b].shield * 100 / crate::ameliorations::building_shield(&w.buildings[b]).1.max(1)
         } else {
             0
         };
@@ -421,6 +422,24 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
         nc += 1;
     }
     out[14] = nc;
+    // Transhumants : améliorations installées (modèles) : référence, emplacements 0 à 3, emplacement 4 | en cours << 8
+    let mut nm = 0;
+    let mut push = |r: u32, mods: u64, job: u8| {
+        out.extend_from_slice(&[r as i32, mods as u32 as i32, ((mods >> 32) as u32 & 0xff | (job as u32) << 8) as i32]);
+        nm += 1;
+    };
+    for s in 0..w.units.alive.len() {
+        let c = &w.units.cold[s];
+        if w.units.alive[s] && c.carried_by == NONE && (c.mods != 0 || c.mod_job != 0) {
+            push(w.unit_id(s), c.mods, c.mod_job);
+        }
+    }
+    for (b, bb) in w.buildings.iter().enumerate() {
+        if bb.alive && (bb.mods != 0 || bb.mod_job != 0) && bb.x >= mx0 && bb.y >= my0 && bb.x <= mx1 && bb.y <= my1 {
+            push(w.building_ref(b), bb.mods, bb.mod_job);
+        }
+    }
+    out[15] = nm;
     // vision de l'équipe du joueur
     out[12] = w.vis_w;
     if with_vis && player >= 0 && (player as usize) < w.players.len() {
@@ -530,7 +549,9 @@ pub fn info_building(w: &World, r: u32) -> String {
         let lvl = crate::data::EXTRACTOR_LEVELS[(bb.level as usize).min(crate::data::EXTRACTOR_LEVELS.len() - 1)].speed as u64;
         let purity = crate::buildings::purity_of(bb) as i32;
         let clock = crate::buildings::clock_of(bb) as i32;
-        let per = |s: u64| per(s) * lvl as i32 / 100 * purity / 100 * clock / 100;
+        // foreuse nomade : deux fois plus vite, moins l'usure, améliorations comprises
+        let nomad = if bb.kind == B_T_DRILL { crate::transhumants::drill_speed(w, b) as i64 } else { 1000 };
+        let per = |s: u64| (per(s) as i64 * lvl as i64 / 100 * purity as i64 / 100 * clock as i64 / 100 * nomad / 1000) as i32;
         (per(sat.clamp(0, 1024) as u64), per(1024))
     } else {
         (0, 0)
@@ -673,7 +694,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id && k.relay == 0).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"egg\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"mods\":{},\"egg\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -697,6 +718,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
         if c.pack != 0 { c.ready_tick.saturating_sub(w.tick) } else { 0 },
         pickup_info(w, s),
         deliver_info(w, s),
+        crate::ameliorations::info(w, crate::ameliorations::Host::U(s)),
         // œuf de la Souche : {kind (espèce portée), left (ticks avant l'éclosion), total (incubation)} ou null
         crate::ponte::content(w, s).map_or("null".into(), |k| format!("{{\"kind\":{},\"left\":{},\"total\":{}}}", k, crate::ponte::hatch_left(w, s), c.timer))
     )

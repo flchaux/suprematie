@@ -426,12 +426,13 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
 /// Unité qui ne tire que déployée (elle se déploie seule à l'arrêt quand elle a une cible).
 #[inline]
 pub fn needs_deploy(kind: u16) -> bool {
-    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID | U_TOWED_GUN)
+    matches!(kind, U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID | U_TOWED_GUN) || crate::ameliorations::is_turret(kind)
 }
 
 /// Blindage : Gardien touché de face (dans un cône de ±60° autour de sa direction) : -45 % ;
 /// tourelle mobile déployée : -30 %.
 fn armor(w: &World, s: usize, dmg: i32) -> i32 {
+    let dmg = crate::ameliorations::unit_armor(w, s, dmg);
     match w.units.kind[s] {
         U_GUARDIAN if w.hit_from.0 != i32::MIN => {
             let (x, y) = (w.units.x[s], w.units.y[s]);
@@ -483,13 +484,19 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
     let calm = w.units.cold[s].calm;
     let p = &w.players[owner as usize];
     let upgraded = kind == U_COMMANDER && p.has_tech(T_CMD_CANNON);
-    for i in 0..def.weapons.len().min(2) {
-        let mut wi = def.weapons[i] as usize;
+    // Transhumants : armes selon les améliorations ; surcharge de l'Arche : cadence +50 %
+    let (wl, wn) = crate::ameliorations::weapons_of(w, s);
+    let boost = kind == U_ARK && w.tick & 1 == 1 && crate::ameliorations::boosted(w, s);
+    for (i, &weapon) in wl.iter().enumerate().take(wn) {
+        let mut wi = weapon as usize;
         if upgraded && i == 0 {
             wi = W_CMD_UP as usize;
         }
         let c = &mut w.units.cold[s];
         if c.cooldown[i] > 0 {
+            c.cooldown[i] -= 1;
+        }
+        if boost && c.cooldown[i] > 0 {
             c.cooldown[i] -= 1;
         }
         let cur = c.wtarget[i];
@@ -534,7 +541,7 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
 }
 
 pub fn building_weapon(w: &mut World, b: usize) {
-    let wi = w.buildings[b].def().weapon;
+    let wi = crate::ameliorations::building_weapon(&w.buildings[b]);
     if wi < 0 {
         return;
     }
@@ -578,9 +585,12 @@ pub fn collect_shields(w: &mut World) {
         let d = udef(w.units.kind[s]);
         // droïde roulant : bouclier seulement une fois déployé
         let up = w.units.kind[s] != U_ROLL_DROID || w.units.cold[s].deployed;
-        if d.shield_r > 0 && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
+        if (d.shield_r > 0 || w.units.kind[s] == U_ARK) && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
             let id = w.unit_id(s);
-            w.shields.push((w.units.x[s], w.units.y[s], d.shield_r * TILE, w.team_of(w.units.owner[s]), id));
+            let r = crate::ameliorations::unit_shield(w, s).0;
+            if r > 0 {
+                w.shields.push((w.units.x[s], w.units.y[s], r * TILE, w.team_of(w.units.owner[s]), id));
+            }
         }
     }
     for b in 0..w.buildings.len() {
@@ -591,6 +601,25 @@ pub fn collect_shields(w: &mut World) {
             let team = w.team_of(bb.owner);
             let rf = w.building_ref(b);
             w.shields.push((cx, cy, r, team, rf));
+        } else if bb.alive && bb.mods != 0 && bb.def().class == BClass::Turret && bb.complete() {
+            // bastion à bouclier (Transhumants) : il se recharge ici, sans énergie
+            let (r, max) = crate::ameliorations::building_shield(bb);
+            if max == 0 {
+                continue;
+            }
+            let bb = &mut w.buildings[b];
+            if bb.shield_down > 0 {
+                bb.shield_down -= 1;
+                if bb.shield_down == 0 {
+                    bb.shield = max / 4;
+                }
+            } else {
+                bb.shield = (bb.shield + (max / 600).max(1)).min(max);
+                let (cx, cy) = bb.center();
+                let team = w.team_of(w.buildings[b].owner);
+                let rf = w.building_ref(b);
+                w.shields.push((cx, cy, r * TILE, team, rf));
+            }
         }
     }
 }
@@ -702,6 +731,7 @@ pub fn damage_building(w: &mut World, b: usize, dmg: i32, attacker: u8) {
         }
     }
     let dmg = crate::souche::building_damage(w, b, dmg);
+    let dmg = crate::ameliorations::building_armor(&w.buildings[b], dmg);
     let bb = &mut w.buildings[b];
     bb.hp -= dmg;
     if bb.hp <= 0 {
@@ -1041,6 +1071,8 @@ pub fn cleanup_dead(w: &mut World) {
 /// un niveau tous les deux fois ses propres points de vie détruits (5 niveaux au plus).
 fn credit_kill(w: &mut World, victim: usize) {
     let Some(k) = w.unit(w.units.cold[victim].last_hit) else { return };
+    // tourelle d'une Arche : c'est l'Arche qui gagne l'expérience
+    let k = if crate::ameliorations::is_turret(w.units.kind[k]) { w.unit(w.units.cold[k].parent).unwrap_or(k) } else { k };
     if w.team_of(w.units.owner[k]) == w.team_of(w.units.owner[victim]) {
         return;
     }
@@ -1049,7 +1081,7 @@ fn credit_kill(w: &mut World, victim: usize) {
     // Transhumants : un ennemi détruit donne des relevés
     let (killer, tier) = (w.units.owner[k], udef(w.units.kind[victim]).tier);
     crate::transhumants::kill_credit(w, killer, tier);
-    crate::transhumants::loot_unit(w, killer, victim);
+    crate::transhumants::loot_unit(w, killer, k, victim);
     let c = &mut w.units.cold[k];
     c.xp = c.xp.saturating_add(gain);
     let lvl = ((c.xp / (2 * own)) as u8).min(MAX_LVL);
@@ -1216,18 +1248,20 @@ pub fn update_visibility(w: &mut World) {
         let k = w.units.kind[s];
         let d = udef(k);
         let (x, y) = (w.units.x[s], w.units.y[s]);
+        // Transhumants : radar, vision et brouillage selon les améliorations
+        let (vision, radar, jam) = (crate::ameliorations::unit_vision(w, s), crate::ameliorations::unit_radar(w, s), crate::ameliorations::unit_jam(w, s));
         let vis = &mut w.vis[team];
-        found[team] += stamp(vis, x, y, d.vision, 1 | 8);
+        found[team] += stamp(vis, x, y, vision, 1 | 8);
         // détection rapprochée : un commando camouflé est repéré à quelques cases
         if d.vision > 0 {
             stamp(vis, x, y, 3, VIS_NEAR);
         }
-        if k == U_JAMMER {
-            stamp(vis, x, y, JAM_RADIUS, VIS_JAM);
+        if jam > 0 {
+            stamp(vis, x, y, jam, VIS_JAM);
         }
         let deployed_sonde = k == U_SONDE && w.units.cold[s].deployed;
-        if d.radar > 0 && (k != U_SONDE || deployed_sonde) {
-            stamp(vis, x, y, d.radar, 2);
+        if radar > 0 && (k != U_SONDE || deployed_sonde) {
+            stamp(vis, x, y, radar, 2);
         }
         if deployed_sonde {
             stamp(vis, x, y, 25, 4);

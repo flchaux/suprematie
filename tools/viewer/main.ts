@@ -1,7 +1,7 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
 // ?set=units|buildings|items|decor|vehicles  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
 import * as THREE from "three/webgpu";
-import { buildModel, depMatrix, fallbackModel, parseDep, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
+import { buildModel, depMatrix, fallbackModel, condShown, parseCond, parseDep, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
 import { RECEIVER_CLASSES } from "../../packages/shared/src/data.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
 import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src/render/textures.ts";
@@ -124,12 +124,15 @@ if (set !== "decor") list.forEach((d, i) => {
   setTeamColor(body, 0, color);
   scene.add(body.mesh);
   for (const p of built.pivots) {
+    // ?mods=ark_w_rail,ark_shield2 : améliorations installées (pivots « si:… » et « sauf:… »)
+    const cond = parseCond(p.name);
+    if (!condShown(cond, (k) => (params.get("mods") ?? "").split(",").includes(k))) continue;
     const pm = teamInstancedMesh((lo && p.geometryLo) || p.geometry, 1, texScale);
     pm.mesh.count = 1;
     // ?dep=0.5 : pivots de déploiement (« dep|… ») à cet avancement (0 replié, 1 déployé ; par défaut : replié ;
     // œufs de la Souche : 1 fermé, 0,4 ouvert, 0 fané ; par défaut : fermé)
     const steps = parseDep(p.name);
-    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" && !d.key.startsWith("egg_") ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p/.test(p.name) ? 0 : 0.5);
+    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" && !d.key.startsWith("egg_") ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p/.test(p.name) || /^fixe/.test(cond?.base ?? "") ? 0 : 0.5);
     const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(pose);
     pm.mesh.setMatrixAt(0, m);
     setTeamColor(pm, 0, color);

@@ -82,6 +82,19 @@ pub const O_HAUL: i32 = 55;
 /// Mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf. de bâtiment…]
 /// (extracteurs, fabricants, usines d'unités terminés ; voir buildings::paused).
 pub const O_SET_PAUSE: i32 = 56;
+/// Transhumants : installer une amélioration : [amélioration, n, réf. d'unité ou de module…] (voir
+/// ameliorations::install ; payée tout de suite, porteur par porteur, dans l'ordre de la liste).
+pub const O_MOD_INSTALL: i32 = 60;
+/// Annuler une installation en cours (remboursée) : [n, réf. d'unité ou de module…].
+pub const O_MOD_CANCEL: i32 = 61;
+/// Tourelles de l'Arche : [action, n, Arches…] (0 replier, 1 déployer, 2 consigne « suivre », 3 « tenir »).
+pub const O_ARK_TURRETS: i32 = 62;
+/// Type voulu d'une tourelle de l'Arche : [Arche, tourelle (-1 : toutes), type].
+pub const O_ARK_TURRET_TYPE: i32 = 63;
+/// Surcharge de l'Arche : [n, Arches…].
+pub const O_ARK_BOOST: i32 = 64;
+/// File de l'atelier embarqué de l'Arche : [Arche, type d'unité, +n ou -n].
+pub const O_ARK_QUEUE: i32 = 65;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -95,10 +108,11 @@ impl Cur<'_> {
     }
 }
 
-/// Unité du joueur `p` qui peut recevoir un ordre (un œuf de la Souche n'en reçoit pas).
+/// Unité du joueur `p` qui peut recevoir un ordre (un œuf de la Souche n'en reçoit pas, ni une tourelle
+/// d'Arche : l'Arche la dirige).
 fn own_unit(w: &World, p: u8, id: i32) -> Option<usize> {
     let s = w.unit(id as u32)?;
-    if w.units.owner[s] == p && !crate::ponte::is_egg(w.units.kind[s]) {
+    if w.units.owner[s] == p && !crate::ponte::is_egg(w.units.kind[s]) && !crate::ameliorations::is_turret(w.units.kind[s]) {
         Some(s)
     } else {
         None
@@ -175,7 +189,7 @@ fn formation_etas(w: &World, list: &[(usize, i32, i32)], queue: bool, turn: u32)
         if members.len() < 2 {
             continue;
         }
-        let vmin = members.iter().map(|&k| unit_speed(w.units.kind[list[k].0])).min().unwrap_or(1).max(1);
+        let vmin = members.iter().map(|&k| crate::ameliorations::speed(w, list[k].0)).min().unwrap_or(1).max(1);
         let mut far = 0i32;
         for &k in &members {
             let (s, tx, ty) = list[k];
@@ -659,6 +673,48 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if let Some(b) = own_building(w, p, r) {
                     crate::transhumants::fold(w, b);
                 }
+            }
+        }
+        O_MOD_INSTALL => {
+            let m = c.next();
+            for id in units_list(&mut c) {
+                if let (Some(h), 1..=255) = (crate::ameliorations::Host::resolve(w, p, id as u32), m) {
+                    crate::ameliorations::install(w, h, m as u8);
+                }
+            }
+        }
+        O_MOD_CANCEL => {
+            for id in units_list(&mut c) {
+                if let Some(h) = crate::ameliorations::Host::resolve(w, p, id as u32) {
+                    crate::ameliorations::cancel(w, h);
+                }
+            }
+        }
+        O_ARK_TURRETS => {
+            let a = c.next();
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    crate::ameliorations::order_turrets(w, s, a);
+                }
+            }
+        }
+        O_ARK_TURRET_TYPE => {
+            let (id, k, kind) = (c.next(), c.next(), c.next());
+            if let Some(s) = own_unit(w, p, id) {
+                crate::ameliorations::set_turret_type(w, s, k, kind);
+            }
+        }
+        O_ARK_BOOST => {
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    crate::ameliorations::boost(w, s);
+                }
+            }
+        }
+        O_ARK_QUEUE => {
+            let (id, kind, n) = (c.next(), c.next(), c.next());
+            if let Some(s) = own_unit(w, p, id) {
+                crate::ameliorations::workshop_queue(w, s, kind, n);
             }
         }
         O_HARVEST => {

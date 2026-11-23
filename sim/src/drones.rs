@@ -33,6 +33,7 @@ pub fn is_store(bb: &Building) -> bool {
 /// Plafond du stock, par objet.
 pub fn store_cap(bb: &Building) -> u16 {
     match bb.def().class {
+        BClass::Depot if crate::ameliorations::fit(bb) == crate::ameliorations::M_HOLD_BIG => 1500,
         BClass::Depot => DEPOT_CAP[(bb.level as usize).min(DEPOT_CAP.len() - 1)] as u16,
         BClass::Warehouse => DEPOT_CAP[DEPOT_CAP.len() - 1] as u16,
         _ => 0,
@@ -134,7 +135,7 @@ impl Store {
     pub fn room(self, w: &World, it: u8) -> u16 {
         match self {
             Store::B(b) => store_room(&w.buildings[b], it),
-            Store::U(s) => COMMANDER_CAP.saturating_sub(has(&w.units.cold[s].hold, it)),
+            Store::U(s) => crate::ameliorations::store_cap(w, s).saturating_sub(has(&w.units.cold[s].hold, it)),
         }
     }
     pub fn pos(self, w: &World) -> (i32, i32) {

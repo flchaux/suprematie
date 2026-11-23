@@ -274,7 +274,7 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
         }
     }
     // une bête qui charge sa proie court plus vite ; en formation, l'allure du groupe (`cap`)
-    let speed = crate::nature::charge_speed(w, s, unit_speed(kind)).min(cap.max(1));
+    let speed = crate::nature::charge_speed(w, s, crate::ameliorations::speed(w, s)).min(cap.max(1));
     let f = w.units.facing[s];
     let nf = turn_towards(f, heading, turn_rate(kind));
     w.units.facing[s] = nf;
@@ -545,7 +545,9 @@ pub fn update_units(w: &mut World) {
         let k = w.units.kind[s];
         // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe ni les œufs
         // (immobiles : ce sont les autres qui s'en écartent)
-        if fixed_wing(k) || crate::ponte::is_egg(k) || (w.tick + s as u32) & 1 == 1 {
+        // (une tourelle d'Arche déployée non plus)
+        let fixed = crate::ponte::is_egg(k) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k));
+        if fixed_wing(k) || fixed || (w.tick + s as u32) & 1 == 1 {
             continue;
         }
         let def = udef(k);
@@ -635,10 +637,15 @@ pub fn update_units(w: &mut World) {
         }
         let kind = w.units.kind[s];
         let def = udef(kind);
+        // amélioration des Transhumants en cours d'installation
+        if w.units.cold[s].mod_job != 0 {
+            crate::ameliorations::tick_job(w, crate::ameliorations::Host::U(s));
+        }
         // boucliers
         {
+            let shield_max = crate::ameliorations::unit_shield(w, s).1;
             let c = &mut w.units.cold[s];
-            let max = if kind == U_COMMANDER { if w.players[w.units.owner[s] as usize].has_tech(T_CMD_SHIELD) { 4000 } else { 0 } } else { def.shield_hp };
+            let max = if kind == U_COMMANDER { if w.players[w.units.owner[s] as usize].has_tech(T_CMD_SHIELD) { 4000 } else { 0 } } else { shield_max };
             if max > 0 {
                 if c.shield_down > 0 {
                     c.shield_down -= 1;
@@ -735,7 +742,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 pop_order(w, s);
                 return NONE;
             }
-            let range = max_range(kind) * TILE;
+            let range = crate::ameliorations::attack_range(w, s, target) * TILE;
             let d = dist(w.units.x[s], w.units.y[s], tx, ty);
             if fixed_wing(kind) {
                 steer(w, s, tx, ty, tx, ty, 0);
@@ -755,7 +762,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
             target
         }
         Order::AttackGround { x, y } => {
-            let range = max_range(kind) * TILE;
+            let range = crate::ameliorations::attack_range(w, s, NONE) * TILE;
             let d = dist(w.units.x[s], w.units.y[s], x, y);
             if fixed_wing(kind) {
                 steer(w, s, x, y, x, y, 0);

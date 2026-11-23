@@ -56,6 +56,18 @@ export const O = {
   HAUL: 55,
   /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
   SET_PAUSE: 56,
+  /** Transhumants : installer une amélioration : [amélioration, n, réf. d'unité ou de module…] */
+  MOD_INSTALL: 60,
+  /** annuler une installation en cours (remboursée) : [n, réf…] */
+  MOD_CANCEL: 61,
+  /** tourelles de l'Arche : [action, n, Arches…] (0 replier, 1 déployer, 2 suivre l'Arche, 3 tenir la place) */
+  ARK_TURRETS: 62,
+  /** type voulu d'une tourelle : [Arche, tourelle (-1 : toutes), type] */
+  ARK_TURRET_TYPE: 63,
+  /** surcharge de l'Arche : [n, Arches…] */
+  ARK_BOOST: 64,
+  /** file de l'atelier embarqué : [Arche, type d'unité, +n ou -n] */
+  ARK_QUEUE: 65,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -267,6 +279,29 @@ export function haul(ids: number[], site: number, feed: boolean, queue = false):
 /** Transhumants : replier des modules déployés (ils redeviennent des chenillards). */
 export function fold(refs: number[]): Cmd {
   return [O.PACK, refs.length, ...refs.map((x) => x | 0)];
+}
+/** Transhumants : installer l'amélioration `mod` sur des unités ou des modules (payée tout de suite, l'un après l'autre). */
+export function installMod(mod: number, refs: number[]): Cmd {
+  return [O.MOD_INSTALL, mod, refs.length, ...refs.map((x) => x | 0)];
+}
+/** Annuler l'installation en cours (composants et relevés rendus). */
+export function cancelMod(refs: number[]): Cmd {
+  return [O.MOD_CANCEL, refs.length, ...refs.map((x) => x | 0)];
+}
+/** Tourelles de l'Arche : 0 replier, 1 déployer, 2 consigne « suivre », 3 « tenir la place ». */
+export function arkTurrets(arks: number[], action: 0 | 1 | 2 | 3): Cmd {
+  return [O.ARK_TURRETS, action, arks.length, ...arks.map((x) => x | 0)];
+}
+/** Type voulu (indice dans data.turretKinds) de la tourelle `k` de l'Arche (-1 : toutes). */
+export function arkTurretType(ark: number, k: number, kind: number): Cmd {
+  return [O.ARK_TURRET_TYPE, ark | 0, k | 0, kind | 0];
+}
+export function arkBoost(arks: number[]): Cmd {
+  return [O.ARK_BOOST, arks.length, ...arks.map((x) => x | 0)];
+}
+/** File de l'atelier embarqué : `delta` unités de plus (ou de moins). */
+export function arkQueue(ark: number, kind: number, delta: number): Cmd {
+  return [O.ARK_QUEUE, ark | 0, kind | 0, delta | 0];
 }
 export function load(carrier: number, ids: number[]): Cmd {
   return [O.LOAD, carrier | 0, ids.length, ...ids.map((x) => x | 0)];

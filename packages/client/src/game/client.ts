@@ -5,7 +5,7 @@ import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
 import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BF, BClass, pausableClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
-import type { Frame, GameData, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
+import type { Frame, GameData, ModInfo, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
 import type { GfxSettings } from "../render/gfx.ts";
@@ -607,6 +607,7 @@ export class GameClient {
     if (sc.entities) sc.entities.logistics = logi;
     // points de vie de l'unité sélectionnée seule
     if (ui.unitInfo && now - this.unitInfoAt > 400) this.refreshUnitInfo();
+    if (ui.groupMods && now - this.groupModsAt > 400) this.refreshGroupMods();
     // curseur : les unités bougent sous une souris immobile, la sélection change
     if (now - this.cursorAt > 150) this.updateCursor();
     // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
@@ -774,6 +775,25 @@ export class GameClient {
             pushMessage(`${u?.name ?? "Chenillard"} : pas la place de se déployer ici${drill ? " (une foreuse se déploie sur un gisement, à 3 cases au plus)" : " (terrain plat et libre)"}`, "alert");
             sfx.error();
           }
+          break;
+        case EV.MOD_DONE:
+          // Transhumants : amélioration installée
+          if (a === ui.me) {
+            const m = this.data!.mods[c];
+            pushMessage(`${m?.name ?? "Amélioration"} : installation terminée (${this.data!.units[m?.host]?.name ?? "unité"})`, "good");
+            sfx.research();
+            sc.addMarker(d / TILE, e / TILE, 0xffb547);
+          }
+          break;
+        case EV.TURRET_LOST:
+          if (a === ui.me) {
+            pushMessage(`${this.data!.units[e]?.name ?? "Tourelle"} détruite : l'Arche la reconstruit (30 s)`, "alert");
+            this.alertPos = { x: c / TILE, z: d / TILE };
+          }
+          break;
+        case EV.ARK_BOOST:
+          if (seen(a / TILE, c / TILE)) fx?.sparks(a / TILE, groundHeight(this.map!, a / TILE, c / TILE) + 1.2, c / TILE, [3, 1.6, 0.4], 14);
+          if (d === ui.me) sfx.confirm();
           break;
         case EV.SHARDS:
           // nid détruit : fragments d'énergie gagnés
@@ -990,6 +1010,7 @@ export class GameClient {
     // une seule unité (la nôtre ou une autre) : ses points de vie (rafraîchis dans la boucle d'affichage)
     if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1) this.refreshUnitInfo();
     else ui.unitInfo = null;
+    this.refreshGroupMods();
     ui.canBuild = ui.selUnits.some((g) => this.data!.units[g.kind].buildPower > 0) && ui.me >= 0 && ui.selForeign < 0;
     if (!ui.canBuild && kb.buildStep) kb.buildStep = "";
     if (selB) {
@@ -1857,10 +1878,11 @@ export class GameClient {
       if (!sc.project(u.x, u.y + 0.3, u.z, p)) continue;
       if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hits.push([u.id, u.kind]);
     }
-    // les œufs de la Souche ne reçoivent pas d'ordres : le cadre ne les prend que s'il n'y a qu'eux
-    const eggsOnly = hits.every(([, kind]) => this.data!.units[kind].egg);
+    // les œufs de la Souche et les tourelles d'Arche ne reçoivent pas d'ordres : le cadre ne les prend que s'il n'y a qu'eux
+    const inert = (kind: number) => this.data!.units[kind].egg || this.data!.units[kind].turret;
+    const eggsOnly = hits.every(([, kind]) => inert(kind));
     for (const [id, kind] of hits) {
-      if (!eggsOnly && this.data!.units[kind].egg) continue;
+      if (!eggsOnly && inert(kind)) continue;
       this.selected.add(id);
       n++;
     }
@@ -1959,6 +1981,69 @@ export class GameClient {
       // la sélection a pu changer pendant la requête
       if (ui.selUnits.length === 1 && ui.selUnits[0].count === 1 && ui.selUnits[0].ids[0] === id) ui.unitInfo = r;
     });
+  }
+
+  private groupModsAt = 0;
+  /** Transhumants : améliorations d'un groupe de porteurs du même type (plusieurs unités, ou plusieurs modules). */
+  private refreshGroupMods(): void {
+    this.groupModsAt = performance.now();
+    const refs = this.modHosts();
+    if (!this.data || refs.length < 2) {
+      ui.groupMods = null;
+      return;
+    }
+    const b = Ord.isBuildingRef(refs[0]);
+    void this.query<Record<string, any> | null>(b ? "building" : "unit", [refs[0]]).then((r) => {
+      const now = this.modHosts();
+      if (now.length < 2 || now[0] !== refs[0]) return;
+      const info = (b ? r?.transh?.mods : r?.mods) as ModInfo | null | undefined;
+      ui.groupMods = info ? { info, refs: now } : null;
+    });
+  }
+  /** Nos unités (ou nos modules) sélectionnés, s'ils sont d'un seul type qui a des améliorations. */
+  private modHosts(): number[] {
+    const d = this.data;
+    if (!d || ui.selForeign >= 0 || ui.me < 0) return [];
+    if (ui.selUnits.length === 1) return d.mods.some((m) => m.host === ui.selUnits[0].kind) ? ui.selUnits[0].ids : [];
+    const own = ui.selBuildings.filter((b) => b.owner === ui.me);
+    if (!own.length || ui.selUnits.length || own.some((b) => b.kind !== own[0].kind) || d.buildings[own[0].kind].race !== 2) return [];
+    return own.map((b) => b.ref);
+  }
+  /** Installer une amélioration sur les porteurs `refs` (payée tout de suite). */
+  installMod(mod: number, refs: number[]): void {
+    this.cmd(Ord.installMod(mod, refs));
+    sfx.confirm();
+  }
+  cancelMod(refs: number[]): void {
+    this.cmd(Ord.cancelMod(refs));
+    sfx.click();
+  }
+  /** Arches sélectionnées. */
+  private arks(): number[] {
+    return this.selectedUnits().filter((u) => this.data!.units[u.kind].key === "ark").map((u) => u.id);
+  }
+  /** Tourelles de l'Arche : 0 replier, 1 déployer, 2 suivre l'Arche, 3 tenir la place. */
+  arkTurrets(action: 0 | 1 | 2 | 3): void {
+    const a = this.arks();
+    if (a.length) this.cmd(Ord.arkTurrets(a, action));
+    sfx.click();
+  }
+  /** Type voulu de la tourelle `k` (-1 : toutes) de l'Arche sélectionnée. */
+  arkTurretType(k: number, kind: number): void {
+    const a = this.arks();
+    if (a.length) this.cmd(Ord.arkTurretType(a[0], k, kind));
+    sfx.click();
+  }
+  arkBoost(): void {
+    const a = this.arks();
+    if (a.length) this.cmd(Ord.arkBoost(a));
+    sfx.confirm();
+  }
+  /** File de l'atelier embarqué de l'Arche sélectionnée. */
+  arkQueue(kind: number, delta: number): void {
+    const a = this.arks();
+    if (a.length) this.cmd(Ord.arkQueue(a[0], kind, delta));
+    sfx.click();
   }
 
   // ---------- curseur contextuel ----------
@@ -2391,12 +2476,16 @@ export class GameClient {
   }
   /**
    * Déployer : les chenillards des Transhumants passent en mode placement (fantôme du module : position et
-   * sens, R pour tourner) ; les autres unités déployables (sonde, artillerie) se déploient sur place.
+   * sens, R pour tourner) ; l'Arche déploie ou replie ses tourelles ; les autres unités déployables (sonde,
+   * artillerie) se déploient sur place.
    */
   deploySelected(): void {
     const sel = this.selectedUnits();
     const ch = sel.filter((u) => (this.data!.units[u.kind].deploys ?? -1) >= 0);
-    const other = sel.filter((u) => !ch.includes(u)).map((u) => u.id);
+    const other = sel.filter((u) => !ch.includes(u) && this.data!.units[u.kind].key !== "ark").map((u) => u.id);
+    // Arche : ses tourelles
+    const ark = ui.unitInfo?.mods?.ark;
+    if (ark?.turrets.length) this.arkTurrets(ark.out ? 0 : 1);
     if (other.length) this.cmd(Ord.deploy(other));
     if (ch.length) this.startDeploy(ch.map((u) => ({ id: u.id, kind: u.kind })));
   }
@@ -2507,7 +2596,7 @@ export class GameClient {
   /** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */
   packSelected(): void {
     if (!this.data) return;
-    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2 && this.data!.buildings[b.kind].key !== "t_pole").map((b) => b.ref);
+    const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (this.data!.buildings[b.kind].race ?? 0) === 2 && !["t_pole", "ark_dock"].includes(this.data!.buildings[b.kind].key)).map((b) => b.ref);
     if (refs.length) this.cmd(Ord.fold(refs));
   }
 

@@ -641,6 +641,8 @@ pub fn gen_output(w: &World, b: usize) -> i32 {
 pub fn supply_of(bb: &Building) -> i32 {
     if bb.kind == B_MAIN_GENERATOR {
         MAIN_GENERATOR_LEVELS[(bb.level as usize).min(MAIN_GENERATOR_LEVELS.len() - 1)].supply
+    } else if crate::ameliorations::fit(bb) == crate::ameliorations::M_GEN_LEAN {
+        bb.def().supply + 3
     } else {
         bb.def().supply
     }
@@ -853,7 +855,9 @@ pub fn power_tick(w: &mut World) {
                 let bb = &mut w.buildings[g as usize];
                 // la géothermie ne brûle rien
                 if bb.alive && bb.fuel > 0 && !crate::buildings::fuelless(bb.kind) {
-                    let burn = (power_prod_of(bb) as i64 * used / cap).max(1) as i32;
+                    // turbine sobre des Transhumants : moitié moins
+                    let lean = crate::ameliorations::fit(bb) == crate::ameliorations::M_GEN_LEAN;
+                    let burn = (power_prod_of(bb) as i64 * used / cap / if lean { 2 } else { 1 }).max(1) as i32;
                     bb.fuel = (bb.fuel - burn).max(0);
                     let (owner, kind) = (bb.owner as i32, bb.kind as i32);
                     let (cx, cy) = bb.center();
@@ -1288,11 +1292,11 @@ pub fn flow_max(w: &World, b: usize) -> u32 {
             tenths(12_000 * w.players[owner].res_mult.max(0) as u64 * lvl * purity_of(bb) as u64 * clock_of(bb) as u64, 30 * 100 * 100 * 100 * 100)
         }
         // une unité (ou une portée) : factory_ticks * RECIPE_SCALE de progrès, 1024 * build_mult par tick
-        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(12_000 * w.players[owner].build_mult.max(0) as u64 * batch(q.0) as u64, factory_ticks(q.0) as u64 * 100)),
+        BClass::Factory => bb.queue.first().map_or(0, |q| tenths(120 * w.players[owner].build_mult.max(0) as u64 * crate::ameliorations::module_speed(bb) as u64 * batch(q.0) as u64, factory_ticks(q.0) as u64 * 100)),
         // un cycle de recherche : time secondes
         BClass::Lab => {
             let t = if bb.working { bb.tech } else { w.players[owner].research };
-            if t == 0 { 0 } else { tenths(600, TECHS[t as usize].time as u64) }
+            if t == 0 { 0 } else { tenths(6 * crate::ameliorations::module_speed(bb) as u64, TECHS[t as usize].time as u64) }
         }
         // prise, aller (SWING ticks), dépose, retour (SWING ticks)
         BClass::Inserter => tenths(12_000, 2 * SWING as u64 + 2),
@@ -1865,6 +1869,21 @@ pub fn update_buildings(w: &mut World) {
             w.buildings[b].stun -= 1;
             continue;
         }
+        if bb.mod_job != 0 {
+            // module des Transhumants : amélioration en cours d'installation, il ne travaille pas (la soute et le
+            // générateur restent en service)
+            let kind = bb.kind;
+            crate::ameliorations::tick_job(w, crate::ameliorations::Host::B(b));
+            if w.tick.is_multiple_of(DEPOT_FEED_PERIOD) {
+                match kind {
+                    B_T_HOLD => crate::transhumants::feed_crafters(w, b),
+                    B_T_GENERATOR => tick_generator(w, b),
+                    _ => {}
+                }
+            }
+            w.buildings[b].wake = 0;
+            continue;
+        }
         if bb.upgrade > 0 {
             // amélioration en cours : le bâtiment ne travaille pas (sa production en cours attend) ; le
             // générateur principal, resté en service, garde l'apport de son dépôt collé (sans partage)
@@ -2074,7 +2093,7 @@ pub fn gen_prod(w: &World, bb: &Building) -> i32 {
 /// Générateur sans combustible : centrale géothermique, socle à EPPZ.
 #[inline]
 pub fn fuelless(kind: u16) -> bool {
-    matches!(kind, B_GEOTHERMAL | B_EPPZ_SOCKET)
+    matches!(kind, B_GEOTHERMAL | B_EPPZ_SOCKET | B_ARK_DOCK)
 }
 
 /// Période (ticks) de l'ondulation d'un geyser : une minute.
@@ -2100,6 +2119,8 @@ pub fn power_prod_of(bb: &Building) -> i32 {
         0
     } else if bb.kind == B_GENERATOR {
         GENERATOR_LEVELS[(bb.level as usize).min(GENERATOR_LEVELS.len() - 1)].prod
+    } else if crate::ameliorations::fit(bb) == crate::ameliorations::M_GEN_BIG {
+        1000
     } else {
         bb.def().power_prod
     }
@@ -2295,6 +2316,7 @@ fn tick_extractor(w: &mut World, b: usize) {
     let lvl = &EXTRACTOR_LEVELS[(w.buildings[b].level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
     // sur un gisement d'hydrocarbure, l'extracteur fonctionne sans électricité
     let need = (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(&w.buildings[b]) as i64 / 1000) as i32;
+    let need = need * crate::ameliorations::module_power(&w.buildings[b]) / 100;
     let s = if w.buildings[b].recipe == HYDROCARBON { 1024 } else { use_power(w, b, need) };
     let mult = w.players[owner].res_mult as u32;
     // pureté du gisement : 50 % (impur), 100 % ou 200 % (pur)
@@ -2407,7 +2429,7 @@ fn furnace_level(bb: &Building) -> Option<&'static ExtractorLevel> {
 
 /// Vitesse d'un fabricant (% de la vitesse de référence des recettes), niveau de la fonderie compris.
 pub fn crafter_speed(bb: &Building) -> u32 {
-    bb.def().speed as u32 * furnace_level(bb).map_or(100, |l| l.speed) / 100 * clock_of(bb) / 100
+    bb.def().speed as u32 * furnace_level(bb).map_or(100, |l| l.speed) / 100 * clock_of(bb) / 100 * crate::ameliorations::module_speed(bb) / 100
 }
 
 // ---------- Cadence (surcadençage, sous-cadençage) ----------
@@ -2420,9 +2442,9 @@ pub fn power_need(bb: &Building) -> i32 {
         BClass::Extractor if bb.recipe == HYDROCARBON => 0,
         BClass::Extractor => {
             let lvl = &EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
-            (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(bb) as i64 / 1000) as i32
+            (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(bb) as i64 / 1000) as i32 * crate::ameliorations::module_power(bb) / 100
         }
-        _ => bb.def().power_use,
+        _ => bb.def().power_use * crate::ameliorations::module_power(bb) / 100,
     }
 }
 
@@ -2494,7 +2516,7 @@ pub fn set_clock(w: &mut World, b: usize, clock: u32) -> bool {
 
 /// Consommation d'un fabricant (kW), niveau de la fonderie compris.
 pub fn crafter_power(bb: &Building) -> i32 {
-    (bb.def().power_use as i64 * furnace_level(bb).map_or(100, |l| l.power) as i64 / 100 * clock_power(bb) as i64 / 1000) as i32
+    (bb.def().power_use as i64 * furnace_level(bb).map_or(100, |l| l.power) as i64 / 100 * clock_power(bb) as i64 / 1000) as i32 * crate::ameliorations::module_power(bb) / 100
 }
 
 fn tick_crafter_work(w: &mut World, b: usize) {
@@ -2516,7 +2538,9 @@ fn tick_crafter_work(w: &mut World, b: usize) {
         }
         let owner = bb.owner as usize;
         let bb = &mut w.buildings[b];
-        for (j, x) in rec.inputs.iter().enumerate() {
+        // gabarits économes (Transhumants) : un cycle sur 5 sans ingrédients
+        let free = crate::ameliorations::free_cycle(bb);
+        for (j, x) in rec.inputs.iter().enumerate().filter(|_| !free) {
             bb.inv[j] -= x.1 as u16;
             w.players[owner].consumed[x.0 as usize] += x.1 as u32;
         }
@@ -2531,10 +2555,12 @@ fn tick_crafter_work(w: &mut World, b: usize) {
     bb.progress += speed * s as u32;
     if bb.progress >= rec.time as u32 * RECIPE_SCALE {
         bb.working = false;
-        bb.out += rec.output.1 as u16;
-        flow_add(bb, w.tick, rec.output.1 as u16);
+        // four à récupération, craquage (Transhumants) : un produit de plus tous les 4 cycles
+        let n = rec.output.1 as u16 * if crate::ameliorations::bonus_output(bb) { 2 } else { 1 };
+        bb.out += n;
+        flow_add(bb, w.tick, n);
         let owner = bb.owner as usize;
-        w.players[owner].produced[rec.output.0 as usize] += rec.output.1 as u32;
+        w.players[owner].produced[rec.output.0 as usize] += n as u32;
         wake_watchers(w, b);
     }
 }
@@ -2576,9 +2602,10 @@ fn tick_lab(w: &mut World, b: usize) {
         bb.tech = t;
         wake_watchers(w, b);
     }
-    let s = use_power(w, b, w.buildings[b].def().power_use);
+    let need = power_need(&w.buildings[b]);
+    let s = use_power(w, b, need);
     let bb = &mut w.buildings[b];
-    bb.progress += s as u32 * 100;
+    bb.progress += s as u32 * crate::ameliorations::module_speed(bb);
     let t = bb.tech;
     let need = TECHS[t as usize].time as u32 * 20 * RECIPE_SCALE;
     if bb.progress >= need {
@@ -2647,9 +2674,9 @@ fn tick_factory(w: &mut World, b: usize) {
         w.buildings[b].progress = 0;
         wake_watchers(w, b);
     }
-    let use_ = w.buildings[b].def().power_use;
+    let use_ = power_need(&w.buildings[b]);
     let s = use_power(w, b, use_);
-    let mut mult = w.players[owner].build_mult as u32;
+    let mut mult = w.players[owner].build_mult as u32 * crate::ameliorations::module_speed(&w.buildings[b]) / 100;
     if w.buildings[b].def().race == RACE_SOUCHE {
         mult = mult * crate::souche::brood_speed(w, owner as u8) / 100;
     }
@@ -2676,6 +2703,12 @@ fn tick_factory(w: &mut World, b: usize) {
             let id = w.spawn_unit(kind, owner as u8, sx, sy);
             let s = slot_of(id);
             w.units.facing[s] = (bb_dir_angle(w.buildings[b].dir)) as u16;
+            // cour de rodage (Transhumants) : premier niveau de vétérance
+            if crate::ameliorations::fit(&w.buildings[b]) == crate::ameliorations::M_SHOP_VETS && !def.weapons.is_empty() {
+                w.units.cold[s].lvl = 1;
+                w.units.cold[s].xp = 2 * def.hp.max(1) as u32;
+                w.units.hp[s] = w.max_hp(s);
+            }
             w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
         }
         let bb = &mut w.buildings[b];

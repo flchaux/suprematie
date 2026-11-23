@@ -12,6 +12,8 @@
 //! - Raclage : la foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement
 //!   (`World::wear`, ‰) : +2 ‰ toutes les 5 s de forage, jusqu'à 600 ‰ ; il se reconstitue au même
 //!   rythme quand aucune foreuse nomade n'y travaille.
+//! - Améliorations : celles de l'Arche, des modules et des unités sont dans ameliorations.rs ; un module garde les
+//!   siennes au repli et au déploiement.
 //! - Recherche par relevés : chaque case de vision (4 × 4 cases de carte) que l'équipe découvre donne un
 //!   relevé à chacun de ses Transhumants, chaque ennemi détruit 4 par palier ; un laboratoire nomade qui
 //!   n'en a pas en tire un des environs toutes les 2 s. Une unité de recherche coûte 3 relevés par palier.
@@ -168,6 +170,10 @@ fn align(w: &mut World, s: usize) {
 /// ordres ; `ready_tick` : tick de fin). Renvoie vrai si l'unité ne doit pas agir ce tick (repli en
 /// cours), ou si elle a disparu (déployée).
 pub fn tick_unit(w: &mut World, s: usize) -> bool {
+    // tourelle d'une Arche
+    if crate::ameliorations::is_turret(w.units.kind[s]) {
+        return crate::ameliorations::tick_turret(w, s);
+    }
     match w.units.cold[s].pack {
         PACK_FOLDING => {
             if w.tick >= w.units.cold[s].ready_tick {
@@ -219,8 +225,8 @@ pub fn spot_under(w: &World, x: i32, y: i32, bw: i32, bh: i32) -> u32 {
     w.map.spots.iter().position(|s| s.kind != GEYSER && s.x >= x && s.y >= y && s.x + 2 <= x + bw && s.y + 2 <= y + bh).map_or(NONE, |i| i as u32)
 }
 
-/// Retire une unité sans mort ni épave (chenillard devenu bâtiment).
-fn vanish(w: &mut World, s: usize) {
+/// Retire une unité sans mort ni épave (chenillard devenu bâtiment, tourelle rentrée à bord de l'Arche).
+pub fn vanish(w: &mut World, s: usize) {
     let owner = w.units.owner[s] as usize;
     crate::units::clear_orders(w, s);
     w.units.alive[s] = false;
@@ -249,10 +255,14 @@ fn deploy(w: &mut World, s: usize) {
     let (recipe, fuel) = (w.units.cold[s].pack_recipe, w.units.cold[s].pack_fuel);
     // soute : son stock replié redevient le stock du dépôt
     let stock = std::mem::take(&mut w.units.cold[s].hold);
+    let (mods, mod_job, mod_left) = (w.units.cold[s].mods, w.units.cold[s].mod_job, w.units.cold[s].mod_left);
     vanish(w, s);
     buildings::complete_building(w, b);
     let def = bdef(bkind);
     let bb = &mut w.buildings[b];
+    bb.mods = mods;
+    bb.mod_job = mod_job;
+    bb.mod_left = mod_left;
     bb.hp = ((def.hp as i64 * hp as i64 / max as i64) as i32).clamp(1, def.hp);
     if def.class == BClass::Crafter && recipe != RECIPE_NONE {
         bb.recipe = recipe;
@@ -263,6 +273,9 @@ fn deploy(w: &mut World, s: usize) {
     }
     if def.class == BClass::Depot {
         bb.stash = stock;
+    }
+    if mods != 0 {
+        crate::ameliorations::applied(w, crate::ameliorations::Host::B(b));
     }
     // soute : ses chariots de convoi ressortent (déjà payés)
     if bkind == B_T_HOLD {
@@ -495,6 +508,7 @@ pub fn fold(w: &mut World, b: usize) {
         }
     }
     let around = glued(w, b);
+    let (mods, mod_job, mod_left) = (w.buildings[b].mods, w.buildings[b].mod_job, w.buildings[b].mod_left);
     buildings::remove_building(w, b, false);
     for o in around {
         orient(w, o);
@@ -515,6 +529,9 @@ pub fn fold(w: &mut World, b: usize) {
         c.pack_recipe = recipe;
         c.pack_fuel = if ukind == U_CH_HOLD { carts } else { fuel };
         c.hold = aboard;
+        c.mods = mods;
+        c.mod_job = mod_job;
+        c.mod_left = mod_left;
         w.units.hp[s] = ((max as i64 * ratio as i64 / 1000) as i32).clamp(1, max);
     }
 }
@@ -679,7 +696,7 @@ pub fn haul_step(w: &mut World, s: usize, site: u32, feed: bool) {
         crate::units::pop_order(w, s);
         return;
     };
-    let cap = udef(U_T_CART).hold as u32;
+    let cap = crate::ameliorations::cart_cap(w, s);
     let phase = w.units.cold[s].timer & 1;
     let carried = crate::drones::total(&w.units.cold[s].hold);
     if !feed {
@@ -782,7 +799,7 @@ fn stow_carts(w: &mut World, h: usize) -> i32 {
 pub fn drill_speed(w: &World, b: usize) -> u32 {
     let spot = w.buildings[b].link;
     let wear = if spot == NONE { 0 } else { w.wear.get(spot as usize).copied().unwrap_or(0) as u32 };
-    2 * (1000 - wear.min(1000))
+    2 * (1000 - wear.min(1000)) * crate::ameliorations::module_speed(&w.buildings[b]) / 100
 }
 
 /// Usure des gisements (toutes les WEAR_PERIOD ticks).
@@ -793,16 +810,23 @@ pub fn update(w: &mut World) {
     if w.wear.len() < w.map.spots.len() {
         w.wear.resize(w.map.spots.len(), 0);
     }
-    let mut drilled = vec![false; w.wear.len()];
+    // usure de ce passage : le plus fort des forages du gisement (forage propre : aucune ; percussion : double)
+    let mut drilled = vec![0u16; w.wear.len()];
     for &b in &w.active {
         let bb = &w.buildings[b as usize];
         if bb.alive && bb.kind == B_T_DRILL && bb.complete() && bb.working && (bb.link as usize) < drilled.len() {
-            drilled[bb.link as usize] = true;
+            let k = match crate::ameliorations::fit(bb) {
+                crate::ameliorations::M_DRILL_CLEAN => 0,
+                crate::ameliorations::M_DRILL_FAST => 2 * WEAR_STEP,
+                _ => WEAR_STEP,
+            };
+            let d = &mut drilled[bb.link as usize];
+            *d = (*d).max(k);
         }
     }
     for (i, d) in drilled.iter().enumerate() {
         let v = &mut w.wear[i];
-        *v = if *d { (*v + WEAR_STEP).min(WEAR_MAX) } else { v.saturating_sub(WEAR_STEP) };
+        *v = if *d > 0 { (*v + *d).min(WEAR_MAX.max(*v)) } else { v.saturating_sub(WEAR_STEP) };
     }
 }
 
@@ -810,7 +834,7 @@ pub fn update(w: &mut World) {
 /// si le laboratoire peut lancer l'unité (relevés payés) ; sinon il en tire un des environs et attend.
 pub fn lab_start(w: &mut World, b: usize, t: u8) -> bool {
     let owner = w.buildings[b].owner as usize;
-    let need = RELEVES_PER_TIER * TECHS[t as usize].tier.max(1) as i32;
+    let need = lab_need(&w.buildings[b], t);
     if w.players[owner].purse[RELEVES as usize] >= need {
         w.players[owner].purse[RELEVES as usize] -= need;
         w.players[owner].consumed[RELEVES as usize] += need as u32;
@@ -818,8 +842,15 @@ pub fn lab_start(w: &mut World, b: usize, t: u8) -> bool {
     }
     w.players[owner].purse[RELEVES as usize] += 1;
     w.players[owner].produced[RELEVES as usize] += 1;
-    w.buildings[b].wake = w.tick + LAB_TRICKLE;
+    let field = crate::ameliorations::fit(&w.buildings[b]) == crate::ameliorations::M_LAB_FIELD;
+    w.buildings[b].wake = w.tick + if field { LAB_TRICKLE / 2 } else { LAB_TRICKLE };
     false
+}
+
+/// Relevés d'une unité de la recherche `t` dans ce laboratoire (carnets de terrain : un de moins par palier).
+pub fn lab_need(bb: &Building, t: u8) -> i32 {
+    let per = if crate::ameliorations::fit(bb) == crate::ameliorations::M_LAB_FIELD { RELEVES_PER_TIER - 1 } else { RELEVES_PER_TIER };
+    per * TECHS[t as usize].tier.max(1) as i32
 }
 
 /// Relevés gagnés par une équipe qui découvre `n` cases de vision.
@@ -846,10 +877,10 @@ pub fn kill_credit(w: &mut World, killer: u8, tier: u8) {
     }
 }
 
-/// Butin du joueur `looter` sur une victime de `victim` détruite en (x, y) qui valait `cost` : LOOT_PCT % de
-/// chaque objet (arrondi au plus proche), versés à la réserve du pillard la plus proche (dépôt, soute,
+/// Butin du joueur `looter` (unité qui pille : `by`) sur une victime de `victim` détruite en (x, y) qui valait
+/// `cost` : LOOT_PCT % de chaque objet (plus avec des améliorations ; arrondi au plus proche), versés à la réserve du pillard la plus proche (dépôt, soute,
 /// Arche). Rien pour un autre peuple, un allié ou la faune ; ni monnaie de race, ni sève, ni sels.
-fn loot(w: &mut World, looter: u8, victim: u8, x: i32, y: i32, cost: &[(u8, u32)]) {
+fn loot(w: &mut World, looter: u8, by: usize, victim: u8, x: i32, y: i32, cost: &[(u8, u32)]) {
     if !w.players.get(looter as usize).is_some_and(|p| p.race == RACE_TRANSH) {
         return;
     }
@@ -858,11 +889,12 @@ fn loot(w: &mut World, looter: u8, victim: u8, x: i32, y: i32, cost: &[(u8, u32)
         return;
     }
     let mut total = 0;
+    let pct = crate::ameliorations::loot_pct(w, looter, by);
     for &(it, n) in cost {
         if crate::races::is_currency(it) || it == SEVE || it == SELS {
             continue;
         }
-        let g = (n * LOOT_PCT + 50) / 100;
+        let g = (n * pct + 50) / 100;
         if g > 0 {
             crate::drones::refund(w, looter, x, y, it, g);
             total += g;
@@ -873,11 +905,11 @@ fn loot(w: &mut World, looter: u8, victim: u8, x: i32, y: i32, cost: &[(u8, u32)
     }
 }
 
-/// Unité `s` détruite par une unité du joueur `killer` (dernier coup) : butin si c'est un Transhumant.
-pub fn loot_unit(w: &mut World, killer: u8, s: usize) {
+/// Unité `s` détruite par l'unité `by` du joueur `killer` (dernier coup) : butin si c'est un Transhumant.
+pub fn loot_unit(w: &mut World, killer: u8, by: usize, s: usize) {
     let cost: Vec<(u8, u32)> = udef(w.units.kind[s]).cost.iter().map(|&(it, n)| (it, n as u32)).collect();
     let (x, y, owner) = (w.units.x[s], w.units.y[s], w.units.owner[s]);
-    loot(w, killer, owner, x, y, &cost);
+    loot(w, killer, by, owner, x, y, &cost);
 }
 
 /// Bâtiment `b` détruit : l'unité ennemie des Transhumants la plus proche (à LOOT_RANGE cases au plus ; à
@@ -905,7 +937,7 @@ pub fn loot_building(w: &mut World, b: usize) {
     let complete = bb.complete();
     let cost: Vec<(u8, u32)> = bb.def().cost.iter().enumerate().map(|(k, &(it, n))| (it, if complete { n as u32 } else { bb.paid[k] as u32 })).collect();
     let looter = w.units.owner[s];
-    loot(w, looter, owner, cx, cy, &cost);
+    loot(w, looter, s, owner, cx, cy, &cost);
 }
 
 /// Soute d'un Transhumant : elle alimente depuis son stock les fabricants collés à ses faces (un objet
@@ -969,5 +1001,8 @@ pub fn info(w: &World, b: usize) -> String {
     } else {
         String::new()
     };
-    format!(",\"transh\":{{\"unit\":{},\"wear\":{}{}}}", chenillard_of(bb.kind) as i32, wear, poles)
+    // (pas de chenillard : poteau, groupe de l'Arche)
+    let ch = chenillard_of(bb.kind);
+    let mods = crate::ameliorations::info(w, crate::ameliorations::Host::B(b));
+    format!(",\"transh\":{{\"unit\":{},\"wear\":{},\"speed\":{},\"mods\":{}{}}}", if ch == NO_KIND { -1 } else { ch as i32 }, wear, crate::ameliorations::module_speed(bb), mods, poles)
 }

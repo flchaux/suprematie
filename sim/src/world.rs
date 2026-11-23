@@ -307,8 +307,13 @@ pub struct UnitCold {
     /// bête d'un nid qu'une Reine de la Souche apprivoise : joueur + 1 qu'elle n'attaque pas (0 : aucun ;
     /// voir nature::taming)
     pub calm: u8,
+    /// Transhumants : améliorations installées (un octet par emplacement), celle en cours d'installation (0 :
+    /// aucune) et ses ticks restants (voir ameliorations.rs)
+    pub mods: u64,
+    pub mod_job: u8,
+    pub mod_left: u16,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 7: mods, mod_job, mod_left });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -400,11 +405,17 @@ pub struct Building {
     pub flow: [u16; FLOW_SLICES],
     /// dernière tranche comptée dans `flow`
     pub flow_at: u32,
+    /// module des Transhumants : améliorations, installation en cours (comme `UnitCold::mods`), et cycles comptés
+    /// pour les améliorations de rendement (voir ameliorations.rs)
+    pub mods: u64,
+    pub mod_job: u8,
+    pub mod_left: u16,
+    pub mod_n: u8,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity; since 7: mods, mod_job, mod_left, mod_n
 });
 
 impl Building {
@@ -606,6 +617,8 @@ pub struct World {
     pub fog: bool,
     /// Transhumants : usure de chaque gisement (‰, indice de `map.spots`) par leurs foreuses
     pub wear: Vec<u16>,
+    /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
+    pub arks: Vec<crate::ameliorations::Ark>,
 }
 
 impl World {
@@ -705,6 +718,7 @@ impl World {
             nature,
             fog,
             wear: Vec::new(),
+            arks: Vec::new(),
         };
         w.wear = vec![0; w.map.spots.len()];
         for p in 0..np {
@@ -811,6 +825,9 @@ impl World {
         let m = self.race_hp_mult(owner, kind);
         if m != 1000 {
             self.units.hp[slot] = (def.hp as i64 * m as i64 / 1000) as i32;
+        }
+        if kind == U_ARK {
+            crate::ameliorations::ark_added(self, slot);
         }
         self.players[owner as usize].unit_count += 1;
         let id = slot as u32 | ((self.units.gen[slot] as u32) << SLOT_BITS);
@@ -975,6 +992,7 @@ impl World {
         crate::units::update_units(self);
         crate::souche::update_units(self);
         crate::transhumants::update(self);
+        crate::ameliorations::update(self);
         crate::combat::update_projectiles(self);
         crate::logistics::update_carriers(self);
         crate::combat::cleanup_dead(self);
@@ -1011,6 +1029,11 @@ impl World {
                 if !u.cold[s].hold.is_empty() {
                     h.add(crate::drones::fold(&u.cold[s].hold) | (u.cold[s].supply_at as u64) << 40);
                 }
+                // améliorations des Transhumants
+                if u.cold[s].mods != 0 || u.cold[s].mod_job != 0 {
+                    h.add(u.cold[s].mods);
+                    h.add(u.cold[s].mod_job as u64 | (u.cold[s].mod_left as u64) << 8);
+                }
             }
         }
         for (i, b) in self.buildings.iter().enumerate() {
@@ -1026,6 +1049,10 @@ impl World {
                 // stock d'un dépôt ou d'un entrepôt, réserve d'une usine, tampons d'une gare
                 if !b.stash.is_empty() {
                     h.add(crate::drones::fold(&b.stash));
+                }
+                if b.mods != 0 || b.mod_job != 0 {
+                    h.add(b.mods);
+                    h.add(b.mod_job as u64 | (b.mod_left as u64) << 8 | (b.mod_n as u64) << 24);
                 }
             }
         }
@@ -1068,6 +1095,7 @@ impl World {
             h.add_i32(c.y);
         }
         crate::nature::hash_into(self, &mut h);
+        crate::ameliorations::hash_into(self, &mut h);
         h.finish32()
     }
 }

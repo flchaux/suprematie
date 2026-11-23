@@ -3,9 +3,9 @@
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
 import type { GameData, Frame } from "@supreme/shared";
-import { UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES, pausableClass } from "@supreme/shared";
+import { frameMods, UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES, pausableClass } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
-import { buildingScale, buildModel, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseDep, PLAYER_COLORS, withHatches, type DepStep } from "../models/generator.ts";
+import { buildingScale, buildModel, condShown, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseCond, parseDep, PLAYER_COLORS, withHatches, type DepStep, type PivotCond } from "../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
 import { FLOOR_H, liftDash, liftOut, liftPad, liftUp } from "./liftAnim.ts";
 import { barInView, siteBarOf, siteBarSize, type SiteBar } from "./siteBars.ts";
@@ -33,7 +33,7 @@ type Built = ReturnType<typeof buildModel>;
  */
 class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null }[] = [];
+  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null; cond: PivotCond | null; fixed: boolean }[] = [];
   cap = 0;
   n = 0;
   private builtV: Built | null;
@@ -95,6 +95,9 @@ class KindMesh {
     this.pivots = this.built.pivots.map((p, i) => {
       const tm = teamInstancedMesh(this.pivotGeo(i), cap, this.texPerTile * this.scale);
       this.scene.add(tm.mesh);
+      // pièce d'une amélioration des Transhumants (« si:… », « sauf:… ») : dessinée selon ce qui est installé
+      const cond = parseCond(p.name);
+      const name = cond?.base ?? p.name;
       // jambe : 1 ou 2 selon la phase (gauche ou arrière décalée d'un demi-pas), 0 sinon
       const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
       // anneau d'un corps qui ondule (« ondule1 », « ondule2 »… de la tête vers la queue), 0 sinon
@@ -105,7 +108,7 @@ class KindMesh {
       // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
       // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
       const slide = Number(/^chenille_p([\d.]+)/.exec(p.name)?.[1] ?? 0);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|emetteur|cristal|feu/.test(p.name), leg, wave, mode, slide, dep: parseDep(p.name) };
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(p.name), cond, fixed: !!cond && /^fixe/.test(name) };
     });
     this.cap = cap;
   }
@@ -380,6 +383,8 @@ export class Entities {
   /** unités qui viennent de disparaître (porte, anneaux, téléportation) : elles s'effacent sur place */
   private ghosts: { kind: number; col: THREE.Color; x: number; y: number; z: number; facing: number; t0: number; fwd: number }[] = [];
   animFrame = 0;
+  /** améliorations des Transhumants : clé → indice */
+  private modIds: Map<string, number>;
   /** trappes ouvertes des bâtiments qui reçoivent des objets (entrée cyan, sortie ambre) ; les fermées sont dans leur modèle */
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
@@ -406,6 +411,7 @@ export class Entities {
     public map: MapData,
   ) {
     map.spots.forEach((sp, i) => this.spotAt.set(sp.y * map.w + sp.x, i));
+    this.modIds = new Map((data.mods ?? []).map((m, i) => [m.key, i]));
     // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
       // un œuf garde la taille de son rayon (les autres unités : 0,7 case au moins)
@@ -732,6 +738,12 @@ export class Entities {
       return (vis[cz * vw + cx] & bit) !== 0;
     };
     const teamOf = (p: number) => f.players[p]?.team ?? p;
+    // améliorations des Transhumants : pièces dessinées selon ce qui est installé
+    const mods = frameMods(f);
+    const modOf = (ref: number) => {
+      const m = mods.get(ref)?.mods;
+      return (key: string) => !!m && m.includes(this.modIds.get(key) ?? -1);
+    };
     /** indice de couleur d'un propriétaire : 0 à 7 pour les joueurs, 8 pour la faune */
     const cslot = (p: number) => (f.players[p]?.team === NATURE_TEAM ? 8 : p % 8);
     for (const m of this.unitMeshes) m.begin();
@@ -860,9 +872,12 @@ export class Entities {
         st.pack = packing;
         st.packTick = f.tick;
       }
-      const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
+      // (tourelle d'une Arche : 2 s et 1,5 s)
+      const packLen = def.turret ? (packing === 1 ? 40 : 30) : packing === 1 ? 300 : 200;
+      const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / packLen) : 0;
       // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
-      let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
+      let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : def.turret && flags & UF.DEPLOYED ? 1 : 0;
+      const has = modOf(id);
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
       tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
       // œuf de la Souche : il respire, s'agite avant d'éclore, puis ouvre ses lèvres (le temps restant tient
@@ -914,10 +929,10 @@ export class Entities {
         } else if (p.slide > 0) {
           // crampons de chenille : ils avancent avec la distance parcourue, d'un pas par période (brin supérieur)
           tmpM2.multiply(new THREE.Matrix4().makeTranslation(0, 0, ((((st.dist ?? 0) / Math.max(1e-6, sc)) % p.slide) - p.slide / 2) * sc));
-        } else tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / 80 : st.torso));
+        } else if (!p.fixed) tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / (p.cond ? 400 : 80) : st.torso));
         // droïde : la boule rentre quand il se déploie, les pièces déployées sortent
         const dep = st.dep ?? 0;
-        const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
+        const vis = !condShown(p.cond, has) ? 0.0001 : p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
         tmpM2.scale(tmpS.set(sc * vis, sc * vis, sc * vis));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
@@ -987,7 +1002,8 @@ export class Entities {
       const c = tmpC.copy(g.col).lerp(new THREE.Color(0xa8e8ff), t);
       setTeamColor(km.body!, km.n, c);
       for (const p of km.pivots) {
-        tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z).scale(tmpS.set(sc, sc, sc));
+        const k = p.cond?.on ? 0.0001 : sc;
+        tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z).scale(tmpS.set(k, k, k));
         const base = tmpM.clone();
         base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
         base.multiply(tmpM2);
@@ -1271,10 +1287,12 @@ export class Entities {
       }
       // extracteur : pièces teintées selon la ressource exploitée
       const ore = def.cls === BClass.Extractor ? oreTint(buf[o + 5] & 0xff, this.data) : null;
+      const has = modOf(buf[o] >>> 0);
       if (ore) setAccentColor(km.body!, km.n, ore);
       for (const p of km.pivots) {
         let rot = 0;
-        if (def.cls === BClass.Turret) rot = Math.PI / 2 - (buf[o + 5] & 0xffff) * ANG - (Math.PI / 2 - (dir * Math.PI) / 2);
+        if (p.fixed) rot = 0;
+        else if (def.cls === BClass.Turret) rot = Math.PI / 2 - (buf[o + 5] & 0xffff) * ANG - (Math.PI / 2 - (dir * Math.PI) / 2);
         else if (def.cls === BClass.Inserter) {
           const phase = (buf[o + 5] >> 8) & 0xff;
           const timer = (buf[o + 5] >> 16) & 0xff;
@@ -1285,7 +1303,7 @@ export class Entities {
           rot = phase === 1 ? (-sweep * timer) / 6 : phase === 2 ? 0 : phase === 3 ? -sweep * (1 - timer / 6) : -sweep;
         } else if (bflags & BF.WORKING && upg === 0) rot = performance.now() / 300;
         // EPPZ d'une ruine : il flotte en tournant tant qu'il n'est pas pris, puis disparaît
-        const gone = p.mode === 4 && !(bflags & BF.WORKING) ? 0.001 : 1;
+        const gone = !condShown(p.cond, has) ? 0.0001 : p.mode === 4 && !(bflags & BF.WORKING) ? 0.001 : 1;
         const bobY = p.mode === 4 ? Math.sin(performance.now() / 500) * 0.06 : 0;
         tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc) + bobY, p.origin.z);
         tmpM2.multiply(new THREE.Matrix4().makeRotationY(rot));
@@ -2172,7 +2190,16 @@ export class Entities {
   private beamSource(wi: number): { h: number; fwd: number; air: boolean; big: number } {
     let s = this.beamFrom.get(wi);
     if (s) return s;
-    const kind = this.data.units.findIndex((u) => u.weapons.includes(wi));
+    // arme d'amélioration (lance-flammes de l'Arche) : celle de l'Arche, depuis sa tourelle de proue
+    const ark = this.data.units.findIndex((u) => u.key === "ark");
+    const own = this.data.units.findIndex((u) => u.weapons.includes(wi));
+    const kind = own >= 0 ? own : ark;
+    if (own < 0 && ark >= 0) {
+      const k = this.unitMeshes[ark].scale;
+      s = { h: 1.26 * k, fwd: 2.8 * k, air: false, big: 1 };
+      this.beamFrom.set(wi, s);
+      return s;
+    }
     const km = kind >= 0 ? this.unitMeshes[kind] : undefined;
     const def = kind >= 0 ? this.data.units[kind] : undefined;
     const piv = km?.built.pivots.find((p) => p.name === "laser");

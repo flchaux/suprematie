@@ -24,7 +24,8 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 ///   à la lecture (`convert_reserve`) ; la réserve du joueur ne garde que les monnaies de race (`purse`).
 /// - 5 : apprivoisement par la Souche (Reine qui apprivoise un nid, nids greffés, bêtes calmées).
 /// - 6 : relais logistiques (relais propriétaire d'un drone de ravitaillement, `Carrier::relay`).
-pub const VERSION: u32 = 6;
+/// - 7 : améliorations des Transhumants (unités, modules, état des Arches).
+pub const VERSION: u32 = 7;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])
@@ -64,6 +65,9 @@ pub fn write(w: &World, version: u32, team_stock: &[[i32; crate::data::NUM_ITEMS
     w.nature.ser(&mut o);
     if version >= 3 {
         w.wear.ser(&mut o);
+    }
+    if version >= 7 {
+        w.arks.ser(&mut o);
     }
     o.buf
 }
@@ -136,6 +140,8 @@ fn read_world(r: &mut R) -> Option<(World, Vec<[i32; crate::data::NUM_ITEMS]>)> 
     if r.version >= 3 {
         w.wear = Ser::de(r);
     }
+    // l'état des Arches manquant (sauvegarde plus ancienne) est créé par `rebuild`
+    w.arks = if r.version >= 7 { Ser::de(r) } else { Vec::new() };
     Some((w, team_stock))
 }
 
@@ -243,5 +249,12 @@ fn rebuild(mut w: World) -> World {
     w.nav = Nav::new(&w.map);
     crate::flow::rebuild_goal_refs(&mut w);
     crate::drones::rebuild_stores(&mut w);
+    crate::ameliorations::rebuild_arks(&mut w);
+    // recherches ajoutées depuis la sauvegarde
+    for p in w.players.iter_mut() {
+        if p.tech_progress.len() < crate::data::TECHS.len() {
+            p.tech_progress.resize(crate::data::TECHS.len(), 0);
+        }
+    }
     w
 }

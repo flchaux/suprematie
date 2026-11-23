@@ -95,7 +95,7 @@ pub struct RaceDef {
 pub const RACES: [RaceDef; NUM_RACES] = [
     RaceDef { key: "industriels", name: "Industriels", desc: "Tapis, bras, fonderies et assembleurs, électricité par zones, laboratoires et lots de recherche." },
     RaceDef { key: "souche", name: "Souche", desc: "Base vivante : un réseau de racines met en commun sève et sels, les organes poussent seuls, la race évolue en digérant les cadavres." },
-    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; recherche par l'exploration ; butin : un quart de ce qu'ils détruisent." },
+    RaceDef { key: "transhumants", name: "Transhumants", desc: "Industrie montée sur des chenillards qui se déploient pour produire et se replient pour partir ; tout se joue sur les améliorations, surtout celles de l'Arche (armes, bouclier, tourelles…) ; recherche par l'exploration ; butin : un quart de ce qu'ils détruisent." },
 ];
 
 // ---------- Recettes ----------
@@ -315,7 +315,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 75] = [
+pub const WEAPONS: [WeaponDef; 89] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -397,7 +397,34 @@ pub const WEAPONS: [WeaponDef; 75] = [
     w!(90, 40, 90, Shell, 14, 384, M_SURF, min_range: 8),               // 72 canon tracté
     w!(300, 2, 40, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 73 bélier : éperonne
     w!(160, 30, 36, Bullet, 40, 128, M_SURF),                           // 74 bastion déployé
+    // améliorations des Transhumants (voir ameliorations.rs)
+    w!(360, 42, 44, Shell, 24, 320, M_SURF, min_range: 5),              // 75 Arche : canon lourd
+    w!(14, 13, 60, Fire, 0, 448, M_SURF, sustain: 40),                  // 76 Arche : lance-flammes (2 s)
+    w!(70, 36, 120, Missile, 18, 224, M_SURF, salvo: 12, spread: 700, min_range: 6), // 77 Arche : roquettes
+    w!(900, 52, 100, Rail, 120, 0, M_SURF),                             // 78 Arche : canon à rail
+    w!(48, 40, 8, Bullet, 60, 256, M_AIR),                              // 79 Arche : batterie antiaérienne
+    w!(10, 18, 5, Bullet, 45, 0, M_SURF),                               // 80 tourelle mitrailleuse
+    w!(24, 28, 8, Bullet, 60, 192, M_AIR),                              // 81 tourelle antiaérienne
+    w!(110, 32, 80, Shell, 16, 384, M_SURF, min_range: 7),              // 82 tourelle mortier
+    w!(170, 44, 36, Bullet, 48, 128, M_SURF),                           // 83 bastion à canon long
+    w!(50, 20, 18, Bullet, 40, 0, M_SURF),                              // 84 cavalier à canons jumelés
+    w!(22, 38, 10, Bullet, 60, 200, M_AIR),                             // 85 herse à viseur longue portée
+    w!(18, 24, 10, Bullet, 50, 128, M_SURF | M_AIR),                    // 86 herse à affût mixte
+    w!(90, 54, 90, Shell, 16, 384, M_SURF, min_range: 10),              // 87 canon tracté à tube allongé
+    w!(45, 40, 90, Shell, 14, 384, M_SURF, salvo: 3, spread: 500, min_range: 8), // 88 canon tracté à obus à grappe
 ];
+/// Armes des améliorations des Transhumants (indices dans WEAPONS).
+pub const W_SIEGE: u8 = 75;
+pub const W_FLAME: u8 = 76;
+pub const W_ROCKETS: u8 = 77;
+pub const W_RAIL: u8 = 78;
+pub const W_FLAK: u8 = 79;
+pub const W_BASTION_LONG: u8 = 83;
+pub const W_RIDER_TWIN: u8 = 84;
+pub const W_HARROW_LONG: u8 = 85;
+pub const W_HARROW_MIXED: u8 = 86;
+pub const W_GUN_LONG: u8 = 87;
+pub const W_GUN_CLUSTER: u8 = 88;
 pub const W_CMD_UP: u8 = 1;
 
 // ---------- Recherches ----------
@@ -432,7 +459,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 64] = [
+pub const TECHS: [TechDef; 76] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -499,7 +526,33 @@ pub const TECHS: [TechDef; 64] = [
     t!("t_bastion", "Bastion", 2, 15, 8, [58], "Chenillard bastion : tourelle lourde une fois déployé", race: RACE_TRANSH),
     t!("t_armor", "Blindage", 3, 25, 10, [60], "Chenillards et Arche : +50 % de points de vie", race: RACE_TRANSH),
     t!("t_crystal", "Cristal nomade", 4, 30, 12, [60], "Cristal raffiné, cellules d'énergie", race: RACE_TRANSH, also: T_CRYSTAL_REFINING),
+    // améliorations (voir ameliorations.rs) : ces recherches débloquent des choix à installer depuis les fiches
+    t!("t_armory", "Armurerie de l'Arche", 1, 8, 6, [], "Arche, armement : canon lourd, batterie de roquettes, batterie antiaérienne", race: RACE_TRANSH),
+    t!("t_fittings", "Modules aménagés", 1, 8, 6, [], "Deux améliorations au choix par foreuse, fonderie, assembleur, générateur et chariot de convoi", race: RACE_TRANSH),
+    t!("t_mounts", "Affûts en étoile", 2, 15, 8, [64], "Arche, pont : 3 tourelles déployables", race: RACE_TRANSH),
+    t!("t_bubble", "Bulle de convoi", 2, 15, 8, [60], "Arche, coque : bouclier de convoi, blindage lourd, blindage réactif", race: RACE_TRANSH),
+    t!("t_drive", "Trains de roulement", 2, 12, 8, [], "Arche, mobilité : moteurs jumelés, éperon, surcharge", race: RACE_TRANSH),
+    t!("t_onboard", "Ateliers de bord", 2, 15, 8, [65], "Arche : atelier embarqué, soutes de pont, groupe électrogène", race: RACE_TRANSH),
+    t!("t_gear", "Équipement de guerre", 2, 12, 8, [58], "Deux équipements au choix par pisteur, cavalier, herse, canon tracté et bélier", race: RACE_TRANSH),
+    t!("t_fittings2", "Modules lourds", 2, 15, 8, [65], "Deux améliorations au choix par raffinerie, soute, laboratoire, atelier et bastion", race: RACE_TRANSH),
+    t!("t_recon", "Guerre de mouvement", 3, 20, 10, [68], "Arche, soutien : radar de crête, brouilleur, grues de pillage", race: RACE_TRANSH),
+    t!("t_bubble2", "Bulle renforcée", 3, 20, 10, [67], "Arche, coque : bouclier de 8 cases et 5 000 points", race: RACE_TRANSH),
+    t!("t_rail", "Canon à rail", 4, 25, 12, [64, 63], "Arche, armement : canon à rail", race: RACE_TRANSH),
+    t!("t_crown", "Couronne de tourelles", 4, 30, 12, [66, 73], "Arche : 9 tourelles déployables (pont), grande bulle de 11 cases et 9 000 points (coque)", race: RACE_TRANSH),
 ];
+/// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
+pub const T_T_ARMORY: u8 = 64;
+pub const T_T_FITTINGS: u8 = 65;
+pub const T_T_MOUNTS: u8 = 66;
+pub const T_T_BUBBLE: u8 = 67;
+pub const T_T_DRIVE: u8 = 68;
+pub const T_T_ONBOARD: u8 = 69;
+pub const T_T_GEAR: u8 = 70;
+pub const T_T_FITTINGS2: u8 = 71;
+pub const T_T_RECON: u8 = 72;
+pub const T_T_BUBBLE2: u8 = 73;
+pub const T_T_RAIL: u8 = 74;
+pub const T_T_CROWN: u8 = 75;
 /// Recherches de la Souche et des Transhumants (indices dans TECHS).
 pub const T_S_SPITTERS: u8 = 48;
 pub const T_S_SHELLS: u8 = 49;
@@ -729,8 +782,10 @@ pub const B_T_BASTION: u16 = 69;
 pub const B_T_POLE: u16 = 70;
 /// relais logistique (voir drones.rs, « Relais logistiques »)
 pub const B_RELAY: u16 = 71;
+/// Groupe électrogène que l'Arche pose à l'arrêt (voir ameliorations::update_dock).
+pub const B_ARK_DOCK: u16 = 72;
 
-pub const BUILDINGS: [BuildingDef; 72] = [
+pub const BUILDINGS: [BuildingDef; 73] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -815,6 +870,8 @@ pub const BUILDINGS: [BuildingDef; 72] = [
     BuildingDef { key: "t_pole", name: "Poteau nomade", hp: 200, cost: &[], build: 1, class: BClass::Pylon, supply: 6, connect: 13, vision: 0, race: RACE_TRANSH, ..BD },
     // relais logistique (Industriels) : sans énergie ; zone de RELAY_RANGE cases, reliés à RELAY_LINK cases
     BuildingDef { key: "logistic_relay", name: "Relais logistique", size: (2, 2), hp: 600, cost: &[(IRON_PLATE, 20), (GEAR, 10), (CIRCUIT, 10)], build: 8, tech: T_AUTOMATION, class: BClass::Relay, vision: 10, ..BD },
+    // Transhumants : groupe électrogène posé par l'Arche à l'arrêt (amélioration « groupe électrogène »)
+    BuildingDef { key: "ark_dock", name: "Groupe de l'Arche", hp: 800, power_prod: 500, cost: &[], build: 1, class: BClass::Power, supply: 8, connect: 20, race: RACE_TRANSH, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -992,12 +1049,16 @@ pub const U_EGG_M: u16 = 78;
 pub const U_EGG_L: u16 = 79;
 /// chariot de convoi des Transhumants, attelé à une soute (voir transhumants::hitch)
 pub const U_T_CART: u16 = 80;
+/// tourelles déployées par l'Arche des Transhumants (voir ameliorations.rs)
+pub const U_TUR_GUN: u16 = 81;
+pub const U_TUR_AA: u16 = 82;
+pub const U_TUR_MORTAR: u16 = 83;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 81] = [
+pub const UNITS: [UnitDef; 84] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1089,6 +1150,11 @@ pub const UNITS: [UnitDef; 81] = [
     // ----- Transhumants : chariot de convoi, attelé à une soute (coût pris dans son stock), qui fait la
     // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
     UnitDef { key: "t_cart", name: "Chariot de convoi", hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
+    // ----- Transhumants : tourelles de l'Arche. Elles roulent jusqu'à leur poste, s'y déploient, et rentrent à
+    // bord ; le coût est celui de la reconstruction d'une tourelle détruite (voir ameliorations.rs) -----
+    UnitDef { key: "turret_gun", name: "Tourelle mitrailleuse", hp: 700, speed: 42, radius: 130, weapons: &[80], vision: 20, cost: &[(IRON_PLATE, 12), (GEAR, 4)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "turret_aa", name: "Tourelle antiaérienne", hp: 600, speed: 42, radius: 130, weapons: &[81], vision: 28, cost: &[(IRON_PLATE, 10), (GEAR, 4), (CIRCUIT, 2)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "turret_mortar", name: "Tourelle mortier", hp: 500, speed: 42, radius: 130, weapons: &[82], vision: 24, cost: &[(STEEL, 3), (GEAR, 4), (IRON_PLATE, 6)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.
@@ -1158,7 +1224,7 @@ fn cost_js(c: &[(u8, u16)]) -> String {
 }
 
 pub fn data_json() -> String {
-    let mut s = String::from("{\"items\":[");
+    let mut s = format!("{{{},\"items\":[", crate::ameliorations::mods_json());
     for (i, it) in ITEMS.iter().enumerate() {
         if i > 0 {
             s.push(',');
@@ -1222,9 +1288,9 @@ pub fn data_json() -> String {
         }
         let ws: Vec<String> = u.weapons.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{},\"litter\":{},\"egg\":{}}}",
+            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{},\"litter\":{},\"egg\":{},\"turret\":{}}}",
             js(u.key), js(u.name), u.layer as u8, u.hp, u.speed, u.radius, ws.join(","), u.vision, u.radar, cost_js(u.cost), u.build, u.tech,
-            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }, u.litter, matches!(i as u16, U_EGG_S | U_EGG_M | U_EGG_L)
+            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }, u.litter, matches!(i as u16, U_EGG_S | U_EGG_M | U_EGG_L), crate::ameliorations::is_turret(i as u16)
         ));
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();

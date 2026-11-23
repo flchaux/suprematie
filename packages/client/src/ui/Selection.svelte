@@ -8,6 +8,7 @@
   import { BClass, RECIPE_NONE, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
+  import Upgrades from "./Upgrades.svelte";
   import { canPay } from "../game/reach.ts";
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
@@ -71,7 +72,7 @@
     return { label: `Améliorer en ${to.name}`, cost: to.cost, tech: to.tech, time: u[2], gain: `vitesse ×${(to.speed / Math.max(1, bdef.speed)).toFixed(2)}, ${to.powerUse} kW` };
   });
   /** vitesse effective d'un fabricant : niveau de la fonderie compris (comme crafter_speed dans la simulation) */
-  const cspeed = $derived(bdef ? (bdef.speed * (bdef.key === "furnace" ? (d?.furnaceLevels?.[info?.level ?? 0]?.speed ?? 100) : 100)) / 100 : 100);
+  const cspeed = $derived(bdef ? (bdef.speed * (bdef.key === "furnace" ? (d?.furnaceLevels?.[info?.level ?? 0]?.speed ?? 100) : (info?.transh?.speed ?? 100))) / 100 : 100);
   const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
   // seulement les recettes débloquées par nos recherches (les autres apparaissent dans l'écran des recettes)
   const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
@@ -100,7 +101,9 @@
     const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
     if (powered && !info.net) return { text: "Hors zone électrique : rapprochez-le d'un générateur ou d'un relais", kind: "warn" };
     if (powered && info.sat < 512) return { text: info.sat === 0 ? "Sans courant : les générateurs de la zone n'ont plus de combustible" : `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : il manque des générateurs ou du combustible`, kind: "warn" };
-    if (bdef.cls === BClass.Power && (info.fuel ?? 0) <= 0 && info.build >= 65536) return { text: "Sans combustible : il ne produit rien", kind: "warn" };
+    // module des Transhumants : amélioration en cours d'installation
+    if (info.transh?.mods?.job) return { text: `Installation d'une amélioration${bdef.cls === BClass.Depot || bdef.cls === BClass.Power ? " (toujours en service)" : " : à l'arrêt jusqu'à la fin"}`, kind: "build" };
+    if (bdef.cls === BClass.Power && !["geothermal", "eppz_socket", "ark_dock"].includes(bdef.key) && (info.fuel ?? 0) <= 0 && info.build >= 65536) return { text: "Sans combustible : il ne produit rien", kind: "warn" };
     if (bdef.cls === BClass.Crafter && info.recipe !== RECIPE_NONE && !info.working) {
       const r = d.recipes[info.recipe];
       if (info.out + r.output[1] > Math.max(4, r.output[1] * 3)) return { text: `Sortie bloquée : ${d.items[r.output[0]].name} n'est pas emporté (bras ou tapis de sortie)`, kind: "warn" };
@@ -285,6 +288,8 @@
     {#if mine && info}
       {#if info.build < 65536}
         <button class="icon-btn danger" onclick={() => client.cancelBuilding()}><Icon name="close" size={14} /> Annuler le chantier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+      {:else if bdef.key === "ark_dock"}
+        <span class="dim small">L'Arche le rembarque en partant.</span>
       {:else if (bdef.race ?? 0) === 2 && bdef.key !== "t_pole"}
         <button class="icon-btn" title="Le module redevient un chenillard (immobile 10 s) ; son contenu retourne à la réserve, sa recette et son combustible restent à bord" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier</button>
       {:else}
@@ -302,6 +307,7 @@
           <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if bdef.key === "leaves"}<span class="dim"> · les frondaisons voisines (4 cases) se font de l'ombre</span>{/if}</div>
         {/if}
       {/if}
+      {#if info.transh?.mods}<Upgrades mi={info.transh.mods} refs={[sb.ref]} />{/if}
       {#if info.transh?.cartsMax}
         {@const tc = info.transh}
         <div class="row small" title="Un chariot de convoi fait la navette entre cette soute et un module éloigné : clic droit sur une foreuse ou un fabricant pour rapporter ce qui en sort, Maj+clic droit sur un fabricant pour lui livrer les ingrédients de sa recette. Les chariots rentrent dans la soute quand elle se replie.">
@@ -678,6 +684,7 @@
         </button>
       {/each}
     </div>
+    {#if ui.groupMods}<Upgrades mi={ui.groupMods.info} refs={ui.groupMods.refs} />{/if}
     {#if pausables.length}
       {@const pl = pausables}
       {@const all = pl.every((b) => b.paused)}
@@ -741,10 +748,11 @@
       {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
       {#if ui.unitInfo.pack}
         <!-- chenillard des Transhumants : déploiement (15 s) ou repli (10 s) en cours -->
-        {@const total = ui.unitInfo.pack === 1 ? 300 : 200}
+        {@const total = d.units[ui.selUnits[0].kind].turret ? (ui.unitInfo.pack === 1 ? 40 : 30) : ui.unitInfo.pack === 1 ? 300 : 200}
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / total) * 100}%"></span></div>
       {/if}
+      {#if ui.unitInfo.mods && ui.me >= 0}<Upgrades mi={ui.unitInfo.mods} refs={ui.selUnits[0].ids} />{/if}
       {#if ui.unitInfo.egg}
         <!-- œuf de la Souche : l'organisme qu'il porte, et le temps avant l'éclosion -->
         {@const eg = ui.unitInfo.egg}
@@ -802,7 +810,7 @@
         {@const hold = ui.unitInfo.hold as number[]}
         {@const reach = (ui.unitInfo.reach ?? []) as number[]}
         {@const inHold = hold.reduce((a: number, b: number) => a + b, 0)}
-        <div class="row">{#if ud.commander}<span class="kicker tip">Soute (dépôt)<span class="tt">Elle compte comme un dépôt : les drones des ingénieurs et des usines proches y puisent, et la récolte y reste</span></span><span class="num small">{inHold}</span><span class="dim small">· {d.depot?.cap[0] ?? 600} par objet</span>{:else}<span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span>{/if}<span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
+        <div class="row">{#if ud.commander}<span class="kicker tip">Soute (dépôt)<span class="tt">Elle compte comme un dépôt : les drones des ingénieurs et des usines proches y puisent, et la récolte y reste</span></span><span class="num small">{inHold}</span><span class="dim small">· {ui.unitInfo.mods?.ark?.cap ?? d.depot?.cap[0] ?? 600} par objet</span>{:else}<span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span>{/if}<span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
         {#if inHold > 0}
           <!-- clic sur un objet : le porter au dépôt le plus proche qui a de la place (ordre Deliver) -->
           <div class="row wrap">
@@ -816,6 +824,7 @@
         {#if reach.some((n) => n > 0)}<div class="row wrap">{#each reach as n, i}{#if i > 0 && n > 0}<Item id={i} {n} size={16} />{/if}{/each}</div>{/if}
       {/if}
     {/if}
+    {#if ui.groupMods && total > 1}<Upgrades mi={ui.groupMods.info} refs={ui.groupMods.refs} />{/if}
     <div class="groups">
       {#each ui.selUnits as g}
         <button class="grp tip" onclick={() => client.selectIds(g.ids)}>
@@ -826,8 +835,9 @@
         </button>
       {/each}
     </div>
-    <!-- des œufs de la Souche seuls : ils ne reçoivent pas d'ordres -->
-    {#if ui.me >= 0 && !ui.selUnits.every((g) => d.units[g.kind].egg)}
+    <!-- des œufs de la Souche ou des tourelles d'Arche seuls : ils ne reçoivent pas d'ordres -->
+    {#if ui.me >= 0 && ui.selUnits.every((g) => d.units[g.kind].turret)}<span class="dim small">Dirigées par l'Arche : sélectionnez-la pour les rappeler ou changer leur type.</span>{/if}
+    {#if ui.me >= 0 && !ui.selUnits.every((g) => d.units[g.kind].egg || d.units[g.kind].turret)}
       <div class="cmds">
         <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">{keyOf("stop")}</span></button>
         <button class="cmd" onclick={() => client.setMode("attackMove")} title="Attaque en mouvement"><Icon name="attack" size={17} /><span class="key">{keyOf("attackMove")}</span></button>

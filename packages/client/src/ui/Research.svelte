@@ -33,7 +33,7 @@
   <div class="modal-body">
     <p class="dim intro">
       {#if ui.race === RACE_SOUCHE}Les matrices évoluent avec l'ADN : chaque unité de recherche coûte autant d'ADN que son palier. L'ADN vient des ennemis et des bêtes digérés sur votre terreau ; à défaut, une matrice en tire de la sève (20 pour 1). Les mutations s'excluent deux à deux : le choix vaut pour toute la partie.
-      {:else if ui.race === RACE_TRANSH}Les laboratoires nomades étudient vos relevés : chaque unité de recherche coûte 3 relevés par palier. Les relevés viennent de l'exploration (cases découvertes) et des ennemis détruits ; à défaut, un laboratoire en tire un des environs toutes les 2 s.
+      {:else if ui.race === RACE_TRANSH}Les laboratoires nomades étudient vos relevés : chaque unité de recherche coûte 3 relevés par palier. Les relevés viennent de l'exploration (cases découvertes) et des ennemis détruits ; à défaut, un laboratoire en tire un des environs toutes les 2 s. La plupart des recherches débloquent des <b>améliorations</b> : elles s'installent ensuite une à une, depuis la fiche de l'Arche, d'un module ou d'une unité, et coûtent aussi des relevés.
       {:else}Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.{/if}
       <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite. {#if ui.researchQueue.length}<button class="ghost small linkish" onclick={() => client.clearResearchQueue()}>Vider la file ({ui.researchQueue.length})</button>{/if}</p>
     {#if d}

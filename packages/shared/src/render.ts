@@ -13,6 +13,8 @@ export const EVENT_WORDS = 5;
 export const WRECK_WORDS = 4;
 export const SHIELD_WORDS = 4;
 export const CARRIER_WORDS = 5;
+/** Transhumants : améliorations d'une unité ou d'un module */
+export const MOD_WORDS = 3;
 
 export const EV = {
   BEAM: 2, EXPLOSION: 3, UNIT_DIED: 4, BUILDING_DIED: 5, BUILT: 6, RESEARCH: 7, NUKE: 8, ELIMINATED: 9,
@@ -21,6 +23,8 @@ export const EV = {
   HATCH: 48,
   /** Transhumants : butin pris sur une victime détruite : (x, y, joueur, objets récupérés) */
   LOOT: 49,
+  /** Transhumants : amélioration installée : (joueur, amélioration, x, y) ; tourelle d'Arche détruite : (joueur, x, y, type d'unité) ; surcharge de l'Arche : (x, y, joueur) */
+  MOD_DONE: 70, TURRET_LOST: 71, ARK_BOOST: 72,
 } as const;
 
 export const UF = { FIRING: 1, WORKING: 2, CHARGING: 4, STUNNED: 8, DEPLOYED: 16, SHIELD: 32, IDLE: 64, CARGO: 128 } as const;
@@ -62,6 +66,8 @@ export interface Frame {
   nShields: number; shieldOff: number;
   /** trains et drones de fret : index, x, y, type | joueur << 8 | en route << 16 | chargé << 17, angle */
   nCarriers: number; carrierOff: number;
+  /** améliorations des Transhumants : référence (unité ou bâtiment), emplacements 0 à 3 (un octet chacun), emplacement 4 | en cours << 8 */
+  nMods: number; modOff: number;
   buildingsVersion: number;
   winner: number;
   vis: Uint8Array | null;
@@ -119,6 +125,7 @@ export function parseFrame(buf: Int32Array): Frame {
     nWrecks: buf[8], wreckOff: 0,
     nShields: buf[13], shieldOff: 0,
     nCarriers: buf[14], carrierOff: 0,
+    nMods: buf[15], modOff: 0,
     buildingsVersion: buf[9], winner: buf[10], vis: null, visW: buf[12],
   };
   o += f.nUnits * UNIT_WORDS;
@@ -136,6 +143,8 @@ export function parseFrame(buf: Int32Array): Frame {
   o += f.nShields * SHIELD_WORDS;
   f.carrierOff = o;
   o += f.nCarriers * CARRIER_WORDS;
+  f.modOff = o;
+  o += f.nMods * MOD_WORDS;
   if (buf[11]) {
     f.vis = new Uint8Array(buf.buffer, buf.byteOffset + o * 4, f.visW * f.visW);
   }
@@ -188,4 +197,17 @@ export function parseBotDump(buf: Int32Array): BotView {
   const wrecks: BotWreck[] = [];
   for (let i = 0; i < buf[4]; i++, o += 4) wrecks.push({ ref: buf[o] >>> 0, x: buf[o + 1], y: buf[o + 2], value: buf[o + 3] });
   return { tick: buf[0], players, units, buildings, wrecks, winner: buf[5] };
+}
+
+/** Améliorations d'une unité ou d'un module : installées (une par emplacement, 0 : rien) et en cours d'installation (0 : aucune). */
+export interface ModView { mods: number[]; job: number }
+/** Améliorations de l'image, par référence (identifiant d'unité ou référence de bâtiment). */
+export function frameMods(f: Frame): Map<number, ModView> {
+  const m = new Map<number, ModView>();
+  for (let i = 0, o = f.modOff; i < f.nMods; i++, o += MOD_WORDS) {
+    const lo = f.buf[o + 1];
+    const hi = f.buf[o + 2];
+    m.set(f.buf[o] >>> 0, { mods: [lo & 255, (lo >>> 8) & 255, (lo >>> 16) & 255, lo >>> 24, hi & 255], job: (hi >>> 8) & 255 });
+  }
+  return m;
 }

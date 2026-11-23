@@ -18,31 +18,34 @@ import { atelierNomade } from "./nomades/atelier.ts";
 import { bastionNomade } from "./nomades/bastion.ts";
 import { poteauNomade } from "./nomades/poteau.ts";
 import { chariotConvoi } from "./nomades/convoi.ts";
+import { ameliorationsArche, amenagements, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
 
 // ——— Bâtiments ———
 
 export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
   // t_drill : foreuse nomade déployée ; même gréement que le chenillard foreuse (voir foreuseNomade), dans sa
   // pose finale : stabilisateurs posés, mât relevé à l'arrière, tige de forage plantée (pivot « foret »)
-  t_drill: { parts: foreuseNomade(false) },
+  t_drill: { parts: [...foreuseNomade(false), ...amenagements("drill_fast", "drill_clean")] },
   // t_furnace : voir nomades/fonderie.ts (même gréement que le chenillard, pose déployée)
-  t_furnace: { parts: fonderieNomade(false) },
+  t_furnace: { parts: [...fonderieNomade(false), ...amenagements("furnace_fast", "furnace_yield")] },
   // t_assembler : voir nomades/assembleur.ts (même gréement que le chenillard, pose déployée)
-  t_assembler: { parts: assembleurNomade(false) },
+  t_assembler: { parts: [...assembleurNomade(false), ...amenagements("asm_fast", "asm_thrift")] },
   // t_refinery : voir nomades/raffinerie.ts (même gréement que le chenillard, pose déployée)
-  t_refinery: { parts: raffinerieNomade(false) },
+  t_refinery: { parts: [...raffinerieNomade(false), ...amenagements("ref_fast", "ref_crack")] },
   // t_generator : voir nomades/generateur.ts (même gréement que le chenillard, pose déployée)
-  t_generator: { parts: generateurNomade(false) },
+  t_generator: { parts: [...generateurNomade(false), ...amenagements("gen_big", "gen_lean")] },
   // t_hold : voir nomades/soute.ts (même gréement que le chenillard, pose déployée)
-  t_hold: { parts: souteNomade(false) },
+  t_hold: { parts: [...souteNomade(false), ...amenagements("hold_big", "hold_armor")] },
   // t_lab : voir nomades/laboratoire.ts (même gréement que le chenillard, pose déployée)
-  t_lab: { parts: laboratoireNomade(false) },
+  t_lab: { parts: [...laboratoireNomade(false), ...amenagements("lab_fast", "lab_field")] },
   // t_workshop : voir nomades/atelier.ts (même gréement que le chenillard, pose déployée)
-  t_workshop: { parts: atelierNomade(false) },
+  t_workshop: { parts: [...atelierNomade(false), ...amenagements("shop_fast", "shop_vets")] },
   // t_bastion : voir nomades/bastion.ts (même gréement que le chenillard, pose déployée)
-  t_bastion: { parts: bastionNomade(false) },
+  t_bastion: { parts: [...bastionNomade(false), ...amenagements("bastion_long", "bastion_shield")] },
   // t_pole : poteau relais planté par le générateur nomade (voir nomades/poteau.ts)
   t_pole: { parts: poteauNomade() },
+  // ark_dock : groupe électrogène posé par l'Arche à l'arrêt (voir nomades/arche.ts)
+  ark_dock: { parts: groupeArche() },
 };
 
 // ——— Unités ———
@@ -62,12 +65,12 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "box", size: [2.1, 0.06, 4.5], pos: [0, 0.94, -0.05], color: "metal" },
       ...[-0.7, 0, 0.7].map((x): Part => ({ shape: "box", size: [0.02, 0.012, 4.3], pos: [x, 0.975, -0.05], color: "dark", fine: true })),
       // tourelle de proue (pivot) : couronne, caisse à pans, fût
-      { shape: "cylinder", sides: 12, radius: 0.46, height: 0.14, pos: [0, 1.04, 1.7], color: "steel", pivot: "tourelle" },
-      { shape: "extrude", profile: [[-0.38, -0.42], [0.38, -0.42], [0.44, 0.02], [0.3, 0.4], [-0.3, 0.4], [-0.44, 0.02]], depth: 0.32, bevel: 0.04, pos: [0, 1.26, 1.66], rot: [90, 0, 0], color: "metal", parent: "tourelle" },
-      { shape: "box", size: [0.5, 0.03, 0.5], pos: [0, 1.43, 1.64], color: "faction", parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.075, height: 0.9, pos: [0, 1.26, 2.43], rot: [90, 0, 0], color: "steel", parent: "tourelle" },
-      { shape: "cylinder", sides: 8, radius: 0.11, height: 0.14, pos: [0, 1.26, 2.86], rot: [90, 0, 0], color: "dark", parent: "tourelle" },
-      { shape: "lathe", sides: 8, pos: [0, 1.26, 1.94], rot: [90, 0, 0], color: "dry", parent: "tourelle", profile: [[0, 0], [0.17, 0], [0.12, 0.12], [0, 0.14]] },
+      { shape: "cylinder", sides: 12, radius: 0.46, height: 0.14, pos: [0, 1.04, 1.7], color: "steel", pivot: CANON },
+      { shape: "extrude", profile: [[-0.38, -0.42], [0.38, -0.42], [0.44, 0.02], [0.3, 0.4], [-0.3, 0.4], [-0.44, 0.02]], depth: 0.32, bevel: 0.04, pos: [0, 1.26, 1.66], rot: [90, 0, 0], color: "metal", parent: CANON },
+      { shape: "box", size: [0.5, 0.03, 0.5], pos: [0, 1.43, 1.64], color: "faction", parent: CANON },
+      { shape: "cylinder", sides: 8, radius: 0.075, height: 0.9, pos: [0, 1.26, 2.43], rot: [90, 0, 0], color: "steel", parent: CANON },
+      { shape: "cylinder", sides: 8, radius: 0.11, height: 0.14, pos: [0, 1.26, 2.86], rot: [90, 0, 0], color: "dark", parent: CANON },
+      { shape: "lathe", sides: 8, pos: [0, 1.26, 1.94], rot: [90, 0, 0], color: "dry", parent: CANON, profile: [[0, 0], [0.17, 0], [0.12, 0.12], [0, 0.14]] },
       // passerelle : caisse d'acier, fente vitrée, toit de bâche, gyrophare
       { shape: "bevel", size: [1.7, 0.5, 0.62], pos: [0, 1.22, 0.85], bevel: 0.05, color: "metal" },
       { shape: "box", size: [1.3, 0.1, 0.03], pos: [0, 1.36, 1.165], color: "glass" },
@@ -87,31 +90,37 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.12, 0.12, 1.7], pos: [0.86, 1.24, -1.1], rot: [3, 0, 0], color: "faction" },
       { shape: "box", size: [0.1, 0.16, 0.12], pos: [0.86, 1.18, -0.24], color: "hazard" },
       // tourelle antiaérienne arrière (pivot) : socle, caisse, deux fûts relevés
-      { shape: "cylinder", sides: 10, radius: 0.3, height: 0.14, pos: [0, 1.04, -2.02], color: "steel", pivot: "tourelle_aa" },
-      { shape: "box", size: [0.44, 0.26, 0.4], pos: [0, 1.24, -2.04], color: "metal", parent: "tourelle_aa" },
-      incl([0.13, 1.3, -1.95], 50, 0.35, 0, { shape: "cylinder", sides: 6, radius: 0.04, height: 0.7, rot: [90, 0, 0], color: "steel", mirror: true, parent: "tourelle_aa" }),
-      incl([0.13, 1.3, -1.95], 50, 0.72, 0, { shape: "cylinder", sides: 8, radius: 0.055, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: "tourelle_aa", fine: true }),
-      { shape: "box", size: [0.3, 0.03, 0.2], pos: [0, 1.38, -2.1], color: "faction", parent: "tourelle_aa" },
+      { shape: "cylinder", sides: 10, radius: 0.3, height: 0.14, pos: [0, 1.04, -2.02], color: "steel", pivot: FLAK },
+      { shape: "box", size: [0.44, 0.26, 0.4], pos: [0, 1.24, -2.04], color: "metal", parent: FLAK },
+      incl([0.13, 1.3, -1.95], 50, 0.35, 0, { shape: "cylinder", sides: 6, radius: 0.04, height: 0.7, rot: [90, 0, 0], color: "steel", mirror: true, parent: FLAK }),
+      incl([0.13, 1.3, -1.95], 50, 0.72, 0, { shape: "cylinder", sides: 8, radius: 0.055, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: FLAK, fine: true }),
+      { shape: "box", size: [0.3, 0.03, 0.2], pos: [0, 1.38, -2.1], color: "faction", parent: FLAK },
       // coffres sanglés sur le pont, mât à fanion
       ...coffre([-0.78, 1.08, 0.38], [0.36, 0.22, 0.4], "wood"),
       ...coffre([-0.78, 1.08, -2.0], [0.4, 0.22, 0.4], "rust"),
       { shape: "cylinder", sides: 6, radius: 0.025, height: 1.5, pos: [-0.45, 2.2, 0.75], color: "steel", fine: true },
       { shape: "box", size: [0.02, 0.22, 0.38], pos: [-0.45, 2.8, 0.56], color: "faction", fine: true },
       { shape: "sphere", radius: 0.04, pos: [-0.45, 2.96, 0.75], color: "amber", fine: true },
+      // améliorations installées (pivots « si:… », voir nomades/arche.ts)
+      ...ameliorationsArche(),
     ],
   },
   // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade)
-  ch_drill: { parts: foreuseNomade(true) },
-  ch_furnace: { parts: fonderieNomade(true) },
-  ch_assembler: { parts: assembleurNomade(true) },
-  ch_refinery: { parts: raffinerieNomade(true) },
-  ch_generator: { parts: generateurNomade(true) },
-  ch_hold: { parts: souteNomade(true) },
-  ch_lab: { parts: laboratoireNomade(true) },
-  ch_workshop: { parts: atelierNomade(true) },
-  ch_bastion: { parts: bastionNomade(true) },
+  ch_drill: { parts: [...foreuseNomade(true), ...amenagements("drill_fast", "drill_clean")] },
+  ch_furnace: { parts: [...fonderieNomade(true), ...amenagements("furnace_fast", "furnace_yield")] },
+  ch_assembler: { parts: [...assembleurNomade(true), ...amenagements("asm_fast", "asm_thrift")] },
+  ch_refinery: { parts: [...raffinerieNomade(true), ...amenagements("ref_fast", "ref_crack")] },
+  ch_generator: { parts: [...generateurNomade(true), ...amenagements("gen_big", "gen_lean")] },
+  ch_hold: { parts: [...souteNomade(true), ...amenagements("hold_big", "hold_armor")] },
+  ch_lab: { parts: [...laboratoireNomade(true), ...amenagements("lab_fast", "lab_field")] },
+  ch_workshop: { parts: [...atelierNomade(true), ...amenagements("shop_fast", "shop_vets")] },
+  ch_bastion: { parts: [...bastionNomade(true), ...amenagements("bastion_long", "bastion_shield")] },
   // t_cart : chariot de convoi attelé à une soute (voir nomades/convoi.ts)
   t_cart: { parts: chariotConvoi() },
+  // tourelles déployables de l'Arche (voir nomades/arche.ts)
+  turret_gun: { parts: tourelleArche(0) },
+  turret_aa: { parts: tourelleArche(1) },
+  turret_mortar: { parts: tourelleArche(2) },
   // tracker : pisteur, buggy léger ; quatre roues à pneus, caisse ouverte d'équipe, arceau de sécurité, pare-soleil
   // de toile, mât d'observation (pivot « tourelle ») à optique ambre et mitrailleuse, bidons
   tracker: {
