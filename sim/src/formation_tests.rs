@@ -111,7 +111,7 @@ fn formation_keeps_its_layout_rotated_towards_the_angle() {
 }
 
 /// Groupe mêlé de motos (rapides), de chars et d'artilleries (lentes) : tous avancent à l'allure des
-/// artilleries et arrivent ensemble. Sans formation orientée, les motos arrivent bien avant.
+/// artilleries et finissent ensemble. Sans formation orientée, les motos arrivent bien avant.
 #[test]
 fn formation_moves_at_the_slowest_speed_and_arrives_together() {
     let kinds = [moto(), U_LIGHT_TANK, U_ARTILLERY, moto(), U_LIGHT_TANK, U_ARTILLERY];
@@ -180,7 +180,7 @@ fn formation_ends_facing_the_angle() {
 }
 
 /// Grand groupe mêlé (24 unités de quatre types) envoyé loin en diagonale : chaque unité finit à sa
-/// place (les lignes restent droites) et le groupe arrive ensemble.
+/// place (les lignes restent droites) et le groupe finit ensemble (les premiers attendent les autres).
 #[test]
 fn big_mixed_formation_stays_in_shape() {
     let mut w = world();
@@ -544,5 +544,99 @@ fn dragged_formation_extends_a_queued_one() {
     for (k, &id) in ids.iter().enumerate() {
         let s = w.unit(id).unwrap();
         assert!(dist(w.units.x[s], w.units.y[s], third[k].0, third[k].1) <= TILE / 2, "unité {k} à sa place");
+    }
+}
+
+// ---------- Allure : la vitesse du plus lent, sans autre ralentissement ----------
+
+/// Distance parcourue en ligne droite par chaque unité entre les ticks 30 et 60 (en pleine course).
+fn cruise(w: &mut World, ids: &[u32]) -> Vec<i32> {
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    let at = |w: &World| -> Vec<(i32, i32)> { ids.iter().map(|&id| w.unit(id).map(|s| (w.units.x[s], w.units.y[s])).unwrap()).collect() };
+    let a = at(w);
+    for _ in 0..30 {
+        w.step(&[]);
+    }
+    at(w).iter().zip(&a).map(|(p, q)| dist(p.0, p.1, q.0, q.1)).collect()
+}
+
+/// Rongeurs éparpillés sur 24 cases (une seule sorte d'unité) : en formation, glissée ou en file, chacun
+/// court à la pleine vitesse du rongeur, aussi vite que sans formation, quelle que soit la distance de sa place.
+#[test]
+fn formation_of_one_kind_is_not_slowed() {
+    for queued in [false, true] {
+        let mut w = world();
+        let ids: Vec<u32> = (0..12).map(|k| w.spawn_unit(kind("gnawer"), 0, (70 + (k * 7) % 25) * TILE, (80 + 2 * k) * TILE)).collect();
+        for &id in &ids {
+            let s = w.unit(id).unwrap();
+            w.units.facing[s] = 0;
+        }
+        if queued {
+            queued_order(&mut w, &ids, 140 * TILE, 91 * TILE);
+        } else {
+            drag_order(&mut w, &ids, 140 * TILE, 91 * TILE, 0, false);
+        }
+        let full = 30 * unit_speed(kind("gnawer"));
+        let d = cruise(&mut w, &ids);
+        assert!(d.iter().all(|&d| d >= full * 95 / 100), "pleine vitesse {full}, en file {queued} : {d:?}");
+    }
+}
+
+/// Groupe mêlé et épars : chacun va à la vitesse du plus lent (l'artillerie), ni plus vite ni moins vite,
+/// que sa place soit proche ou loin ; sur le terreau de son joueur, un groupe de la Souche garde son bonus.
+#[test]
+fn formation_goes_at_the_slowest_speed() {
+    let mut w = world();
+    let keys = ["moto", "light_tank", "artillery", "gnawer"];
+    let ids: Vec<u32> = (0..12).map(|k| w.spawn_unit(kind(keys[k as usize % 4]), 0, (70 + (k * 7) % 25) * TILE, (80 + 2 * k) * TILE)).collect();
+    for &id in &ids {
+        let s = w.unit(id).unwrap();
+        w.units.facing[s] = 0;
+    }
+    let vmin = keys.iter().map(|k| unit_speed(kind(k))).min().unwrap();
+    drag_order(&mut w, &ids, 150 * TILE, 91 * TILE, 0, false);
+    let d = cruise(&mut w, &ids);
+    assert!(d.iter().all(|&d| d >= 30 * vmin * 95 / 100 && d <= 30 * vmin + 60), "vitesse du plus lent {} : {d:?}", 30 * vmin);
+
+    let mut w = world();
+    w.players[0].race = RACE_SOUCHE;
+    crate::soil::ensure(&mut w);
+    w.terreau.fill(1);
+    let ids: Vec<u32> = (0..6).map(|k| w.spawn_unit(kind(if k % 2 == 0 { "gnawer" } else { "shell" }), 0, (70 + k * 4) * TILE, (80 + 2 * k) * TILE)).collect();
+    for &id in &ids {
+        let s = w.unit(id).unwrap();
+        w.units.facing[s] = 0;
+    }
+    w.players[0].researched2 = u64::MAX;
+    drag_order(&mut w, &ids, 150 * TILE, 85 * TILE, 0, false);
+    let bonus = crate::essaim::speed(&w, w.unit(ids[0]).unwrap(), unit_speed(kind("shell")));
+    assert!(bonus > unit_speed(kind("shell")), "le terreau accélère");
+    let d = cruise(&mut w, &ids);
+    assert!(d.iter().all(|&d| d >= 30 * bonus * 95 / 100 && d <= 30 * bonus + 60), "bonus du terreau gardé {} : {d:?}", 30 * bonus);
+}
+
+/// Grande armée mêlée en tas, dont les rôles doivent se croiser (tireurs devant, corps à corps derrière) :
+/// les premiers arrivés laissent passer les autres, et chacun finit à sa place, tourné vers l'angle.
+#[test]
+fn big_crossing_formation_reaches_every_slot() {
+    for (n, face) in [(40, 0), (80, 20000)] {
+        let mut w = world();
+        let keys = ["artillery", "heavy_artillery", "light_tank", "assault_walker", "gnawer"];
+        // par colonnes : l'artillerie à l'est (devant), les rongeurs à l'ouest
+        let ids: Vec<u32> = (0..n).map(|k| w.spawn_unit(kind(keys[(k * 5 / n) as usize]), 0, (110 - k * 5 / n * 5) * TILE, (80 + (k % (n / 5)) * 2) * TILE)).collect();
+        drag_order(&mut w, &ids, 140 * TILE, 110 * TILE, face, false);
+        let slots = queued_slots(&w, &ids);
+        run_until_done(&mut w, &ids, 4000);
+        let mut off: Vec<String> = vec![];
+        for (k, &id) in ids.iter().enumerate() {
+            let s = w.unit(id).unwrap();
+            let d = dist(w.units.x[s], w.units.y[s], slots[k].0, slots[k].1);
+            if d > TILE {
+                off.push(format!("{k} {} à {:.1}", udef(w.units.kind[s]).key, d as f64 / TILE as f64));
+            }
+        }
+        assert!(off.is_empty(), "{n} unités : {off:?}");
     }
 }

@@ -108,7 +108,7 @@ pub fn legged(kind: u16) -> bool {
 }
 
 #[inline]
-fn turn_rate(kind: u16) -> i32 {
+pub fn turn_rate(kind: u16) -> i32 {
     let d = udef(kind);
     if fixed_wing(kind) {
         700
@@ -169,46 +169,8 @@ pub fn steer(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, stop: 
     steer_paced(w, s, tx, ty, gx, gy, stop, i32::MAX, 20, false)
 }
 
-/// Allure d'une unité dans un déplacement en formation (`Order::Move::eta`, voir
-/// orders::formation_etas) : vitesse (sous-unités par tick) qui la fait arriver à (x, y) au tick prévu
-/// pour le groupe. Une unité en avance ralentit (ou attend), une unité en retard (détour, combat)
-/// reprend sa pleine vitesse. Au premier tick de l'ordre, la durée prévue devient un tick d'arrivée.
-pub fn formation_pace(w: &mut World, s: usize, x: i32, y: i32, eta: u32) -> i32 {
-    if eta == 0 || fixed_wing(w.units.kind[s]) {
-        return i32::MAX;
-    }
-    let eta = if eta & ETA_PENDING != 0 {
-        let at = w.tick.saturating_add(eta & !ETA_PENDING);
-        if let Some(Order::Move { eta: e, .. }) = w.units.cold[s].orders.first_mut() {
-            *e = at;
-        }
-        at
-    } else {
-        eta
-    };
-    let left = eta as i64 - w.tick as i64;
-    if left <= 0 {
-        return i32::MAX;
-    }
-    let d = dist(w.units.x[s], w.units.y[s], x, y) as i64;
-    ((d + left - 1) / left).max(1) as i32
-}
-
-/// Formation en file : à la fin d'un segment, le suivant (s'il n'a pas commencé) compte sa durée à
-/// partir du tick d'arrivée prévu pour le groupe, pas du tick où cette unité arrive. Tout le groupe
-/// partage ainsi la même horloge d'un point à l'autre : une unité en retard rattrape, une en avance
-/// ralentit, et la disposition se garde sur toute la file.
-fn chain_eta(w: &mut World, s: usize) {
-    let o = &mut w.units.cold[s].orders;
-    if let (Some(&Order::Move { eta: e0, .. }), Some(Order::Move { eta: e1, .. })) = (o.first(), o.get(1)) {
-        if e0 != 0 && e0 & ETA_PENDING == 0 && e1 & ETA_PENDING != 0 {
-            let at = e0.saturating_add(e1 & !ETA_PENDING).min(ETA_PENDING - 1);
-            if let Some(Order::Move { eta, .. }) = o.get_mut(1) {
-                *eta = at;
-            }
-        }
-    }
-}
+/// Écart de cap (16 bits) d'une unité en formation qui contourne un voisin : 60 degrés.
+const SIDESTEP: u16 = 10923;
 
 /// Comme `steer`, à une vitesse d'au plus `cap` sous-unités par tick (allure d'un groupe en formation).
 /// `patience` : ticks sans rapprochement, près du but, avant de s'arrêter là (foule autour du but).
@@ -278,9 +240,16 @@ pub fn steer_paced(w: &mut World, s: usize, tx: i32, ty: i32, gx: i32, gy: i32, 
             }
         }
     }
-    // une bête qui charge sa proie court plus vite ; en formation, l'allure du groupe (`cap`)
+    // en formation, une unité qui bute sur un voisin déjà à sa place le contourne, d'un côté puis de l'autre
+    let blocked = w.units.cold[s].noprog;
+    if form && blocked > 6 && d > TILE / 2 {
+        let side = (blocked as usize / 25 + s) & 1 == 0;
+        heading = if side { heading.wrapping_add(SIDESTEP) } else { heading.wrapping_sub(SIDESTEP) };
+    }
+    // en formation, au plus l'allure du groupe (`cap`) ; une bête qui charge sa proie court plus vite ;
     // sur le terreau de la Souche, plus lente (ennemie) ou plus rapide (organisme chez lui)
-    let speed = crate::essaim::speed(w, s, crate::nature::charge_speed(w, s, crate::ameliorations::speed(w, s))).min(cap.max(1));
+    let speed = crate::ameliorations::speed(w, s).min(cap.max(1));
+    let speed = crate::essaim::speed(w, s, crate::nature::charge_speed(w, s, speed));
     let f = w.units.facing[s];
     let nf = turn_towards(f, heading, turn_rate(kind));
     w.units.facing[s] = nf;
@@ -763,17 +732,16 @@ fn run_order(w: &mut World, s: usize) -> u32 {
     let def = udef(kind);
     let owner = w.units.owner[s];
     match o {
-        Order::Move { x, y, gx, gy, attack, eta } => {
+        Order::Move { x, y, gx, gy, attack, pace, .. } => {
             if attack && has_target_in_range(w, s) && !fixed_wing(kind) {
                 return NONE;
             }
-            let cap = formation_pace(w, s, x, y, eta);
+            let cap = crate::formation::pace_speed(w, pace);
             // en formation, chacun va jusqu'à sa place (le groupe garde sa forme), quitte à attendre
             // qu'un voisin qui croise son chemin se dégage ; sinon on s'arrête dès qu'on touche sa
             // place, et on renonce vite si la foule bloque, pour ne pas se bousculer autour d'un but commun
-            let (stop, patience) = if eta != 0 { (TILE / 4, 100) } else { (def.radius + TILE / 2, 20) };
-            if steer_paced(w, s, x, y, gx, gy, stop, cap, patience, eta != 0) {
-                chain_eta(w, s);
+            let (stop, patience) = if pace != 0 { (TILE / 4, 100) } else { (def.radius + TILE / 2, 20) };
+            if steer_paced(w, s, x, y, gx, gy, stop, cap, patience, pace != 0) && !crate::formation::hold(w, s) {
                 pop_order(w, s);
             }
             NONE
@@ -1474,7 +1442,7 @@ fn gate_check(w: &mut World, s: usize) {
     if let Some(Order::Move { .. }) = w.units.cold[s].orders.first() {
         pop_order(w, s);
     }
-    w.units.cold[s].orders.insert(0, Order::Move { x: gx, y: gy, gx, gy, attack: false, eta: 0 });
+    w.units.cold[s].orders.insert(0, Order::Move { x: gx, y: gy, gx, gy, attack: false, pace: 0, wait: 0 });
 }
 
 /// Porte-avions : chaque seconde, les appareils alliés à moins de 8 cases regagnent 1 % de leurs points de vie.

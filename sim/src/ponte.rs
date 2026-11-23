@@ -226,7 +226,7 @@ pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: Optio
     w.units.facing[s] = facing;
     let order = rally.map(|(rx, ry)| match crate::souche::heart_under(w, owner, rx, ry) {
         Some(target) if crate::souche::sacrifice_value(kind) > 0 => Order::Sacrifice { target },
-        _ => Order::Move { x: rx, y: ry, gx: rx, gy: ry, attack: false, eta: 0 },
+        _ => Order::Move { x: rx, y: ry, gx: rx, gy: ry, attack: false, pace: 0, wait: 0 },
     });
     let c = &mut w.units.cold[s];
     c.work = kind as u32 + 1;

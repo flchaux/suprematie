@@ -152,7 +152,7 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
                 w.units.cold[s].xp = 2 * def.hp.max(1) as u32;
                 w.units.hp[s] = w.max_hp(s);
             }
-            w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, pace: 0, wait: 0 });
         }
         let bb = &mut w.buildings[b];
         if let Some(q) = bb.queue.first_mut() {

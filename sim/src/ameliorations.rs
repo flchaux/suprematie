@@ -996,7 +996,7 @@ fn update_turrets(w: &mut World, i: usize, s: usize, left: bool) {
                     w.units.hp[u] = ((w.max_hp(u) as i64 * t.hp as i64 / 1000) as i32).max(1);
                     w.units.facing[u] = w.trig.atan2((py - ay) as i64, (px - ax) as i64);
                     w.units.cold[u].parent = id;
-                    w.units.cold[u].orders.push(Order::Move { x: px, y: py, gx: px, gy: py, attack: false, eta: 0 });
+                    w.units.cold[u].orders.push(Order::Move { x: px, y: py, gx: px, gy: py, attack: false, pace: 0, wait: 0 });
                     t.unit = uid;
                     t.state = TU_OUT;
                 }
@@ -1036,7 +1036,7 @@ fn update_turrets(w: &mut World, i: usize, s: usize, left: bool) {
                             t.timer = 0;
                         } else if idle || w.tick.is_multiple_of(10) {
                             crate::units::clear_orders(w, u);
-                            w.units.cold[u].orders.push(Order::Move { x: ax, y: ay, gx: ax, gy: ay, attack: false, eta: 0 });
+                            w.units.cold[u].orders.push(Order::Move { x: ax, y: ay, gx: ax, gy: ay, attack: false, pace: 0, wait: 0 });
                         }
                     }
                 }
