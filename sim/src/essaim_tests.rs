@@ -349,20 +349,18 @@ fn sticky_terreau_slows_enemies_and_hollow_roots_speed_organisms() {
     let foe = unit(&mut w, U_LIGHT_TANK, 1, hx + 12, hy + 2);
     let org = unit(&mut w, U_GNAWER, 0, hx + 12, hy);
     let away = unit(&mut w, U_LIGHT_TANK, 1, hx - 15, hy + 20);
-    essaim::refresh_terreau(&mut w);
-    assert!(w.terreau.is_empty(), "personne ne le lit : pas calculé");
+    crate::soil::ensure(&mut w);
+    assert_eq!(essaim::speed(&w, foe, 100), 100, "sans les recherches, rien");
     tech(&mut w, T_S_STICKY);
     tech(&mut w, T_S_ROOTWAYS);
-    essaim::refresh_terreau(&mut w);
     assert_eq!(essaim::speed(&w, foe, 100), 65);
     assert_eq!(essaim::speed(&w, org, 100), 120);
     assert_eq!(essaim::speed(&w, away, 100), 100, "hors du terreau");
-    // une racine détruite : le terreau se retire au tick suivant
+    // une racine détruite : le terreau se retire aussitôt
     let cut: Vec<usize> = (0..w.buildings.len()).filter(|&b| w.buildings[b].alive && w.buildings[b].kind == B_ROOT).collect();
     for b in cut {
         remove_building(&mut w, b, false);
     }
-    essaim::refresh_terreau(&mut w);
     assert_eq!(essaim::speed(&w, foe, 100), 100);
 }
 

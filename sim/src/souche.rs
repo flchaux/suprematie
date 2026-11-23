@@ -121,7 +121,8 @@ pub fn net_at(w: &World, owner: u8, tx: i32, ty: i32) -> u16 {
         }
     });
     if best == usize::MAX {
-        0
+        // herbe mangée, hors des zones : le réseau du poteau le plus proche
+        crate::soil::net_at(w, owner, tx, ty)
     } else {
         w.buildings[best].net
     }
@@ -147,7 +148,8 @@ pub fn on_terreau(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> boo
             ok = true;
         }
     });
-    ok
+    // herbe mangée, à portée d'un poteau
+    ok || crate::soil::can_place(w, owner, x, y, bw, bh)
 }
 
 /// Règles de pose propres à la Souche : terreau (sauf graine-mère), nombre de graines-mères.
@@ -462,8 +464,20 @@ fn shade(w: &World, b: usize) -> i32 {
     n
 }
 
-/// Production par seconde d'un organe (sève, sels), en centièmes.
+/// Production par seconde d'un organe (sève, sels), en centièmes ; épuisé (plus d'herbe autour), il n'en
+/// donne presque plus (voir soil.rs).
 pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
+    let (s, l) = full_rate(w, b);
+    let bb = &w.buildings[b];
+    if bb.stalled && bb.complete() && crate::soil::feed_r(bb.kind) > 0 {
+        (s * crate::soil::SPENT_PCT / 100, l * crate::soil::SPENT_PCT / 100)
+    } else {
+        (s, l)
+    }
+}
+
+/// Production d'un organe qui a de l'herbe à manger.
+fn full_rate(w: &World, b: usize) -> (i32, i32) {
     let bb = &w.buildings[b];
     let big = if has(w, bb.owner, T_S_BIG_LEAVES) { 150 } else { 100 };
     match bb.kind {
@@ -491,6 +505,7 @@ pub fn tick_organ(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + ORGAN_PERIOD;
     let kind = w.buildings[b].kind;
     match kind {
+        B_LEAVES | B_TAPROOT => crate::soil::graze(w, b),
         B_MAW => tick_maw(w, b),
         B_COCOON if tick_cocoon(w, b) => return,
         _ => {}
@@ -872,5 +887,5 @@ pub fn info(w: &World, b: usize) -> String {
     let adapt = if bb.kind == B_MATRIX { crate::essaim::adapt_info(w, bb.owner) } else { String::new() };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
     let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
-    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), adapt)
+    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), adapt)
 }

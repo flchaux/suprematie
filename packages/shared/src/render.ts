@@ -1,7 +1,7 @@
 // Lecture du tampon de rendu produit par la simulation (voir sim/src/render.rs).
 import { NATURE_TEAM } from "./data.ts";
 
-export const HEADER = 16;
+export const HEADER = 17;
 export const NUM_ITEMS = 31;
 /** ... + plafond de la réserve (dernier mot) */
 export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 9;
@@ -33,6 +33,10 @@ export const EV = {
   DIGEST: 53,
   /** Souche : passage d'un terrier (x, y, x de sortie, y de sortie) */
   BURROW: 54,
+  /** Souche : case d'herbe mangée (x, y, type de l'organe, joueur) */
+  GRAZE: 58,
+  /** Souche : organe épuisé, plus d'herbe autour (x, y, type, joueur) */
+  SPENT: 59,
   /** Transhumants : amélioration installée : (joueur, amélioration, x, y) ; tourelle d'Arche détruite : (joueur, x, y, type d'unité) ; surcharge de l'Arche : (x, y, joueur) */
   MOD_DONE: 70, TURRET_LOST: 71, ARK_BOOST: 72,
 } as const;
@@ -79,6 +83,8 @@ export interface Frame {
   /** améliorations des Transhumants : référence (unité ou bâtiment), emplacements 0 à 3 (un octet chacun), emplacement 4 | en cours << 8 */
   nMods: number; modOff: number;
   buildingsVersion: number;
+  /** Souche : cases d'herbe mangées (le sol se redemande quand ce nombre change) */
+  soilN: number;
   winner: number;
   vis: Uint8Array | null;
   visW: number;
@@ -136,7 +142,7 @@ export function parseFrame(buf: Int32Array): Frame {
     nShields: buf[13], shieldOff: 0,
     nCarriers: buf[14], carrierOff: 0,
     nMods: buf[15], modOff: 0,
-    buildingsVersion: buf[9], winner: buf[10], vis: null, visW: buf[12],
+    buildingsVersion: buf[9], soilN: buf[16], winner: buf[10], vis: null, visW: buf[12],
   };
   o += f.nUnits * UNIT_WORDS;
   f.buildingOff = o;

@@ -6,8 +6,8 @@
 //! - Épines (mutation Carapaces d'épines, ronces) : une part des morsures revient à l'agresseur.
 //! - Caractères acquis (Mémoire du sang) : les dégâts subis par les organismes d'un joueur sont comptés par
 //!   famille d'armes (`Player::scars`) ; la Matrice en fixe une résistance dans l'espèce (`Player::adapt`).
-//! - Terreau (`World::terreau`) : un bit par joueur et par case, pour ce qui se lit à chaque pas d'une
-//!   unité (Terreau collant, Racines creuses).
+//! - Vitesse des unités au sol sur le terreau (Terreau collant, Racines creuses), d'après le terreau par case
+//!   (`World::terreau`, tenu par soil.rs).
 
 use crate::combat::{area_damage, damage_unit};
 use crate::data::*;
@@ -317,42 +317,7 @@ pub fn queen_net(w: &World, p: u8) -> u16 {
     }
 }
 
-// ---------- Terreau par case ----------
-
-/// Recalcule le terreau par case quand une racine ou une graine-mère a poussé ou disparu ; il n'existe que
-/// si un joueur a une recherche qui le lit (Terreau collant, Racines creuses).
-pub fn refresh_terreau(w: &mut World) {
-    let wanted = w.players.iter().any(|p| p.race == RACE_SOUCHE && (p.has_tech(T_S_STICKY) || p.has_tech(T_S_ROOTWAYS)));
-    if !wanted {
-        w.terreau.clear();
-        return;
-    }
-    let (mw, mh) = (w.map.w, w.map.h);
-    let size = (mw * mh) as usize;
-    if w.terreau.len() == size && !w.terreau_dirty {
-        return;
-    }
-    w.terreau_dirty = false;
-    w.terreau.clear();
-    w.terreau.resize(size, 0);
-    for b in 0..w.buildings.len() {
-        let bb = &w.buildings[b];
-        if !bb.alive || !bb.complete() || bb.def().race != RACE_SOUCHE || bb.def().supply == 0 || bb.owner >= 8 {
-            continue;
-        }
-        let bit = 1u8 << bb.owner;
-        let (bw, bh) = bb.size();
-        let sp = bb.def().supply;
-        let (x0, x1) = ((bb.x - sp).max(0), (bb.x + bw + sp).min(mw));
-        let (y0, y1) = ((bb.y - sp).max(0), (bb.y + bh + sp).min(mh));
-        for y in y0..y1 {
-            let row = (y * mw) as usize;
-            for v in &mut w.terreau[row + x0 as usize..row + x1 as usize] {
-                *v |= bit;
-            }
-        }
-    }
-}
+// ---------- Vitesse sur le terreau ----------
 
 /// Vitesse d'une unité au sol selon le terreau sous elle : collant pour les ennemis (Terreau collant),
 /// porteur pour les organismes de son joueur (Racines creuses).
