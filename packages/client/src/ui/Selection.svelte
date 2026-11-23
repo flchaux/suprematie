@@ -887,6 +887,10 @@
         {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
         {#if deployable}<button class="cmd" class:on={rooted} onclick={() => client.deploySelected()} title={queen ? (rooted ? "Déraciner la Reine (3 s)" : "Enraciner la Reine sur votre terreau (3 s) : elle nourrit son réseau, résiste et frappe mieux, mais ne bouge plus") : chenillards ? "Déployer : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
+        {#if queen}
+          {@const dens = client.denLimit()}
+          <button class="cmd" class:off={dens.have >= dens.max} onclick={() => client.tameMode()} title="Apprivoiser un nid de mordeurs ({dens.have} / {dens.max} nids greffés, un de plus par mutation acquise) : la Reine s'y tient 30 s à moins de 6 cases, sans frapper le nid ni ses bêtes ; il devient le vôtre avec sa horde (aussi : clic droit sur le nid)"><Icon name="tame" size={17} /><span class="key">{keyOf("tame")}</span></button>
+        {/if}
         {#if anyFerry}<button class="cmd" onclick={() => client.setMode("ferryFrom")} title="Navette : le transport fait des allers-retours entre deux points, il embarque les unités de combat qui attendent au premier et les dépose au second"><Icon name="ferry" size={17} /><span class="key">{keyOf("ferry")}</span></button>{/if}
         {#if has("commander")}<button class="cmd" onclick={() => client.setMode("harvest")} title="Récolter un gisement : le commandant extrait le minerai et le fond dans sa fonderie intégrée (aussi : clic droit sur un gisement libre)"><Icon name="harvest" size={17} /><span class="key">{keyOf("harvest")}</span></button>{/if}
         {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
@@ -1024,6 +1028,7 @@
   .cmds { display: flex; flex-wrap: wrap; gap: 4px; }
   .cmd { position: relative; width: 40px; height: 36px; display: grid; place-items: center; padding: 0; color: var(--accent); }
   .cmd:hover:not(:disabled) { color: #fff; }
+  .cmd.off { opacity: 0.45; }
   .cmd.on { color: var(--accent-ink, #04121a); }
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }
   .sel :global(.key:empty) { display: none; }

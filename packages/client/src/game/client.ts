@@ -1617,6 +1617,9 @@ export class GameClient {
       case "unload":
         this.setMode("unload");
         break;
+      case "tame":
+        this.tameMode();
+        break;
       case "ferry":
         if (ui.selUnits.some((g) => this.data!.units[g.kind].carry > 0 && this.data!.units[g.kind].layer === Layer.Air) && ui.selForeign < 0) this.setMode("ferryFrom");
         break;
@@ -2261,6 +2264,8 @@ export class GameClient {
         case "unload":
         case "ferryTo":
           return "unload";
+        case "tame":
+          return this.wildNestAt(g.x, g.z) ? "load" : "invalid";
         case "ferryFrom":
           return "load";
         case "ping":
@@ -2476,8 +2481,42 @@ export class GameClient {
     return this.data?.buildings[tb.kind]?.key === "nest" && this.frame?.players[tb.owner]?.team === NATURE_TEAM;
   }
 
+  /** Nid de mordeurs sauvage visé au sol : celui de la case, sinon le plus proche à moins de 4 cases du point. */
+  private wildNestAt(x: number, z: number): number {
+    const tb = this.buildingAtTile(Math.floor(x), Math.floor(z));
+    if (tb && this.wildNest(tb)) return tb.ref;
+    const f = this.frame;
+    let best = 0;
+    let bd = 4;
+    if (f && this.data) {
+      for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+        const kind = f.buf[o + 1] & 0xff;
+        if (!this.wildNest({ kind, owner: (f.buf[o + 1] >> 8) & 0xff })) continue;
+        const def = this.data.buildings[kind];
+        const d = Math.hypot((f.buf[o + 2] & 0xffff) + def.w / 2 - x, (f.buf[o + 2] >>> 16) + def.h / 2 - z);
+        if (d < bd) {
+          bd = d;
+          best = f.buf[o] >>> 0;
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Bouton ou touche « Apprivoiser » de la Reine : choisir un nid (refus si la limite est atteinte). */
+  tameMode(): void {
+    if (!this.selectedUnits().some((u) => this.data!.units[u.kind].key === "queen")) return;
+    const { have, max } = this.denLimit();
+    if (have >= max) {
+      pushMessage(`Nids greffés : ${have} / ${max}. Chaque mutation acquise permet d'en greffer un de plus`, "alert");
+      sfx.error();
+      return;
+    }
+    this.setMode("tame");
+  }
+
   /** Nids greffés au plus : un, plus un par mutation acquise (souche::den_limit). */
-  private denLimit(): { have: number; max: number } {
+  denLimit(): { have: number; max: number } {
     const me = this.frame?.players[ui.me];
     let max = 1;
     if (me && this.data) for (let t = 0; t < this.data.techs.length; t++) if (this.data.techs[t].race === 1 && this.data.techs[t].excl && hasTech(me, t)) max++;
@@ -2598,6 +2637,17 @@ export class GameClient {
         this.cmd(Ord.point(O.ATTACK_GROUND, ids, gx, gy, queue));
         this.scene?.addMarker(g.x, g.z, 0xff5050);
         break;
+      case "tame": {
+        const nest = this.wildNestAt(g.x, g.z);
+        if (!nest) {
+          pushMessage("Apprivoiser : cliquez un nid de mordeurs sauvage (les ruches de réplicateurs ne s'apprivoisent pas)", "alert");
+          sfx.error();
+          return;
+        }
+        if (this.tameNest(units, nest, queue)) this.scene?.addMarker(g.x, g.z, 0x9be05a);
+        this.cancelMode();
+        return;
+      }
       case "ferryFrom":
       case "ferryTo":
         this.ferryClick(g.x, g.z, queue);
