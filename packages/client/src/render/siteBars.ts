@@ -1,6 +1,6 @@
 // Barres de progression des chantiers et des améliorations : logique pure (décodage de l'image, taille
 // selon le zoom), testée sous Node (`test/siteBars.test.ts`). Le dessin (un seul maillage instancié) est
-// dans `entities.ts`.
+// dans `entities/markers.ts` (`pushSiteBar`).
 import { BUILD_FULL } from "@supreme/shared";
 
 /** Barre d'un bâtiment : avancement (0 à 1), part saine et part perdue (dégâts) de l'avancement. */

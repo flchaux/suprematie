@@ -118,7 +118,7 @@ fn build_reference(verbose: bool) -> World {
             let id = w.spawn_unit(k, owner, x, y);
             let s = slot_of(id);
             let (tx, ty) = (512 * TILE, 512 * TILE);
-            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, pace: 0, wait: 0 });
         }
     }
     w.nav = crate::flow::Nav::new(&w.map);
@@ -529,7 +529,7 @@ pub fn weapons_demo() -> World {
         }
         let gx = if w.units.owner[s] == 0 { x0 + 64 } else { x0 + 10 };
         let (x, y) = (gx * TILE, w.units.y[s]);
-        crate::orders::give(&mut w, s, false, Order::Move { x, y, gx: x, gy: y, attack: true, eta: 0 });
+        crate::orders::give(&mut w, s, false, Order::Move { x, y, gx: x, gy: y, attack: true, pace: 0, wait: 0 });
     }
     w
 }
@@ -623,7 +623,7 @@ pub fn ponte_demo() -> World {
         let id = w.spawn_unit(U_LIGHT_TANK, 1, cx + 44 * TILE, cy + (k - 2) * 2 * TILE);
         if let Some(s) = w.unit(id) {
             let (tx, ty) = (cx + 9 * TILE, cy);
-            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, pace: 0, wait: 0 });
         }
     }
     w
@@ -746,7 +746,7 @@ pub fn essaim_demo() -> World {
         let id = w.spawn_unit(U_LIGHT_TANK, 1, (hx + 46) * TILE, (hy - 4 + 2 * k) * TILE);
         if let Some(s) = w.unit(id) {
             let (tx, ty) = ((hx + 26) * TILE, (hy + 2) * TILE);
-            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, pace: 0, wait: 0 });
         }
         w.spawn_unit(if k % 2 == 0 { U_BURSTER } else { U_SPITTER }, 0, (hx + 24) * TILE, (hy - 2 + 2 * k) * TILE);
     }
@@ -911,7 +911,7 @@ pub fn anciens_demo() -> World {
     for k in 0..4 {
         let id = w.spawn_unit(U_ROLL_DROID, 0, (x0 + 75) * TILE, (y0 + 30 + k * 3) * TILE);
         if let Some(s) = w.unit(id) {
-            w.units.cold[s].orders.push(Order::Move { x: (x0 + 92) * TILE, y: (y0 + 34) * TILE, gx: (x0 + 92) * TILE, gy: (y0 + 34) * TILE, attack: true, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x: (x0 + 92) * TILE, y: (y0 + 34) * TILE, gx: (x0 + 92) * TILE, gy: (y0 + 34) * TILE, attack: true, pace: 0, wait: 0 });
         }
     }
     for k in 0..5 {
@@ -1083,7 +1083,7 @@ pub fn arche_demo() -> World {
         if w.units.alive[s] && w.units.owner[s] == 1 && w.units.kind[s] == U_LIGHT_TANK {
             w.units.hp[s] = 6000;
             let (x, y) = ((cx - 8) * TILE, cy * TILE);
-            w.units.cold[s].orders.push(Order::Move { x, y, gx: x, gy: y, attack: true, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x, y, gx: x, gy: y, attack: true, pace: 0, wait: 0 });
         }
     }
     w.power_dirty = true;

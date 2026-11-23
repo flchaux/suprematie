@@ -178,7 +178,7 @@ fn battle_world(n: usize) -> World {
             let id = w.spawn_unit(k, p, x, y);
             let s = slot_of(id);
             let tx = if p == 0 { 300 * TILE } else { 200 * TILE };
-            w.units.cold[s].orders.push(Order::Move { x: tx, y, gx: tx, gy: 250 * TILE, attack: true, eta: 0 });
+            w.units.cold[s].orders.push(Order::Move { x: tx, y, gx: tx, gy: 250 * TILE, attack: true, pace: 0, wait: 0 });
         }
     }
     w
@@ -280,7 +280,7 @@ fn flow_field_goes_around_wall() {
     let id = w.spawn_unit(6, 0, 100 * TILE, 100 * TILE);
     let s = slot_of(id);
     let (tx, ty) = (160 * TILE, 100 * TILE);
-    w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: false, eta: 0 });
+    w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: false, pace: 0, wait: 0 });
     for t in 0..1500 {
         w.step(&[]);
         if t % 20 == 0 && t > 200 && t < 440 {
@@ -318,7 +318,7 @@ fn flow_goal_on_building_goes_around_wall() {
     let (bx, by) = w.buildings[depot].center();
     let id = w.spawn_unit(6, 0, 100 * TILE, 100 * TILE);
     let s = slot_of(id);
-    w.units.cold[s].orders.push(Order::Move { x: bx, y: by, gx: bx, gy: by, attack: false, eta: 0 });
+    w.units.cold[s].orders.push(Order::Move { x: bx, y: by, gx: bx, gy: by, attack: false, pace: 0, wait: 0 });
     for _ in 0..2500 {
         w.step(&[]);
         if w.units.cold[s].orders.is_empty() {
@@ -348,7 +348,7 @@ fn long_detour_keeps_the_order() {
     let id = w.spawn_unit(U_LINE_ROBOT, 0, 100 * TILE, 100 * TILE);
     let s = slot_of(id);
     let (tx, ty) = (160 * TILE, 100 * TILE);
-    w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: false, eta: 0 });
+    w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: false, pace: 0, wait: 0 });
     for _ in 0..12000 {
         w.step(&[]);
         if w.units.cold[s].orders.is_empty() {
@@ -786,7 +786,7 @@ fn unit_leaves_its_sector_towards_the_goal() {
                 let s = slot_of(w.spawn_unit(kind, 0, x0, y0));
                 w.units.facing[s] = facing;
                 let (gx, gy) = (30 * TILE, (ty + gdy) * TILE + TILE / 2);
-                w.units.cold[s].orders.push(Order::Move { x: gx, y: gy, gx, gy, attack: false, eta: 0 });
+                w.units.cold[s].orders.push(Order::Move { x: gx, y: gy, gx, gy, attack: false, pace: 0, wait: 0 });
                 let slack = if facing == 0 { TILE / 8 } else { 0 };
                 let mut prev_x = x0;
                 for t in 0..400 {

@@ -4,12 +4,25 @@
 //! - Maj + clic droit (drapeaux 1 et 8) : au premier point d'une file, rectangle face au trajet ; aux
 //!   points suivants, le groupe garde cette disposition, tournée vers la direction du nouveau segment.
 //!
-//! L'allure commune (vitesse du plus lent) vient de `orders::formation_etas` et `units::formation_pace`.
+//! Allure : chacun va au plus à la vitesse du plus lent de sa famille (`paces`) ; le groupe ne ralentit
+//! jamais davantage, sauf le pivot d'une disposition gardée. À chaque point, les
+//! premiers arrivés attendent les autres à leur place (`hold`).
 
 use crate::data::*;
-use crate::fixed::{TILE, TRIG_ONE};
-use crate::units::max_range;
+use crate::fixed::{angle_diff, dist, turn_towards, TILE, TRIG_ONE};
+use crate::units::{fixed_wing, max_range, turn_rate};
 use crate::world::*;
+
+/// Unité de `Order::Move::pace` : sous-unités par tick, en seizièmes.
+const PACE: i64 = 16;
+/// Attente au plus du reste du groupe à un point de la formation (ticks : 15 s).
+pub const HOLD_TICKS: u16 = 300;
+/// Période (ticks) à laquelle un groupe qui s'attend regarde si tout le monde est là.
+const HOLD_CHECK: u32 = 4;
+/// Une unité à moins de cette distance de sa place y est arrivée, pour ceux qui attendent.
+const HOLD_NEAR: i32 = TILE / 2;
+/// Écart d'orientation (16 bits) au plus pour repartir vers le point suivant.
+const HOLD_ANGLE: i32 = 5000;
 
 /// Drapeau de `O_MOVE` : formation dont les places sont calculées par la simulation.
 pub const FLAG_PLANNED: i32 = 8;
@@ -73,7 +86,7 @@ fn formation_tail(w: &World, s: usize) -> Option<(i32, i32, i32, i32, u16)> {
         return None;
     }
     match (o[n - 2], o[n - 1]) {
-        (Order::Move { x, y, gx, gy, eta, .. }, Order::Face { a }) if eta != 0 => Some((x, y, gx, gy, a as u16)),
+        (Order::Move { x, y, gx, gy, pace, .. }, Order::Face { a }) if pace != 0 => Some((x, y, gx, gy, a as u16)),
         _ => None,
     }
 }
@@ -86,6 +99,8 @@ pub struct Plan {
     pub angle: u16,
     /// le groupe prolonge une formation en file : il passe le point précédent sans s'arrêter
     pub cont: bool,
+    /// il garde aussi sa disposition (déplacée ou tournée) d'un point à l'autre
+    pub keep: bool,
 }
 
 /// Places d'une formation pour les unités `members` (une seule famille, par indice croissant) vers le
@@ -94,7 +109,7 @@ pub struct Plan {
 pub fn plan(w: &World, members: &[usize], gx: i32, gy: i32, face: Option<u16>, queue: bool) -> Plan {
     let n = members.len();
     if n == 0 {
-        return Plan { slots: vec![], angle: face.unwrap_or(0), cont: false };
+        return Plan { slots: vec![], angle: face.unwrap_or(0), cont: false, keep: false };
     }
     // suite d'une formation : tous les membres finissent leur file par la même formation
     let tails: Vec<_> = members.iter().map(|&s| if queue { formation_tail(w, s) } else { None }).collect();
@@ -116,7 +131,7 @@ pub fn plan(w: &World, members: &[usize], gx: i32, gy: i32, face: Option<u16>, q
                     (gx + ox, gy + oy)
                 })
                 .collect();
-            return Plan { slots, angle: a1, cont };
+            return Plan { slots, angle: a1, cont, keep: true };
         }
     }
     let starts: Vec<(i32, i32)> = members.iter().map(|&s| if queue { queue_end(w, s) } else { (w.units.x[s], w.units.y[s]) }).collect();
@@ -131,7 +146,7 @@ pub fn plan(w: &World, members: &[usize], gx: i32, gy: i32, face: Option<u16>, q
         None => w.units.facing[members[0]],
     };
     if n == 1 {
-        return Plan { slots: vec![(gx, gy)], angle: a, cont };
+        return Plan { slots: vec![(gx, gy)], angle: a, cont, keep: false };
     }
     let slots = rectangle(w, members, &starts, (cx, cy), a)
         .into_iter()
@@ -140,7 +155,96 @@ pub fn plan(w: &World, members: &[usize], gx: i32, gy: i32, face: Option<u16>, q
             (gx + ox, gy + oy)
         })
         .collect();
-    Plan { slots, angle: a, cont }
+    Plan { slots, angle: a, cont, keep: false }
+}
+
+/// Allure d'un déplacement en formation, par unité de `list` (indice, place) : seizièmes de sous-unité par
+/// tick (`Order::Move::pace`, 0 : pas d'allure imposée). Chaque famille va à la vitesse de sa plus lente ;
+/// une unité seule de sa famille et les avions à voilure fixe gardent leur vitesse. `keep` : le groupe
+/// garde sa disposition depuis la fin des files ; dans un tournant, l'intérieur du bloc a moins de chemin
+/// et ralentit d'autant, l'extérieur va à la vitesse du plus lent.
+pub fn paces(w: &World, list: &[(usize, i32, i32)], keep: bool) -> Vec<u16> {
+    let mut out = vec![0; list.len()];
+    for fam in 0..3 {
+        let members: Vec<usize> = (0..list.len()).filter(|&k| family(w.units.kind[list[k].0]) == fam && !fixed_wing(w.units.kind[list[k].0])).collect();
+        if members.len() < 2 {
+            continue;
+        }
+        let vmin = members.iter().map(|&k| crate::ameliorations::speed(w, list[k].0)).min().unwrap_or(1).max(1) as i64;
+        let way = |k: usize| {
+            let (s, tx, ty) = list[k];
+            let (sx, sy) = queue_end(w, s);
+            dist(sx, sy, tx, ty) as i64
+        };
+        let far = members.iter().map(|&k| way(k)).max().unwrap_or(0).max(1);
+        for &k in &members {
+            let p = if keep { (vmin * PACE * way(k) + far - 1) / far } else { vmin * PACE };
+            out[k] = p.clamp(1, u16::MAX as i64 - 1) as u16;
+        }
+    }
+    out
+}
+
+/// Vitesse (sous-unités) permise à ce tick par une allure en seizièmes.
+pub fn pace_speed(w: &World, pace: u16) -> i32 {
+    if pace == 0 || pace == u16::MAX {
+        return i32::MAX;
+    }
+    let (p, t) = (pace as i64, w.tick as i64);
+    ((t + 1) * p / PACE - t * p / PACE) as i32
+}
+
+/// Direction à prendre depuis la place d'une unité en formation : vers le point suivant de sa file, ou
+/// orientation finale.
+fn next_heading(w: &World, s: usize) -> Option<u16> {
+    let o = &w.units.cold[s].orders;
+    match (o.first(), o.get(1)) {
+        (Some(&Order::Move { x: x0, y: y0, .. }), Some(&Order::Move { x, y, .. })) if (x, y) != (x0, y0) => Some(w.trig.atan2((y - y0) as i64, (x - x0) as i64)),
+        (_, Some(&Order::Face { a })) => Some(a as u16),
+        _ => None,
+    }
+}
+
+/// Unité arrivée à un point d'une formation : elle attend à sa place que tout le groupe y soit (au plus
+/// `HOLD_TICKS`), puis le groupe se tourne ou repart vers le point suivant en rangs. Poussée par un
+/// retardataire qui passe, elle revient à sa place. Le groupe : nos unités de la même famille en formation
+/// vers le même but.
+pub fn hold(w: &mut World, s: usize) -> bool {
+    let Some(&Order::Move { x, y, gx, gy, pace, wait, .. }) = w.units.cold[s].orders.first() else { return false };
+    if pace == 0 || wait == 0 {
+        return false;
+    }
+    let there = dist(w.units.x[s], w.units.y[s], x, y) <= HOLD_NEAR;
+    let c = &mut w.units.cold[s];
+    if there {
+        c.noprog = 0;
+        c.best_dist = i32::MAX;
+    }
+    if let Some(Order::Move { wait, .. }) = c.orders.first_mut() {
+        *wait -= 1;
+    }
+    // en attendant, elle se tourne vers le point suivant (ou l'orientation finale)
+    if let (true, Some(a)) = (there, next_heading(w, s)) {
+        w.units.facing[s] = turn_towards(w.units.facing[s], a, turn_rate(w.units.kind[s]));
+    }
+    // tout le groupe regarde au même tick, pour repartir ensemble
+    if !w.tick.is_multiple_of(HOLD_CHECK) {
+        return true;
+    }
+    let (o, fam) = (w.units.owner[s], family(w.units.kind[s]));
+    (0..w.units.alive.len()).any(|u| {
+        if !w.units.alive[u] || w.units.owner[u] != o || family(w.units.kind[u]) != fam {
+            return false;
+        }
+        let c = &w.units.cold[u];
+        match c.orders.first() {
+            Some(&Order::Move { x, y, gx: ax, gy: ay, pace, .. }) if pace != 0 && (ax, ay) == (gx, gy) => {
+                let late = dist(w.units.x[u], w.units.y[u], x, y) > HOLD_NEAR;
+                c.noprog <= 100 && c.stuck <= 60 && (late || (matches!(c.orders.get(1), Some(Order::Move { .. })) && next_heading(w, u).is_some_and(|a| angle_diff(w.units.facing[u], a).abs() > HOLD_ANGLE)))
+            }
+            _ => false,
+        }
+    })
 }
 
 /// Rectangle d'angle `a`, environ deux fois plus large que profond, centré sur (0, 0) : place (avant,

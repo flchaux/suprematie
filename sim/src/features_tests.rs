@@ -504,7 +504,7 @@ fn turrets_lead_moving_targets() {
     // marcheur d'assaut ennemi qui traverse à 14 cases, perpendiculairement
     let walker = w.spawn_unit(U_ASSAULT_WALKER, 1, 114 * TILE, 88 * TILE);
     let s = w.unit(walker).unwrap();
-    w.units.cold[s].orders.push(Order::Move { x: 114 * TILE, y: 118 * TILE, gx: 114 * TILE, gy: 118 * TILE, attack: false, eta: 0 });
+    w.units.cold[s].orders.push(Order::Move { x: 114 * TILE, y: 118 * TILE, gx: 114 * TILE, gy: 118 * TILE, attack: false, pace: 0, wait: 0 });
     let wi = bdef(B_LIGHT_TURRET).weapon as i32;
     let dmg = WEAPONS[wi as usize].dmg;
     let mut shots = 0;

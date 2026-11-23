@@ -179,47 +179,6 @@ fn units_list(c: &mut Cur) -> Vec<i32> {
     (0..n).map(|_| c.next()).collect()
 }
 
-/// Marge (ticks) ajoutée à la durée prévue d'un déplacement en formation : demi-tour sur place au départ.
-const FORMATION_TURN_TICKS: u32 = 20;
-
-/// Allure d'un déplacement en formation orientée (comme Supreme Commander) : le groupe avance à la
-/// vitesse de son unité la plus lente et arrive ensemble. Durée prévue : la plus longue distance à
-/// parcourir (depuis la position actuelle, ou la fin du déplacement en file) divisée par la vitesse
-/// de la plus lente, plus une marge pour tourner ; chaque unité règle ensuite son allure pour finir à
-/// ce moment (units::formation_pace). Chaque famille (terrestre, navale, aérienne : voir
-/// formation::family) règle son allure sur sa plus lente, et les avions à voilure fixe gardent leur
-/// vitesse. `turn` : marge ajoutée (ticks) pour tourner.
-/// Renvoie le champ `eta` de chaque ordre (`ETA_PENDING` | durée, 0 : pas d'allure imposée).
-fn formation_etas(w: &World, list: &[(usize, i32, i32)], queue: bool, turn: u32) -> Vec<u32> {
-    use crate::formation::family;
-    use crate::units::fixed_wing;
-    let mut out = vec![0; list.len()];
-    for fam in 0..3 {
-        let members: Vec<usize> = (0..list.len()).filter(|&k| family(w.units.kind[list[k].0]) == fam && !fixed_wing(w.units.kind[list[k].0])).collect();
-        if members.len() < 2 {
-            continue;
-        }
-        let vmin = members.iter().map(|&k| crate::ameliorations::speed(w, list[k].0)).min().unwrap_or(1).max(1);
-        let mut far = 0i32;
-        for &k in &members {
-            let (s, tx, ty) = list[k];
-            // départ : fin du dernier déplacement en file, sinon la position actuelle
-            let last = if queue {
-                w.units.cold[s].orders.iter().rev().find_map(|o| if let Order::Move { x, y, .. } = *o { Some((x, y)) } else { None })
-            } else {
-                None
-            };
-            let (sx, sy) = last.unwrap_or((w.units.x[s], w.units.y[s]));
-            far = far.max(crate::fixed::dist(sx, sy, tx, ty));
-        }
-        let dur = (far / vmin) as u32 + turn;
-        for &k in &members {
-            out[k] = ETA_PENDING | dur.min(ETA_PENDING - 1);
-        }
-    }
-    out
-}
-
 /// Blocs d'une formation calculée par la simulation (voir formation.rs), un par famille d'unités : membres
 /// (par indice croissant) et plan, places bornées à la carte.
 fn formation_blocks(w: &World, mut list: Vec<usize>, gx: i32, gy: i32, face: Option<u16>, queue: bool) -> Vec<(Vec<usize>, crate::formation::Plan)> {
@@ -270,10 +229,9 @@ fn planned_formation(w: &mut World, list: Vec<usize>, gx: i32, gy: i32, face: Op
             }
         }
         let placed: Vec<(usize, i32, i32)> = members.iter().zip(&plan.slots).map(|(&s, &(x, y))| (s, x, y)).collect();
-        // prolonger une formation : le groupe passe le point sans s'arrêter, demi-marge pour tourner
-        let etas = formation_etas(w, &placed, true, if plan.cont { FORMATION_TURN_TICKS / 2 } else { FORMATION_TURN_TICKS });
+        let paces = crate::formation::paces(w, &placed, plan.keep);
         for (k, &(s, tx, ty)) in placed.iter().enumerate() {
-            give(w, s, true, Order::Move { x: tx, y: ty, gx, gy, attack, eta: etas[k] });
+            give(w, s, true, Order::Move { x: tx, y: ty, gx, gy, attack, pace: paces[k], wait: if paces[k] != 0 { crate::formation::HOLD_TICKS } else { 0 } });
             give(w, s, true, Order::Face { a: plan.angle as i32 });
         }
     }
@@ -303,9 +261,9 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 planned_formation(w, list, gx.clamp(0, mx), gy.clamp(0, my), face.map(|a| a as u16), queue, flags & 2 != 0);
                 return;
             }
-            let etas = if face.is_some() { formation_etas(w, &list, queue, FORMATION_TURN_TICKS) } else { vec![0; list.len()] };
+            let paces = if face.is_some() { crate::formation::paces(w, &list, false) } else { vec![0; list.len()] };
             for (k, &(s, tx, ty)) in list.iter().enumerate() {
-                let o = Order::Move { x: tx, y: ty, gx: gx.clamp(0, mx), gy: gy.clamp(0, my), attack: flags & 2 != 0, eta: etas[k] };
+                let o = Order::Move { x: tx, y: ty, gx: gx.clamp(0, mx), gy: gy.clamp(0, my), attack: flags & 2 != 0, pace: paces[k], wait: if paces[k] != 0 { crate::formation::HOLD_TICKS } else { 0 } };
                 give(w, s, queue, o);
                 if let Some(a) = face {
                     give(w, s, true, Order::Face { a });
