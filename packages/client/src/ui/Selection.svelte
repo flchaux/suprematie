@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ui, hasTechUI } from "../game/state.svelte.ts";
-  import { UNIT_TRAITS, ADAPT_FAMILIES } from "../game/traits.ts";
+  import { ADAPT_FAMILIES } from "../game/traits.ts";
   import SplitIcon from "./SplitIcon.svelte";
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
@@ -105,13 +105,13 @@
     // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
     const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
     if (powered && !info.net) return { text: "Hors zone électrique : rapprochez-le d'un générateur ou d'un relais", kind: "warn" };
-    if (powered && info.sat < 512) return { text: info.sat === 0 ? "Sans courant : les générateurs de la zone n'ont plus de combustible" : `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : il manque des générateurs ou du combustible`, kind: "warn" };
+    if (powered && info.sat < 512) return { text: info.sat === 0 ? "Sans courant : plus de combustible dans la zone" : `Sous-alimenté (${Math.round((info.sat / 1024) * 100)} %) : pas assez d'énergie`, kind: "warn" };
     // module des Transhumants : amélioration en cours d'installation
     if (info.transh?.mods?.job) return { text: `Installation d'une amélioration${bdef.cls === BClass.Depot || bdef.cls === BClass.Power ? " (toujours en service)" : " : à l'arrêt jusqu'à la fin"}`, kind: "build" };
     if (bdef.cls === BClass.Power && !["geothermal", "eppz_socket", "ark_dock"].includes(bdef.key) && (info.fuel ?? 0) <= 0 && info.build >= 65536) return { text: "Sans combustible : il ne produit rien", kind: "warn" };
     if (bdef.cls === BClass.Crafter && info.recipe !== RECIPE_NONE && !info.working) {
       const r = d.recipes[info.recipe];
-      if (info.out + r.output[1] > Math.max(4, r.output[1] * 3)) return { text: `Sortie bloquée : ${d.items[r.output[0]].name} n'est pas emporté (bras ou tapis de sortie)`, kind: "warn" };
+      if (info.out + r.output[1] > Math.max(4, r.output[1] * 3)) return { text: `Sortie bloquée : ${d.items[r.output[0]].name} n'est pas emporté`, kind: "warn" };
       const miss = r.inputs.filter(([, n], j) => info.inv[j] < n).map(([it]) => d.items[it].name);
       if (miss.length) return { text: `En attente de : ${miss.join(", ")}`, kind: "warn" };
     }
@@ -127,7 +127,7 @@
       // ce que les dépôts à portée des drones de l'usine ont encore (voir drones::site_missing)
       const near = new Map(((info.missing ?? []) as number[][]).map(([it, , n]) => [it, n]));
       const empty = lack.some(([it]) => (near.get(it) ?? 0) <= 0);
-      const how = empty ? `vos dépôts à moins de ${d.depot?.factorySupply ?? 30} cases n'en ont pas assez : amenez-en, ou un tapis` : "ses drones les apportent";
+      const how = empty ? "absent des dépôts proches" : "ses drones les apportent";
       if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
     if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: `En attente ${bdef.race === 1 ? "d'ADN" : bdef.race === 2 ? "de relevés" : "de lots de recherche"}`, kind: "warn" };
@@ -248,7 +248,7 @@
       <div class="stline">
         {#if status.text}<div class="status {status.kind}"><span class="led"></span>{status.text}</div>{/if}
         {#if canPause}
-          <button class="icon-btn pausebtn" class:resume={paused} title={paused ? "Relancer : la machine reprend là où elle en était (cycle en cours et contenu gardés)" : "Mettre en pause : plus d'énergie, plus d'ingrédients ni de production ; le contenu et le cycle en cours sont gardés. Vaut aussi pour une sélection de plusieurs bâtiments."} onclick={() => client.togglePauseSelected()}><Icon name={paused ? "play" : "pause"} size={13} /> {paused ? "Reprendre" : "Pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
+          <button class="icon-btn pausebtn" class:resume={paused} title={paused ? "Relancer" : "Mettre en pause, contenu gardé"} onclick={() => client.togglePauseSelected()}><Icon name={paused ? "play" : "pause"} size={13} /> {paused ? "Reprendre" : "Pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
         {/if}
       </div>
     {/if}
@@ -260,7 +260,7 @@
         <span class="dim">Prochaine portée</span><span class="num">{brood >= cap ? `aucune (${cap} mordeurs au plus, œufs compris)` : `3 œufs dans ${next} s`}</span>
         <span class="dim">Nids greffés</span><span class="num">{have} / {lim}</span>
       </div>
-      <div class="status good"><span class="led"></span>Nid greffé : il pond des portées de 3 œufs de mordeurs, sans coût. Clic droit au sol : point de ralliement</div>
+      <div class="status good"><span class="led"></span>Nid greffé : pond des mordeurs. Clic droit au sol : ralliement</div>
     {:else if nest && nest.length}
       {@const [home, max, need, age, evo, press, chance, tamer = -1, tame = 0] = nest}
       {#if tamer >= 0}
@@ -275,12 +275,12 @@
         <span class="dim">Bâtiments proches</span><span class="num">{press ? `pression ${press}` : "aucun"}</span>
         <span class="dim">Risque d'attaque</span><span class="num">{chance ? `${(chance / 10).toFixed(1)} % / 10 s` : "nul"}</span>
       </div>
-      <div class="status {home >= need && chance ? 'warn' : 'build'}"><span class="led"></span>{home >= need ? (chance ? "Horde prête : elle peut attaquer à tout moment" : "Horde prête, mais aucun bâtiment ne l'inquiète") : `La horde grossit : ${need - home} bête${need - home > 1 ? "s" : ""} avant de pouvoir attaquer`}</div>
+      <div class="status {home >= need && chance ? 'warn' : 'build'}"><span class="led"></span>{home >= need ? (chance ? "Horde prête à attaquer" : "Horde prête, pas de cible proche") : `La horde grossit : ${need - home} bête${need - home > 1 ? "s" : ""} avant de pouvoir attaquer`}</div>
     {/if}
     {#if ruin && ruin.length}
       {@const [has, holder, prog] = ruin}
       {#if has}
-        <div class="status {holder === ui.me ? 'good' : holder >= 0 ? 'warn' : 'idle'}"><span class="led"></span>{holder < 0 ? "EPPZ en place : approchez seul des unités terrestres (4 cases) pendant 10 s pour le capturer" : `Capture par ${holder === ui.me ? "vous" : (ui.names[holder] ?? "un adversaire")} : ${Math.floor(prog / 10)} %`}</div>
+        <div class="status {holder === ui.me ? 'good' : holder >= 0 ? 'warn' : 'idle'}"><span class="led"></span>{holder < 0 ? "EPPZ à capturer : 10 s seul, à 4 cases" : `Capture par ${holder === ui.me ? "vous" : (ui.names[holder] ?? "un adversaire")} : ${Math.floor(prog / 10)} %`}</div>
       {:else}
         <div class="status idle"><span class="led"></span>L'EPPZ a été emporté</div>
       {/if}
@@ -290,7 +290,7 @@
       <div class="row wrap"><span class="kicker">Manque</span>
         {#each info.missing as [it, n, near]}<span class="miss tip"><Item id={it} n={n} size={18} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span><span class="tt"><b>{d.items[it]?.name}</b><br /><span class="num">{n}</span> encore à apporter<br /><span class="num">{near}</span> dans vos dépôts à moins de {d.depot?.near ?? 30} cases</span></span>{/each}
       </div>
-      <span class="dim small"><Icon name="logistics" size={12} /> Les drones de vos constructeurs vont chercher les matériaux dans les dépôts proches ; un ingénieur emporte d'abord ce qui manque aux environs du chantier.</span>
+      <span class="dim small"><Icon name="logistics" size={12} /> Les drones apportent les matériaux des dépôts proches.</span>
     {/if}
     {#if mine && info}
       {#if info.build < 65536}
@@ -298,28 +298,28 @@
       {:else if bdef.key === "ark_dock"}
         <span class="dim small">L'Arche le rembarque en partant.</span>
       {:else if (bdef.race ?? 0) === 2 && bdef.key !== "t_pole"}
-        <button class="icon-btn" title="Le module redevient un chenillard (immobile 10 s) ; son contenu retourne à la réserve, sa recette et son combustible restent à bord" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier</button>
+        <button class="icon-btn" title="Redevient un chenillard en 10 s" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier</button>
       {:else}
-        <button class="icon-btn danger" title="Démonté par vos constructeurs les plus proches : les matériaux vont dans leur soute, puis leurs drones les rapportent à un dépôt" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        <button class="icon-btn danger" title="Démonté par les constructeurs proches, matériaux rendus" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {/if}
       {#if info.souche}
         {@const sv = info.souche}
-        <div class="row small" title="Chaque réseau de racines a sa propre réserve : ses organes poussent et ses couveuses pondent avec elle. Une racine coupée partage la réserve entre les morceaux.">
+        <div class="row small" title="Réserve partagée par les organes du réseau">
           <span class="kicker">Réseau</span>
           {#if sv.net}
             <Item id={27} size={16} /> <span class="num">{sv.seve}</span> <Item id={28} size={16} /> <span class="num">{sv.sels}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
           {:else if !sv.heart}<b class="bad">hors du terreau : rien ne pousse</b>{:else}<span class="dim">le sien, une fois poussée</span>{/if}
         </div>
         {#if sv.heart}
-          <div class="row small" title="Une graine-mère ne pousse que des organismes qui s'y sacrifient. Chacun rapporte son prix en sève."><span class="kicker">Sacrifices</span> <Item id={SEVE} size={16} /> <b class="num">{sv.heart.fed.toLocaleString("fr-FR")}</b><span class="dim"> / <span class="num">{sv.heart.need.toLocaleString("fr-FR")}</span> sève</span></div>
+          <div class="row small" title="Pousse grâce aux organismes sacrifiés"><span class="kicker">Sacrifices</span> <Item id={SEVE} size={16} /> <b class="num">{sv.heart.fed.toLocaleString("fr-FR")}</b><span class="dim"> / <span class="num">{sv.heart.need.toLocaleString("fr-FR")}</span> sève</span></div>
           <div class="upbar"><span style="width: {(sv.heart.fed / sv.heart.need) * 100}%"></span></div>
-          <span class="dim small">Sélectionnez des organismes et clic droit ici : ils s'y dissolvent (une carapace vaut 120 sève, un rongeur 25). Une couveuse ralliée sur elle lui envoie ce qui naît.</span>
+          <span class="dim small">Clic droit avec des organismes : ils s'y sacrifient.</span>
         {/if}
-        {#if sv.far}<div class="row small" title="Racines et rhizomes coûtent 2 % de plus par case qui les sépare de la graine-mère la plus proche (fixé à la plantation)"><span class="kicker">Distance</span> <span class="num">{sv.far / 2}</span> cases de la graine-mère <span class="dim">· coût +{sv.far} %</span></div>{/if}
+        {#if sv.far}<div class="row small" title="Plus loin de la graine-mère, plus cher"><span class="kicker">Distance</span> <span class="num">{sv.far / 2}</span> cases de la graine-mère <span class="dim">· coût +{sv.far} %</span></div>{/if}
         {#if sv.soil}
           {@const so = sv.soil}
-          <div class="row small" title="C'est l'herbe mangée (tout sol qui n'est pas du terreau) qui donne la sève : chaque case rapporte autant, mais prend de plus en plus de temps quand elle est loin. Les organes qui convoitent la même herbe se la partagent."><span class="kicker">Débit</span> <b class="num" class:bad={so.rate < 300}>{Math.round(so.rate / 10)} %</b>{#if so.near >= 0}<span class="dim">· herbe à <span class="num">{so.near}</span> cases, une toutes les <span class="num">{so.secs}</span> s</span>{:else}<span class="bad">· plus d'herbe</span>{/if}</div>
-          {#if so.near >= 0 && so.share < 950}<div class="row small"><span class="kicker">Part</span> <span class="num">{Math.round(so.share / 10)} %</span><span class="dim"> : d'autres organes convoitent la même herbe</span></div>{/if}
+          <div class="row small" title="L'herbe mangée donne la sève, plus lentement quand elle est loin"><span class="kicker">Débit</span> <b class="num" class:bad={so.rate < 300}>{Math.round(so.rate / 10)} %</b>{#if so.near >= 0}<span class="dim">· herbe à <span class="num">{so.near}</span> cases, une toutes les <span class="num">{so.secs}</span> s</span>{:else}<span class="bad">· plus d'herbe</span>{/if}</div>
+          {#if so.near >= 0 && so.share < 950}<div class="row small"><span class="kicker">Part</span> <span class="num">{Math.round(so.share / 10)} %</span><span class="dim"> (herbe partagée)</span></div>{/if}
           {#if so.total}
             <div class="row small"><span class="kicker">Herbe du périmètre</span> <b class="num" class:bad={so.left < 15}>{so.left}</b><span class="dim"> / <span class="num">{so.total}</span> cases{so.left ? ` · ≈ ${Math.max(1, Math.round(so.all / 60))} min` : ""}</span></div>
             <div class="upbar"><span style="width: {(so.left / Math.max(1, so.total)) * 100}%"></span></div>
@@ -334,7 +334,7 @@
           {@const got = [0, 1, 2, 3, 4].filter((k) => ad.bits & (1 << k)).length}
           {@const adn = ui.stock[ADN] ?? 0}
           <div class="adapt">
-            <div class="row small" title="L'espèce entière devient résistante ({ad.pct} % de dégâts en moins) à une famille d'armes qui a assez blessé vos organismes. Trois familles au plus, pour toute la partie."><span class="kicker">Caractères acquis</span> <span class="num">{got} / {ad.max}</span>{#if got < ad.max}<span class="dim">· prochain : <Item id={ADN} n={ad.cost} size={14} /></span>{/if}</div>
+            <div class="row small" title="Résistance de l'espèce à une famille d'armes, trois au plus"><span class="kicker">Caractères acquis</span> <span class="num">{got} / {ad.max}</span>{#if got < ad.max}<span class="dim">· prochain : <Item id={ADN} n={ad.cost} size={14} /></span>{/if}</div>
             {#each ADAPT_FAMILIES as name, k}
               {@const own = (ad.bits & (1 << k)) !== 0}
               {@const pct = Math.min(100, Math.floor((ad.scars[k] / ad.min) * 100))}
@@ -354,29 +354,29 @@
       {#if info.transh?.mods}<Upgrades mi={info.transh.mods} refs={[sb.ref]} />{/if}
       {#if info.transh?.cartsMax}
         {@const tc = info.transh}
-        <div class="row small" title="Un chariot de convoi fait la navette entre cette soute et un module éloigné : clic droit sur une foreuse ou un fabricant pour rapporter ce qui en sort, Maj+clic droit sur un fabricant pour lui livrer les ingrédients de sa recette. Les chariots rentrent dans la soute quand elle se replie.">
+        <div class="row small" title="Clic droit sur un module : rapporter sa production. Maj+clic droit : le ravitailler.">
           <span class="kicker">Chariots</span> <b class="num">{tc.carts}</b><span class="dim"> / <span class="num">{tc.cartsMax}</span></span>
           {#if tc.carts < tc.cartsMax}<button class="icon-btn" onclick={() => client.hitchCart()} title="Atteler un chariot de convoi, payé avec le stock de cette soute">Atteler un chariot {#each tc.cartCost as [it, n]}<Item id={it} n={n} size={14} />{/each}</button>{/if}
         </div>
       {/if}
       {#if info.transh?.poles}
         {@const tp = info.transh}
-        <div class="row small" title="Chaque poteau planté agrandit la zone électrique du générateur ({tp.poleReach} cases au plus entre deux poteaux). Le générateur les rembarque quand il se replie.">
+        <div class="row small" title="Chaque poteau agrandit la zone">
           <span class="kicker">Poteaux</span> <b class="num">{tp.poles.length}</b><span class="dim"> / <span class="num">{tp.polesMax}</span></span>
-          {#if tp.poles.length < tp.polesMax}<button class="icon-btn" onclick={() => client.startPole()} title="Planter un poteau relais : à {tp.poleReach} cases au plus du générateur ou d'un de ses poteaux ; Maj+clic pour en planter plusieurs"><Icon name="power" size={14} /> Planter un poteau</button>{/if}
+          {#if tp.poles.length < tp.polesMax}<button class="icon-btn" onclick={() => client.startPole()} title="Planter un poteau à {tp.poleReach} cases au plus ; Maj : plusieurs"><Icon name="power" size={14} /> Planter un poteau</button>{/if}
         </div>
       {/if}
       {#if info.transh && info.transh.wear >= 0}
-        <div class="row small" title="La foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement : son débit baisse jusqu'à 60 %. Le gisement se reconstitue quand on le laisse."><span class="kicker">Usure du gisement</span> <b class="num" class:bad={info.transh.wear >= 400}>{Math.round(info.transh.wear / 10)} %</b><span class="dim"> · débit ×<span class="num">{((2000 - 2 * info.transh.wear) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span></div>
+        <div class="row small" title="L'usure baisse le débit ; le gisement se reconstitue seul"><span class="kicker">Usure du gisement</span> <b class="num" class:bad={info.transh.wear >= 400}>{Math.round(info.transh.wear / 10)} %</b><span class="dim"> · débit ×<span class="num">{((2000 - 2 * info.transh.wear) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span></div>
       {/if}
       {#if info.clockable && info.build >= 65536}
         {@const ck = info.clock ?? 100}
         {@const inst = info.shards ?? 0}
-        <div class="row small clock" title="Cadence de la machine : plus vite, mais la consommation électrique croît plus vite encore (×2,5 à 200 %). Au-dessus de 100 %, il faut un fragment d'énergie par tranche de 50 % ; on en gagne en détruisant des nids de la faune.">
+        <div class="row small clock" title="Plus vite, mais plus gourmand. Au-dessus de 100 % : un fragment d'énergie par 50 %, gagné sur les nids.">
           <span class="kicker">Cadence</span>
           <button class="icon-btn" disabled={!mine || !clockOk(ck - 10, inst)} aria-label="Ralentir" onclick={() => client.setClock(ck - 10)}>−</button>
           <b class="num">{ck} %</b>
-          <button class="icon-btn" disabled={!mine || !clockOk(ck + 10, inst)} aria-label="Accélérer" title={ck < 250 && !clockOk(ck + 10, inst) ? `Au-delà de ${ck} % : il faut un fragment d'énergie de plus (un par tranche de 50 % au-dessus de 100 %). Détruisez un nid de la faune pour en gagner.` : "Accélérer"} onclick={() => client.setClock(ck + 10)}>+</button>
+          <button class="icon-btn" disabled={!mine || !clockOk(ck + 10, inst)} aria-label="Accélérer" title={ck < 250 && !clockOk(ck + 10, inst) ? `Il faut un fragment d'énergie : détruisez un nid` : "Accélérer"} onclick={() => client.setClock(ck + 10)}>+</button>
           <span class="dim">· énergie ×<span class="num">{((info.clockPower ?? 1000) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span>
           <span class="dim nowrap">· fragments <span class="num">{inst}</span> installé{inst > 1 ? "s" : ""}, <span class="num">{ui.shards}</span> en réserve</span>
         </div>
@@ -392,7 +392,7 @@
         {@const out = info.genOut ?? 0}
         {@const base = Math.round((bdef.powerProd * (info.purity || 100) * (info.clock ?? 100)) / 10000)}
         <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> kW <span class="dim">· de <span class="num">{Math.round(base / 2)}</span> à <span class="num">{Math.round(base * 1.5)}</span> kW selon le geyser</span></div>
-        <span class="dim small">Sans combustible : la vapeur du geyser monte et retombe en une minute, la production suit (moyenne <span class="num">{base}</span> kW).</span>
+        <span class="dim small">Moyenne : <span class="num">{base}</span> kW</span>
       {:else if (bdef.key === "eppz_socket" || bdef.key === "ark_dock") && info.build >= 65536}
         {@const out = info.genOut ?? 0}
         <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{Math.round((bdef.powerProd * (info.clock ?? 100)) / 100)}</span> kW</div>
@@ -421,10 +421,10 @@
         <span class="dim small">Brûle {cell ? "des cellules d'énergie" : "de l'hydrocarbure, ou du carburant (5 fois plus d'énergie)"}, d'autant plus vite que sa zone consomme.</span>
       {/if}
       {#if flow && bdef.cls !== BClass.Crafter && bdef.cls !== BClass.Extractor}
-        <div class="row small" title="Moyenne de ce qui a été réellement produit pendant la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
+        <div class="row small" title="Produit sur la dernière minute"><span class="kicker">Dernière minute</span> {#if flow.item}<Item id={flow.item} size={16} />{/if} <span class="num">{flow.v.toFixed(1)}</span> {flow.unit}/min{#if flow.pct !== null} <span class="num pct" class:good={flow.pct >= 90} class:warn={flow.pct < 50}>{flow.pct} %</span> <span class="dim">du max ({flow.max.toFixed(1)}/min)</span>{/if}</div>
       {/if}
       {#if info.twins}
-        <div class="row small twins" title="Deux machines identiques collées qui fabriquent la même chose se dépannent : ingrédients et produits passent de l'une à l'autre quand ses bras et tapis ne suffisent pas"><span class="kicker">Jumelée</span> {bdef.cls === BClass.Crafter ? "ingrédients et produits partagés" : bdef.cls === BClass.Power ? "combustible partagé" : "ingrédients partagés"} avec {bdef.cls === BClass.Power ? (info.twins === 1 ? "le générateur collé" : `${info.twins} générateurs collés`) : info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
+        <div class="row small twins" title="Les machines identiques collées se partagent leur contenu"><span class="kicker">Jumelée</span> {bdef.cls === BClass.Crafter ? "ingrédients et produits partagés" : bdef.cls === BClass.Power ? "combustible partagé" : "ingrédients partagés"} avec {bdef.cls === BClass.Power ? (info.twins === 1 ? "le générateur collé" : `${info.twins} générateurs collés`) : info.twins === 1 ? "la machine collée" : `${info.twins} machines collées`}</div>
       {/if}
       {#if belt}
         {@const slots = belt.tiles ? belt.cap / belt.tiles : 4}
@@ -496,7 +496,7 @@
             <span class="arrow">▸▸</span>
             <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">Sortie : {d.items[r.output[0]].name}, {info.out} prêt{info.out > 1 ? "s" : ""} à partir</span></span>
           </div>
-          <div class="row small" title="Ce qui a vraiment été produit pendant la dernière minute, rapporté au maximum de la machine"><span class="kicker">Débit</span> <Item id={r.output[0]} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
+          <div class="row small" title="Dernière minute, par rapport au maximum"><span class="kicker">Débit</span> <Item id={r.output[0]} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
           <div class="perfbar"><span style:width={pct + "%"}></span></div>
           <div class="row small" title={m ? `${fmt1((1200 / r.time) * r.output[1] * ((bdef.speed ?? 100) / 100))} /min de base${m.lv ? ` × ${fmtX(m.speed)} (niveau ${m.lv})` : ""} × ${fmtX(m.clock)} (cadence)` : ""}><span class="kicker">Au maximum</span>
             {#each r.inputs as [it, n]}<span class="pm"><Item id={it} size={14} />−{fmt1((fmax * n) / r.output[1])}</span>{/each}
@@ -519,8 +519,8 @@
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
-                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `éclosion en ${10 + 2 * u.build} s` : `${u.build} s`}</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}
-                {#if u.litter}<span class="good">Portée de {u.litter} œufs, pondus aussitôt et sans coût : chaque œuf puise ensuite son prix dans le réseau</span><br /><span class="dim">La portée, en tout :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
+                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `éclosion en ${10 + 2 * u.build} s` : `${u.build} s`}</span><br />
+                {#if u.litter}<span class="good">Portée de {u.litter} œufs</span><br /><span class="dim">La portée, en tout :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
             </div>
           {/each}
         </div>
@@ -535,12 +535,10 @@
         {#if (info.missing ?? []).length}
           <div class="row wrap"><span class="kicker">Manque</span>{#each info.missing as [it, n, near]}<span class="miss"><Item id={it} n={n} size={16} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span></span>{/each}</div>
         {/if}
-        {#if (bdef.race ?? 0) === 1}
-          <span class="dim small"><Icon name="logistics" size={12} />
-            {#if bdef.key === "brood"}Elle pond ses œufs aussitôt, sans rien payer (trois portées à couver au plus). Chaque œuf puise son prix dans le réseau de son terreau, petit à petit, jusqu'à éclore ; sans sève ou sans sels, il attend. L'ennemi peut le détruire avant.{:else}Elle prend le coût de chaque unité dans la réserve de son réseau.{/if}</span>
-        {:else}
-          <span class="dim small"><Icon name="logistics" size={12} />
-            Ses {d.depot?.factoryDrones ?? 4} drones ({info.drones ?? 0} en vol) vont chercher les composants dans vos dépôts à moins de {d.depot?.factorySupply ?? 30} cases. Elle garde d'avance les composants de 2 unités.</span>
+        {#if (bdef.race ?? 0) !== 1}
+          <span class="dim small"><Icon name="logistics" size={12} /> Drones en vol : <span class="num">{info.drones ?? 0} / {d.depot?.factoryDrones ?? 4}</span></span>
+        {:else if bdef.key !== "brood"}
+          <span class="dim small"><Icon name="logistics" size={12} /> Payé par son réseau.</span>
         {/if}
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
@@ -558,8 +556,8 @@
         <div class="row"><button class="icon-btn" disabled={info.cooldown > 0} onclick={() => client.setMode("transfer")}><Icon name="teleport" size={14} /> Transférer les unités proches</button>{#if info.cooldown > 0}<span class="dim num">{Math.ceil(info.cooldown / 20)} s</span>{/if}</div>
       {:else if bdef.key === "burrow"}
         <!-- terrier de la Souche : sa sortie est un autre terrier du même réseau -->
-        <div class="row"><button class="icon-btn" onclick={() => client.setMode("link")} title="Puis cliquez sur un autre de vos terriers, sur le même réseau de racines"><Icon name="link" size={14} /> Choisir la sortie</button></div>
-        <div class="status {info.working ? 'good' : info.link >= 0 ? 'warn' : 'idle'}"><span class="led"></span>{info.working ? "Ouvert : clic droit dessus pour y envoyer des organismes" : info.link >= 0 ? "Fermé : sa sortie n'est plus sur le même réseau de racines" : "Sans sortie"}</div>
+        <div class="row"><button class="icon-btn" onclick={() => client.setMode("link")} title="Puis cliquez un terrier du même réseau"><Icon name="link" size={14} /> Choisir la sortie</button></div>
+        <div class="status {info.working ? 'good' : info.link >= 0 ? 'warn' : 'idle'}"><span class="led"></span>{info.working ? "Ouvert : clic droit dessus pour y envoyer des organismes" : info.link >= 0 ? "Fermé : sortie hors du réseau" : "Sans sortie"}</div>
       {:else if bdef.cls === BClass.Gate}
         <div class="row"><button class="icon-btn" onclick={() => client.setMode("link")}><Icon name="link" size={14} /> Relier à une autre porte</button><button onclick={() => client.toggleBuilding()}>{info.enabled ? "Fermer" : "Ouvrir"}</button></div>
         <span class="dim small">{info.link >= 0 ? (info.working ? "Ouverte" : "Ouverture… (forte consommation)") : "Non reliée"}</span>
@@ -580,7 +578,7 @@
             {#if info.takers > 1}<span class="dim small">effective : <span class="num">{(info.shareEff / 10).toFixed(1)} %</span> · {info.takers} sorties sur cette source (bras et tapis)</span>{/if}
           </div>
           <input type="range" min="0" max="100" step="5" value={info.share} title="0 : automatique (part égale du reste)" onchange={(e) => client.setShare(Number((e.target as HTMLInputElement).value))} />
-          <span class="dim small">Les bras qui se servent au même bâtiment alternent. En automatique, ils se partagent à égalité ce que les parts réglées laissent.</span>
+          <span class="dim small">Automatique : parts égales entre les bras.</span>
         </div>
       {:else if bdef.cls === BClass.Extractor}
         {@const levels = d.extractorLevels ?? []}
@@ -591,21 +589,20 @@
         {@const pct = fmax > 0 ? Math.min(100, Math.round((fnow / fmax) * 100)) : 0}
         {@const m = machineMults}
         {#if info.build >= 65536}
-          <div class="row small" title="Ce qui a vraiment été extrait pendant la dernière minute, rapporté au maximum de l'extracteur"><span class="kicker">Débit</span> <Item id={info.recipe} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
+          <div class="row small" title="Dernière minute, par rapport au maximum"><span class="kicker">Débit</span> <Item id={info.recipe} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
           <div class="perfbar"><span style:width={pct + "%"}></span></div>
           <div class="row small" title={m ? `Vitesse${m.lv ? ` × ${fmtX(m.speed)} (niveau ${m.lv})` : ""} × ${fmtX(m.purity)} (pureté) × ${fmtX(m.clock)} (cadence)` : ""}><span class="kicker">Au maximum</span> <span class="pm good"><Item id={info.recipe} size={14} />+{fmt1(fmax)}</span><span class="dim"> /min</span></div>
         {/if}
       {:else if bdef.cls === BClass.Belt && bdef.collect}
-        <span class="dim small">Posé sur un tapis : quand la file est bouchée plus loin, ce qui arrive ici part au dépôt le plus proche (à moins de {d.depot?.near ?? 30} cases) qui a de la place, au lieu de bloquer l'amont. Il ne prend rien tant que la file avance.</span>
         <div class="row"><span class="kicker">Surplus mis en dépôt</span> <span class="num">{info.out ?? 0}</span></div>
       {:else if bdef.cls === BClass.Depot}
         {@const dp = d.depot}
         {@const filters = (info.filters ?? []) as number[]}
         {@const stash = (info.stash ?? []) as number[]}
-        <span class="dim small">Son stock lui est propre : les drones de vos constructeurs (commandant, ingénieurs, usines) et de vos générateurs viennent y puiser. Un objet plein (<span class="num">{info.storeCap}</span> au plus) est refusé, et le tapis attend.</span>
+        <span class="dim small"><span class="num">{info.storeCap}</span> de chaque objet au plus.</span>
         <div class="row"><span class="kicker">Stock</span>{#if !stash.some((n) => n > 0)}<span class="dim small">vide</span>{/if}</div>
         <div class="row wrap">{#each stash as n, i}{#if i > 0 && n > 0}<span class="tip"><Item id={i} {n} size={20} /><span class="tt"><b>{d.items[i]?.name}</b><br /><span class="num">{n} / {info.storeCap}</span></span></span>{/if}{/each}</div>
-        <div class="row"><span class="kicker">Sorties</span><span class="dim small">{filters.length ? "seulement les objets choisis" : "tous les objets (par défaut)"}, posés à tour de rôle sur les tapis qui partent du dépôt, ou pris par les bras</span></div>
+        <div class="row"><span class="kicker">Sorties</span><span class="dim small">{filters.length ? "seulement les objets choisis" : "tous les objets (par défaut)"}</span></div>
         <div class="row wrap">
           {#each Array(dp?.maxFilters ?? 4) as _, k}
             <select value={filters[k] ?? 0} disabled={!mine || (k > filters.length)} title="Objet sorti du dépôt (aucun filtre : tout sort)" onchange={(e) => {
@@ -620,11 +617,11 @@
           {/each}
         </div>
         {#if (info.level ?? 0) === 0}
-          <span class="dim small">Amélioré, il gagne un étage et garde jusqu'à {dp?.cap[1] ?? 2000} de chaque objet.</span>
+          <span class="dim small">Amélioré : {dp?.cap[1] ?? 2000} de chaque objet.</span>
         {/if}
       {:else if bdef.cls === BClass.Warehouse}
         {@const stash = (info.stash ?? []) as number[]}
-        <span class="dim small">Un dépôt commun à l'équipe : les drones de chaque allié peuvent y puiser (<span class="num">{info.storeCap}</span> au plus par objet).</span>
+        <span class="dim small"><span class="num">{info.storeCap}</span> de chaque objet au plus.</span>
         <div class="row"><span class="kicker">Sortie</span>
           <select value={info.recipe === 255 ? 0 : info.recipe} title="Objet qu'un bras peut prendre dans l'entrepôt" onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value) || RECIPE_NONE)}>
             <option value={0}>— aucune —</option>
@@ -640,9 +637,8 @@
               <button class="icon-btn split" class:on={sp === m} disabled={!mine} title={label as string} aria-label={label as string} onclick={() => client.setSplit(m as number)}><SplitIcon mode={m as number} /></button>
             {/each}
           </div>
-          <span class="dim small">Répartit les objets à tour de rôle {sp === 1 ? "à gauche et devant" : sp === 2 ? "à droite et devant" : "à gauche, devant et à droite"}. Entrée par l'arrière ; à la pose, R tourne et la molette choisit les sorties.</span>
-        {:else if bdef.key === "overflow"}<span class="dim small">Envoie devant ; quand l'avant est bloqué, déborde à gauche puis à droite.</span>
-        {:else}
+          <span class="dim small">{sp === 1 ? "Gauche et devant" : sp === 2 ? "Droite et devant" : "Gauche, devant et droite"}</span>
+        {:else if bdef.key !== "overflow"}
           <span class="dim small">L'objet choisi part à gauche, tout le reste continue devant.</span>
           <div class="row"><span class="kicker">Objet trié</span>
             <select value={info.recipe === 255 ? 0 : info.recipe} onchange={(e) => client.setRecipe(Number((e.target as HTMLSelectElement).value) || RECIPE_NONE)}>
@@ -650,23 +646,20 @@
               {#each d.items as it, i}{#if i > 0}<option value={i}>{it.name}</option>{/if}{/each}
             </select></div>
         {/if}
-      {:else if bdef.cls === BClass.Portal}
-        <span class="dim small">Les unités d'un allié qui entrent dans ce portail deviennent les vôtres. Pour donner des troupes à un allié, envoyez-les dans SON portail.</span>
       {:else if bdef.cls === BClass.Roboport}
         {@const flying = (info.carriers ?? []).filter((c: { state: number }) => c.state === 1 || c.state === 3).length}
-        <span class="dim small">8 robots apportent depuis le stock (le vôtre puis celui de l'équipe) ce qui manque aux fabricants, usines, laboratoires et silos dans un rayon de 25 cases, et évacuent vers le stock les sorties bloquées.</span>
         <div class="row"><span class="kicker">Robots en vol</span> <b class="num">{flying}</b> / 8</div>
       {:else if bdef.cls === BClass.Relay && info.relayNet}
         {@const [nRel, nSt] = info.relayNet}
-        <span class="dim small">Ses drones portent, depuis les dépôts de son réseau, ce qui manque aux chantiers, usines et générateurs à moins de {d.depot?.relayRange ?? 20} cases. Il se relie aux relais à moins de {d.depot?.relayLink ?? 40} cases.</span>
+        <span class="dim small">Portée <span class="num">{d.depot?.relayRange ?? 20}</span> cases · relié jusqu'à <span class="num">{d.depot?.relayLink ?? 40}</span> cases</span>
         <div class="row"><span class="kicker">Drones en vol</span> <b class="num">{info.drones ?? 0}</b> / {d.depot?.relayDrones ?? 4}</div>
         <div class="row"><span class="kicker">Réseau</span> <b class="num">{nRel}</b> {nRel > 1 ? "relais reliés" : "relais"} · <b class="num" class:bad={nSt === 0}>{nSt}</b> {nSt > 1 ? "dépôts" : "dépôt"}</div>
-        {#if nSt === 0}<span class="bad small">Aucun dépôt dans son réseau : posez un dépôt (ou un autre relais relié à un dépôt) à moins de {d.depot?.relayRange ?? 20} cases.</span>{/if}
+        {#if nSt === 0}<span class="bad small">Aucun dépôt à moins de {d.depot?.relayRange ?? 20} cases.</span>{/if}
       {:else if isStation}
         {@const air = bdef.cls === BClass.CargoPad}
         {@const capa = d.carriers?.[air ? 1 : 0]?.capacity ?? (air ? 25 : 400)}
         {@const step = air ? 1 : 25}
-        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage au plus." : "Trains : sur les rails de l'équipe, 400 objets par voyage au plus."} Bras et tapis entrants déposent dans « À envoyer » ; les « Reçus » sortent sur les tapis qui partent de ses faces et par les bras. Une gare alliée peut être la destination.</span>
+        <span class="dim small">{air ? "Drones : vol direct, rapides, 25 objets par voyage au plus." : "Trains : sur les rails de l'équipe, 400 objets par voyage au plus."}</span>
         <div class="share">
           <div class="row">
             <span class="kicker">Objets par voyage</span>
@@ -739,12 +732,12 @@
       {@const np = pl.filter((b) => b.paused).length}
       <div class="stline">
         <div class="status {np ? 'paused' : 'idle'}"><span class="led"></span>{np ? `${np} machine${np > 1 ? "s" : ""} sur ${pl.length} en pause` : `${pl.length} machine${pl.length > 1 ? "s" : ""} ou usine${pl.length > 1 ? "s" : ""} de production`}</div>
-        <button class="icon-btn pausebtn" class:resume={all} title={all ? "Relancer toutes ces machines : elles reprennent là où elles en étaient" : "Mettre en pause toutes ces machines : plus d'énergie, plus d'ingrédients ni de production ; contenu et cycle en cours gardés"} onclick={() => client.togglePauseSelected()}><Icon name={all ? "play" : "pause"} size={13} /> {all ? "Tout reprendre" : "Tout mettre en pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
+        <button class="icon-btn pausebtn" class:resume={all} title={all ? "Tout relancer" : "Tout mettre en pause, contenu gardé"} onclick={() => client.togglePauseSelected()}><Icon name={all ? "play" : "pause"} size={13} /> {all ? "Tout reprendre" : "Tout mettre en pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
       </div>
     {/if}
     {#if own.length}
       <div class="row">
-        <button class="icon-btn danger" title="Démontés par vos constructeurs, matériaux rapportés à vos dépôts ; les chantiers sont annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        <button class="icon-btn danger" title="Démonter, matériaux rendus ; chantiers annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       </div>
     {/if}
   </div>
@@ -790,8 +783,6 @@
     {#if ui.unitInfo && total === 1}
       {@const f = ui.unitInfo.hp / Math.max(1, ui.unitInfo.maxHp)}
       <div class="hpline own"><span class="hp" class:mid={f < 0.6} class:low={f < 0.3}><span style:width={f * 100 + "%"}></span></span><span class="num small">{ui.unitInfo.hp} / {ui.unitInfo.maxHp} PV</span></div>
-      {@const tr = UNIT_TRAITS[d.units[ui.selUnits[0].kind].key]}
-      {#if tr}<span class="dim small">{tr}</span>{/if}
       {#if ui.unitInfo.cloaked}<span class="good small">Camouflé : invisible pour l'ennemi</span>{:else if d.units[ui.selUnits[0].kind].key === "commando"}<span class="bad small">Repérable : il vient de tirer</span>{/if}
       {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
       {#if queen && (ui.unitInfo.tame ?? -1) >= 0}
@@ -838,7 +829,7 @@
           {:else if h.state === 2}
             <div class="status warn"><span class="led"></span>Interrompue : le commandant combat</div>
           {:else}
-            <div class="status warn"><span class="led"></span>En attente : soute pleine (aucun dépôt à portée pour la vider)</div>
+            <div class="status warn"><span class="led"></span>Soute pleine, pas de dépôt à portée</div>
           {/if}
         </div>
       {/if}
@@ -857,7 +848,7 @@
           {:else if p.state === 2}
             <div class="status warn"><span class="led"></span>Soute pleine : ses drones la vident dans un dépôt</div>
           {:else if d.units[ui.selUnits[0].kind].commander}
-            <div class="status warn"><span class="led"></span>Soute pleine pour ce produit : cliquez-le dans la soute pour le livrer à un dépôt</div>
+            <div class="status warn"><span class="led"></span>Soute pleine : cliquez l'objet pour le livrer</div>
           {:else}
             <div class="status warn"><span class="led"></span>Soute pleine : aucun de vos dépôts n'a de place</div>
           {/if}
@@ -873,12 +864,12 @@
         {@const hold = ui.unitInfo.hold as number[]}
         {@const reach = (ui.unitInfo.reach ?? []) as number[]}
         {@const inHold = hold.reduce((a: number, b: number) => a + b, 0)}
-        <div class="row">{#if ud.commander}<span class="kicker tip">Soute (dépôt)<span class="tt">Elle compte comme un dépôt : les drones des ingénieurs et des usines proches y puisent, et la récolte y reste</span></span><span class="num small">{inHold}</span><span class="dim small">· {ui.unitInfo.mods?.ark?.cap ?? d.depot?.cap[0] ?? 600} par objet</span>{:else}<span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span>{/if}<span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
+        <div class="row">{#if ud.commander}<span class="kicker tip">Soute (dépôt)<span class="tt">Compte comme un dépôt</span></span><span class="num small">{inHold}</span><span class="dim small">· {ui.unitInfo.mods?.ark?.cap ?? d.depot?.cap[0] ?? 600} par objet</span>{:else}<span class="kicker">Soute</span><span class="num small">{inHold} / {ud.hold}</span>{/if}<span class="dim small">· drones en vol <span class="num">{ui.unitInfo.drones ?? 0} / {ud.drones}</span></span></div>
         {#if inHold > 0}
           <!-- clic sur un objet : le porter au dépôt le plus proche qui a de la place (ordre Deliver) -->
           <div class="row wrap">
             {#each hold as n, i}{#if i > 0 && n > 0}<button class="hitem" title="Livrer : {d.items[i]?.name} au dépôt le plus proche (Maj : en file)" onclick={(ev) => client.deliverSelected(i, ev.shiftKey)}><Item id={i} {n} size={18} /></button>{/if}{/each}
-            <button class="icon-btn hall" title="Porter toute la soute au dépôt le plus proche qui a de la place (Maj : en file)" onclick={(ev) => client.deliverSelected(0, ev.shiftKey)}>Tout livrer</button>
+            <button class="icon-btn hall" title="Vider au dépôt proche (Maj : en file)" onclick={(ev) => client.deliverSelected(0, ev.shiftKey)}>Tout livrer</button>
           </div>
           <span class="dim tiny">Clic sur un objet : le porter au dépôt le plus proche</span>
         {/if}
@@ -899,7 +890,7 @@
       {/each}
     </div>
     <!-- des œufs de la Souche ou des tourelles d'Arche seuls : ils ne reçoivent pas d'ordres -->
-    {#if ui.me >= 0 && ui.selUnits.every((g) => d.units[g.kind].turret)}<span class="dim small">Dirigées par l'Arche : sélectionnez-la pour les rappeler ou changer leur type.</span>{/if}
+    {#if ui.me >= 0 && ui.selUnits.every((g) => d.units[g.kind].turret)}<span class="dim small">Dirigées par l'Arche.</span>{/if}
     {#if ui.me >= 0 && !ui.selUnits.every((g) => d.units[g.kind].egg || d.units[g.kind].turret)}
       <div class="cmds">
         <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">{keyOf("stop")}</span></button>
@@ -908,14 +899,14 @@
         <button class="cmd" onclick={() => client.setMode("assist")} title="Escorter / assister"><Icon name="assist" size={17} /><span class="key">{keyOf("assist")}</span></button>
         <button class="cmd" onclick={() => client.setMode("attackGround")} title="Tir au sol"><Icon name="ground" size={17} /></button>
         {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
-        {#if deployable}<button class="cmd" class:on={rooted} onclick={() => client.deploySelected()} title={queen ? (rooted ? "Déraciner la Reine (3 s)" : "Enraciner la Reine sur votre terreau (3 s) : elle nourrit son réseau, résiste et frappe mieux, mais ne bouge plus") : chenillards ? "Déployer : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
+        {#if deployable}<button class="cmd" class:on={rooted} onclick={() => client.deploySelected()} title={queen ? (rooted ? "Déraciner la Reine (3 s)" : "Enraciner (3 s) : immobile, nourrit son réseau, résiste et frappe mieux") : chenillards ? "Déployer : cliquez l'emplacement (R : tourner)" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
         {#if queen}
           {@const dens = client.denLimit()}
-          <button class="cmd" class:off={dens.have >= dens.max} onclick={() => client.tameMode()} title="Apprivoiser un nid de mordeurs ({dens.have} / {dens.max} nids greffés, un de plus par mutation acquise) : la Reine s'y tient 30 s à moins de 6 cases, sans frapper le nid ni ses bêtes ; il devient le vôtre avec sa horde (aussi : clic droit sur le nid)"><Icon name="tame" size={17} /><span class="key">{keyOf("tame")}</span></button>
+          <button class="cmd" class:off={dens.have >= dens.max} onclick={() => client.tameMode()} title="Apprivoiser un nid ({dens.have} / {dens.max}) : 30 s tout près, sans frapper"><Icon name="tame" size={17} /><span class="key">{keyOf("tame")}</span></button>
         {/if}
-        {#if anyFerry}<button class="cmd" onclick={() => client.setMode("ferryFrom")} title="Navette : le transport fait des allers-retours entre deux points, il embarque les unités de combat qui attendent au premier et les dépose au second"><Icon name="ferry" size={17} /><span class="key">{keyOf("ferry")}</span></button>{/if}
-        {#if has("commander")}<button class="cmd" onclick={() => client.setMode("harvest")} title="Récolter un gisement : le commandant extrait le minerai et le fond dans sa fonderie intégrée (aussi : clic droit sur un gisement libre)"><Icon name="harvest" size={17} /><span class="key">{keyOf("harvest")}</span></button>{/if}
+        {#if anyFerry}<button class="cmd" onclick={() => client.setMode("ferryFrom")} title="Navette : allers-retours entre deux points"><Icon name="ferry" size={17} /><span class="key">{keyOf("ferry")}</span></button>{/if}
+        {#if has("commander")}<button class="cmd" onclick={() => client.setMode("harvest")} title="Récolter et fondre un gisement"><Icon name="harvest" size={17} /><span class="key">{keyOf("harvest")}</span></button>{/if}
         {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
         {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
       </div>
@@ -952,7 +943,7 @@
       <div class="status {depUser.owner === ui.me ? 'good' : 'warn'}"><span class="led"></span>Exploité par {depUser.owner === ui.me ? "vous" : (ui.names[depUser.owner] ?? "un autre joueur")} ({d.buildings[depUser.kind]?.name})</div>
     {:else}
       <div class="status idle"><span class="led"></span>Libre : posez {dep.kind === GEYSER ? "une centrale géothermique" : "un extracteur"} dessus pour l'exploiter</div>
-      {#if client.harvestRecipe(dep.kind) >= 0}<span class="dim small">Ou récoltez-le avec votre commandant (clic droit dessus), plus lentement : il fond le minerai lui-même.</span>{/if}
+      {#if client.harvestRecipe(dep.kind) >= 0}<span class="dim small">Ou clic droit avec le commandant, plus lentement.</span>{/if}
     {/if}
   </div>
 {/if}
