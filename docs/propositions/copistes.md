@@ -224,7 +224,7 @@ Les Copistes sont la race la plus simple à faire jouer par un bot :
 | 3. Brouter | `units.rs` | La récolte du commandant (`Order::Harvest`, `HARVEST_*`) généralisée : débit par forme, plafond par gisement (un compteur par gisement et par tick), dépôt dans les Ruches. |
 | 4. Ordres | `orders.rs`, `packages/shared/src/orders.ts` | `O_SPLIT`, `O_MERGE`, `O_REFORM`, `O_FREEZE`, `O_THAW`, `O_DRAW` (puiser) ; validation (forme, masse, silice). |
 | 5. Désassembleur | `combat.rs`, `data.rs` | Une arme qui rend une partie de ses dégâts en masse au tireur, avec les plafonds. |
-| 6. Épaves | `units.rs`, `buildings.rs` | Épaves des assemblages (moitié de la masse) ; épaves de bâtiments pour les Copistes ; schémas en les mangeant. |
+| 6. Épaves | `units.rs`, `buildings/pose.rs` | Épaves des assemblages (moitié de la masse) ; épaves de bâtiments pour les Copistes ; schémas en les mangeant. |
 | 7. Recherche | `world.rs`, `data.rs` | Compteurs de schémas par famille ; arbre de 5 × 4 études dans `TECHS`, payé en schémas. |
 | 8. Client | `packages/client` | Barre de masse, fiche, raccourcis, aperçu de figement, panneau de recherche ; modèles dans `assets/models/copistes/`. |
 | 9. Bots | `packages/server/src/bots/races/copistes.ts` | Les règles ci-dessus. |
