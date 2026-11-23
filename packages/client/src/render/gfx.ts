@@ -12,5 +12,7 @@ export interface GfxSettings {
   decor: boolean;
   /** boucliers détaillés (alvéoles, bord lumineux, ondulation) ; sinon simple bulle */
   shieldFx: boolean;
+  /** cercles de portée de la sélection (tir, zone morte, radar) */
+  ranges: boolean;
 }
-export const DEFAULT_GFX: GfxSettings = { shadows: true, bloom: true, effects: 1, textures: true, ground: true, decor: true, shieldFx: true };
+export const DEFAULT_GFX: GfxSettings = { shadows: true, bloom: true, effects: 1, textures: true, ground: true, decor: true, shieldFx: true, ranges: true };

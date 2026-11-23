@@ -1189,8 +1189,8 @@ pub fn data_json() -> String {
             s.push(',');
         }
         s.push_str(&format!(
-            "{{\"dmg\":{},\"range\":{},\"cooldown\":{},\"proj\":{},\"aoe\":{},\"mask\":{},\"salvo\":{},\"sustain\":{}}}",
-            w.dmg, w.range, w.cooldown, w.proj as u8, w.aoe, w.mask, w.salvo, w.sustain
+            "{{\"dmg\":{},\"range\":{},\"cooldown\":{},\"proj\":{},\"aoe\":{},\"mask\":{},\"salvo\":{},\"sustain\":{},\"minRange\":{}}}",
+            w.dmg, w.range, w.cooldown, w.proj as u8, w.aoe, w.mask, w.salvo, w.sustain, w.min_range
         ));
     }
     s.push_str("],\"techs\":[");

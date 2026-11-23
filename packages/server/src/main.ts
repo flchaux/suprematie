@@ -10,6 +10,7 @@ import { FAUNA_LEVELS, RACE_COUNT } from "@supreme/shared";
 import { Game, type Peer } from "./game.ts";
 import { listSaves, readSave, readSaveMeta, deleteSave, validSaveId } from "./saves.ts";
 import { PERSONALITIES } from "./bots/index.ts";
+import { markAllowed, markPeers, markPoint, type MarkPeer } from "./mark.ts";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
 const DIST = process.env.SUPREME_DIST ?? join(ROOT, "packages/client/dist");
@@ -108,7 +109,7 @@ const server = createServer((req, res) => {
 });
 
 // ---------- Lobby ----------
-interface Client extends Peer {
+interface Client extends Peer, MarkPeer {
   ws: WebSocket;
   token: string;
 }
@@ -446,6 +447,13 @@ wss.on("connection", (ws, req) => {
       case "chat":
         broadcast({ t: "chat", from: client.name, text: String(msg.text).slice(0, 200) });
         return;
+      case "mark": {
+        // ping sur la carte : pour l'équipe du joueur seulement
+        const at = markPoint(msg.x, msg.z, lobby.mapSize);
+        if (!game || game.ended || !at || !markAllowed(client, Date.now())) return;
+        for (const c of markPeers(client, clients, (s) => lobby.players[s]?.team)) c.send({ t: "mark", slot: client.slot, ...at });
+        return;
+      }
       case "speed": {
         // vitesse de jeu : partie solo seulement ; pause (vitesse 0) et reprise : en solo, ou par l'hôte
         const speed = Number(msg.speed);

@@ -56,6 +56,8 @@ export const O = {
   HAUL: 55,
   /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
   SET_PAUSE: 56,
+  /** transports volants : navette sans fin de A (embarquement) à B (débarquement) : [drapeaux, ax, ay, bx, by (sous-unités), n, unités…] */
+  FERRY: 57,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -270,6 +272,10 @@ export function fold(refs: number[]): Cmd {
 }
 export function load(carrier: number, ids: number[]): Cmd {
   return [O.LOAD, carrier | 0, ids.length, ...ids.map((x) => x | 0)];
+}
+/** Navette de transports entre A (embarquement) et B (débarquement), en sous-unités. */
+export function ferry(ids: number[], ax: number, ay: number, bx: number, by: number, queue = false): Cmd {
+  return [O.FERRY, queue ? 1 : 0, ax | 0, ay | 0, bx | 0, by | 0, ids.length, ...ids.map((v) => v | 0)];
 }
 export function special(src: number, x: number, y: number, tgt: number): Cmd {
   return [O.SPECIAL, src | 0, x | 0, y | 0, tgt | 0];

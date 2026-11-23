@@ -82,6 +82,9 @@ pub const O_HAUL: i32 = 55;
 /// Mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf. de bâtiment…]
 /// (extracteurs, fabricants, usines d'unités terminés ; voir buildings::paused).
 pub const O_SET_PAUSE: i32 = 56;
+/// navette de transport : [drapeaux (bit 0 en file), ax, ay, bx, by (sous-unités), n, unités…] : les transports
+/// volants de la liste font des allers-retours entre A (embarquement) et B (débarquement)
+pub const O_FERRY: i32 = 57;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -558,6 +561,21 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if let Some(s) = own_unit(w, p, id) {
                     if udef(w.units.kind[s]).carry > 0 {
                         give(w, s, q, Order::Unload { x, y });
+                    }
+                }
+            }
+        }
+        O_FERRY => {
+            let q = c.next() & 1 != 0;
+            let (mx, my) = (w.map.w * TILE - 1, w.map.h * TILE - 1);
+            let (ax, ay) = (c.next().clamp(0, mx), c.next().clamp(0, my));
+            let (bx, by) = (c.next().clamp(0, mx), c.next().clamp(0, my));
+            let ok = crate::units::ferry_ok(w, ax, ay, bx, by);
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    let d = udef(w.units.kind[s]);
+                    if ok && d.carry > 0 && d.layer == Layer::Air {
+                        give(w, s, q, Order::Ferry { ax, ay, bx, by });
                     }
                 }
             }

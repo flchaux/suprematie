@@ -139,6 +139,9 @@ pub enum Order {
     /// chariot de convoi des Transhumants : navette entre sa soute et le module `site` ; `feed` : de la soute
     /// vers le fabricant (ingrédients de sa recette), sinon du module vers la soute (ce qui sort)
     Haul { site: u32, feed: bool },
+    /// transport volant : navette sans fin entre A (embarquement des unités de combat qui y attendent) et B
+    /// (débarquement ; voir units::ferry_step)
+    Ferry { ax: i32, ay: i32, bx: i32, by: i32 },
 }
 
 impl Order {
@@ -166,6 +169,7 @@ impl Order {
             Order::Deliver { .. } => 19,
             Order::Tame { .. } => 21,
             Order::Haul { .. } => 22,
+            Order::Ferry { .. } => 23,
         }
     }
 }
@@ -180,6 +184,12 @@ impl Ser for Order {
                 gx.ser(w);
                 gy.ser(w);
                 eta.ser(w);
+            }
+            Order::Ferry { ax, ay, bx, by } => {
+                ax.ser(w);
+                ay.ser(w);
+                bx.ser(w);
+                by.ser(w);
             }
             Order::Patrol { x, y, ox, oy } => {
                 x.ser(w);
@@ -239,6 +249,7 @@ impl Ser for Order {
             20 => Order::DeployAt { x: i(r), y: i(r), dir: u8::de(r) },
             21 => Order::Tame { target: u(r) },
             22 => Order::Haul { site: u(r), feed: u8::de(r) != 0 },
+            23 => Order::Ferry { ax: i(r), ay: i(r), bx: i(r), by: i(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

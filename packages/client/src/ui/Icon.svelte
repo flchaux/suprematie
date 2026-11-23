@@ -5,6 +5,8 @@
     stop: '<rect x="6" y="6" width="12" height="12"/>',
     recipe: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h3M8 12h3M8 16h3"/><path d="M14 8l2 2 2-2M14 14h4"/>',
     attack: '<path d="M4 20 14 10"/><path d="M12 4h8v8"/><path d="M20 4 11 13"/><path d="M6 14l4 4"/>',
+    ferry: '<path d="M3 7h15l-3-3"/><path d="M21 17H6l3 3"/><path d="M9 12h6"/><circle cx="5" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+    ping: '<circle cx="12" cy="12" r="2.4"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="10"/>',
     patrol: '<path d="M4 9h13l-3-3"/><path d="M20 15H7l3 3"/>',
     assist: '<path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"/><path d="M9 12l2 2 4-4"/>',
     ground: '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1.5"/>',

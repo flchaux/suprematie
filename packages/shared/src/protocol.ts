@@ -94,6 +94,7 @@ export type ClientMsg =
   | { t: "cmd"; tick: number; cmd: number[] }
   | { t: "ack"; tick: number; hash?: number }
   | { t: "chat"; text: string }
+  | { t: "mark"; x: number; z: number } // ping sur la carte (cases), relayé à son équipe
   | { t: "speed"; speed: number } // 0 : pause (solo ou hôte) ; sinon reprise ou vitesse (solo)
   | { t: "quit" } // hôte : arrête la partie (sauvegarde automatique) et ramène tout le monde au salon
   | { t: "ping"; time: number };
@@ -106,6 +107,7 @@ export type ServerMsg =
   | { t: "tick"; tick: number; orders: number[] }
   | { t: "wait"; who: string[] }
   | { t: "chat"; from: string; text: string }
+  | { t: "mark"; slot: number; x: number; z: number } // ping d'un joueur de notre équipe
   | { t: "desync"; tick: number }
   | { t: "stats"; sample: StatSample } // relevé périodique (toutes les 600 ticks)
   | { t: "end"; winner: number; replay: string; stats?: StatSample[] } // historique complet, tous les joueurs

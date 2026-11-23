@@ -136,6 +136,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
+                Order::Ferry { ax, ay, bx, by } => if crate::units::ferry_loaded(w, s) { (bx, by) } else { (ax, ay) },
                 Order::Harvest { x, y } => (x * TILE + TILE / 2, y * TILE + TILE / 2),
                 Order::DeployAt { x, y, .. } => (x, y),
                 Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map_or((w.units.x[s], w.units.y[s]), |(_, st)| st.pos(w)),
@@ -778,6 +779,7 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
         Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Haul { site: target, .. } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
+        Order::Ferry { ax, ay, .. } => Some((ax, ay)),
         Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),
         Order::DeployAt { x, y, .. } => Some((x, y)),
         Order::Deliver { item } => crate::drones::deliver_target(w, s, item).map(|(_, st)| st.pos(w)),
@@ -790,7 +792,17 @@ pub fn unit_orders(w: &World, ids: &[u32]) -> Vec<i32> {
     let mut out = Vec::new();
     for &id in ids.iter().take(400) {
         let Some(s) = w.unit(id) else { continue };
-        let pts: Vec<(u8, i32, i32)> = w.units.cold[s].orders.iter().filter_map(|o| order_point(w, s, o).map(|(x, y)| (o.code(), x, y))).take(32).collect();
+        let mut pts: Vec<(u8, i32, i32)> = Vec::new();
+        for o in w.units.cold[s].orders.iter() {
+            if let Some((x, y)) = order_point(w, s, o) {
+                pts.push((o.code(), x, y));
+            }
+            // navette : les deux bouts (embarquement, puis débarquement)
+            if let Order::Ferry { bx, by, .. } = *o {
+                pts.push((o.code(), bx, by));
+            }
+        }
+        pts.truncate(32);
         out.extend_from_slice(&[id as i32, w.units.x[s], w.units.y[s], pts.len() as i32]);
         for (c, x, y) in pts {
             out.extend_from_slice(&[c as i32, x, y]);

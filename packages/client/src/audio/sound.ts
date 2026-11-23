@@ -439,6 +439,11 @@ export const sfx = {
     bell(2093, 0.42, 1.6, 0.03);
     noise(0.5, 7000, 0.025, 0.7, "highpass");
   },
+  ping(): void {
+    if (!throttle("ping", 200)) return;
+    tone(1320, 1320, 0.12, 0.09, "triangle");
+    tone(1760, 1760, 0.22, 0.08, "triangle", 0.1);
+  },
   alert(): void {
     if (!throttle("alert", 2500)) return;
     tone(880, 880, 0.15, 0.1, "square");

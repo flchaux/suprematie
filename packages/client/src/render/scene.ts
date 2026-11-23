@@ -19,6 +19,8 @@ import { CommandOverlay } from "./overlay.ts";
 import { PowerCoverage } from "./power.ts";
 import { TerreauCover } from "./terreau.ts";
 import { worldPerPixel } from "./siteBars.ts";
+import { RangeRings, type Circle, type RangeKind } from "./ranges.ts";
+import { Pings } from "./pings.ts";
 
 const PAD_OK = new THREE.Color(0.2, 0.75, 0.35);
 const PAD_BAD = new THREE.Color(1.6, 0.12, 0.1);
@@ -77,6 +79,11 @@ export class GameScene {
   markers: THREE.InstancedMesh;
   markerList: { x: number; z: number; age: number; color: THREE.Color }[] = [];
   rangeRing: THREE.Mesh;
+  /** portées de la sélection, pings de l'équipe */
+  ranges: RangeRings | null = null;
+  pings: Pings | null = null;
+  /** cercles à tracer (null : aucun) */
+  rangeCircles: Record<RangeKind, Circle[]> | null = null;
   // soleil chaud ; l'ambiance (ciel et environnement réfléchi) est froide : ombres bleutées
   sun = new THREE.DirectionalLight(0xffe2b8, 2.6);
   /** direction vers le soleil (normalisée) */
@@ -225,6 +232,10 @@ export class GameScene {
     this.power = new PowerCoverage(map.w, map.h, this.scene);
     this.terreau = new TerreauCover(map.w, map.h);
     if (this.overlay) this.scene.remove(this.overlay.group);
+    for (const o of [this.ranges?.mesh, this.pings?.group]) if (o) this.scene.remove(o);
+    this.ranges = new RangeRings(map);
+    this.pings = new Pings(map);
+    this.scene.add(this.ranges.mesh, this.pings.group);
     this.overlay = new CommandOverlay(data, map);
     this.scene.add(this.overlay.group);
     this.entities = new Entities(data, map);
@@ -652,6 +663,10 @@ export class GameScene {
       this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }
     this.decor?.update(frame, this.camera, this.distance, this.strategic, view, this.target, this.time);
+    // portées de la sélection (trait d'environ 2 pixels) et pings
+    const px = worldPerPixel(this.distance, this.camera.fov, this.canvasParent.clientHeight || innerHeight);
+    this.ranges?.update(this.gfx.ranges !== false ? this.rangeCircles : null, Math.max(0.12, px * 2));
+    this.pings?.update(dt, Math.max(2.5, this.distance / 18));
     // repères de clic
     const m = new THREE.Matrix4();
     this.markerList = this.markerList.filter((k) => (k.age += dt) < 0.8);

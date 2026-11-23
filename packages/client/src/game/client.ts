@@ -24,6 +24,8 @@ import { isTextField, keyboardPan, syncModifiers, type FocusLike } from "./heldK
 import { isMachine, machineRow } from "./machineRow.ts";
 import * as Belts from "./belts.ts";
 import { shortCells } from "./reach.ts";
+import { buildingRanges, unitRanges, type Circle, type RangeKind } from "../render/ranges.ts";
+import { PING_TIME } from "../render/pings.ts";
 
 const TILE = 256;
 const O = Ord.O;
@@ -299,6 +301,9 @@ export class GameClient {
         break;
       case "chat":
         pushMessage(`${m.from} : ${m.text}`, "chat");
+        break;
+      case "mark":
+        this.showPing(m.slot, m.x, m.z);
         break;
       case "desync":
         pushMessage(`Désynchronisation détectée au tick ${m.tick} : resynchronisation…`, "alert");
@@ -634,10 +639,102 @@ export class GameClient {
         sc.overlay?.setPlanned(this.planned, ui.selPlan);
       });
     }
-    if (now - this.lastMinimap > 200) {
+    sc.rangeCircles = ui.gfx.ranges === false ? null : this.selectionRanges(now);
+    if (now - this.lastMinimap > (sc.pings?.list.length ? 80 : 200)) {
       this.lastMinimap = now;
       this.drawMinimap();
     }
+  }
+
+  private rangeBuildings: { at: number; key: string; list: { kind: number; x: number; z: number }[] } = { at: 0, key: "", list: [] };
+  /** Cercles de portée de la sélection : positions affichées (interpolées) des unités, centres des bâtiments. */
+  private selectionRanges(now: number): Record<RangeKind, Circle[]> | null {
+    const data = this.data;
+    const f = this.frame;
+    const ent = this.scene?.entities;
+    if (!data || !f || !ent || !this.selected.size) return null;
+    const out: Record<RangeKind, Circle[]> = { ground: [], air: [], sub: [], min: [], radar: [] };
+    const put = (r: Partial<Record<RangeKind, number>>, x: number, z: number) => {
+      for (const k in r) out[k as RangeKind].push({ x, z, r: r[k as RangeKind]! });
+    };
+    const byKind = new Map<number, Partial<Record<RangeKind, number>>>();
+    for (const u of ent.screen) {
+      if (!this.selected.has(u.id)) continue;
+      let r = byKind.get(u.kind);
+      if (!r) {
+        const d = data.units[u.kind];
+        // canon renforcé (recherche 34) : il remplace le canon du robot de commandement
+        r = unitRanges(d, data.weapons, d.key === "commander" && u.owner === ui.me && hasTechUI(34) ? 1 : -1);
+        byKind.set(u.kind, r);
+      }
+      put(r, u.x, u.z);
+    }
+    // bâtiments : relus quatre fois par seconde (ils ne bougent pas)
+    const refs = new Set(ui.selBuildings.map((b) => b.ref));
+    const key = [...refs].join();
+    const cache = this.rangeBuildings;
+    if (key !== cache.key || (refs.size && now - cache.at > 250)) {
+      const list: { kind: number; x: number; z: number }[] = [];
+      if (refs.size) {
+        for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+          if (!refs.has(f.buf[o] >>> 0)) continue;
+          const kind = f.buf[o + 1] & 0xff;
+          const d = data.buildings[kind];
+          list.push({ kind, x: (f.buf[o + 2] & 0xffff) + d.w / 2, z: (f.buf[o + 2] >>> 16) + d.h / 2 });
+        }
+      }
+      // vue stratégique : les bâtiments peuvent manquer à l'image, on garde les derniers connus
+      if (key !== cache.key || list.length) this.rangeBuildings = { at: now, key, list };
+      else cache.at = now;
+    }
+    for (const b of this.rangeBuildings.list) put(buildingRanges(data.buildings[b.kind], data.weapons), b.x, b.z);
+    return out;
+  }
+
+  // ---------- pings ----------
+  /** Signale un point (cases) à son équipe ; dans une démo, seulement à soi. */
+  sendPing(x: number, z: number): void {
+    if (this.demoOrders) return this.showPing(ui.me, x, z);
+    if (ui.me < 0 || ui.replay || ui.spectator) return;
+    this.send({ t: "mark", x, z });
+  }
+  private showPing(slot: number, x: number, z: number): void {
+    const f = this.frame;
+    if (!f || !this.scene?.pings) return;
+    this.scene.pings.add(x, z, new THREE.Color(ownerHex(slot, f.players)).getHex());
+    sfx.ping();
+    this.alertPos = { x, z };
+    if (slot !== ui.me) {
+      const k = keyOf("alert");
+      pushMessage(`${ui.names[slot] ?? "Un allié"} signale un point${k ? ` (${k} pour y aller)` : ""}`, "info");
+    }
+  }
+
+  // ---------- navette de transport ----------
+  private ferryFrom: { x: number; z: number } | null = null;
+  /** Clic des modes de la navette : l'embarquement, puis le débarquement. */
+  private ferryClick(x: number, z: number, queue: boolean): void {
+    if (ui.mode === "ferryFrom") {
+      this.ferryFrom = { x, z };
+      ui.mode = "ferryTo";
+      this.scene?.addMarker(x, z, 0xc07dff);
+      sfx.click();
+      this.updateCursor(true);
+      return;
+    }
+    const a = this.ferryFrom;
+    if (!a) return this.cancelMode();
+    const ids = this.selectedUnits().filter((u) => this.data!.units[u.kind].carry > 0 && this.data!.units[u.kind].layer === Layer.Air).map((u) => u.id);
+    if (Math.hypot(x - a.x, z - a.z) <= 17) {
+      pushMessage("Navette : le débarquement doit être à plus de 17 cases de l'embarquement", "alert");
+      sfx.error();
+      return;
+    }
+    if (ids.length) this.cmd(Ord.ferry(ids, Math.round(a.x * TILE), Math.round(a.z * TILE), Math.round(x * TILE), Math.round(z * TILE), queue));
+    this.scene?.addMarker(x, z, 0xc07dff);
+    pushMessage("Navette : les unités de combat qui attendent à l'embarquement (8 cases) sont portées au débarquement ; réglez-y le ralliement de vos usines", "info");
+    sfx.confirm();
+    this.cancelMode();
   }
 
   private panCamera(dt: number): void {
@@ -1124,6 +1221,12 @@ export class GameClient {
       e.preventDefault();
       return;
     }
+    // Alt+clic : ping pour l'équipe
+    if (e.button === 0 && e.altKey && !ui.mode) {
+      const g = this.groundAt(x, y);
+      if (g) this.sendPing(g.x, g.z);
+      return;
+    }
     this.mouse.down = true;
     this.mouse.button = e.button;
     this.mouse.startX = x;
@@ -1443,6 +1546,15 @@ export class GameClient {
       case "unload":
         this.setMode("unload");
         break;
+      case "ferry":
+        if (ui.selUnits.some((g) => this.data!.units[g.kind].carry > 0 && this.data!.units[g.kind].layer === Layer.Air) && ui.selForeign < 0) this.setMode("ferryFrom");
+        break;
+      case "ping": {
+        const g = this.mouse.inside ? this.groundAt(this.mouse.x, this.mouse.y) : null;
+        if (g) this.sendPing(g.x, g.z);
+        else if (ui.me >= 0) this.setMode("ping");
+        break;
+      }
       case "buildMenu":
         if (ui.canBuild) {
           kb.buildStep = "cat";
@@ -1668,6 +1780,7 @@ export class GameClient {
   cancelMode(): void {
     this.deployUnits = [];
     this.poleGen = null;
+    this.ferryFrom = null;
     ui.mode = "";
     ui.buildKind = -1;
     this.resetLine();
@@ -2010,7 +2123,12 @@ export class GameClient {
           return s && this.harvestRecipe(s.kind) >= 0 ? "harvest" : "invalid";
         }
         case "unload":
+        case "ferryTo":
           return "unload";
+        case "ferryFrom":
+          return "load";
+        case "ping":
+          return "ping";
         case "assist":
           return (unit && !enemy(unit.owner)) || (tb && !enemy(tb.owner)) ? "assist" : "invalid";
         default:
@@ -2344,6 +2462,14 @@ export class GameClient {
         this.cmd(Ord.point(O.ATTACK_GROUND, ids, gx, gy, queue));
         this.scene?.addMarker(g.x, g.z, 0xff5050);
         break;
+      case "ferryFrom":
+      case "ferryTo":
+        this.ferryClick(g.x, g.z, queue);
+        return;
+      case "ping":
+        this.sendPing(g.x, g.z);
+        if (!queue) this.cancelMode();
+        return;
       case "unload":
         this.cmd(Ord.point(O.UNLOAD, ids, gx, gy, queue));
         this.scene?.addMarker(g.x, g.z, 0x50b0ff);
@@ -3145,6 +3271,14 @@ export class GameClient {
       const r = c.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * this.map.w;
       const z = ((e.clientY - r.top) / r.height) * this.map.h;
+      if (e.button === 0 && e.type === "pointerdown" && (ui.mode === "ping" || ui.mode === "ferryFrom" || ui.mode === "ferryTo" || (e.altKey && !ui.mode))) {
+        if (ui.mode.startsWith("ferry")) this.ferryClick(x, z, e.shiftKey);
+        else {
+          this.sendPing(x, z);
+          if (ui.mode === "ping" && !e.shiftKey) this.cancelMode();
+        }
+        return true;
+      }
       if (e.button === 2) {
         const units = this.selectedUnits();
         if (units.length) {
@@ -3158,7 +3292,8 @@ export class GameClient {
       this.scene.target.z = z;
     };
     c.addEventListener("pointerdown", (e) => {
-      go(e);
+      // ping ou navette : le clic ne déplace pas la caméra
+      if (go(e)) return;
       const move = (ev: PointerEvent) => ev.buttons & 1 && go(ev);
       const up = () => {
         removeEventListener("pointermove", move);
@@ -3287,6 +3422,21 @@ export class GameClient {
         ctx.lineWidth = 1;
         ctx.stroke();
       }
+    }
+    // pings : point et ondes à la couleur du joueur
+    for (const p of this.scene?.pings?.list ?? []) {
+      ctx.strokeStyle = ctx.fillStyle = "#" + p.color.toString(16).padStart(6, "0");
+      ctx.globalAlpha = Math.min(1, (PING_TIME - p.age) / 1.2);
+      ctx.beginPath();
+      ctx.arc(p.x * k, p.z * k, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      for (const w of [0, 0.5]) {
+        ctx.beginPath();
+        ctx.arc(p.x * k, p.z * k, 3 + ((p.age * 0.7 + w) % 1) * 14, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     }
     // cadre de la caméra
     const r = this.scene!.viewRect();

@@ -25,6 +25,7 @@
   const mine = $derived(!!sb && sb.owner === ui.me);
   const kinds = $derived(ui.selUnits.map((g) => g.kind));
   const has = (key: string) => !!d && kinds.some((k) => d.units[k].key === key);
+  const anyFerry = $derived(!!d && kinds.some((k) => d.units[k].carry > 0 && d.units[k].layer === 4));
   const anyCarrier = $derived(!!d && kinds.some((k) => d.units[k].carry > 0));
   const anyEng = $derived(!!d && kinds.some((k) => d.units[k].buildPower > 0));
   // déploiement : sonde, artillerie lourde, canon tracté, chenillards des Transhumants (ils deviennent leur module)
@@ -837,6 +838,7 @@
         {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
         {#if deployable}<button class="cmd" onclick={() => client.deploySelected()} title={chenillards ? "Déployer : choisissez l'emplacement et le sens du module (R pour tourner), puis cliquez" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
+        {#if anyFerry}<button class="cmd" onclick={() => client.setMode("ferryFrom")} title="Navette : le transport fait des allers-retours entre deux points, il embarque les unités de combat qui attendent au premier et les dépose au second"><Icon name="ferry" size={17} /><span class="key">{keyOf("ferry")}</span></button>{/if}
         {#if has("commander")}<button class="cmd" onclick={() => client.setMode("harvest")} title="Récolter un gisement : le commandant extrait le minerai et le fond dans sa fonderie intégrée (aussi : clic droit sur un gisement libre)"><Icon name="harvest" size={17} /><span class="key">{keyOf("harvest")}</span></button>{/if}
         {#if has("commander") && hasTechUI(35)}<button class="cmd" onclick={() => client.setMode("teleport")} title="Téléportation"><Icon name="teleport" size={17} /></button>{/if}
         {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
