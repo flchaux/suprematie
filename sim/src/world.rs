@@ -101,14 +101,13 @@ impl Player {
 }
 
 // ---------- Ordres des unités ----------
-/// `Order::Move::eta` : durée pas encore commencée (le reste du champ est un nombre de ticks)
-pub const ETA_PENDING: u32 = 1 << 31;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
-    /// déplacement vers (x, y) ; (gx, gy) : but du groupe (champ de flux partagé). `eta` : allure d'un
-    /// déplacement en formation (0 : pleine vitesse) ; tick d'arrivée prévu du groupe, ou, avec le bit
-    /// `ETA_PENDING`, durée prévue comptée à partir du début de l'ordre (voir units::formation_pace)
-    Move { x: i32, y: i32, gx: i32, gy: i32, attack: bool, eta: u32 },
+    /// déplacement vers (x, y) ; (gx, gy) : but du groupe (champ de flux partagé). `pace` : allure d'un
+    /// déplacement en formation, en seizièmes de sous-unité par tick (0 : pas de formation, pleine vitesse ;
+    /// voir formation::paces). `wait` : ticks d'attente encore permis à sa place pour le reste du
+    /// groupe (voir formation::hold)
+    Move { x: i32, y: i32, gx: i32, gy: i32, attack: bool, pace: u16, wait: u16 },
     Patrol { x: i32, y: i32, ox: i32, oy: i32 },
     Attack { target: u32 },
     AttackGround { x: i32, y: i32 },
@@ -185,12 +184,17 @@ impl Ser for Order {
     fn ser(&self, w: &mut crate::ser::W) {
         w.u8(self.code());
         match *self {
-            Order::Move { x, y, gx, gy, eta, .. } => {
+            Order::Move { x, y, gx, gy, pace, wait, .. } => {
                 x.ser(w);
                 y.ser(w);
                 gx.ser(w);
                 gy.ser(w);
-                eta.ser(w);
+                if w.version >= 10 {
+                    pace.ser(w);
+                    wait.ser(w);
+                } else {
+                    0u32.ser(w);
+                }
             }
             Order::Ferry { ax, ay, bx, by } => {
                 ax.ser(w);
@@ -235,8 +239,17 @@ impl Ser for Order {
         let i = |r: &mut crate::ser::R| i32::de(r);
         let u = |r: &mut crate::ser::R| u32::de(r);
         match c {
-            // l'allure (formation) n'existe qu'à partir de la version 2 du format
-            1 | 2 => Order::Move { x: i(r), y: i(r), gx: i(r), gy: i(r), attack: c == 2, eta: if r.version >= 2 { u(r) } else { 0 } },
+            1 | 2 => {
+                let (x, y, gx, gy) = (i(r), i(r), i(r), i(r));
+                // formation : rien avant la version 2, tick d'arrivée prévu jusqu'à la 9 (le groupe reste en
+                // formation, chacun à sa vitesse)
+                let (pace, wait) = match r.version {
+                    0 | 1 => (0, 0),
+                    2..=9 => (if u(r) != 0 { u16::MAX } else { 0 }, 0),
+                    _ => (u16::de(r), u16::de(r)),
+                };
+                Order::Move { x, y, gx, gy, attack: c == 2, pace, wait }
+            }
             3 => Order::Patrol { x: i(r), y: i(r), ox: i(r), oy: i(r) },
             4 => Order::Attack { target: u(r) },
             5 => Order::AttackGround { x: i(r), y: i(r) },

@@ -351,7 +351,7 @@ fn push_front(w: &mut World, s: usize, o: Order) {
 }
 
 fn move_to(x: i32, y: i32, attack: bool) -> Order {
-    Order::Move { x, y, gx: x, gy: y, attack, eta: 0 }
+    Order::Move { x, y, gx: x, gy: y, attack, pace: 0, wait: 0 }
 }
 
 /// Point (sous-unités) dans un rayon de `r` cases autour de (x, y), au hasard.
@@ -1405,7 +1405,7 @@ fn update_raid(w: &mut World, k: usize) -> bool {
                     if let Some(s) = beast(w, id) {
                         if w.units.cold[s].wtarget[0] == NONE {
                             let (x, y) = jitter(w, r.tx, r.ty, 2);
-                            command(w, s, Order::Move { x, y, gx: r.tx, gy: r.ty, attack: true, eta: 0 });
+                            command(w, s, Order::Move { x, y, gx: r.tx, gy: r.ty, attack: true, pace: 0, wait: 0 });
                         }
                     }
                 }
@@ -1433,7 +1433,7 @@ fn update_raid(w: &mut World, k: usize) -> bool {
                     for &id in &units {
                         if let Some(s) = beast(w, id) {
                             let (x, y) = jitter(w, tx, ty, 2);
-                            command(w, s, Order::Move { x, y, gx: tx, gy: ty, attack: true, eta: 0 });
+                            command(w, s, Order::Move { x, y, gx: tx, gy: ty, attack: true, pace: 0, wait: 0 });
                         }
                     }
                     let rr = &mut w.nature.raids[k];

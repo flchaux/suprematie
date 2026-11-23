@@ -27,7 +27,8 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 /// - 7 : Souche, suite (caractères acquis des joueurs, flaques d'acide).
 /// - 8 : améliorations des Transhumants (unités, modules, état des Arches).
 /// - 9 : Souche, sol mangé.
-pub const VERSION: u32 = 9;
+/// - 10 : formations à la vitesse du plus lent (`Order::Move::pace` et `wait` au lieu d'un tick d'arrivée).
+pub const VERSION: u32 = 10;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])
