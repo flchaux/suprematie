@@ -75,7 +75,8 @@
             <tr><td>J maintenu</td><td>Vue logistique : remplissage de chaque tapis (vide, fluide, chargé, saturé) et bâtiments bloqués, affamés ou sans énergie</td></tr>
             <tr><td>Molette (pose de tapis)</td><td>Niveau du tapis : sol, étage 1 ou étage 2. Un tapis surélevé passe au-dessus des tapis et des bâtiments ; entre deux niveaux, un ascenseur se forme tout seul. Un tapis ne livre un bâtiment qu'au sol.</td></tr>
             <tr><td>Clic milieu glissé</td><td>Tourner / incliner la caméra</td></tr>
-            <tr><td>Clic droit glissé (unités sélectionnées)</td><td>Formation orientée : les unités se placent en lignes autour du point cliqué, face à la direction du glisser (Maj : en file)</td></tr>
+            <tr><td>Clic droit glissé (unités sélectionnées)</td><td>Formation orientée : les unités se rangent en rectangle au point cliqué, face à la direction du glisser, corps à corps et plus résistants devant, boucliers, puis tireurs, puis unités sans arme (Maj : en file). Le groupe avance à la vitesse du plus lent</td></tr>
+            <tr><td>Maj + clic droit (plusieurs unités)</td><td>Formation en file : même rectangle face au trajet, gardé aux points suivants</td></tr>
             <tr><td>Clic droit glissé (sans unité), bords</td><td>Déplacer la caméra</td></tr>
           </tbody>
         </table>

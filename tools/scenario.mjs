@@ -49,7 +49,7 @@ export function randomOrders(seed, sim) {
       if (r < 2) pack(p, move([u], tx * 256, ty * 256, false, rnd(2) === 0), out);
       else if (r < 3) {
         // formation orientée (allure du plus lent, orientation à l'arrivée) : jusqu'à 6 unités, angle au hasard
-        const group = mine.slice(0, 6).map((v) => ({ id: v.id, x: v.x, y: v.y, facing: 0 }));
+        const group = mine.slice(0, 6).map((v) => v.id);
         pack(p, moveFormation(group, tx * 256, ty * 256, (rnd(360) * Math.PI) / 180, rnd(4) === 0, rnd(2) === 0), out);
       }
       else if (r < 6) {

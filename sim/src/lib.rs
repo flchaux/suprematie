@@ -238,6 +238,23 @@ pub extern "C" fn twin_preview(n_words: u32) -> *const u8 {
     set_out_i32(&v)
 }
 
+/// Aperçu d'une formation orientée (voir orders::formation_preview). Tampon d'entrée (i32) : [joueur, x, y
+/// (sous-unités, but), angle (16 bits), en file (0 ou 1), puis identifiants…] ; renvoie id, x, y par unité.
+#[no_mangle]
+pub extern "C" fn formation_preview(n_words: u32) -> *const u8 {
+    let a = read_i32s(n_words);
+    let v = with_world(
+        |w| {
+            if a.len() < 5 || a[0] < 0 {
+                return Vec::new();
+            }
+            orders::formation_preview(w, a[0] as u8, a[1], a[2], a[3], a[4] != 0, &a[5..])
+        },
+        Vec::new(),
+    );
+    set_out_i32(&v)
+}
+
 /// Disponible pour payer en un point (voir render::reach_stock). Tampon d'entrée (i32) : [joueur, x, y
 /// (cases, centre), rayon (cases), puis identifiants des constructeurs dont la soute compte…] ; renvoie la
 /// quantité par objet.
@@ -487,6 +504,15 @@ pub extern "C" fn ponte_demo() -> u32 {
 #[no_mangle]
 pub extern "C" fn essaim_demo() -> u32 {
     let w = stress::essaim_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
+/// Démo de l'apprivoisement d'un nid par la Reine de la Souche (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn taming_demo() -> u32 {
+    let w = stress::taming_demo();
     let h = w.hash();
     WORLD.with(|x| *x.borrow_mut() = Some(w));
     h

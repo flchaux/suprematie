@@ -749,6 +749,25 @@ pub fn essaim_demo() -> World {
     w
 }
 
+/// Démo de l'apprivoisement (?demo=apprivoisement) : la Reine du joueur 0 charme un nid de mordeurs sauvage et sa
+/// horde, jusqu'à le greffer. On y joue le joueur 0.
+pub fn taming_demo() -> World {
+    let fauna = crate::nature::FAUNA_NORMAL as i32;
+    let mut w = World::new(&[19, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, fauna, 0, RACE_SOUCHE as i32, RACE_INDUS as i32]);
+    let (sx, sy) = w.map.starts[0];
+    flat(&mut w, sx - 25, sy - 25, sx + 35, sy + 25);
+    w.place_start_buildings();
+    let Some(q) = w.unit(w.players[0].commander) else { return w };
+    let (qx, qy) = (w.units.x[q] / TILE, w.units.y[q] / TILE);
+    let Some(i) = crate::nature::found_nest(&mut w, qx + 14, qy - 1) else { return w };
+    for _ in 0..5 {
+        crate::nature::spawn_beast(&mut w, i, U_BEAST_S);
+    }
+    let target = w.nature.nests[i].b;
+    w.units.cold[q].orders.push(Order::Tame { target });
+    w
+}
+
 /// Démo des ascenseurs de tapis (?demo=ascenseurs) : deux extracteurs du joueur 0 alimentent quatre files
 /// qui changent de niveau. Tapis roulant : sol, étage 1, étage 2, puis retour au sol. Tapis rapide : une
 /// montée suivie aussitôt d'une descente, puis un ascenseur pris par le côté (virage). Tapis express :

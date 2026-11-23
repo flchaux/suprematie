@@ -487,6 +487,78 @@ export class Effects {
     this.smoke.spawn({ x, y, z, vy: 0.5, life: rnd(0.7, 1.2), s0: 0.3, s1: 0.9, c0: [0.28, 0.36, 0.16], a: 0.4, drag: 1.2 });
   }
 
+  /**
+   * Reine qui charme un nid (par image) : spores lumineuses soufflées de sa tête vers le nid, qui s'enroulent
+   * l'une autour de l'autre en volant.
+   */
+  charm(x: number, y: number, z: number, nx: number, nz: number, dt: number): void {
+    if (!this.inView(x, z, 8)) return;
+    const d = Math.max(0.5, Math.hypot(nx - x, nz - z));
+    const px = -(nz - z) / d;
+    const pz = (nx - x) / d;
+    for (let i = 0, n = this.n(dt * 60); i < n; i++) {
+      const T = rnd(0.8, 1.15);
+      const tx = nx + rnd(-0.9, 0.9);
+      const tz = nz + rnd(-0.9, 0.9);
+      const ty = groundHeight(this.map, tx, tz) + rnd(0.5, 1.5);
+      const g = -5;
+      const side = Math.sin(performance.now() / 130 + i) * 0.9;
+      const c: [number, number, number] = Math.random() < 0.6 ? [1.9, 0.6, 2.4] : [0.9, 2.2, 0.5];
+      this.fire.spawn({ x: x + rnd(-0.15, 0.15), y: y + rnd(-0.1, 0.1), z: z + rnd(-0.15, 0.15), vx: (tx - x) / T + px * side, vy: (ty - y) / T - (g * T) / 2, vz: (tz - z) / T + pz * side, life: T, s0: 0.2, s1: 0.11, c0: c, c1: [c[0] * 0.5, c[1] * 0.5, c[2] * 0.5], grav: g });
+    }
+    if (Math.random() < dt * 8 * this.quality) this.fire.spawn({ x, y, z, life: 0.35, s0: 0.2, s1: 0.9, c0: [0.8, 0.25, 1.1], c1: [0, 0, 0], a: 0.6 });
+  }
+
+  /**
+   * Nid charmé (par image) : un cercle de spores se referme autour de lui à mesure que l'apprivoisement avance
+   * (`k`, 0 à 1), des filaments montent en spirale de ses flancs.
+   */
+  tamingNest(x: number, z: number, r: number, k: number, dt: number): void {
+    if (!this.inView(x, z, r + 2)) return;
+    const t = performance.now() / 1000;
+    for (let i = 0, n = this.n(dt * (14 + 70 * k)); i < n; i++) {
+      const a = -Math.PI / 2 + Math.random() * k * Math.PI * 2;
+      const px = x + Math.cos(a) * r;
+      const pz = z + Math.sin(a) * r;
+      this.fire.spawn({ x: px, y: groundHeight(this.map, px, pz) + 0.12, z: pz, vy: rnd(0.2, 0.9), life: rnd(0.5, 0.9), s0: 0.22, s1: 0.05, c0: [1.7, 0.5, 2.3], c1: [0.5, 1.6, 0.4] });
+    }
+    // tête du cercle : le point qui avance
+    const h = -Math.PI / 2 + k * Math.PI * 2;
+    const hx = x + Math.cos(h) * r;
+    const hz = z + Math.sin(h) * r;
+    this.fire.spawn({ x: hx, y: groundHeight(this.map, hx, hz) + 0.25, z: hz, life: 0.18, s0: 0.5, s1: 0.2, c0: [2.4, 1.2, 3], a: 0.8 });
+    for (let i = 0, n = this.n(dt * (6 + 22 * k)); i < n; i++) {
+      const a = t * 2.4 + (i % 2) * Math.PI + rnd(-0.3, 0.3);
+      const q = r * rnd(0.45, 0.6);
+      this.fire.spawn({ x: x + Math.cos(a) * q, y: groundHeight(this.map, x, z) + rnd(0.2, 0.8), z: z + Math.sin(a) * q, vx: -Math.sin(a) * 1.6, vy: rnd(1.2, 2.4), vz: Math.cos(a) * 1.6, life: rnd(0.7, 1.2), s0: 0.16, s1: 0.04, c0: [0.8, 2.1, 0.5], c1: [1.4, 0.4, 1.8], drag: 0.6 });
+    }
+  }
+
+  /** Charme rompu : le cercle de spores s'éteint en poussière. */
+  tameBroken(x: number, z: number, r: number): void {
+    if (!this.inView(x, z, r)) return;
+    for (let i = 0, n = this.n(26); i < n; i++) {
+      const a = rnd(0, Math.PI * 2);
+      const px = x + Math.cos(a) * r;
+      const pz = z + Math.sin(a) * r;
+      this.smoke.spawn({ x: px, y: groundHeight(this.map, px, pz) + 0.2, z: pz, vx: Math.cos(a) * 0.8, vy: rnd(0.1, 0.5), vz: Math.sin(a) * 0.8, life: rnd(0.6, 1.1), s0: 0.2, s1: 0.6, c0: [0.3, 0.2, 0.34], a: 0.5, drag: 1.2 });
+    }
+  }
+
+  /** Nid apprivoisé : éclat à la couleur de son nouveau maître, gerbe de spores et ondes. */
+  tamed(x: number, z: number, color: THREE.Color): void {
+    if (!this.inView(x, z, 8)) return;
+    const g = groundHeight(this.map, x, z);
+    const c: [number, number, number] = [0.4 + color.r * 2.4, 0.4 + color.g * 2.4, 0.4 + color.b * 2.4];
+    this.fire.spawn({ x, y: g + 1.2, z, life: 0.5, s0: 1, s1: 5, c0: c, c1: [0, 0, 0], a: 0.6 });
+    for (const [s, l] of [[7, 0.6], [12, 1]]) this.waves.spawn(x, g + 0.2, z, 1, s, l, this.normalAt(x, z));
+    for (let i = 0, n = this.n(70); i < n; i++) {
+      const a = rnd(0, Math.PI * 2);
+      const v = rnd(0.6, 4.2);
+      this.fire.spawn({ x: x + Math.cos(a) * 0.6, y: g + rnd(0.4, 1.6), z: z + Math.sin(a) * 0.6, vx: Math.cos(a) * v, vy: rnd(3, 8), vz: Math.sin(a) * v, life: rnd(1, 1.9), s0: 0.24, s1: 0.05, c0: i % 3 ? c : [0.9, 2.3, 0.5], grav: -5, drag: 0.5 });
+    }
+  }
+
   /** Case d'herbe mangée par un organe de la Souche : brins arrachés, poussière sombre. */
   graze(x: number, z: number): void {
     if (!this.inView(x, z, 1)) return;

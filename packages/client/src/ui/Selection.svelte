@@ -264,6 +264,7 @@
     {:else if nest && nest.length}
       {@const [home, max, need, age, evo, press, chance, tamer = -1, tame = 0] = nest}
       {#if tamer >= 0}
+        <div class="tamebar"><span style="width: {tame / 10}%"></span></div>
         <div class="status {tamer === ui.me ? 'good' : 'warn'}"><span class="led"></span>Apprivoisé par {tamer === ui.me ? "votre Reine" : `la Reine de ${ui.names[tamer] ?? "un adversaire"}`} : {Math.floor(tame / 10)} %</div>
       {/if}
       <div class="sgrid small nest">
@@ -790,6 +791,10 @@
       {#if tr}<span class="dim small">{tr}</span>{/if}
       {#if ui.unitInfo.cloaked}<span class="good small">Camouflé : invisible pour l'ennemi</span>{:else if d.units[ui.selUnits[0].kind].key === "commando"}<span class="bad small">Repérable : il vient de tirer</span>{/if}
       {#if ui.unitInfo.radarStealth && !ui.unitInfo.cloaked}<span class="good small">Absent des radars ennemis</span>{/if}
+      {#if queen && (ui.unitInfo.tame ?? -1) >= 0}
+        <div class="tamebar"><span style="width: {(ui.unitInfo.tame ?? 0) / 10}%"></span></div>
+        <div class="row small"><span class="kicker">Apprivoisement</span> <span class="num">{(ui.unitInfo.tame ?? 0) > 0 ? `${Math.floor((ui.unitInfo.tame ?? 0) / 10)} % · ${Math.ceil(((1000 - (ui.unitInfo.tame ?? 0)) * 30) / 1000)} s` : "en approche"}</span></div>
+      {/if}
       {#if queen && (ui.unitInfo.pack === 3 || ui.unitInfo.pack === 4)}
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 3 ? "S'enracine" : "Se déracine"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span></div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / 60) * 100}%"></span></div>
@@ -1043,6 +1048,8 @@
   .cmds { display: flex; flex-wrap: wrap; gap: 4px; }
   .cmd { position: relative; width: 40px; height: 36px; display: grid; place-items: center; padding: 0; color: var(--accent); }
   .cmd:hover:not(:disabled) { color: #fff; }
+  .tamebar { height: 7px; background: rgba(217, 92, 255, 0.14); border: 1px solid rgba(217, 92, 255, 0.35); }
+  .tamebar > span { display: block; height: 100%; background: linear-gradient(90deg, #8e3cff, #e07cff); box-shadow: 0 0 6px rgba(217, 92, 255, 0.6); transition: width 0.3s linear; }
   .cmd.off { opacity: 0.45; }
   .cmd.on { color: var(--accent-ink, #04121a); }
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }

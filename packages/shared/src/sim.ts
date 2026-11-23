@@ -19,6 +19,7 @@ export interface SimExports {
   zone_economy(player: number, tx: number, ty: number): number;
   can_place(owner: number, kind: number, x: number, y: number, dir: number): number;
   twin_preview(nWords: number): number;
+  formation_preview(nWords: number): number;
   reach_stock(nWords: number): number;
   can_place_line(nWords: number): number;
   line_cost(nWords: number): number;
@@ -40,6 +41,7 @@ export interface SimExports {
   anciens_demo(): number;
   ponte_demo(): number;
   essaim_demo(): number;
+  taming_demo(): number;
   lifts_demo(): number;
   chantiers_demo(): number;
   relais_demo(): number;
@@ -160,6 +162,13 @@ export class Sim {
     return this.outI32(this.ex.twin_preview(this.writeI32(args)));
   }
   /**
+   * Places d'une formation orientée (aperçu du clic droit glissé) : `args` = [joueur, x, y (but, sous-unités),
+   * angle (16 bits), en file (0 ou 1), puis identifiants…] ; renvoie id, x, y par unité.
+   */
+  formationPreview(args: number[]): Int32Array {
+    return this.outI32(this.ex.formation_preview(this.writeI32(args)));
+  }
+  /**
    * Disponible pour payer en un point (couleur des coûts) : `args` = [joueur, x, y (case), rayon (cases),
    * puis identifiants des constructeurs dont la soute compte…] ; quantité par objet (voir sim render::reach_stock).
    */
@@ -220,6 +229,10 @@ export class Sim {
   }
   ponteDemo(): number {
     return this.ex.ponte_demo() >>> 0;
+  }
+  /** Démo de l'apprivoisement d'un nid par la Reine (voir sim/src/stress.rs, taming_demo). */
+  tamingDemo(): number {
+    return this.ex.taming_demo() >>> 0;
   }
   /** Démo de la Souche, suite : nouveaux organes et organismes (voir sim/src/stress.rs, essaim_demo). */
   essaimDemo(): number {

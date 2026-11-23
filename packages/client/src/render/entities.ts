@@ -8,7 +8,7 @@ import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttr
 import { buildingScale, buildModel, condShown, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseCond, parseDep, PLAYER_COLORS, withHatches, type DepStep, type PivotCond } from "../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
 import { FLOOR_H, liftDash, liftOut, liftPad, liftUp } from "./liftAnim.ts";
-import { barInView, siteBarOf, siteBarSize, type SiteBar } from "./siteBars.ts";
+import { barInView, siteBarOf, siteBarSize, tameOf, type SiteBar } from "./siteBars.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { ASCENSEUR_MAT, BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -133,6 +133,12 @@ const RECEIVERS = RECEIVER_CLASSES;
 const RECIPE_NONE = 255;
 /** code de l'ordre de récolte du commandant (Order::Harvest), dans le mot aux des unités */
 const ORDER_HARVEST = 16;
+/** Reine qui apprivoise un nid (Order::Tame), distance à laquelle son charme se voit (territoire du nid, en cases), rayon du cercle de spores */
+const ORDER_TAME = 21;
+const TAME_SHOW = 14.5;
+const TAME_RING = 2.9;
+/** durée de l'apprivoisement (nature::TAME_TICKS), en secondes */
+const TAME_SECONDS = 30;
 /** trappe ouverte logée dans la trappe du modèle : échelles du cadre lumineux (0,64 x 0,44 -> 0,46 x 0,28) et de l'ouverture (0,5 x 0,3 -> 0,38 x 0,2) */
 const FITTED_GLOW = new THREE.Vector3(0.46 / 0.64, 0.28 / 0.44, 0.1);
 const FITTED_HOLE = new THREE.Vector3(0.38 / 0.5, 0.2 / 0.3, 0.1);
@@ -393,6 +399,8 @@ export class Entities {
   private modIds: Map<string, number>;
   private modFor: Frame | null = null;
   modViews = new Map<number, ModView>();
+  /** nids qu'une Reine apprivoise : avancement affiché (lissé) */
+  private taming = new Map<number, { k: number; at: number }>();
   /** trappes ouvertes des bâtiments qui reçoivent des objets (entrée cyan, sortie ambre) ; les fermées sont dans leur modèle */
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
@@ -730,6 +738,13 @@ export class Entities {
     for (const k of all) k?.setLod(lo);
   }
 
+  /** Avancement affiché d'un nid qu'une Reine apprivoise : la simulation l'avance d'une seconde à la fois. */
+  private tameStep(ref: number, k: number, simT: number): number {
+    const t = this.taming.get(ref);
+    if (!t || t.k !== k) this.taming.set(ref, { k, at: simT });
+    return k > 0 ? Math.min(1, k + Math.max(0, Math.min(1, simT - (t && t.k === k ? t.at : simT))) / TAME_SECONDS) : 0;
+  }
+
   /**
    * Barre de progression d'un chantier ou d'une amélioration, à plat au-dessus du bâtiment de `w` × `h` cases
    * centré en (cx, cz), au sol à la hauteur `y` : fond sombre, part faite (cyan, ambre pour une amélioration),
@@ -941,6 +956,18 @@ export class Entities {
         if (rootK > 0) {
           bob -= 0.22 * rootK * km.height;
           this.queenRoots(x, y, z, rootK, km.height, cslot(owner));
+        }
+      }
+      // Reine qui apprivoise un nid : elle se dresse et se balance, des spores volent de sa tête vers le nid
+      if (queen && buf[o + 8] >>> 24 === ORDER_TAME && (!enemy || visible)) {
+        const tx = (buf[o + 8] & 0xfff) + 0.5;
+        const tz = ((buf[o + 8] >> 12) & 0xfff) + 0.5;
+        if (Math.hypot(tx - x, tz - z) < TAME_SHOW) {
+          const s = Math.sin(simT * 4);
+          grow *= 1.03 + 0.03 * s;
+          bob += (0.06 + 0.04 * s) * km.height;
+          tmpQ.premultiply(tmpQ2.setFromAxisAngle(tmpV2.set(Math.cos(facing), 0, Math.sin(facing)), 0.07 * Math.sin(simT * 2.6)));
+          if (dt > 0) fx.charm(x + Math.cos(facing) * km.height * 0.45, y + bob + km.height * 0.8, z + Math.sin(facing) * km.height * 0.45, tx, tz, dt);
         }
       }
       // fouisseur enterré : seules les épines de son dos dépassent ; la terre vole quand il s'enterre ou surgit
@@ -1210,7 +1237,8 @@ export class Entities {
       const sy = (mast ? 1 : sc) * (build >= 1 ? wilt : Math.max(0.08, build));
       tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
-      const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
+      const tameTint = def.key === "nest" ? tameOf(buf, o, true) : null;
+      const c = tameTint && tameTint.progress > 0 ? tmpC.copy(col).lerp(this.teamColors[cslot(tameTint.tamer)], tameTint.progress * (0.65 + 0.35 * Math.sin(simT * 5))) : build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
       // porte de transit (aux2 : charge d'ouverture, 0 à 100) : gerbe à l'ouverture, puis horizon ondulant
       if (def.key === "gate" && build >= 1) {
@@ -1407,11 +1435,17 @@ export class Entities {
       if (frac < 0.6 && build >= 1 && def.cls !== BClass.Belt && def.cls !== BClass.Inserter && (!enemy || seen(cx, cz, 1))) {
         fx.burning(cx, y + km.height * 0.85, cz, (0.6 - frac) / 0.6, Math.max(def.w, def.h) * 0.45, dt);
       }
+      // nid qu'une Reine apprivoise : animation, et barre violette sous ses points de vie
+      const tame = tameOf(buf, o, def.key === "nest");
+      const shownTame = tame && (!enemy || seen(cx, cz, 1) || tame.tamer === me) ? tame : null;
+      if (!shownTame && this.taming.delete(ref) && teamOf(owner) === NATURE_TEAM && dt > 0) fx.tameBroken(cx, cz, TAME_RING);
+      const tameK = shownTame ? this.tameStep(ref, shownTame.progress, simT) : 0;
+      if (shownTame && shownTame.progress > 0 && dt > 0) fx.tamingNest(cx, cz, TAME_RING, tameK, dt);
       // chantier (tapis compris) ou amélioration : barre de progression, dans la zone vue seulement
       const sb = siteBarOf(buf, o, def.hp, def.cls === BClass.Belt);
       if (sb) {
         if (siteBars + 3 <= SITE_BARS_MAX && barInView(cx, cz, viewRect)) siteBars = this.pushSiteBar(siteBars, sb, cx, y, cz, def.w, def.h);
-      } else if ((frac < 0.999 || selected.has(ref)) && def.cls !== BClass.Belt && bars < 5900) {
+      } else if ((frac < 0.999 || selected.has(ref) || shownTame) && def.cls !== BClass.Belt && bars < 5900) {
         const wdt = def.w * 0.8;
         tmpM.compose(tmpV.set(cx, y + 2.2, cz + def.h / 2), tmpQ.identity(), tmpS.set(wdt, 1, 1));
         this.bars.setMatrixAt(bars, tmpM);
@@ -1421,6 +1455,20 @@ export class Entities {
         this.bars.setMatrixAt(bars, tmpM);
         this.bars.setColorAt(bars, tmpC.setRGB(1 - frac, 0.25 + frac * 0.7, 0.2));
         bars++;
+        if (shownTame) {
+          // apprivoisement : sous la vie, au moins 4 pixels d'épaisseur
+          const thick = Math.max(0.22, 4 * this.pxWorld);
+          const tz = cz + def.h / 2 + 0.12 + thick / 2;
+          tmpM.compose(tmpV.set(cx, y + 2.2, tz), tmpQ.identity(), tmpS.set(wdt, 1, thick / 0.12));
+          this.bars.setMatrixAt(bars, tmpM);
+          this.bars.setColorAt(bars, tmpC.setRGB(0.1, 0.06, 0.14));
+          bars++;
+          const tk = Math.max(0.015, tameK);
+          tmpM.compose(tmpV.set(cx - (wdt * 0.97 * (1 - tk)) / 2, y + 2.22, tz), tmpQ, tmpS.set(wdt * 0.97 * tk, 1, (thick * 0.7) / 0.12));
+          this.bars.setMatrixAt(bars, tmpM);
+          this.bars.setColorAt(bars, tmpC.setRGB(0.85, 0.35 + 0.1 * Math.sin(simT * 6), 1));
+          bars++;
+        }
       }
       // générateur de l'équipe : jauge de combustible au-dessus (verte, ambre sous une minute d'autonomie,
       // rouge clignotante à sec)

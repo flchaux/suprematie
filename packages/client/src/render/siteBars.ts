@@ -65,3 +65,12 @@ export function worldPerPixel(distance: number, fovDeg: number, heightPx: number
 export function barInView(cx: number, cz: number, view: readonly [number, number, number, number], margin = 2): boolean {
   return cx >= view[0] - margin && cx <= view[2] + margin && cz >= view[1] - margin && cz <= view[3] + margin;
 }
+
+/**
+ * Nid de mordeurs qu'une Reine de la Souche apprivoise (mot 5 : joueur + 1, 0 s'il n'y en a pas ; mot 6 :
+ * avancement en millièmes). Null pour un autre bâtiment ou un nid tranquille.
+ */
+export function tameOf(buf: Int32Array, o: number, nest: boolean): { tamer: number; progress: number } | null {
+  if (!nest || buf[o + 5] <= 0) return null;
+  return { tamer: buf[o + 5] - 1, progress: Math.max(0, Math.min(1, buf[o + 6] / 1000)) };
+}

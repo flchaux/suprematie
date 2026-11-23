@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim, parseFrame, BClass, BUILDING_WORDS, BUILD_FULL } from "@supreme/shared";
 import type { GameData } from "@supreme/shared";
-import { BAR_MIN_PX, barInView, siteBarOf, siteBarSize, worldPerPixel } from "../src/render/siteBars.ts";
+import { BAR_MIN_PX, barInView, siteBarOf, siteBarSize, tameOf, worldPerPixel } from "../src/render/siteBars.ts";
 
 /** Mots d'un bâtiment : points de vie, avancement du chantier, mot 7 (amélioration ou ligne d'un tapis). */
 const words = (hp: number, build: number, w7 = 0) => Int32Array.from([1, 0, 0, hp, build, 0, 0, w7]);
@@ -113,5 +113,34 @@ describe("démo des chantiers", () => {
     belts.sort((a, b) => a[0] - b[0]);
     expect(belts.length).toBe(30);
     for (let i = 1; i < belts.length; i++) expect(belts[i][1]).toBeGreaterThan(belts[i - 1][1]);
+  });
+});
+
+describe("barre d'un nid qu'une Reine apprivoise", () => {
+  it("démo : charmé d'abord, puis l'avancement monte jusqu'à la greffe", async () => {
+    const sim = await Sim.load(readFileSync(new URL("../public/sim.wasm", import.meta.url)));
+    const data = JSON.parse(sim.dataJson()) as GameData;
+    sim.init([1, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
+    sim.tamingDemo();
+    const seen: number[] = [];
+    let owner = -1;
+    for (let t = 0; t < 1400; t++) {
+      sim.step([]);
+      if (t % 20) continue;
+      const f = parseFrame(sim.render(0, 0, 512, 512, 2, 0, false));
+      for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+        if (data.buildings[f.buf[o + 1] & 0xff].key !== "nest") continue;
+        const tame = tameOf(f.buf, o, true);
+        if (tame) {
+          expect(tame.tamer).toBe(0);
+          seen.push(tame.progress);
+        } else if (seen.length) owner = (f.buf[o + 1] >> 8) & 0xff;
+      }
+    }
+    expect(seen[0]).toBe(0);
+    expect(Math.max(...seen)).toBeGreaterThan(0.9);
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
+    expect(owner).toBe(0);
+    expect(tameOf(Int32Array.from([1, 0, 0, 1, 1, 3, 500, 0]), 0, false)).toBeNull();
   });
 });

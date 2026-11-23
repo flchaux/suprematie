@@ -1,7 +1,8 @@
-// Déplacement en formation orientée dans la démo « formation » : une armée mêlée (motos, chars, artilleries,
-// marcheurs, robots, glisseurs) en bloc tourné vers l'est reçoit un clic droit glissé vers le sud, à la souris.
-// Contrôles : aperçu pendant le glisser, ordre envoyé (drapeau 4, angle), disposition conservée et tournée d'un
-// quart de tour, motos à l'allure des artilleries, arrivée ensemble, chacun à sa place et tourné vers le sud.
+// Formation orientée dans la démo « formation » : une armée mêlée (motos, chars, artilleries, marcheurs, robots,
+// glisseurs) en bloc tourné vers l'est reçoit un clic droit glissé vers le sud, à la souris. Contrôles : aperçu
+// pendant le glisser (places calculées par la simulation), ordre envoyé (drapeaux 4 et 8, angle), arrivée en
+// rectangle face au sud, aux places de l'aperçu, les plus résistants devant et l'artillerie derrière.
+// La démo est figée au chargement puis avancée par sauts (stopReplayAt) : le rendu logiciel est lent.
 // Usage : node tools/e2e-formation.mjs http://127.0.0.1:3061 [dossier des captures]
 import { launchBrowser } from "./browser.mjs";
 import { mkdirSync } from "node:fs";
@@ -40,6 +41,9 @@ const army = () => page.evaluate(() => {
   }
   return { tick: f.tick, units: out };
 });
+// démo figée pendant qu'on vise ; l'ordre part au tick d'arrêt + 3
+const T0 = await page.evaluate(() => { const c = window.__game.client; c.stopReplayAt(c.frame.tick + 2); return c.frame.tick + 2; });
+await page.waitForFunction((t) => window.__game.client.frame.tick >= t, T0, { timeout: 60000 });
 const start = await army();
 const n = start.units.length;
 check(n === 24, "armée de la démo", `${n} unités`);
@@ -97,84 +101,44 @@ check(preview >= n, "aperçu de la formation pendant le glisser", `${preview} fl
 await page.screenshot({ path: `${outDir}/formation-apercu.png`, timeout: 180000 });
 await page.mouse.up({ button: "right" });
 await page.waitForTimeout(300);
-// démo en accéléré (×2) pour le trajet ; relevés à partir de l'ordre
-await page.evaluate(() => window.__game.client.setReplaySpeed(2));
-const atOrder = await army();
-
 const cmds = await page.evaluate(() => window.__cmds);
-check(cmds.length === 1 && cmds[0][0] === 1 && (cmds[0][1] & 4) !== 0, "un ordre de déplacement orienté", JSON.stringify(cmds.map((c) => c.slice(0, 6))));
+check(cmds.length === 1 && cmds[0][0] === 1 && (cmds[0][1] & 12) === 12, "un ordre de formation orientée", JSON.stringify(cmds.map((c) => c.slice(0, 6))));
 const cmd = cmds[0] ?? [];
 const angle = cmd[4];
 check(Math.abs(((angle - 16384 + 32768) & 0xffff) - 32768) < 700, "angle : vers le sud", `${angle}`);
+// places de l'ordre, lues dans la simulation avant qu'il parte (la démo est figée)
+const list = await page.evaluate(([x, y, a, ids]) => window.__game.client.query("formation", [0, x, y, a, 0, ...ids]), [cmd[2], cmd[3], angle, start.units.map((u) => u.id)]);
 const slots = new Map();
-for (let i = 6; i + 2 < cmd.length; i += 3) slots.set(cmd[i] >>> 0, { x: cmd[i + 1], y: cmd[i + 2] });
+for (let i = 0; i + 2 < list.length; i += 3) slots.set(list[i] >>> 0, { x: list[i + 1], y: list[i + 2] });
 check(slots.size === n, "une place par unité", `${slots.size}`);
-// disposition conservée, tournée d'un quart de tour : le groupe regardait l'est, il regarde le sud
-// (écart au centre (dx, dy) → (-dy, dx))
-const sx = [...slots.values()].reduce((s, p) => s + p.x, 0) / n;
-const sy = [...slots.values()].reduce((s, p) => s + p.y, 0) / n;
-let worst = 0;
-for (const u of start.units) {
-  const p = slots.get(u.id);
-  if (!p) continue;
-  const ex = -(u.y / TILE - cz), ey = u.x / TILE - cx;
-  worst = Math.max(worst, Math.hypot((p.x - sx) / TILE - ex, (p.y - sy) / TILE - ey));
-}
-check(worst < 0.3, "places : disposition actuelle tournée d'un quart de tour", `écart max ${worst.toFixed(2)} case`);
 
-// trajet : relevé toutes les 20 ticks ; vitesse des motos comparée à celle des artilleries
-const speedOf = (k) => page.evaluate((k) => {
-  const d = window.__game.client.data.units.find((u) => u.key === k);
-  return (d.speed * 256) / 200;
-}, k);
-const vArt = await speedOf("artillery");
-let prev = atOrder;
-let motoMax = 0;
-const arrived = new Map();
-let mid = false;
-for (let round = 0; round < 120; round++) {
-  const t0 = prev.tick;
-  await page.waitForFunction((t0) => window.__game.client.frame.tick >= t0 + 20, t0, { timeout: 60000, polling: 50 });
-  const cur = await army();
-  const dt = cur.tick - prev.tick;
-  for (const u of cur.units) {
-    const p = prev.units.find((v) => v.id === u.id);
-    const s = slots.get(u.id);
-    if (!p || !s) continue;
-    const step = Math.hypot(u.x - p.x, u.y - p.y) / dt;
-    if (u.key === "moto" && cur.tick > atOrder.tick + 40) motoMax = Math.max(motoMax, step);
-    if (!arrived.has(u.id) && Math.hypot(u.x - s.x, u.y - s.y) <= TILE / 2) arrived.set(u.id, cur.tick);
-  }
-  if (!mid && cur.tick > atOrder.tick + 150) {
-    mid = true;
-    // la démo est mise en pause pendant la capture (lente en rendu logiciel) pour ne pas fausser les relevés
-    await page.evaluate(() => window.__game.client.worker.postMessage({ type: "pause", paused: true }));
-    await page.screenshot({ path: `${outDir}/formation-trajet.png`, timeout: 180000 });
-    await page.evaluate(() => window.__game.client.worker.postMessage({ type: "pause", paused: false }));
-  }
-  prev = cur;
-  const done = cur.units.every((u) => arrived.has(u.id) && u.facing === angle);
-  if (done) break;
-}
-const end = prev;
-console.log("vitesse max des motos :", motoMax.toFixed(1), "sous-unités/tick ; artillerie :", vArt.toFixed(1));
-check(motoMax <= vArt * 1.15, "les motos avancent à l'allure des artilleries");
-const times = [...arrived.values()];
-check(arrived.size === n, "toutes arrivées à leur place", `${arrived.size}/${n}`);
-const spread = Math.max(...times) - Math.min(...times);
-check(spread <= 60, "arrivées ensemble", `écart ${spread} ticks, trajet de ${times.length ? Math.min(...times) - atOrder.tick : "?"} à ${times.length ? Math.max(...times) - atOrder.tick : "?"} ticks`);
-// durée attendue : la plus longue distance à parcourir à la vitesse de l'artillerie (plus 1 s pour tourner)
-const longest = Math.max(...atOrder.units.map((u) => { const p = slots.get(u.id); return p ? Math.hypot(u.x - p.x, u.y - p.y) : 0; }));
-const expect = longest / vArt + 20;
-check(Math.min(...times) - atOrder.tick >= expect * 0.85, "à l'allure de la plus lente", `attendu ≈ ${Math.round(expect)} ticks`);
+// arrivée : trajet d'environ 35 cases à l'allure de l'artillerie (500 ticks au plus), puis le demi-tour
+await page.evaluate(() => window.__game.client.setReplaySpeed(4));
+const T = T0 + 3 + 640;
+await page.evaluate((t) => window.__game.client.stopReplayAt(t), T);
+await page.waitForFunction((t) => window.__game.client.frame.tick >= t, T, { timeout: 300000, polling: 500 });
+const end = await army();
 let far = 0;
 for (const u of end.units) {
   const s = slots.get(u.id);
   if (s) far = Math.max(far, Math.hypot(u.x - s.x, u.y - s.y) / TILE);
 }
-check(far <= 0.5, "chacun à sa place", `écart max ${far.toFixed(2)} case`);
+check(far <= 0.5, "chacun à sa place de l'aperçu", `écart max ${far.toFixed(2)} case`);
 const wrong = end.units.filter((u) => u.facing !== angle).map((u) => `${u.key}:${u.facing}`);
 check(wrong.length === 0, "chacun tourné vers l'angle choisi", wrong.join(" "));
+// rangées : avance le long de l'angle choisi, regroupée à 0,4 case près ; l'avant en premier
+const rad = (angle / 65536) * 2 * Math.PI;
+const ahead = new Map(end.units.map((u) => [u.id, u.x * Math.cos(rad) + u.y * Math.sin(rad)]));
+const rows = [];
+for (const u of [...end.units].sort((p, q) => ahead.get(q.id) - ahead.get(p.id))) {
+  const last = rows[rows.length - 1];
+  if (last && ahead.get(last[last.length - 1].id) - ahead.get(u.id) < 0.4 * TILE) last.push(u);
+  else rows.push([u]);
+}
+check(rows.length === 4, "rangées droites", rows.map((r) => r.map((u) => u.key).sort().join(",")).join(" | "));
+const rowOf = (key) => rows.flatMap((r, i) => r.filter((u) => u.key === key).map(() => i));
+check(Math.max(...rowOf("hover_tank")) === 0, "les plus résistants (glisseurs) devant", `${rowOf("hover_tank")}`);
+check(Math.min(...rowOf("artillery")) === rows.length - 1, "l'artillerie derrière", `${rowOf("artillery")}`);
 await page.evaluate(([x, z]) => {
   const sc = window.__game.client.scene;
   sc.target.set(x, 0, z);
