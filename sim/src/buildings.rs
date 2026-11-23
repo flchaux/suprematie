@@ -431,6 +431,11 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
         }
     }
     if def.race == RACE_SOUCHE {
+        // racine, rhizome : plus ils sont loin d'une graine-mère, plus ils coûtent (fixé à la pose)
+        if crate::souche::is_far_priced(kind) {
+            let hearts = crate::souche::hearts(w, owner);
+            w.buildings[slot].lot = crate::souche::far_pct(&hearts, kind, x, y, dir);
+        }
         // son réseau (la réserve qui le fait pousser) au prochain calcul des zones
         w.power_dirty = true;
     }

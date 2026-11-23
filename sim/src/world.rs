@@ -397,7 +397,8 @@ pub struct Building {
     pub clock: u8,
     pub shards: u8,
     /// gare, héliport : objets par voyage des véhicules qui en partent (0 : automatique, ils partent
-    /// dès qu'ils ont quelque chose ; sinon ils chargent au plus ce nombre et l'attendent avant de partir)
+    /// dès qu'ils ont quelque chose ; sinon ils chargent au plus ce nombre et l'attendent avant de partir) ;
+    /// racine, rhizome de la Souche : supplément de coût (%) fixé à la pose (voir souche::far_pct)
     pub lot: u16,
     /// générateur : combustible en réserve, en kW × ticks (voir FUEL_HYDROCARBON)
     pub fuel: i32,

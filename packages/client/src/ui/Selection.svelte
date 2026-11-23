@@ -307,6 +307,7 @@
             <Item id={27} size={16} /> <span class="num">{sv.seve}</span> <Item id={28} size={16} /> <span class="num">{sv.sels}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
           {:else}<b class="bad">hors du terreau : rien ne pousse</b>{/if}
         </div>
+        {#if sv.far}<div class="row small" title="Racines et rhizomes coûtent 2 % de plus par case qui les sépare de la graine-mère la plus proche (fixé à la plantation)"><span class="kicker">Distance</span> <span class="num">{sv.far / 2}</span> cases de la graine-mère <span class="dim">· coût +{sv.far} %</span></div>{/if}
         {#if sv.hatch >= 0}
           <div class="row small"><span class="kicker">Éclosion</span> <b>Béhémoth</b> <span class="num">{sv.hatch > 0 ? `dans ${Math.ceil(sv.hatch / 20)} s` : "dès qu'il y a de la place sous la limite d'unités"}</span></div>
           <div class="upbar"><span style="width: {100 - sv.hatch / 4}%"></span></div>

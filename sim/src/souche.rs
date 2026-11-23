@@ -35,6 +35,8 @@ pub const START_SELS: i32 = 150;
 pub const MAX_SUPPLY: i32 = 7;
 /// Période des organes (production, régénération), en ticks.
 pub const ORGAN_PERIOD: u32 = 20;
+/// Racines et rhizomes : supplément de coût (%) par case qui les sépare de la graine-mère la plus proche.
+pub const FAR_PCT: i32 = 2;
 /// Période de la croissance d'un organe, en ticks.
 pub const GROW_PERIOD: u32 = 10;
 /// Sève pour un ADN quand la Matrice n'en a pas, et période de cette conversion (ticks).
@@ -319,6 +321,85 @@ fn pool_of(w: &World, net: u16, item: u8) -> i32 {
     }
 }
 
+/// Racine ou rhizome : son coût monte avec la distance (voir `far_pct`).
+#[inline]
+pub fn is_far_priced(kind: u16) -> bool {
+    let d = bdef(kind);
+    d.race == RACE_SOUCHE && d.supply > 0 && kind != B_SEED_HEART
+}
+
+/// Emprises (x, y, largeur, hauteur) des graines-mères poussées du joueur ; à défaut, de celles qui poussent.
+pub fn hearts(w: &World, owner: u8) -> Vec<(i32, i32, i32, i32)> {
+    let of = |done: bool| -> Vec<(i32, i32, i32, i32)> {
+        w.buildings
+            .iter()
+            .filter(|b| b.alive && b.owner == owner && b.kind == B_SEED_HEART && b.complete() == done)
+            .map(|b| {
+                let (bw, bh) = b.size();
+                (b.x, b.y, bw, bh)
+            })
+            .collect()
+    };
+    let grown = of(true);
+    if grown.is_empty() {
+        of(false)
+    } else {
+        grown
+    }
+}
+
+/// Cases de l'emprise (x, y, bw, bh) à la plus proche des graines-mères `hearts`, comptées comme un câble
+/// (à l'horizontale puis à la verticale ; 1 : collée). 0 sans graine-mère.
+pub fn heart_dist(hearts: &[(i32, i32, i32, i32)], x: i32, y: i32, bw: i32, bh: i32) -> i32 {
+    hearts
+        .iter()
+        .map(|&(hx, hy, hw, hh)| {
+            let gap = |a: i32, al: i32, b: i32, bl: i32| (b - (a + al - 1)).max(a - (b + bl - 1)).max(0);
+            gap(x, bw, hx, hw) + gap(y, bh, hy, hh)
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+/// Supplément de coût (%) d'un bâtiment `kind` posé là : FAR_PCT par case de distance pour une racine ou un
+/// rhizome, 0 pour le reste. Fixé à la pose (`Building::lot`).
+pub fn far_pct(hearts: &[(i32, i32, i32, i32)], kind: u16, x: i32, y: i32, dir: u8) -> u16 {
+    if !is_far_priced(kind) {
+        return 0;
+    }
+    let (bw, bh) = buildings::dims(kind, dir);
+    (heart_dist(hearts, x, y, bw, bh) * FAR_PCT).clamp(0, 1000) as u16
+}
+
+/// Quantité `n` d'un objet du coût, avec le supplément `pct` (%), au plus proche.
+#[inline]
+pub fn far_cost(n: u16, pct: u16) -> u16 {
+    ((n as u32 * (100 + pct as u32) + 50) / 100) as u16
+}
+
+/// Supplément de coût (%) fixé à la pose d'un bâtiment (0 : aucun).
+#[inline]
+pub fn far_of(bb: &Building) -> u16 {
+    if is_far_priced(bb.kind) {
+        bb.lot
+    } else {
+        0
+    }
+}
+
+/// Coût d'une file posée d'un coup (aperçu) : [supplément le plus fort (%), puis objet, total, pour chaque
+/// objet du coût].
+pub fn line_cost(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> Vec<i32> {
+    let hearts = hearts(w, owner);
+    let pcts: Vec<u16> = cells.iter().map(|&(x, y, d)| far_pct(&hearts, kind, x, y, d)).collect();
+    let mut out = vec![pcts.iter().copied().max().unwrap_or(0) as i32];
+    for &(it, n) in bdef(kind).cost {
+        out.push(it as i32);
+        out.push(pcts.iter().map(|&p| far_cost(n, p) as i32).sum());
+    }
+    out
+}
+
 /// Croissance d'un organe en chantier (appelée par `update_buildings`, toutes les GROW_PERIOD ticks) : il
 /// tire le coût de son réseau au fur et à mesure ; sans réserve, il attend.
 pub fn grow(w: &mut World, b: usize) {
@@ -336,9 +417,10 @@ pub fn grow(w: &mut World, b: usize) {
     let bb = &w.buildings[b];
     let p2 = (bb.build + delta).min(BUILD_FULL);
     let net = bb.net;
+    let far = far_of(bb);
     let mut need = [0i32; 4];
     for (k, &(it, n)) in def.cost.iter().enumerate() {
-        let total = (n as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as i32;
+        let total = (far_cost(n, far) as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as i32;
         need[k] = total - bb.paid[k] as i32;
         if pool_of(w, net, it) < need[k] {
             w.buildings[b].stalled = true;
@@ -790,5 +872,5 @@ pub fn info(w: &World, b: usize) -> String {
     let adapt = if bb.kind == B_MATRIX { crate::essaim::adapt_info(w, bb.owner) } else { String::new() };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
     let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
-    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{}}}{}", bb.net, s, l, st, rs, rl, hatch, adapt)
+    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), adapt)
 }

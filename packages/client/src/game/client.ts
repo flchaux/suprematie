@@ -1854,6 +1854,7 @@ export class GameClient {
     this.ferryFrom = null;
     ui.mode = "";
     ui.buildKind = -1;
+    ui.lineCost = null;
     this.resetLine();
     this.scene?.hideGhost();
     this.plans.clear();
@@ -3009,7 +3010,19 @@ export class GameClient {
     // matériaux : disponible à portée du lieu (stocks à moins de 30 cases, réseau des relais, soutes des
     // constructeurs choisis) ; les cases de la file qu'il ne couvre plus (coût cumulé) sont ambre
     const reach = def.cost.length && ui.race === 0 ? await this.reachStock(cur.x + (def.w >> 1), cur.y + (def.h >> 1), this.data.depot?.near ?? 30, this.engineers()) : null;
+    // racines et rhizomes de la Souche : leur coût monte avec la distance à la graine-mère
+    const farPriced = (def.race ?? 0) === 1 && def.supply > 0 && def.key !== "seed_heart";
+    let lineCost: typeof ui.lineCost = null;
+    if (farPriced) {
+      const args = [ui.me, ui.buildKind];
+      cells.forEach((c, i) => okAt[i] && args.push(c.x, c.y, c.dir));
+      const v = (await this.query<number[]>("lineCost", args)) ?? [];
+      const cost: [number, number][] = [];
+      for (let i = 1; i + 1 < v.length; i += 2) cost.push([v[i], v[i + 1]]);
+      lineCost = args.length > 2 ? { n: (args.length - 2) / 3, cost, pct: v[0] ?? 0 } : null;
+    }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
+    ui.lineCost = lineCost;
     if (reach) {
       ui.buildReach = reach;
       ui.buildReachAt = "cursor";

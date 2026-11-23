@@ -475,16 +475,23 @@ fn deconstruct(w: &mut World, s: usize, b: usize) -> bool {
     let delta = (build_power(w, s) * 2 * BUILD_FULL as u64 / work).max(1) as u32;
     let bb = &mut w.buildings[b];
     let p2 = bb.build.saturating_sub(delta);
-    // ce qui est récupéré va dans la soute de l'ingénieur, sans plafond (remboursement)
+    // ce qui est récupéré va dans la soute de l'ingénieur, sans plafond (remboursement) ; la sève et les
+    // sels d'un organe de la Souche retournent à son réseau
+    let far = crate::souche::far_of(bb);
+    let net = if def.race == RACE_SOUCHE { bb.net } else { 0 };
     let mut back = [(0u8, 0u16); 4];
     for (k, &(it, n)) in def.cost.iter().enumerate() {
-        let total = (n as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as u16;
+        let total = (crate::souche::far_cost(n, far) as u64 * p2 as u64).div_ceil(BUILD_FULL as u64) as u16;
         let refund = bb.paid[k].saturating_sub(total);
         bb.paid[k] -= refund;
         back[k] = (it, refund);
     }
     for (it, n) in back {
-        crate::drones::put(&mut w.units.cold[s].hold, it, n);
+        if def.race == RACE_SOUCHE {
+            crate::souche::refund(w, net, it, n as i32);
+        } else {
+            crate::drones::put(&mut w.units.cold[s].hold, it, n);
+        }
     }
     let bb = &mut w.buildings[b];
     bb.build = p2;

@@ -474,6 +474,12 @@ pub fn refund(w: &mut World, p: u8, x: i32, y: i32, it: u8, n: u32) {
 
 /// Remboursement au plus près du bâtiment `b`.
 pub fn refund_at(w: &mut World, p: u8, b: usize, it: u8, n: u32) {
+    // organe de la Souche : sa sève et ses sels retournent à son réseau
+    if w.buildings[b].def().race == RACE_SOUCHE {
+        let net = w.buildings[b].net;
+        crate::souche::refund(w, net, it, n as i32);
+        return;
+    }
     let (x, y) = w.buildings[b].center();
     refund(w, p, x, y, it, n);
 }
@@ -1097,8 +1103,9 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
     let r = NEAR_SUPPLY * TILE;
     let mut out = Vec::new();
     if !bb.complete() {
+        let far = crate::souche::far_of(bb);
         for (k, &(it, n)) in bb.def().cost.iter().enumerate() {
-            let miss = (n as u32).saturating_sub(bb.paid[k] as u32);
+            let miss = (crate::souche::far_cost(n, far) as u32).saturating_sub(bb.paid[k] as u32);
             if miss > 0 {
                 out.push((it, miss, reach_amount(w, bb.owner, x, y, r, it)));
             }

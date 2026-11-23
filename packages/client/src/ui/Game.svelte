@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { BClass } from "@supreme/shared";
+  import { BClass, SEVE } from "@supreme/shared";
   import { ui } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
   import TopBar from "./TopBar.svelte";
@@ -12,6 +12,7 @@
   import Help from "./Help.svelte";
   import Recipes from "./Recipes.svelte";
   import Icon from "./Icon.svelte";
+  import Item from "./Item.svelte";
   import SplitIcon from "./SplitIcon.svelte";
   import EndReport from "./EndReport.svelte";
   import GameMenu from "./GameMenu.svelte";
@@ -81,7 +82,7 @@
     </div>
     {#if ui.mode}
       {@const m = MODE_LABEL[ui.mode]}
-      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt} (direction et virages automatiques d'après les tapis voisins ; {keyOf("rotate")} force la direction){/if}{/if}{#if ui.mode === "build" && ([BClass.Belt, BClass.Router, BClass.Inserter] as number[]).includes(ui.data?.buildings[ui.buildKind]?.cls ?? -1)}. Peut remplacer vos tapis{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
+      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt} (direction et virages automatiques d'après les tapis voisins ; {keyOf("rotate")} force la direction){/if}{/if}{#if ui.mode === "build" && ([BClass.Belt, BClass.Router, BClass.Inserter] as number[]).includes(ui.data?.buildings[ui.buildKind]?.cls ?? -1)}. Peut remplacer vos tapis{/if}{#if ui.mode === "build" && ui.lineCost}<b class="num nowrap linecost">· {ui.lineCost.n} {ui.data?.buildings[ui.buildKind]?.name.toLowerCase() ?? ""}{ui.lineCost.n > 1 ? "s" : ""} : {#each ui.lineCost.cost as [it, n]}<span class:bad={n > (it === SEVE ? ui.seve : ui.sels)}><Item id={it} {n} size={15} /></span>{/each}{#if ui.lineCost.pct}<span class="dim">(+{ui.lineCost.pct} %{ui.lineCost.n > 1 ? " au plus loin" : ""})</span>{/if}</b>{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
     {/if}
     <div class="messages">
       {#each ui.messages.filter((m) => now - m.time < 10000) as m (m.id)}
@@ -187,6 +188,8 @@
   .mode { position: absolute; top: calc(var(--topbar-h, 48px) + 12px); left: 50%; transform: translateX(-50%); padding: 7px 14px; display: flex; align-items: center; gap: 8px; color: var(--accent); }
   .mode :global(.key) { margin-left: 4px; }
   .nowrap { white-space: nowrap; }
+  .linecost { display: inline-flex; gap: 6px; align-items: center; }
+  .linecost .bad { color: var(--bad); }
   .messages { position: absolute; left: 10px; bottom: 252px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; max-width: 480px; }
   .msg {
     display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 9px;

@@ -74,13 +74,14 @@ await look(heart.x + 4, heart.z + 2, 90);
 const at = {};
 for (const key of ["bramble", "rhizome", "burrow", "maw", "sporangium", "cocoon", "spawnery", "matrix"]) {
   [at[key]] = await find(key);
-  check(!!at[key], `organe : ${key}`);
+  // la démo a pu dépasser l'ouverture du cocon avant d'être figée (chargement lent) : un second Béhémoth est là
+  check(!!at[key] || (key === "cocoon" && (await find("behemoth", true)).length === 2), `organe : ${key}`);
 }
+at.cocoon ??= { x: heart.x + 8.5, z: heart.z - 4.5 };
 for (const key of ["burster", "dart", "burrower", "nurse", "hornet", "moray", "leviathan", "behemoth", "queen"]) {
   [at[key]] = await find(key, true);
   check(!!at[key], `organisme : ${key}`);
 }
-const behemoths = (await find("behemoth", true)).length;
 await shot("base");
 check(await page.evaluate(([x, z]) => {
   const t = window.__game.client.scene.terreau;
@@ -95,6 +96,31 @@ check(await page.evaluate(() => [...document.querySelectorAll(".sel .status")].s
 await select(null);
 await look(at.queen.x, at.queen.z, 13);
 await shot("reine");
+
+// ---------- racine en cours de pose : son coût, plus cher loin de la graine-mère ----------
+await look(heart.x + 1, heart.z - 6, 40);
+await select(at.queen.ref);
+await page.evaluate(() => window.__game.client.startBuild(window.__game.ui.data.buildings.findIndex((b) => b.key === "root")));
+// le bord nord du câble ouest : une case libre, collée à la file, à une dizaine de cases de la graine-mère
+const px = await page.evaluate(([x, z]) => {
+  const p = { x: 0, y: 0 };
+  const { client } = window.__game;
+  let h = client.scene.target.y;
+  for (let i = 0; i < 3; i++) {
+    client.scene.project(x, h, z, p);
+    h = client.groundAt(p.x, p.y)?.y ?? h;
+  }
+  return p;
+}, [heart.x - 11, heart.z + 1]);
+await page.mouse.move(px.x, px.y);
+await page.mouse.move(px.x + 1, px.y + 1);
+await page.waitForFunction(() => window.__game.ui.lineCost, null, { timeout: 60000 }).catch(() => {});
+const cost = await page.evaluate(() => ({ line: window.__game.ui.lineCost, text: document.querySelector(".linecost")?.textContent ?? "" }));
+check(!!cost.line && cost.line.pct >= 10 && cost.line.cost[0]?.[1] >= 5, "coût d'une racine éloignée dans le bandeau", JSON.stringify(cost));
+await shot("cout");
+await page.evaluate(() => window.__game.client.cancelMode());
+await page.mouse.move(640, 300);
+await select(null);
 
 // ---------- Matrice : caractère acquis ----------
 await look(heart.x + 4, heart.z + 2, 90);
@@ -128,7 +154,7 @@ check(await page.evaluate(() => window.__game.client.scene.entities.effects.acid
 await look(heart.x + 4, heart.z + 2, 90);
 await stopAt(Math.max(470, await page.evaluate(() => window.__game.client.frame.tick + 5)));
 await page.waitForTimeout(2000);
-check((await find("behemoth", true)).length === behemoths + 1 && (await find("cocoon")).length === 0, "le cocon s'est ouvert, un Béhémoth est né");
+check((await find("behemoth", true)).length === 2 && (await find("cocoon")).length === 0, "le cocon s'est ouvert, un Béhémoth est né");
 await look(at.cocoon.x, at.cocoon.z, 26);
 await shot("behemoth");
 

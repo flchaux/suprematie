@@ -7,7 +7,7 @@ type In =
   | { type: "snapshot"; wasmUrl: string; tick: number; data: Uint8Array }
   | { type: "tick"; tick: number; orders: number[] }
   | { type: "view"; x0: number; y0: number; x1: number; y1: number; detail: number; player: number }
-  | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "twinPreview" | "reachStock" | "wreckAt" | "orders" | "planned" | "researchQueue" | "powerZones" | "zoneEconomy" | "beltPath"; a: number[] }
+  | { type: "query"; reqId: number; q: "building" | "unit" | "canPlace" | "buildingAt" | "canPlaceMany" | "lineCost" | "twinPreview" | "reachStock" | "wreckAt" | "orders" | "planned" | "researchQueue" | "powerZones" | "zoneEconomy" | "beltPath"; a: number[] }
   | { type: "replay"; speed: number }
   | { type: "replayEnd"; tick: number }
   | { type: "pause"; paused: boolean }
@@ -121,6 +121,7 @@ onmessage = async (e: MessageEvent<In>) => {
       else if (m.q === "powerZones") result = sim.powerZones(m.a[0]);
       else if (m.q === "zoneEconomy") result = sim.zoneEconomy(m.a[0], m.a[1], m.a[2]);
       else if (m.q === "beltPath") result = sim.beltPath(m.a[0]);
+      else if (m.q === "lineCost") result = sim.lineCost(m.a);
       else if (m.q === "twinPreview") result = Array.from(sim.twinPreview(m.a));
       else if (m.q === "reachStock") result = Array.from(sim.reachStock(m.a));
       else if (m.q === "canPlaceMany") {

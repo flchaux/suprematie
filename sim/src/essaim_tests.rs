@@ -659,3 +659,78 @@ fn essaim_demo_shows_every_new_organ_and_organism() {
     assert!(w.wrecks.iter().any(|k| k.alive), "la panse n'a pas fini ses épaves");
     assert!((0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_BEHEMOTH).count() >= 2, "le cocon s'est ouvert");
 }
+
+// ---------- Coût des racines ----------
+
+/// Racines et rhizomes : 2 % de plus par case de distance à la graine-mère poussée la plus proche, fixé à
+/// la pose ; le réseau paie ce prix, l'annulation le rend.
+#[test]
+fn far_roots_cost_more() {
+    let mut w = game();
+    let (heart, hx, hy) = base(&mut w, 60);
+    let q = w.unit(w.players[0].commander).unwrap();
+    w.units.cold[q].stun = 60_000;
+    let line = roots(&mut w, hx + 3, hy + 1, 1, 50);
+    assert_eq!(w.buildings[line[0]].lot, 2, "collée : une case");
+    assert_eq!(w.buildings[line[9]].lot, 20, "dix cases : +20 %");
+    assert_eq!(w.buildings[line[49]].lot, 100, "cinquante cases : le double");
+    // distance comptée comme un câble : à l'horizontale puis à la verticale
+    let h = souche::hearts(&w, 0);
+    assert_eq!(souche::heart_dist(&h, hx + 12, hy + 12, 1, 1), 20);
+    assert_eq!(souche::heart_dist(&h, hx - 3, hy, 2, 2), 2, "emprise contre emprise");
+    // ce que paie le réseau : la case suivante (51 cases, +102 %) coûte 8 sève au lieu de 4
+    fill(&mut w, heart, 500, 100);
+    let before = w.players[0].consumed[SEVE as usize];
+    let far = place_building(&mut w, 0, B_ROOT, hx + 53, hy + 1, 0).expect("racine au bout");
+    rebuild_power(&mut w);
+    steps(&mut w, 200);
+    assert!(w.buildings[far].complete());
+    assert_eq!(w.players[0].consumed[SEVE as usize] - before, 8);
+    assert_eq!(w.buildings[far].paid[0], 8);
+    // aperçu d'une file : le total et le supplément le plus fort
+    let cells: Vec<(i32, i32, u8)> = (0..3).map(|k| (hx + 3 + k, hy + 1, 0)).collect();
+    assert_eq!(souche::line_cost(&w, 0, B_ROOT, &cells), vec![6, SEVE as i32, 12]);
+    let cells: Vec<(i32, i32, u8)> = (0..3).map(|k| (hx + 54 + k, hy + 1, 0)).collect();
+    assert_eq!(souche::line_cost(&w, 0, B_ROOT, &cells), vec![108, SEVE as i32, 24]);
+    // les autres organes gardent leur prix
+    assert_eq!(souche::far_pct(&h, B_LEAVES, hx + 40, hy, 0), 0);
+    assert_eq!(souche::far_pct(&h, B_RHIZOME, hx + 12, hy, 0), 20);
+    // une seconde graine-mère poussée près du bout : les racines suivantes repartent de leur prix de base,
+    // celles déjà posées gardent le leur
+    let h2 = put(&mut w, 0, B_SEED_HEART, hx + 54, hy + 4);
+    assert!(w.buildings[h2].complete());
+    let near = place_building(&mut w, 0, B_ROOT, hx + 54, hy + 1, 0).expect("racine près de la seconde");
+    assert_eq!(w.buildings[near].lot, 6);
+    assert_eq!(w.buildings[line[49]].lot, 100);
+    // relue d'une sauvegarde, elle garde son prix
+    let r = crate::save::restore(&crate::save::snapshot(&w)).expect("relue");
+    assert_eq!(r.buildings[line[49]].lot, 100);
+}
+
+/// Un organe annulé en pleine croissance, ou démonté, rend sa sève à son réseau.
+#[test]
+fn cancelled_and_dismantled_organs_give_their_sap_back() {
+    let mut w = game();
+    let (heart, hx, hy) = base(&mut w, 12);
+    fill(&mut w, heart, 400, 200);
+    let b = place_building(&mut w, 0, B_BROOD, hx + 4, hy, 0).expect("couveuse");
+    steps(&mut w, 150);
+    assert!(w.buildings[b].paid[0] > 20 && !w.buildings[b].complete());
+    let paid = w.buildings[b].paid[0] as i32;
+    let before = seve(&w, heart);
+    let r = w.building_ref(b) as i32;
+    order(&mut w, 0, crate::orders::O_CANCEL, &[r]);
+    assert!(!w.buildings[b].alive);
+    assert!(seve(&w, heart) >= before + paid, "{} + {paid} → {}", before, seve(&w, heart));
+    // démonté par un semeur : le réseau récupère tout, rien ne reste dans la soute du semeur
+    let l = put(&mut w, 0, B_LEAVES, hx + 3, hy);
+    w.buildings[l].paid = [40, 10, 0, 0];
+    let s = unit(&mut w, U_SOWER, 0, hx + 5, hy + 3);
+    let (sid, r) = (w.unit_id(s) as i32, w.building_ref(l) as i32);
+    fill(&mut w, heart, 100, 0);
+    order(&mut w, 0, crate::orders::O_RECLAIM, &[0, r, 1, sid]);
+    steps(&mut w, 200);
+    assert!(!w.buildings[l].alive, "démontée");
+    assert!(seve(&w, heart) >= 140, "sève rendue : {}", seve(&w, heart));
+    assert!(w.units.cold[s].hold.iter().all(|&n| n == 0));
+}

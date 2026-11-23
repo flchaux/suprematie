@@ -275,6 +275,24 @@ pub extern "C" fn can_place_line(n_words: u32) -> *const u8 {
     set_out_i32(&v)
 }
 
+/// Coût d'une file posée d'un coup (voir souche::line_cost). Tampon d'entrée (i32) : [joueur, type, puis
+/// (x, y, dir)…] ; renvoie [supplément le plus fort (%), puis objet, total, pour chaque objet du coût].
+#[no_mangle]
+pub extern "C" fn line_cost(n_words: u32) -> *const u8 {
+    let a = read_i32s(n_words);
+    let v = with_world(
+        |w| {
+            if a.len() < 2 || a[0] < 0 || a[1] < 0 || a[1] as usize >= data::BUILDINGS.len() || a[0] as usize >= w.players.len() {
+                return Vec::new();
+            }
+            let cells: Vec<(i32, i32, u8)> = a[2..].chunks_exact(3).map(|c| (c[0], c[1], c[2] as u8)).collect();
+            souche::line_cost(w, a[0] as u8, a[1] as u16, &cells)
+        },
+        Vec::new(),
+    );
+    set_out_i32(&v)
+}
+
 /// Bâtiment sur une case : kind+1 | propriétaire<<8 | direction<<16 | (complet)<<20, ou 0.
 #[no_mangle]
 pub extern "C" fn tile_info(x: i32, y: i32) -> i32 {
