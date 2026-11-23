@@ -1648,7 +1648,7 @@ export class Planner {
       for (const [x, y] of front(c.d)) if (this.plan[this.idx(x, y)] !== P_BLD) block(x, y);
       const path = this.astar(c.bx, c.by, m, net, maxNodes, best ? best.path.length : 1e9);
       for (let k = saved.length - 1; k >= 0; k--) this.plan[saved[k][0]] = saved[k][1];
-      if (path && (!best || path.length < best.path.length)) best = { c, path };
+      if (path && !this.startLeaks(path, net) && (!best || path.length < best.path.length)) best = { c, path };
     }
     if (!best) {
       // détail des positions de fonderie refusées (plan des cases, pose possible)
@@ -1722,7 +1722,7 @@ export class Planner {
       }
       if (!this.beltFree(fx, fy)) continue;
       const path = this.astar(fx, fy, m, net, maxNodes, best ? best.path.length : 1e9);
-      if (path && (!best || path.length < best.path.length)) best = { dir, path };
+      if (path && !this.startLeaks(path, net) && (!best || path.length < best.path.length)) best = { dir, path };
     }
     if (!best) return null;
     const places: Placement[] = [];
@@ -1733,6 +1733,26 @@ export class Planner {
     places.push(...this.ensurePower(sx, sy, 2, 2));
     m.feeders++;
     return places;
+  }
+
+  /**
+   * Le premier tapis de ce chemin d'amenée (un début de file) serait-il une sortie d'un dépôt de module ou
+   * d'arsenal ? Oui s'il part d'une face du dépôt (son arrière la touche) ou la longe (dépôt sur un côté) :
+   * la simulation y pose alors le stock du dépôt, à la cadence du tapis (`takes_from_face`, `tick_depot`).
+   * Ce stock repart en boucle sur le tapis principal et manque aux chantiers. Un tapis qui entre dans le
+   * dépôt par son avant ne reçoit rien.
+   */
+  startLeaks(path: number[], net: number): boolean {
+    if (!path.length) return false;
+    const x = path[0] % this.w;
+    const y = (path[0] / this.w) | 0;
+    const d = path.length > 1 ? dirOf((path[1] % this.w) - x, ((path[1] / this.w) | 0) - y) : this.endDir(x, y, net);
+    for (const side of [d + 1, d + 2, d + 3]) {
+      const nx = x + DX[side & 3];
+      const ny = y + DY[side & 3];
+      if (this.inside(nx, ny) && this.plan[this.idx(nx, ny)] === P_DEPOT) return true;
+    }
+    return false;
   }
 
   endDir(x: number, y: number, net: number): number {

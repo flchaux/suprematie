@@ -1109,8 +1109,30 @@ pub fn share_weights(w: &World, takers: &[usize]) -> Vec<u64> {
 
 const SHARE_STRIDE: u64 = 1 << 32;
 
-/// Le bras `c` est-il prêt à prendre l'objet `it` (main vide, au repos, cible qui l'accepte) ?
-fn taker_ready(w: &World, c: usize, it: u8) -> bool {
+/// Stock où un bras choisit parmi plusieurs objets (dépôt, entrepôt d'équipe, gare, héliport), par
+/// opposition au fabricant et à l'extracteur, qui n'ont qu'un produit.
+fn is_stock(c: BClass) -> bool {
+    matches!(c, BClass::Depot | BClass::Warehouse | BClass::Station | BClass::CargoPad)
+}
+
+/// Le stock `sb` a-t-il en sortie un objet que `want` accepte ? Même choix que `take_output`, sans rien
+/// prendre : les objets en sortie d'un dépôt (filtrés, ou tout son stock), l'objet choisi d'un entrepôt,
+/// les objets reçus d'une gare.
+fn offers(w: &World, sb: usize, want: &dyn Fn(u8) -> bool) -> bool {
+    let bb = &w.buildings[sb];
+    match bb.def().class {
+        BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::offers(w, sb, want),
+        BClass::Depot if bb.filters.is_empty() => (1..NUM_ITEMS as u8).any(|it| crate::drones::has(&bb.stash, it) > 0 && want(it)),
+        BClass::Depot => bb.filters.iter().any(|&it| it != 0 && crate::drones::has(&bb.stash, it) > 0 && want(it)),
+        _ => false,
+    }
+}
+
+/// Le bras `c` est-il prêt à prendre à sa source `sb` (main vide, au repos, cible qui accepte l'objet ;
+/// sans courant, seulement du combustible) ? `it` : le produit de la source, 0 si elle n'en a pas
+/// d'unique. Autour d'un stock (`is_stock`), le bras n'est prêt que si le stock a en sortie un objet que
+/// sa cible accepte : sinon il ne prendrait pas son tour et bloquerait les autres bras du stock.
+fn taker_ready(w: &World, sb: usize, c: usize, it: u8) -> bool {
     let cb = &w.buildings[c];
     if cb.phase != 0 || cb.hand != 0 {
         return false;
@@ -1124,7 +1146,21 @@ fn taker_ready(w: &World, c: usize, it: u8) -> bool {
         return false;
     }
     let t = (o - 1) as usize;
-    w.buildings[t].complete() && (it == 0 || w.buildings[t].def().class == BClass::Belt || accepts(w, t, it))
+    if !w.buildings[t].complete() {
+        return false;
+    }
+    let belt = w.buildings[t].def().class == BClass::Belt;
+    let powered = arm_powered(w, c);
+    let takes = |i: u8| (powered || is_fuel(i)) && (belt || accepts(w, t, i));
+    if it != 0 {
+        takes(it)
+    } else if is_stock(w.buildings[sb].def().class) {
+        offers(w, sb, &takes)
+    } else {
+        // fabricant ou extracteur sans produit pour l'instant : le bras garde son tour, et ceux qui
+        // attendent derrière lui reviennent le réveiller (voir `share_turn`)
+        powered
+    }
 }
 
 /// Satisfaction électrique minimale (sur 1024) pour qu'un bras travaille.
@@ -1136,13 +1172,13 @@ fn arm_powered(w: &World, c: usize) -> bool {
     n != 0 && n < w.nets.len() && w.nets[n].sat >= ARM_MIN_SAT
 }
 
-/// La sortie `c` de `sb` (bras, tapis ou voisin collé) peut-elle recevoir l'objet `it` maintenant ? Un
-/// bras sans courant ne compte pas : il ne prendrait jamais son tour et bloquerait les autres sorties.
+/// La sortie `c` de `sb` (bras, tapis ou voisin collé) peut-elle recevoir l'objet `it` maintenant (0 : un
+/// objet en sortie de `sb`, quel qu'il soit) ? Un bras sans courant ne compte pas, sauf pour du
+/// combustible : il ne prendrait jamais son tour et bloquerait les autres sorties.
 fn outlet_ready(w: &World, sb: usize, c: usize, it: u8) -> bool {
     match w.buildings[c].def().class {
         BClass::Belt => belts::belt_has_room(w, c),
-        // un bras sans courant prend quand même son tour pour du combustible
-        BClass::Inserter => (arm_powered(w, c) || is_fuel(it)) && taker_ready(w, c, it),
+        BClass::Inserter => taker_ready(w, sb, c, it),
         _ => direct_ok(w, sb, c, it),
     }
 }
@@ -1151,7 +1187,10 @@ fn outlet_ready(w: &World, sb: usize, c: usize, it: u8) -> bool {
  * Tour de rôle (ordonnancement à pas pondérés) entre les sorties de `sb` (bras et tapis) : parmi
  * celles qui sont prêtes (et `me`, qui l'est), celle dont le compteur est le plus bas reçoit l'objet ;
  * son compteur avance de STRIDE / poids. Une sortie restée inactive repart du temps virtuel de la
- * source (pas de crédit accumulé). Renvoie la sortie choisie et son pas (0 : sortie unique).
+ * source (pas de crédit accumulé). Autour d'un stock (dépôt, entrepôt, gare), un bras n'est prêt que
+ * s'il a quelque chose à y prendre (`taker_ready`) : celui dont la cible ne veut rien du stock laisse
+ * passer les autres.
+ * Renvoie la sortie choisie et son pas (0 : sortie unique).
  */
 fn next_outlet(w: &World, sb: usize, outs: &[usize], me: Option<usize>) -> Option<(usize, u64)> {
     let it = output_of(&w.buildings[sb]);
@@ -1162,11 +1201,12 @@ fn next_outlet(w: &World, sb: usize, outs: &[usize], me: Option<usize>) -> Optio
     let v = w.buildings[sb].vpass;
     let mut best: Option<(usize, u64, u64)> = None;
     for (i, &c) in outs.iter().enumerate() {
-        if Some(c) != me && !outlet_ready(w, sb, c, it) {
+        // le compteur d'abord : une sortie qui ne passerait pas devant n'a pas à être examinée
+        let k = w.buildings[c].pass.max(v);
+        if best.is_some_and(|(_, bk, _)| k >= bk) {
             continue;
         }
-        let k = w.buildings[c].pass.max(v);
-        if best.is_none_or(|(_, bk, _)| k < bk) {
+        if Some(c) == me || outlet_ready(w, sb, c, it) {
             best = Some((c, k, SHARE_STRIDE / weights[i]));
         }
     }
@@ -1783,6 +1823,10 @@ pub fn insert_item(w: &mut World, b: usize, item: u8) {
         }
         _ => {}
     }
+    // un objet qui manquait au stock : les bras qui attendaient de quoi se servir se réveillent
+    if matches!(class, BClass::Depot | BClass::Warehouse) && crate::drones::has(&w.buildings[b].stash, item) == 1 {
+        wake_watchers(w, b);
+    }
     w.buildings[b].wake = 0;
 }
 
@@ -2257,26 +2301,47 @@ fn depot_take(w: &mut World, b: usize, want: &dyn Fn(u8) -> bool) -> u8 {
     0
 }
 
+/// Attente d'un dépôt qui n'a rien à poser, ou dont les tapis de sortie sont bouchés (ticks).
+const DEPOT_IDLE: u32 = 20;
+
 /**
  * Dépôt : il pose ses objets (filtrés, ou tous sans filtre), pris dans son stock à tour de rôle, sur les
- * tapis qui partent de ses faces ; sinon il dort.
+ * tapis qui partent de ses faces ; sinon il dort. Il revient dès qu'un de ses tapis a de nouveau la
+ * place (`belts::room_wait` : le temps que l'objet posé s'écarte, 3 ticks sur un tapis simple), et ne
+ * dort `DEPOT_IDLE` ticks que s'il n'a rien à poser ou que ses tapis sont bouchés : un tapis de sortie
+ * qui s'écoule se remplit à sa pleine cadence.
  */
 fn tick_depot(w: &mut World, b: usize) {
     let belts = out_belts(w, b);
     let mut any = false;
+    // délai le plus court avant qu'un tapis de sortie ait de nouveau la place (None : tous bouchés)
+    let mut soon: Option<u32> = None;
+    let mut empty = false;
     for t in belts.iter().copied() {
-        if !belts::belt_has_room(w, t) {
-            continue;
+        let mut wait = belts::room_wait(w, t);
+        if wait == Some(0) {
+            let it = depot_take(w, b, &|_| true);
+            if it == 0 {
+                empty = true;
+                break;
+            }
+            belts::put_on_belt(w, t, it);
+            any = true;
+            wait = belts::room_wait(w, t);
         }
-        let it = depot_take(w, b, &|_| true);
-        if it == 0 {
-            break;
+        if let Some(n) = wait {
+            soon = Some(soon.map_or(n, |s| s.min(n)));
         }
-        belts::put_on_belt(w, t, it);
-        any = true;
     }
     w.buildings[b].working = any;
-    w.buildings[b].wake = w.tick + if belts.is_empty() { SLEEP } else if any { 2 } else { 20 };
+    w.buildings[b].wake = w.tick
+        + if belts.is_empty() {
+            SLEEP
+        } else if empty {
+            DEPOT_IDLE
+        } else {
+            soon.map_or(DEPOT_IDLE, |n| n.clamp(1, DEPOT_IDLE))
+        };
 }
 
 fn tick_extractor(w: &mut World, b: usize) {
