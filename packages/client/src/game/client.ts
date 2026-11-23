@@ -576,6 +576,18 @@ export class GameClient {
       this.queryZone(sc);
       if (!(ui.mode === "build" && this.ghostCells.length)) this.queryBuildReach(sc);
     }
+    // Souche : herbe mangée, redemandée quand elle change (et de temps en temps : territoire découvert)
+    const cover = sc.terreau;
+    if (this.frame && cover && (this.frame.soilN > 0 || this.soilSeen > 0)) {
+      const fresh = this.soilFor !== cover;
+      const wait = fresh ? 0 : this.frame.soilN !== this.soilSeen ? 900 : 6000;
+      if (now - this.lastSoil > wait) {
+        this.lastSoil = now;
+        this.soilSeen = this.frame.soilN;
+        this.soilFor = cover;
+        void this.query<Int32Array>("soil", [ui.spectator ? -1 : ui.me]).then((runs) => runs && this.scene?.terreau === cover && cover.setSoil(runs));
+      }
+    }
     // zones électriques : vue électrique (touche maintenue) ou pose d'un bâtiment qui consomme ou alimente
     const pv = keymap.held("powerView", this.keys);
     if (pv !== ui.powerView) ui.powerView = pv;
@@ -975,6 +987,25 @@ export class GameClient {
           this.alertPos = { x, z };
           break;
         }
+        case EV.GRAZE:
+          if (seen(a / TILE, c / TILE)) fx?.graze(a / TILE, c / TILE);
+          break;
+        case EV.SPENT:
+          // organes épuisés : une annonce groupée, au plus toutes les 8 s
+          if (e === ui.me) {
+            this.spent.set(d, (this.spent.get(d) ?? 0) + 1);
+            this.alertPos = { x: a / TILE, z: c / TILE };
+            if (!this.spentTimer) {
+              this.spentTimer = window.setTimeout(() => {
+                const list = [...this.spent].map(([k, n]) => `${n} ${this.data?.buildings[k]?.key === "taproot" ? (n > 1 ? "racines-puits" : "racine-puits") : n > 1 ? "frondaisons" : "frondaison"}`).join(", ");
+                const many = [...this.spent.values()].reduce((x, y) => x + y, 0) > 1;
+                pushMessage(`${list} ${many ? "épuisées" : "épuisée"} : plus d'herbe autour, étendez votre réseau (Espace pour y aller)`, "alert");
+                this.spent.clear();
+                this.spentTimer = 0;
+              }, 1500);
+            }
+          }
+          break;
         case EV.DIGEST: {
           const x = a / TILE, z = c / TILE;
           if (seen(x, z)) fx?.digest(x, z, (d & 0xffff) + 1, ((d >>> 16) & 0xffff) + 1);
@@ -1855,6 +1886,7 @@ export class GameClient {
     ui.mode = "";
     ui.buildKind = -1;
     ui.lineCost = null;
+    ui.grass = null;
     this.resetLine();
     this.scene?.hideGhost();
     this.plans.clear();
@@ -3010,6 +3042,16 @@ export class GameClient {
     // matériaux : disponible à portée du lieu (stocks à moins de 30 cases, réseau des relais, soutes des
     // constructeurs choisis) ; les cases de la file qu'il ne couvre plus (coût cumulé) sont ambre
     const reach = def.cost.length && ui.race === 0 ? await this.reachStock(cur.x + (def.w >> 1), cur.y + (def.h >> 1), this.data.depot?.near ?? 30, this.engineers()) : null;
+    // frondaison, racine-puits : l'herbe qu'elle aura à manger autour d'elle
+    let grass: typeof ui.grass = null;
+    let grassR = 0;
+    if (def.key === "leaves" || def.key === "taproot") {
+      const v = (await this.query<number[]>("soilPreview", [ui.buildKind, cells[0].x, cells[0].y])) ?? [];
+      if (v.length === 4) {
+        grass = { left: v[0], total: v[1], secs: v[2] };
+        grassR = v[3] + 0.5;
+      }
+    }
     // racines et rhizomes de la Souche : leur coût monte avec la distance à la graine-mère
     const farPriced = (def.race ?? 0) === 1 && def.supply > 0 && def.key !== "seed_heart";
     let lineCost: typeof ui.lineCost = null;
@@ -3023,6 +3065,7 @@ export class GameClient {
     }
     if (seq !== this.ghostSeq || ui.mode !== "build") return;
     ui.lineCost = lineCost;
+    ui.grass = grass;
     if (reach) {
       ui.buildReach = reach;
       ui.buildReachAt = "cursor";
@@ -3043,7 +3086,7 @@ export class GameClient {
     const wpn = def.weapon >= 0 ? this.data.weapons[def.weapon] : null;
     // portée : arme, radar, bouclier ; relais logistique : sa zone (dépôts du réseau, destinations servies)
     const relayR = def.cls === BClass.Relay ? (this.data.depot?.relayRange ?? 0) : 0;
-    this.scene.showRange(cur.x + def.w / 2, cur.y + def.h / 2, wpn ? wpn.range : def.radar || def.shieldR || relayR);
+    this.scene.showRange(cur.x + def.w / 2, cur.y + def.h / 2, wpn ? wpn.range : def.radar || def.shieldR || relayR || grassR);
   }
 
   private placeBuildings(shift: boolean): void {
@@ -3413,6 +3456,12 @@ export class GameClient {
   giftTimer = 0;
   /** butin des Transhumants pas encore annoncé (objets) */
   loot = 0;
+  /** Souche : organes épuisés à annoncer (type -> nombre) ; sol mangé : nombre connu, dernière demande, couverture servie */
+  private spent = new Map<number, number>();
+  private spentTimer = 0;
+  private soilSeen = -1;
+  private lastSoil = 0;
+  private soilFor: unknown = null;
   lootTimer = 0;
 
   /** Gare ou héliport sélectionné : retire ses véhicules (relier le bâtiment à lui-même). */

@@ -663,6 +663,7 @@ export class GameScene {
       // les roches hautes d'un gisement disparaissent sous le bâtiment qui le recouvre
       this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }
+    if (this.decor) this.decor.terreau = this.terreau;
     this.decor?.update(frame, this.camera, this.distance, this.strategic, view, this.target, this.time);
     // portées de la sélection (trait d'environ 2 pixels) et pings
     const px = worldPerPixel(this.distance, this.camera.fov, this.canvasParent.clientHeight || innerHeight);

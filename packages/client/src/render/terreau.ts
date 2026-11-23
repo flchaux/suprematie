@@ -4,7 +4,7 @@
 // Le grain vient des textures du sol (terre nue et herbe dense, voir terreauLayers dans ground.ts) : même
 // définition que le reste du sol. La couverture est une carte à deux texels par case, adoucie (coins
 // arrondis), lue avec un décalage bruité ; le bord suit en plus le relief de la texture, au pixel près.
-// Recalculée seulement quand les poteaux poussés connus changent.
+// Tenue à jour là où un poteau pousse ou meurt, et case par case là où l'herbe est mangée.
 import * as THREE from "three/webgpu";
 import { texture, positionWorld, vec2, vec3, mix, uniform, float, smoothstep, mx_noise_float, abs, clamp, fwidth } from "three/tsl";
 import { BUILDING_WORDS } from "@supreme/shared";
@@ -98,17 +98,36 @@ export function applyTerreau<T>(input: T, textured = false): T {
   return mix(edged, lit, k) as unknown as T;
 }
 
-/** Couverture du terreau : RES x RES texels par case (255 : terreau), d'après les poteaux de la Souche de la trame. */
+/** Secondes qu'une case mangée met à passer de l'herbe au terreau. */
+const GROW = 3;
+/** Période des relevés et des fondus, en secondes. */
+const STEP = 0.2;
+
+/**
+ * Couverture du terreau : RES x RES texels par case (255 : terreau), d'après les poteaux de la Souche de la
+ * trame et l'herbe mangée (sim/src/soil.rs). Tenue à jour rectangle par rectangle : seul ce qui change est
+ * adouci de nouveau.
+ */
 export class TerreauCover {
   tex: THREE.DataTexture;
   data: Uint8Array;
   /** texels par case */
   readonly res = RES;
+  /** augmente quand du terreau apparaît ou disparaît (plantes du décor à masquer) */
+  changes = 0;
   private w: number;
   private h: number;
+  private cw: number;
+  private ch: number;
+  /** couverture avant adoucissement */
+  private raw: Uint8Array;
   private tmp: Uint8Array;
   private version = -1;
   private wait = 0;
+  /** herbe mangée, par case (1 : mangée) ; null tant qu'on ne l'a pas reçue */
+  private soil: Uint8Array | null = null;
+  /** cases qui passent de l'herbe au terreau : avancement 0..255 */
+  private growing = new Map<number, number>();
   /**
    * Poteaux poussés connus (référence -> emprise et portée ; `miss` : relevés où il manquait alors que sa
    * case était à l'écran). La trame ne contient que la zone vue, et pas les racines de très loin : ce qui
@@ -117,9 +136,12 @@ export class TerreauCover {
   private known = new Map<number, { x: number; z: number; w: number; h: number; s: number; miss: number }>();
 
   constructor(w: number, h: number) {
+    this.cw = w;
+    this.ch = h;
     this.w = w * RES;
     this.h = h * RES;
     this.data = new Uint8Array(this.w * this.h);
+    this.raw = new Uint8Array(this.w * this.h);
     this.tmp = new Uint8Array(this.w * this.h);
     this.tex = new THREE.DataTexture(this.data, this.w, this.h, THREE.RedFormat, THREE.UnsignedByteType);
     this.tex.magFilter = THREE.LinearFilter;
@@ -130,18 +152,54 @@ export class TerreauCover {
     terreauShow.value = 0;
   }
 
+  /** Terreau sur la case (x, z) ? */
+  at(x: number, z: number): boolean {
+    if (x < 0 || z < 0 || x >= this.cw || z >= this.ch) return false;
+    return this.data[(z * RES + (RES >> 1)) * this.w + x * RES + (RES >> 1)] > 120;
+  }
+
+  /** Herbe mangée, reçue de la simulation : suites [longueur << 8 | joueur + 1]. Les nouvelles cases fondent. */
+  setSoil(runs: Int32Array | number[]): void {
+    const n = this.cw * this.ch;
+    const first = this.soil === null;
+    const old = this.soil;
+    const soil = new Uint8Array(n);
+    let i = 0;
+    for (const v of runs) {
+      const len = v >>> 8;
+      if (v & 0xff) soil.fill(1, i, Math.min(n, i + len));
+      i += len;
+    }
+    let gone = false;
+    for (let k = 0; k < n; k++) {
+      const was = old ? old[k] : 0;
+      if (soil[k] === was) continue;
+      if (was) {
+        // replay, partie relue : de l'herbe est revenue
+        gone = true;
+        this.growing.delete(k);
+      } else if (!first) this.growing.set(k, 1);
+    }
+    this.soil = soil;
+    if (first || gone) this.rebuild(0, 0, this.cw, this.ch);
+  }
+
   /**
-   * Recalcule la couverture quand les poteaux connus ont changé (relevé de la trame à chaque changement de
-   * bâtiments, et au plus toutes les 0,3 s). `view` : zone à l'écran [x0, z0, x1, z1] ; `detailed` : la trame
-   * contient les racines (pas la vue stratégique).
+   * Relevé des poteaux de la trame et avance des fondus (au plus toutes les 0,2 s). `view` : zone à l'écran
+   * [x0, z0, x1, z1] ; `detailed` : la trame contient les racines (pas la vue stratégique).
    */
   update(f: Frame, data: GameData, dt: number, view: [number, number, number, number], detailed: boolean): void {
     this.wait -= dt;
-    if (f.buildingsVersion === this.version && this.wait > 0) return;
+    const due = this.wait <= 0;
+    if (!due && f.buildingsVersion === this.version) return;
+    if (due) this.wait = STEP;
+    if (due || f.buildingsVersion !== this.version) this.poles(f, data, view, detailed);
     this.version = f.buildingsVersion;
-    this.wait = 0.3;
+    if (due) this.fade();
+  }
+
+  private poles(f: Frame, data: GameData, view: [number, number, number, number], detailed: boolean): void {
     const buf = f.buf;
-    let dirty = false;
     for (const p of this.known.values()) p.miss++;
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const d = data.buildings[buf[o + 1] & 0xff];
@@ -150,8 +208,9 @@ export class TerreauCover {
       const p = this.known.get(ref);
       if (p) p.miss = 0;
       else {
-        this.known.set(ref, { x: buf[o + 2] & 0xffff, z: (buf[o + 2] >>> 16) & 0xffff, w: d.w, h: d.h, s: d.supply, miss: 0 });
-        dirty = true;
+        const q = { x: buf[o + 2] & 0xffff, z: (buf[o + 2] >>> 16) & 0xffff, w: d.w, h: d.h, s: d.supply, miss: 0 };
+        this.known.set(ref, q);
+        this.rebuild(q.x - q.s, q.z - q.s, q.x + q.w + q.s, q.z + q.h + q.s);
       }
     }
     for (const [ref, p] of this.known) {
@@ -161,45 +220,91 @@ export class TerreauCover {
       if (p.miss > 0 && !inView) p.miss = 0;
       else if (p.miss >= 3) {
         this.known.delete(ref);
-        dirty = true;
+        this.rebuild(p.x - p.s, p.z - p.s, p.x + p.w + p.s, p.z + p.h + p.s);
       }
     }
-    if (!dirty) return;
+  }
+
+  /** Fondu des cases mangées. */
+  private fade(): void {
+    if (!this.growing.size) return;
+    const step = Math.ceil((255 * STEP) / GROW);
+    for (const [k, v] of this.growing) {
+      const nv = Math.min(255, v + step);
+      if (nv >= 255) this.growing.delete(k);
+      else this.growing.set(k, nv);
+      const x = k % this.cw;
+      const z = (k / this.cw) | 0;
+      // sous la zone d'un poteau, la case est déjà du terreau
+      if (this.raw[z * RES * this.w + x * RES] < nv) {
+        for (let dz = 0; dz < RES; dz++) this.raw.fill(nv, (z * RES + dz) * this.w + x * RES, (z * RES + dz) * this.w + (x + 1) * RES);
+        this.blur(x * RES, z * RES, (x + 1) * RES, (z + 1) * RES);
+      }
+      if (v < 128 && nv >= 128) this.changes++;
+    }
+    this.tex.needsUpdate = true;
+    terreauShow.value = 1;
+  }
+
+  /** Refait la couverture d'un rectangle de cases (bornes exclues à droite) d'après les poteaux et l'herbe mangée. */
+  private rebuild(cx0: number, cz0: number, cx1: number, cz1: number): void {
+    const x0 = Math.max(0, cx0), z0 = Math.max(0, cz0), x1 = Math.min(this.cw, cx1), z1 = Math.min(this.ch, cz1);
+    if (x0 >= x1 || z0 >= z1) return;
+    const W = this.w;
+    const raw = this.raw;
+    for (let z = z0 * RES; z < z1 * RES; z++) raw.fill(0, z * W + x0 * RES, z * W + x1 * RES);
+    if (this.soil) {
+      for (let z = z0; z < z1; z++) {
+        for (let x = x0; x < x1; x++) {
+          const k = z * this.cw + x;
+          if (!this.soil[k]) continue;
+          const v = this.growing.get(k) ?? 255;
+          for (let dz = 0; dz < RES; dz++) raw.fill(v, (z * RES + dz) * W + x * RES, (z * RES + dz) * W + (x + 1) * RES);
+        }
+      }
+    }
+    for (const p of this.known.values()) {
+      const ax = Math.max(x0, p.x - p.s), bx = Math.min(x1, p.x + p.w + p.s);
+      const az = Math.max(z0, p.z - p.s), bz = Math.min(z1, p.z + p.h + p.s);
+      if (ax >= bx) continue;
+      for (let z = az * RES; z < bz * RES; z++) raw.fill(255, z * W + ax * RES, z * W + bx * RES);
+    }
+    this.blur(x0 * RES, z0 * RES, x1 * RES, z1 * RES);
+    this.tex.needsUpdate = true;
+    this.changes++;
+    terreauShow.value = this.known.size > 0 || this.soil?.includes(1) ? 1 : 0;
+  }
+
+  /**
+   * Adoucissement du rectangle de texels [x0, x1[ × [z0, z1[ et de son bord : moyenne glissante horizontale puis
+   * verticale (le bord droit d'une zone reste à 0,5 sur sa limite).
+   */
+  private blur(x0: number, z0: number, x1: number, z1: number): void {
     const W = this.w;
     const H = this.h;
-    const raw = this.tmp;
-    raw.fill(0);
-    for (const p of this.known.values()) {
-      const x0 = Math.max(0, (p.x - p.s) * RES);
-      const z0 = Math.max(0, (p.z - p.s) * RES);
-      const x1 = Math.min(W, (p.x + p.w + p.s) * RES);
-      const z1 = Math.min(H, (p.z + p.h + p.s) * RES);
-      for (let z = z0; z < z1; z++) raw.fill(255, z * W + x0, z * W + x1);
-    }
-    // adoucissement : moyenne glissante horizontale puis verticale (le bord droit reste à 0,5 sur la limite)
-    const out = this.data;
+    const raw = this.raw, tmp = this.tmp, out = this.data;
     const span = 2 * BLUR + 1;
-    for (let z = 0; z < H; z++) {
+    const ax = Math.max(0, x0 - BLUR), bx = Math.min(W, x1 + BLUR);
+    const az = Math.max(0, z0 - BLUR), bz = Math.min(H, z1 + BLUR);
+    const tz0 = Math.max(0, az - BLUR), tz1 = Math.min(H, bz + BLUR);
+    for (let z = tz0; z < tz1; z++) {
       const row = z * W;
       let sum = 0;
-      for (let x = 0; x <= BLUR && x < W; x++) sum += raw[row + x];
-      for (let x = 0; x < W; x++) {
-        out[row + x] = (sum / span + 0.5) | 0;
+      for (let x = Math.max(0, ax - BLUR); x <= ax + BLUR && x < W; x++) sum += raw[row + x];
+      for (let x = ax; x < bx; x++) {
+        tmp[row + x] = (sum / span + 0.5) | 0;
         if (x + BLUR + 1 < W) sum += raw[row + x + BLUR + 1];
         if (x - BLUR >= 0) sum -= raw[row + x - BLUR];
       }
     }
-    for (let x = 0; x < W; x++) {
+    for (let x = ax; x < bx; x++) {
       let sum = 0;
-      for (let z = 0; z <= BLUR && z < H; z++) sum += out[z * W + x];
-      for (let z = 0; z < H; z++) {
-        raw[z * W + x] = (sum / span + 0.5) | 0;
-        if (z + BLUR + 1 < H) sum += out[(z + BLUR + 1) * W + x];
-        if (z - BLUR >= 0) sum -= out[(z - BLUR) * W + x];
+      for (let z = Math.max(0, az - BLUR); z <= az + BLUR && z < H; z++) sum += tmp[z * W + x];
+      for (let z = az; z < bz; z++) {
+        out[z * W + x] = (sum / span + 0.5) | 0;
+        if (z + BLUR + 1 < H) sum += tmp[(z + BLUR + 1) * W + x];
+        if (z - BLUR >= 0) sum -= tmp[(z - BLUR) * W + x];
       }
     }
-    out.set(raw);
-    this.tex.needsUpdate = true;
-    terreauShow.value = this.known.size > 0 ? 1 : 0;
   }
 }

@@ -475,7 +475,7 @@ pub fn complete_building(w: &mut World, b: usize) {
         w.power_dirty = true;
     }
     if def.race == RACE_SOUCHE && def.supply > 0 {
-        w.terreau_dirty = true;
+        crate::soil::pole_added(w, b);
     }
     if def.class == BClass::Belt {
         belts::rebuild_around(w, &[(x, y)]);
@@ -526,7 +526,7 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
         w.power_dirty = true;
     }
     if def.race == RACE_SOUCHE && def.supply > 0 {
-        w.terreau_dirty = true;
+        crate::soil::pole_removed(w, b);
     }
     // un organe de la Souche ne laisse pas d'épave (il est digéré, voir souche::digest)
     if with_wreck && def.race != RACE_SOUCHE && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
@@ -804,6 +804,9 @@ pub fn rebuild_power(w: &mut World) {
                 pole_net[bi]
             } else if best != usize::MAX {
                 pole_net[best]
+            } else if let Some(p) = (souche && def.race == RACE_SOUCHE).then(|| crate::soil::pole_for(w, owner, bx, by, bw, bh, |p| pole_net[p] != 0)).flatten() {
+                // organe sur l'herbe mangée : le réseau du poteau le plus proche
+                pole_net[p]
             } else {
                 fallback
             };

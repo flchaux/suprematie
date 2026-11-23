@@ -487,6 +487,15 @@ export class Effects {
     this.smoke.spawn({ x, y, z, vy: 0.5, life: rnd(0.7, 1.2), s0: 0.3, s1: 0.9, c0: [0.28, 0.36, 0.16], a: 0.4, drag: 1.2 });
   }
 
+  /** Case d'herbe mangée par un organe de la Souche : brins arrachés, poussière sombre. */
+  graze(x: number, z: number): void {
+    if (!this.inView(x, z, 1)) return;
+    const y = groundHeight(this.map, x, z) + 0.05;
+    for (let i = 0, n = this.n(4); i < n; i++) {
+      this.smoke.spawn({ x: x + rnd(-0.4, 0.4), y, z: z + rnd(-0.4, 0.4), vx: rnd(-0.3, 0.3), vy: rnd(0.3, 0.8), vz: rnd(-0.3, 0.3), life: rnd(0.8, 1.5), s0: 0.1, s1: 0.4, c0: [0.2, 0.26, 0.09], c1: [0.16, 0.11, 0.13], a: 0.45, drag: 1.4, grav: -0.4 });
+    }
+  }
+
   /** Terre soulevée (terrier, fouisseur qui surgit). */
   dirt(x: number, z: number, big = 1): void {
     if (!this.inView(x, z, 2)) return;

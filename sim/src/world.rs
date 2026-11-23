@@ -635,10 +635,12 @@ pub struct World {
     pub wear: Vec<u16>,
     /// Souche : flaques d'acide, de la plus ancienne à la plus récente (voir essaim.rs)
     pub acid: Vec<crate::essaim::Acid>,
-    /// Souche : terreau par case, un bit par joueur (dérivé, vide si personne ne le lit ; voir
-    /// essaim::refresh_terreau), à recalculer
+    /// Souche : sol mangé (0, ou joueur + 1 ; vide tant que rien n'est mangé) et nombre de cases mangées
+    /// (voir soil.rs)
+    pub soil: Vec<u8>,
+    pub soil_n: u32,
+    /// Souche : terreau par case, un bit par joueur : zones des poteaux et sol mangé (dérivé, voir soil::ensure)
     pub terreau: Vec<u8>,
-    pub terreau_dirty: bool,
     /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
     pub arks: Vec<crate::ameliorations::Ark>,
 }
@@ -743,8 +745,9 @@ impl World {
             fog,
             wear: Vec::new(),
             acid: Vec::new(),
+            soil: Vec::new(),
+            soil_n: 0,
             terreau: Vec::new(),
-            terreau_dirty: true,
             arks: Vec::new(),
         };
         w.wear = vec![0; w.map.spots.len()];
@@ -1012,11 +1015,11 @@ impl World {
         let teams: Vec<u8> = self.players.iter().map(|p| p.team).collect();
         self.grid.rebuild_units(&self.units, &teams);
         crate::combat::collect_shields(self);
+        crate::soil::ensure(self);
         crate::buildings::update_buildings(self);
         crate::drones::plan(self);
         crate::belts::update_belts(self);
         crate::nature::update(self);
-        crate::essaim::refresh_terreau(self);
         crate::units::update_units(self);
         crate::essaim::update_units(self);
         crate::souche::regen_organs(self);
@@ -1111,6 +1114,9 @@ impl World {
             for &q in &p.research_queue {
                 h.add(q as u64);
             }
+        }
+        if self.soil_n != 0 {
+            h.add(self.soil_n as u64);
         }
         for a in &self.acid {
             h.add_i32(a.x);

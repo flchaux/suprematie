@@ -1205,7 +1205,9 @@ export class Entities {
       const ripe = def.key === "cocoon" && build >= 1 ? (buf[o + 5] & 0x3ff) / 1000 : -1;
       const sc = ripe < 0 ? km.scale : km.scale * (1 + Math.sin(simT * (3 + 9 * ripe * ripe)) * (0.008 + 0.03 * ripe));
       // les hauteurs du mât sont en cases du monde : seul son plan est à l'échelle du tapis
-      const sy = (mast ? 1 : sc) * (build >= 1 ? 1 : Math.max(0.08, build));
+      // frondaison ou racine-puits épuisée (plus d'herbe autour) : elle s'affaisse
+      const wilt = def.cls === BClass.Organ && build >= 1 && bflags & BF.NO_INPUT ? 0.78 : 1;
+      const sy = (mast ? 1 : sc) * (build >= 1 ? wilt : Math.max(0.08, build));
       tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
       km.body!.mesh.setMatrixAt(km.n, tmpM);
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
@@ -2417,7 +2419,7 @@ export class Entities {
 }
 
 /** Bâtiments qui affichent une icône de diagnostic. */
-const DIAG_CLASSES = new Set<number>([BClass.Crafter, BClass.Extractor, BClass.Lab, BClass.Factory, BClass.Station, BClass.CargoPad, BClass.Turret, BClass.Radar, BClass.Shield]);
+const DIAG_CLASSES = new Set<number>([BClass.Crafter, BClass.Extractor, BClass.Lab, BClass.Factory, BClass.Station, BClass.CargoPad, BClass.Turret, BClass.Radar, BClass.Shield, BClass.Organ]);
 
 /** Nombre d'icônes de l'atlas de diagnostic, et celle de la pause. */
 const DIAG_ICONS = 5;

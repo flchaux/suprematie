@@ -5,7 +5,7 @@ use crate::data::*;
 use crate::fixed::TILE;
 use crate::world::*;
 
-pub const HEADER: usize = 16;
+pub const HEADER: usize = 17;
 /// ... + plafond total des dépôts, fragments, EPPZ, race, recherches 64 à 127, réserves de la Souche
 pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 9;
 pub const CARRIER_WORDS: usize = 5;
@@ -205,6 +205,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             BClass::Extractor if bb.out >= 5 => flags |= 64,
             BClass::Lab if !bb.working && w.players.get(bb.owner as usize).is_some_and(|p| p.research != 0) => flags |= 32,
             BClass::Factory if !bb.working && !bb.queue.is_empty() => flags |= 32,
+            // Souche : frondaison ou racine-puits épuisée (plus d'herbe autour)
+            BClass::Organ if bb.stalled => flags |= 32,
             BClass::Power if bb.fuel <= 0 && !crate::buildings::fuelless(bb.kind) => flags |= 32,
             _ => {}
         }
@@ -443,6 +445,8 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
         }
     }
     out[15] = nm;
+    // Souche : cases d'herbe mangées (le client redemande le sol quand ce nombre change, voir soil::layer)
+    out[16] = w.soil_n as i32;
     // vision de l'équipe du joueur
     out[12] = w.vis_w;
     if with_vis && player >= 0 && (player as usize) < w.players.len() {
