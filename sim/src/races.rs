@@ -83,6 +83,12 @@ pub fn tech_ok(w: &World, p: u8, t: u8) -> bool {
     true
 }
 
+/// Prérequis de la recherche `t`, d'après ce que le joueur a (`has`) : un prérequis à choix exclusif est
+/// satisfait par l'une ou l'autre des deux mutations (on ne peut pas avoir les deux).
+pub fn prereq_ok(t: u8, has: impl Fn(u8) -> bool) -> bool {
+    TECHS[t as usize].prereq.iter().all(|&q| has(q) || (TECHS[q as usize].excl != 0 && has(TECHS[q as usize].excl)))
+}
+
 /// Point d'apparition libre près d'une position de départ, décalé de (dx, dy) cases.
 pub fn start_spot(w: &World, p: usize, dx: i32, dy: i32, mask: u8) -> (i32, i32) {
     let (sx, sy) = w.map.starts[p];

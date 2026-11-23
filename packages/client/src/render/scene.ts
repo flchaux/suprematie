@@ -658,7 +658,8 @@ export class GameScene {
       this.entities.pxWorld = worldPerPixel(this.distance, this.camera.fov, this.canvasParent.clientHeight || innerHeight);
       const simDt = this.paused ? 0 : dt;
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, simDt, spectator, view);
-      if (this.data) this.terreau?.update(frame, this.data, simDt);
+      // (temps réel : en pause aussi, le terreau suit la caméra)
+      if (this.data) this.terreau?.update(frame, this.data, dt, view, !this.strategic);
       // les roches hautes d'un gisement disparaissent sous le bâtiment qui le recouvre
       this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }

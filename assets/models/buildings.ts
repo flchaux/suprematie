@@ -7,6 +7,7 @@ import { NEST_MODELS } from "./faune.ts";
 import { GEO_MODELS } from "./geothermie.ts";
 import { ANCIENT_BUILDING_MODELS } from "./anciens.ts";
 import { SOUCHE_BUILDING_MODELS } from "./souche.ts";
+import { SOUCHE_ORGAN_MODELS } from "./souche-organes.ts";
 import { TRANSH_BUILDING_MODELS } from "./transhumants.ts";
 
 /** Socle chanfreiné de w x d cases (dessus à y = 0.25), sans dépasser de l'emprise. 88 triangles. */
@@ -2457,5 +2458,6 @@ export const BUILDING_MODELS: Record<string, Model> = {
   ...GEO_MODELS,
   ...ANCIENT_BUILDING_MODELS,
   ...SOUCHE_BUILDING_MODELS,
+  ...SOUCHE_ORGAN_MODELS,
   ...TRANSH_BUILDING_MODELS,
 };

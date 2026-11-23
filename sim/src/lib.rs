@@ -7,6 +7,7 @@ pub mod buildings;
 pub mod combat;
 pub mod data;
 pub mod drones;
+pub mod essaim;
 pub mod fixed;
 pub mod flow;
 pub mod formation;
@@ -440,6 +441,15 @@ pub extern "C" fn ponte_demo() -> u32 {
     h
 }
 
+/// Démo de la Souche, suite : nouveaux organes et organismes (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn essaim_demo() -> u32 {
+    let w = stress::essaim_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des déplacements en formation orientée (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn formation_demo() -> u32 {
@@ -494,6 +504,8 @@ mod relays_tests;
 mod pickup_tests;
 #[cfg(test)]
 mod races_tests;
+#[cfg(test)]
+mod essaim_tests;
 #[cfg(test)]
 mod ponte_tests;
 #[cfg(test)]

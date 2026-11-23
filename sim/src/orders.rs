@@ -82,9 +82,12 @@ pub const O_HAUL: i32 = 55;
 /// Mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf. de bâtiment…]
 /// (extracteurs, fabricants, usines d'unités terminés ; voir buildings::paused).
 pub const O_SET_PAUSE: i32 = 56;
+/// Souche : fixer dans l'espèce la résistance à une famille d'armes (Mémoire du sang) : [famille]
+/// (voir essaim::adapt).
+pub const O_ADAPT: i32 = 57;
 /// navette de transport : [drapeaux (bit 0 en file), ax, ay, bx, by (sous-unités), n, unités…] : les transports
 /// volants de la liste font des allers-retours entre A (embarquement) et B (débarquement)
-pub const O_FERRY: i32 = 57;
+pub const O_FERRY: i32 = 58;
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -441,13 +444,12 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 return;
             }
             let pl = &w.players[p as usize];
-            let td = &TECHS[t as usize];
             if t == 0 {
                 w.players[p as usize].research = 0;
                 w.players[p as usize].research_queue.clear();
                 return;
             }
-            if pl.has_tech(t as u8) || !td.prereq.iter().all(|&q| pl.has_tech(q)) || !crate::races::tech_ok(w, p, t as u8) {
+            if pl.has_tech(t as u8) || !crate::races::prereq_ok(t as u8, |q| pl.has_tech(q)) || !crate::races::tech_ok(w, p, t as u8) {
                 return;
             }
             let pl = &mut w.players[p as usize];
@@ -471,7 +473,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 let mut avail = researched_bits(pl) | if pl.research != 0 { 1u128 << pl.research } else { 0 };
                 let mut keep = Vec::new();
                 for &q in &pl.research_queue {
-                    if TECHS[q as usize].prereq.iter().all(|&r| avail & (1u128 << r) != 0) {
+                    if crate::races::prereq_ok(q, |r| avail & (1u128 << r) != 0) {
                         avail |= 1u128 << q;
                         keep.push(q);
                     }
@@ -489,7 +491,7 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let pl = &mut w.players[p as usize];
             // prérequis acquis, en cours ou plus tôt dans la file
             let avail = researched_bits(pl) | if pl.research != 0 { 1u128 << pl.research } else { 0 } | pl.research_queue.iter().fold(0u128, |a, &q| a | 1u128 << q);
-            if !TECHS[t as usize].prereq.iter().all(|&r| avail & (1u128 << r) != 0) {
+            if !crate::races::prereq_ok(t, |r| avail & (1u128 << r) != 0) {
                 return;
             }
             pl.research_queue.push(t);
@@ -523,6 +525,9 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                     if udef(k).deploys != NO_KIND {
                         // chenillard des Transhumants : il devient son module (voir transhumants.rs)
                         crate::transhumants::start_deploy(w, s);
+                    } else if k == U_QUEEN {
+                        // Reine de la Souche : elle s'enracine ou se déracine (voir essaim.rs)
+                        crate::essaim::toggle_root(w, s);
                     } else if k == U_SONDE || crate::combat::needs_deploy(k) {
                         clear_orders(w, s);
                         let cd = &mut w.units.cold[s];
@@ -632,6 +637,12 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                         give(w, s, q, Order::DeployAt { x, y, dir });
                     }
                 }
+            }
+        }
+        O_ADAPT => {
+            let f = c.next();
+            if f >= 0 {
+                crate::essaim::adapt(w, p, f as usize);
             }
         }
         O_TAME => {
@@ -872,6 +883,13 @@ fn special(w: &mut World, p: u8, src: u32, x: i32, y: i32, target: u32) {
         BClass::Gate => {
             let Some(t) = w.building(target) else { return };
             if t == b || w.buildings[t].owner != p || w.buildings[t].def().class != BClass::Gate {
+                return;
+            }
+            // terriers de la Souche : chacun a sa sortie (pas forcément par paires)
+            if w.buildings[b].kind == B_BURROW || w.buildings[t].kind == B_BURROW {
+                if w.buildings[b].kind == B_BURROW {
+                    crate::souche::link_burrow(w, b, t);
+                }
                 return;
             }
             for g in [b, t] {

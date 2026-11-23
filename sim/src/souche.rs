@@ -2,7 +2,7 @@
 //!
 //! - Réseau de racines : les racines et les organes qui ont une zone (graine-mère) sont des « poteaux »
 //!   du calcul des zones électriques (`buildings::rebuild_power`). Deux poteaux de la Souche sont reliés
-//!   quand leurs zones (le terreau) se touchent. Chaque réseau garde sa réserve de sève et de sels
+//!   quand leurs emprises se touchent par un côté (`linked`). Chaque réseau garde sa réserve de sève et de sels
 //!   (`Net::seve`, `Net::sels`, plafond `Net::store`) ; quand un réseau se coupe, sa réserve est partagée
 //!   entre les morceaux au prorata de leurs bâtiments (`split_pools`).
 //! - Terreau : la zone d'un poteau. Les organes ne se posent que sur le terreau de leur joueur (sauf la
@@ -11,6 +11,9 @@
 //!   (`grow`), une fois et demie plus lentement qu'un chantier d'ingénieur de puissance 10.
 //! - Production : graine-mère, frondaisons (qui se font de l'ombre) et racines-puits sur les gisements
 //!   remplissent leur réseau (`tick_organ`). Les couveuses prennent le coût des unités dans leur réseau.
+//! - Organes qui agissent : panse (digère les épaves), terrier (passage souterrain d'un bout à l'autre du
+//!   réseau), sporange (chaque tir coûte de la sève), ronce (mur vivant), cocon (il en sort un Béhémoth),
+//!   racines étrangleuses. Organismes, flaques d'acide, Reine enracinée : essaim.rs.
 //! - Recherche : la Matrice consomme de l'ADN (palier de la recherche par unité de recherche). L'ADN vient
 //!   de la digestion des cadavres tombés sur le terreau (`digest`) et, à défaut, de la sève (20 pour 1).
 
@@ -28,6 +31,8 @@ pub const MAX_HEARTS: usize = 3;
 /// Réserve de départ du premier réseau.
 pub const START_SEVE: i32 = 400;
 pub const START_SELS: i32 = 150;
+/// Plus grande zone (cases) d'un poteau de la Souche (rayon de recherche ; test : souche_supply_is_bounded).
+pub const MAX_SUPPLY: i32 = 7;
 /// Période des organes (production, régénération), en ticks.
 pub const ORGAN_PERIOD: u32 = 20;
 /// Période de la croissance d'un organe, en ticks.
@@ -97,7 +102,7 @@ pub fn linked(a: &Building, b: &Building) -> bool {
 
 /// Réseau de la Souche (du joueur `owner`) dont le terreau couvre la case (tx, ty), ou 0.
 pub fn net_at(w: &World, owner: u8, tx: i32, ty: i32) -> u16 {
-    let r = (crate::buildings::max_supply() + 4) * TILE;
+    let r = (MAX_SUPPLY + 4) * TILE;
     let mut best = usize::MAX;
     w.grid.query_buildings(tx * TILE + TILE / 2, ty * TILE + TILE / 2, r, |p| {
         if p >= best {
@@ -124,7 +129,7 @@ pub fn net_at(w: &World, owner: u8, tx: i32, ty: i32) -> u16 {
 /// poteau encore en croissance compte : une file de racines se plante d'un coup, chacune sur le terreau
 /// à venir de la précédente, et pousse quand celle-ci a poussé (son réseau la nourrit alors).
 pub fn on_terreau(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> bool {
-    let r = (crate::buildings::max_supply() + bw.max(bh) + 2) * TILE;
+    let r = (MAX_SUPPLY + bw.max(bh) + 4) * TILE;
     let mut ok = false;
     w.grid.query_buildings(x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2, r, |p| {
         if ok {
@@ -149,17 +154,17 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32, bh: i
         let n = w.buildings.iter().filter(|b| b.alive && b.owner == owner && b.kind == B_SEED_HEART).count();
         return n < MAX_HEARTS;
     }
-    // une racine se pose collée par un côté à une racine ou à une graine-mère du joueur (même en
-    // croissance) : le câble part toujours d'une graine-mère, jamais de réseau isolé dans un terreau
-    if kind == B_ROOT {
-        return touches_network(w, owner, x, y, bw, bh);
+    // une racine (ou un rhizome) se pose collée par un côté à une racine, un rhizome ou une graine-mère du
+    // joueur (même en croissance) : le câble part toujours d'une graine-mère, jamais de réseau isolé
+    if bdef(kind).supply > 0 {
+        return touches_network(w, owner, kind, x, y, bw, bh);
     }
     on_terreau(w, owner, x, y, bw, bh)
 }
 
-/// L'emprise (x, y, bw, bh) touche par un côté un poteau de la Souche du joueur (racine ou graine-mère).
-pub fn touches_network(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> bool {
-    let probe = Building { x, y, kind: B_ROOT, ..Building::default() };
+/// L'emprise (x, y, bw, bh) d'un poteau `kind` touche par un côté un poteau de la Souche du joueur.
+pub fn touches_network(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32, bh: i32) -> bool {
+    let probe = Building { x, y, kind, ..Building::default() };
     let r = (bw.max(bh) + 4) * TILE;
     let mut ok = false;
     w.grid.query_buildings(x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2, r, |p| {
@@ -277,6 +282,17 @@ fn add_pool(w: &mut World, net: u16, seve: i32, sels: i32) {
     }
 }
 
+/// Verse de la sève et des sels dans un réseau, comptés dans la production du joueur.
+pub fn feed(w: &mut World, owner: u8, net: u16, seve: i32, sels: i32) {
+    if net == 0 {
+        return;
+    }
+    add_pool(w, net, seve, sels);
+    let p = &mut w.players[owner as usize];
+    p.produced[SEVE as usize] += seve as u32;
+    p.produced[SELS as usize] += sels as u32;
+}
+
 /// Prend `n` d'un objet (sève ou sels) dans un réseau ; faux s'il n'y en a pas assez.
 fn take_pool(w: &mut World, net: u16, item: u8, n: i32) -> bool {
     if net == 0 {
@@ -313,8 +329,10 @@ pub fn grow(w: &mut World, b: usize) {
     if has(w, owner, T_S_FERTILITY) {
         speed = 3;
     }
+    // Reine enracinée : les organes de son réseau poussent plus vite
+    let royal = if w.buildings[b].net != 0 && crate::essaim::queen_net(w, owner) == w.buildings[b].net { crate::essaim::Q_GROW as u64 } else { 100 };
     let work = def.build.max(1) as u64 * 20 * 3;
-    let delta = ((GROW_PERIOD as u64 * speed * BUILD_FULL as u64 * w.players[owner as usize].build_mult.max(1) as u64 / 100) / work).max(1) as u32;
+    let delta = ((GROW_PERIOD as u64 * speed * BUILD_FULL as u64 * w.players[owner as usize].build_mult.max(1) as u64 / 100 * royal / 100) / work).max(1) as u32;
     let bb = &w.buildings[b];
     let p2 = (bb.build + delta).min(BUILD_FULL);
     let net = bb.net;
@@ -389,6 +407,12 @@ pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
 /// Organe terminé (toutes les ORGAN_PERIOD ticks) : production dans son réseau, régénération.
 pub fn tick_organ(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + ORGAN_PERIOD;
+    let kind = w.buildings[b].kind;
+    match kind {
+        B_MAW => tick_maw(w, b),
+        B_COCOON if tick_cocoon(w, b) => return,
+        _ => {}
+    }
     let (s, l) = organ_rate(w, b);
     if s > 0 || l > 0 {
         // centièmes par seconde : le reste est gardé dans `progress`
@@ -408,10 +432,197 @@ pub fn tick_organ(w: &mut World, b: usize) {
     regen_building(w, b);
 }
 
-/// Racine terminée : elle se régénère seulement (toutes les 2 s).
+/// Racine, rhizome ou ronce poussés (toutes les 2 s) : régénération ; les racines étranglent ce qu'elles
+/// touchent (mutation Racines étrangleuses).
 pub fn tick_root(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + 2 * ORGAN_PERIOD;
     regen_building(w, b);
+    if w.buildings[b].def().class == BClass::Pylon && has(w, w.buildings[b].owner, T_S_STRANGLE) {
+        strangle(w, b);
+    }
+}
+
+/// Régénération des organes qui ont leur propre tick (couveuse, matrice, épine, floraison, terrier…),
+/// toutes les ORGAN_PERIOD ticks ; les organes simples et les racines se régénèrent dans leur tick.
+pub fn regen_organs(w: &mut World) {
+    if !w.tick.is_multiple_of(ORGAN_PERIOD) || !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
+        return;
+    }
+    for i in 0..w.active.len() {
+        let b = w.active[i] as usize;
+        let bb = &w.buildings[b];
+        if bb.alive && bb.complete() && bb.def().race == RACE_SOUCHE && !matches!(bb.def().class, BClass::Organ | BClass::Pylon | BClass::Wall) {
+            regen_building(w, b);
+        }
+    }
+}
+
+/// Racines étrangleuses : dégâts d'un passage (% des points de vie du bâtiment étranglé, au moins
+/// STRANGLE_MIN) et sève prise par bâtiment étranglé.
+pub const STRANGLE_PCT: i32 = 1;
+pub const STRANGLE_MIN: i32 = 12;
+pub const STRANGLE_SEVE: i32 = 2;
+
+/// Une racine étrangle les bâtiments ennemis collés à ses côtés.
+fn strangle(w: &mut World, b: usize) {
+    let (x, y, owner, net) = (w.buildings[b].x, w.buildings[b].y, w.buildings[b].owner, w.buildings[b].net);
+    if net == 0 {
+        return;
+    }
+    let team = w.team_of(owner);
+    let (bw, bh) = w.buildings[b].size();
+    let mut prey: Vec<usize> = Vec::new();
+    let mut look = |tx: i32, ty: i32| {
+        if !w.map.inside(tx, ty) {
+            return;
+        }
+        let o = w.map.occ[w.map.idx(tx, ty)];
+        if o != 0 {
+            let t = (o - 1) as usize;
+            let tb = &w.buildings[t];
+            if tb.alive && w.team_of(tb.owner) != team && tb.kind != B_RUIN {
+                prey.push(t);
+            }
+        }
+    };
+    for k in 0..bw {
+        look(x + k, y - 1);
+        look(x + k, y + bh);
+    }
+    for k in 0..bh {
+        look(x - 1, y + k);
+        look(x + bw, y + k);
+    }
+    prey.sort_unstable();
+    prey.dedup();
+    for t in prey {
+        let dmg = (w.buildings[t].def().hp * STRANGLE_PCT / 100).max(STRANGLE_MIN);
+        let (cx, cy) = w.buildings[t].center();
+        w.hit_weapon = W_GNAW;
+        crate::combat::damage_building(w, t, dmg, owner);
+        w.hit_weapon = 255;
+        w.ev(EV_FIRE, W_GNAW as i32, cx, cy, owner as i32);
+        feed(w, owner, net, STRANGLE_SEVE, 0);
+    }
+}
+
+/// Morsure du rongeur : arme comptée pour une racine qui étrangle.
+const W_GNAW: u8 = 63;
+
+// ---------- Panse ----------
+
+/// Panse : portée (cases), matière d'épave digérée par passage (une fois par seconde).
+pub const MAW_RANGE: i32 = 12;
+pub const MAW_BITE: i32 = 12;
+
+/// Panse : ses vrilles digèrent l'épave la plus proche. Une unité de matière donne 2 sève, l'acier donne
+/// aussi 1 sel pour 2 ; l'épave finie laisse un ADN.
+fn tick_maw(w: &mut World, b: usize) {
+    let (cx, cy) = w.buildings[b].center();
+    let (owner, net) = (w.buildings[b].owner, w.buildings[b].net);
+    let r2 = ((MAW_RANGE * TILE) as i64).pow(2);
+    let mut best: Option<(i64, usize)> = None;
+    if net != 0 {
+        for (k, wk) in w.wrecks.iter().enumerate() {
+            let d = crate::fixed::dist2(cx, cy, wk.x, wk.y);
+            if wk.alive && d <= r2 && best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, k));
+            }
+        }
+    }
+    w.buildings[b].working = best.is_some();
+    let Some((_, k)) = best else { return };
+    let wk = &mut w.wrecks[k];
+    let steel = wk.steel.min(MAW_BITE);
+    let iron = wk.iron.min(MAW_BITE - steel);
+    wk.steel -= steel;
+    wk.iron -= iron;
+    let (x, y, done) = (wk.x, wk.y, wk.steel + wk.iron <= 0);
+    if done {
+        wk.alive = false;
+        w.wfree.push(k as u32);
+        w.players[owner as usize].purse[ADN as usize] += 1;
+        w.players[owner as usize].produced[ADN as usize] += 1;
+    }
+    feed(w, owner, net, 2 * (steel + iron), steel / 2);
+    let (bx, by) = (w.buildings[b].x, w.buildings[b].y);
+    w.ev(crate::essaim::EV_DIGEST, x, y, bx | by << 16, owner as i32);
+}
+
+// ---------- Cocon ----------
+
+/// Cocon poussé : maturation avant de s'ouvrir, en ticks (20 s).
+pub const COCOON_TICKS: u32 = 400;
+
+/// Cocon : il mûrit (`charge`), puis s'ouvre : le Béhémoth prend sa place. Vrai quand il s'est ouvert.
+fn tick_cocoon(w: &mut World, b: usize) -> bool {
+    let owner = w.buildings[b].owner;
+    let bb = &mut w.buildings[b];
+    bb.working = true;
+    bb.charge = (bb.charge + ORGAN_PERIOD).min(COCOON_TICKS);
+    // mûr, il attend une place sous la limite d'unités
+    if bb.charge < COCOON_TICKS || w.players[owner as usize].unit_count >= UNIT_CAP {
+        return false;
+    }
+    let (cx, cy) = w.buildings[b].center();
+    let facing = (w.buildings[b].dir as u16 & 3).wrapping_mul(16384);
+    buildings::remove_building(w, b, false);
+    let id = w.spawn_unit(U_BEHEMOTH, owner, cx, cy);
+    w.units.facing[slot_of(id)] = facing;
+    w.ev(crate::essaim::EV_COCOON, cx, cy, U_BEHEMOTH as i32, owner as i32 | (facing as i32) << 8);
+    true
+}
+
+// ---------- Terrier ----------
+
+/// Rayon (1/256 de case) des plus gros organismes qui passent par un terrier.
+pub const BURROW_MAX_RADIUS: i32 = 300;
+
+/// Terrier : ouvert quand sa sortie est un autre terrier poussé du même joueur, sur le même réseau.
+pub fn tick_burrow(w: &mut World, b: usize) {
+    w.buildings[b].wake = w.tick + 5;
+    let bb = &w.buildings[b];
+    let open = bb.net != 0 && w.building(bb.link).is_some_and(|t| t != b && w.buildings[t].kind == B_BURROW && w.buildings[t].owner == bb.owner && w.buildings[t].complete() && w.buildings[t].net == bb.net);
+    let bb = &mut w.buildings[b];
+    bb.working = open;
+    bb.charge = if open { 100 } else { 0 };
+}
+
+/// Choix de la sortie d'un terrier (ordre O_SPECIAL) ; la sortie y revient si elle n'en a pas encore.
+pub fn link_burrow(w: &mut World, b: usize, t: usize) {
+    if b == t || w.buildings[t].kind != B_BURROW || w.buildings[t].owner != w.buildings[b].owner {
+        return;
+    }
+    w.buildings[b].link = w.building_ref(t);
+    w.buildings[b].wake = 0;
+    if w.building(w.buildings[t].link).is_none_or(|x| w.buildings[x].kind != B_BURROW) {
+        w.buildings[t].link = w.building_ref(b);
+        w.buildings[t].wake = 0;
+    }
+}
+
+/// L'unité passe-t-elle par un terrier (organisme ou bête apprivoisée, au sol, pas trop gros) ?
+pub fn burrow_fits(kind: u16) -> bool {
+    let d = udef(kind);
+    (d.bio || is_beast(kind)) && matches!(d.layer, Layer::Land | Layer::Hover) && d.radius <= BURROW_MAX_RADIUS
+}
+
+// ---------- Sporange ----------
+
+/// Sève d'un tir de sporange.
+pub const SHOT_SEVE: i32 = 15;
+
+/// Tir d'une tourelle de la Souche : le sporange paie sa sève (faux : le réseau n'en a pas assez).
+pub fn pay_shot(w: &mut World, b: usize) -> bool {
+    if w.buildings[b].kind != B_SPORANGIUM {
+        return true;
+    }
+    let (net, owner) = (w.buildings[b].net, w.buildings[b].owner as usize);
+    if net == 0 || !take_pool(w, net, SEVE, SHOT_SEVE) {
+        return w.nets.get(net as usize).is_some_and(|n| n.unlimited);
+    }
+    w.players[owner].consumed[SEVE as usize] += SHOT_SEVE as u32;
+    true
 }
 
 fn regen_building(w: &mut World, b: usize) {
@@ -493,44 +704,6 @@ pub fn digest(w: &mut World, x: i32, y: i32, victim_owner: u8, tier: u8) {
     }
 }
 
-/// Organismes de la Souche : régénération sur le terreau (toutes les ORGAN_PERIOD ticks).
-pub fn update_units(w: &mut World) {
-    if !w.tick.is_multiple_of(ORGAN_PERIOD) || !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
-        return;
-    }
-    for s in 0..w.units.alive.len() {
-        if !w.units.alive[s] || w.units.cold[s].carried_by != NONE {
-            continue;
-        }
-        let owner = w.units.owner[s];
-        // organismes, et bêtes apprivoisées (nids greffés)
-        let kind = w.units.kind[s];
-        if !(udef(kind).bio || is_beast(kind)) || !is_souche(w, owner) {
-            continue;
-        }
-        let max = w.max_hp(s);
-        if w.units.hp[s] >= max || w.units.hp[s] <= 0 {
-            continue;
-        }
-        let quick = has(w, owner, T_S_QUICK_SAP);
-        let (x, y) = (w.units.x[s] / TILE, w.units.y[s] / TILE);
-        let pct = if net_at(w, owner, x, y) != 0 {
-            if quick {
-                4
-            } else {
-                2
-            }
-        } else if quick {
-            1
-        } else {
-            0
-        };
-        if pct > 0 {
-            w.units.hp[s] = (w.units.hp[s] + (max * pct / 100).max(1)).min(max);
-        }
-    }
-}
-
 /// Points de vie (‰) des organismes selon les mutations.
 pub fn hp_mult(w: &World, owner: u8, kind: u16) -> i32 {
     if udef(kind).bio && has(w, owner, T_S_SCALES) {
@@ -573,7 +746,7 @@ pub fn brood_speed(w: &World, owner: u8) -> u32 {
 /// Nids greffés au plus : un, plus un par mutation acquise (stade d'évolution).
 pub fn den_limit(w: &World, p: u8) -> usize {
     let Some(pl) = w.players.get(p as usize) else { return 0 };
-    1 + [T_S_SCALES, T_S_QUICK_SAP, T_S_ACID, T_S_FERTILITY, T_S_DEEP_ROOTS, T_S_BIG_LEAVES].iter().filter(|&&t| pl.has_tech(t)).count()
+    1 + MUTATIONS.iter().filter(|&&t| pl.has_tech(t)).count()
 }
 
 /// Le joueur peut-il greffer un nid de plus ?
@@ -614,5 +787,8 @@ pub fn info(w: &World, b: usize) -> String {
     let n = w.nets.get(bb.net as usize).filter(|_| bb.net != 0);
     let (s, l, st) = n.map_or((0, 0, 0), |n| (n.seve, n.sels, n.store));
     let (rs, rl) = if bb.complete() { organ_rate(w, b) } else { (0, 0) };
-    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{}}}", bb.net, s, l, st, rs, rl)
+    let adapt = if bb.kind == B_MATRIX { crate::essaim::adapt_info(w, bb.owner) } else { String::new() };
+    // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
+    let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
+    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{}}}{}", bb.net, s, l, st, rs, rl, hatch, adapt)
 }

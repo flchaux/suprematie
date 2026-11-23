@@ -542,6 +542,7 @@ pub fn showcase_demo() -> World {
     w.infinite_grid = true;
     for pl in w.players.iter_mut() {
         pl.researched = u64::MAX;
+        pl.researched2 = u64::MAX;
         // de quoi poser le socle à EPPZ
         pl.eppz = 1;
     }
@@ -625,6 +626,109 @@ pub fn ponte_demo() -> World {
             w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
         }
     }
+    w
+}
+
+/// Démo de la Souche, suite (?demo=essaim) : autour de la graine-mère du joueur 0, tous les nouveaux organes
+/// (rhizome, ronces, deux terriers reliés, panse et ses épaves, sporange, cocon qui mûrit, frayère sur un
+/// lac), la Reine qui s'enracine, des racines qui étranglent une fonderie ennemie, un exemplaire de chaque
+/// nouvel organisme, des vessies lâchées sur des chars et des flaques d'acide. On y joue le joueur 0.
+pub fn essaim_demo() -> World {
+    let mut w = World::new(&[19, 512, 1, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 0, RACE_SOUCHE as i32, RACE_INDUS as i32]);
+    let (sx, sy) = w.map.starts[0];
+    flat(&mut w, sx - 50, sy - 45, sx + 50, sy + 45);
+    w.place_start_buildings();
+    for t in (T_S_SPITTERS..=T_S_BIG_LEAVES).chain(T_S_BRAMBLES..=T_S_BEHEMOTH) {
+        // une mutation de chaque paire
+        if !matches!(t, T_S_QUICK_SAP | T_S_FERTILITY | T_S_DEEP_ROOTS | T_S_STICKY | T_S_SPINES) {
+            w.players[0].set_tech(t);
+        }
+    }
+    let heart = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == 0 && w.buildings[b].kind == B_SEED_HEART);
+    let Some(heart) = heart else { return w };
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    let put = |w: &mut World, owner: u8, kind: u16, x: i32, y: i32| -> Option<usize> {
+        let b = place_building(w, owner, kind, x, y, 0)?;
+        complete_building(w, b);
+        Some(b)
+    };
+    // câble vers l'est (rhizome au bout), vers l'ouest et vers le sud
+    for k in 0..14 {
+        put(&mut w, 0, B_ROOT, hx + 3 + k, hy + 1);
+        put(&mut w, 0, B_ROOT, hx - 1 - k, hy + 1);
+    }
+    for k in 0..9 {
+        put(&mut w, 0, B_ROOT, hx + 1, hy + 3 + k);
+    }
+    put(&mut w, 0, B_RHIZOME, hx + 17, hy + 1);
+    put(&mut w, 0, B_SPORANGIUM, hx + 18, hy - 3);
+    put(&mut w, 0, B_COCOON, hx + 8, hy - 5);
+    put(&mut w, 0, B_MATRIX, hx - 4, hy - 2);
+    put(&mut w, 0, B_LEAVES, hx - 8, hy - 2);
+    put(&mut w, 0, B_BROOD, hx + 4, hy + 3);
+    let maw = put(&mut w, 0, B_MAW, hx - 6, hy + 3);
+    let a = put(&mut w, 0, B_BURROW, hx + 3, hy - 3);
+    let b = put(&mut w, 0, B_BURROW, hx + 20, hy + 5);
+    for k in 0..7 {
+        put(&mut w, 0, B_BRAMBLE, hx - 16 + k, hy - 2);
+    }
+    // une fonderie ennemie au bout du câble ouest, déjà étreinte
+    put(&mut w, 1, B_FURNACE, hx - 16, hy + 1);
+    // un lac au sud, la frayère sur l'eau
+    let lvl = w.map.water_level;
+    for y in hy + 11..hy + 30 {
+        for x in hx - 12..hx + 15 {
+            let i = w.map.idx(x, y);
+            if w.map.occ[i] == 0 {
+                w.map.height[i] = lvl.saturating_sub(12);
+                w.map.update_pass(x, y);
+            }
+        }
+    }
+    put(&mut w, 0, B_SPAWNERY, hx, hy + 12);
+    w.nav = crate::flow::Nav::new(&w.map);
+    for _ in 0..10 {
+        w.step(&[]);
+    }
+    let net = w.buildings[heart].net as usize;
+    if net != 0 {
+        w.nets[net].seve = 1_000_000;
+        w.nets[net].sels = 1_000_000;
+    }
+    if let (Some(a), Some(b)) = (a, b) {
+        crate::souche::link_burrow(&mut w, a, b);
+    }
+    if let Some(m) = maw {
+        let (cx, cy) = w.buildings[m].center();
+        w.spawn_wreck(cx - 4 * TILE, cy + 5 * TILE, &[(STEEL, 400)], 2, 1 + U_LIGHT_TANK, 9000);
+        w.spawn_wreck(cx + 3 * TILE, cy + 4 * TILE, &[(STEEL, 400)], 2, 1 + U_ASSAULT_WALKER, 30000);
+    }
+    w.players[0].purse[ADN as usize] = 300;
+    w.players[0].scars = [5200, 3100, 800, 0, 1500];
+    // la Reine s'enracine au nord-ouest de la graine-mère
+    if let Some(q) = w.unit(w.players[0].commander) {
+        w.units.x[q] = (hx - 1) * TILE;
+        w.units.y[q] = (hy - 1) * TILE;
+        crate::essaim::toggle_root(&mut w, q);
+    }
+    // un exemplaire de chaque nouvel organisme, en rang au nord
+    for (k, kind) in [U_BURSTER, U_DART, U_BURROWER, U_NURSE, U_SHELL, U_HORNET].into_iter().enumerate() {
+        w.spawn_unit(kind, 0, (hx - 2 + 3 * k as i32) * TILE, (hy - 9) * TILE);
+    }
+    w.spawn_unit(U_MORAY, 0, (hx - 5) * TILE, (hy + 16) * TILE);
+    w.spawn_unit(U_LEVIATHAN, 0, (hx + 8) * TILE, (hy + 15) * TILE);
+    w.spawn_unit(U_BEHEMOTH, 0, (hx + 27) * TILE, (hy - 4) * TILE);
+    // des chars arrivent de l'est ; des vessies et des cracheurs les attendent
+    for k in 0..6 {
+        let id = w.spawn_unit(U_LIGHT_TANK, 1, (hx + 46) * TILE, (hy - 4 + 2 * k) * TILE);
+        if let Some(s) = w.unit(id) {
+            let (tx, ty) = ((hx + 26) * TILE, (hy + 2) * TILE);
+            w.units.cold[s].orders.push(Order::Move { x: tx, y: ty, gx: tx, gy: ty, attack: true, eta: 0 });
+        }
+        w.spawn_unit(if k % 2 == 0 { U_BURSTER } else { U_SPITTER }, 0, (hx + 24) * TILE, (hy - 2 + 2 * k) * TILE);
+    }
+    crate::essaim::spill(&mut w, 0, (hx + 12) * TILE, (hy + 8) * TILE, 420, 8, 2000);
+    crate::essaim::spill(&mut w, 0, (hx + 15) * TILE, (hy + 9) * TILE, 600, 8, 2000);
     w
 }
 

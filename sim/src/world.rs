@@ -58,8 +58,12 @@ pub struct Player {
     pub race: u8,
     /// recherches acquises d'indice 64 à 127 (les 64 premières sont dans `researched`)
     pub researched2: u64,
+    /// Souche : dégâts subis par ses organismes, par famille d'armes, et familles auxquelles l'espèce est
+    /// devenue résistante (un bit par famille ; voir essaim.rs, « Caractères acquis »)
+    pub scars: [u32; crate::essaim::FAMILIES],
+    pub adapt: u8,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, purse, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz; since 3: race, researched2 });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, purse, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz; since 3: race, researched2; since 7: scars, adapt });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -70,7 +74,7 @@ impl Player {
         let mut q = std::mem::take(&mut self.research_queue);
         q.retain(|&t| !has(t));
         if self.research == 0 {
-            if let Some(k) = q.iter().position(|&t| TECHS[t as usize].prereq.iter().all(|&r| has(r))) {
+            if let Some(k) = q.iter().position(|&t| crate::races::prereq_ok(t, has)) {
                 self.research = q.remove(k);
             }
         }
@@ -617,6 +621,12 @@ pub struct World {
     pub fog: bool,
     /// Transhumants : usure de chaque gisement (‰, indice de `map.spots`) par leurs foreuses
     pub wear: Vec<u16>,
+    /// Souche : flaques d'acide, de la plus ancienne à la plus récente (voir essaim.rs)
+    pub acid: Vec<crate::essaim::Acid>,
+    /// Souche : terreau par case, un bit par joueur (dérivé, vide si personne ne le lit ; voir
+    /// essaim::refresh_terreau), à recalculer
+    pub terreau: Vec<u8>,
+    pub terreau_dirty: bool,
 }
 
 impl World {
@@ -659,6 +669,8 @@ impl World {
                 eppz: 0,
                 race: 0,
                 researched2: 0,
+                scars: [0; crate::essaim::FAMILIES],
+                adapt: 0,
             });
         }
         // faune : un joueur caché de plus, après les vrais joueurs
@@ -716,6 +728,9 @@ impl World {
             nature,
             fog,
             wear: Vec::new(),
+            acid: Vec::new(),
+            terreau: Vec::new(),
+            terreau_dirty: true,
         };
         w.wear = vec![0; w.map.spots.len()];
         for p in 0..np {
@@ -983,8 +998,10 @@ impl World {
         crate::drones::plan(self);
         crate::belts::update_belts(self);
         crate::nature::update(self);
+        crate::essaim::refresh_terreau(self);
         crate::units::update_units(self);
-        crate::souche::update_units(self);
+        crate::essaim::update_units(self);
+        crate::souche::regen_organs(self);
         crate::transhumants::update(self);
         crate::combat::update_projectiles(self);
         crate::logistics::update_carriers(self);
@@ -1058,10 +1075,19 @@ impl World {
             if p.researched2 != 0 {
                 h.add(p.researched2);
             }
+            // caractères acquis de la Souche (hash inchangé sans eux)
+            if p.adapt != 0 {
+                h.add(p.adapt as u64);
+            }
             h.add(p.research as u64 | (p.tech_progress.iter().map(|&x| x as u64).sum::<u64>() << 8));
             for &q in &p.research_queue {
                 h.add(q as u64);
             }
+        }
+        for a in &self.acid {
+            h.add_i32(a.x);
+            h.add_i32(a.y);
+            h.add(a.until as u64 | (a.dmg as u64) << 32);
         }
         for pr in &self.projectiles {
             h.add_i32(pr.tx);

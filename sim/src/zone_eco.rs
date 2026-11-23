@@ -179,6 +179,9 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
             let mut mult = pl.build_mult.max(0) as u64;
             if bb.def().race == RACE_SOUCHE {
                 mult = mult * crate::souche::brood_speed(w, owner as u8) as u64 / 100;
+                if bb.net != 0 && crate::essaim::queen_net(w, owner as u8) == bb.net {
+                    mult = mult * crate::essaim::Q_BROOD as u64 / 100;
+                }
             }
             if mult == 0 {
                 return;
@@ -253,6 +256,10 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         stock[SEVE as usize] += net.seve.max(0) as i64;
         stock[SELS as usize] += net.sels.max(0) as i64;
         cap = net.store as i64;
+        // Reine enracinée sur ce réseau (centièmes par minute)
+        if crate::essaim::queen_net(w, p) == n {
+            prod[SEVE as usize] += crate::essaim::Q_SEVE as u64 * 100 * 60;
+        }
     } else {
         // dépôts du joueur dans la zone, ou les plus proches d'elle (les entrepôts d'équipe n'en font pas partie)
         let poles: Vec<usize> = (0..w.buildings.len())

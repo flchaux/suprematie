@@ -315,7 +315,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 75] = [
+pub const WEAPONS: [WeaponDef; 85] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -397,8 +397,21 @@ pub const WEAPONS: [WeaponDef; 75] = [
     w!(90, 40, 90, Shell, 14, 384, M_SURF, min_range: 8),               // 72 canon tracté
     w!(300, 2, 40, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 73 bélier : éperonne
     w!(160, 30, 36, Bullet, 40, 128, M_SURF),                           // 74 bastion déployé
+    // ----- Souche, suite -----
+    w!(170, 1, 20, Bite, 0, 576, M_LAND),                               // 75 vessie (elle éclate : voir souche::burst)
+    w!(30, 26, 12, Spit, 45, 0, M_AIR),                                 // 76 dard (antiaérien)
+    w!(60, 1, 20, Bite, 0, 0, M_LAND),                                  // 77 fouisseur
+    w!(24, 10, 10, Spit, 45, 0, M_AIR),                                 // 78 frelon
+    w!(55, 12, 24, Spit, 25, 128, M_SURF | M_SUB),                      // 79 murène
+    w!(480, 3, 36, Bite, 0, 0, M_SURF),                                 // 80 mâchoires du léviathan
+    w!(140, 28, 50, Spit, 18, 384, M_SURF | M_AIR),                     // 81 crachat du léviathan
+    w!(260, 75, 170, Spit, 16, 640, M_SURF, min_range: 12),             // 82 sporange (mortier à spores)
+    w!(1100, 5, 40, Bite, 0, 640, M_LAND),                              // 83 griffes du béhémoth (balaient la zone)
+    w!(55, 28, 8, Spit, 50, 0, M_AIR),                                  // 84 dards du béhémoth
 ];
 pub const W_CMD_UP: u8 = 1;
+/// Souche : arme de la vessie (dégâts et rayon de son éclatement) et griffes du béhémoth.
+pub const W_BURST: u8 = 75;
 
 // ---------- Recherches ----------
 pub struct TechDef {
@@ -432,7 +445,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 64] = [
+pub const TECHS: [TechDef; 80] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -488,9 +501,9 @@ pub const TECHS: [TechDef; 64] = [
     t!("s_membranes", "Membranes", 3, 20, 10, [49], "Planeur à membranes : bombes de spores", race: RACE_SOUCHE),
     t!("s_scales", "Écailles", 2, 15, 8, [], "Mutation : +30 % de points de vie pour tous les organismes. Exclut Sève vive.", race: RACE_SOUCHE, excl: 53),
     t!("s_quick_sap", "Sève vive", 2, 15, 8, [], "Mutation : régénération doublée sur le terreau, et 1 % par seconde hors du terreau. Exclut Écailles.", race: RACE_SOUCHE, excl: 52),
-    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
+    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes ; les cracheurs laissent une flaque d'acide. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
     t!("s_fertility", "Fécondité", 3, 20, 10, [52, 53], "Mutation : couveuses et croissance des organes 50 % plus rapides. Exclut Acide.", race: RACE_SOUCHE, excl: 54),
-    t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : points de vie des organes doublés. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
+    t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : racines et organes subissent 40 % de dégâts en moins. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
     t!("s_big_leaves", "Grandes frondaisons", 4, 25, 12, [54, 55], "Mutation : frondaisons et racines-puits +50 %. Exclut Racines profondes.", race: RACE_SOUCHE, excl: 56),
     // ----- Transhumants : chaque unité de recherche coûte 3 × palier relevés (voir transhumants.rs) -----
     t!("t_heavy_shop", "Atelier lourd", 1, 10, 6, [], "Canon tracté, bélier", race: RACE_TRANSH),
@@ -499,6 +512,23 @@ pub const TECHS: [TechDef; 64] = [
     t!("t_bastion", "Bastion", 2, 15, 8, [58], "Chenillard bastion : tourelle lourde une fois déployé", race: RACE_TRANSH),
     t!("t_armor", "Blindage", 3, 25, 10, [60], "Chenillards et Arche : +50 % de points de vie", race: RACE_TRANSH),
     t!("t_crystal", "Cristal nomade", 4, 30, 12, [60], "Cristal raffiné, cellules d'énergie", race: RACE_TRANSH, also: T_CRYSTAL_REFINING),
+    // ----- Souche, suite (un prérequis à choix exclusif est satisfait par l'une des deux mutations : `has_prereq`) -----
+    t!("s_brambles", "Ronces", 1, 10, 6, [], "Ronce : mur vivant qui déchire ceux qui la mordent. Rhizome : gros nœud de racines à grand terreau.", race: RACE_SOUCHE),
+    t!("s_darts", "Dards", 2, 15, 8, [48], "Dard : organisme antiaérien", race: RACE_SOUCHE),
+    t!("s_bursters", "Vessies", 2, 15, 8, [48], "Vessie : court à l'ennemi et éclate en flaque d'acide", race: RACE_SOUCHE),
+    t!("s_burrowers", "Fouisseurs", 2, 15, 8, [48], "Fouisseur : s'enterre à l'arrêt, invisible, et surgit en frappant trois fois plus fort", race: RACE_SOUCHE),
+    t!("s_rootways", "Racines creuses", 2, 15, 8, [64], "Terrier : passage souterrain d'un bout à l'autre du réseau. Les organismes vont 20 % plus vite sur leur terreau.", race: RACE_SOUCHE),
+    t!("s_memory", "Mémoire du sang", 2, 15, 8, [], "La Matrice peut fixer dans l'espèce une résistance de 20 % à une famille d'armes qui l'a beaucoup blessée (trois au plus)", race: RACE_SOUCHE),
+    t!("s_sticky", "Terreau collant", 3, 20, 10, [64], "Mutation : les unités au sol ennemies vont 35 % moins vite sur votre terreau. Exclut Racines étrangleuses.", race: RACE_SOUCHE, excl: 71),
+    t!("s_strangle", "Racines étrangleuses", 3, 20, 10, [64], "Mutation : une racine collée à un bâtiment ennemi l'étrangle et lui prend de la sève. Exclut Terreau collant.", race: RACE_SOUCHE, excl: 70),
+    t!("s_nurses", "Nourrices", 3, 20, 10, [67], "Nourrice : les organismes proches guérissent comme sur le terreau", race: RACE_SOUCHE),
+    t!("s_sporangia", "Sporanges", 3, 20, 10, [64], "Sporange : mortier à spores à très longue portée ; chaque tir coûte de la sève", race: RACE_SOUCHE),
+    t!("s_tides", "Marées", 3, 20, 10, [49], "Frayère (organe d'eau), murène", race: RACE_SOUCHE),
+    t!("s_hornets", "Frelons", 4, 25, 12, [51], "Frelon : chasseur volant, naît par quatre", race: RACE_SOUCHE),
+    t!("s_leviathan", "Léviathan", 5, 35, 15, [74], "Léviathan : géant amphibie, dévore ce qu'il tue pour guérir", race: RACE_SOUCHE),
+    t!("s_acid_blood", "Sang acide", 5, 30, 15, [56, 57], "Mutation : un organisme qui meurt au sol laisse une flaque d'acide. Exclut Carapaces d'épines.", race: RACE_SOUCHE, excl: 78),
+    t!("s_spines", "Carapaces d'épines", 5, 30, 15, [56, 57], "Mutation : un tiers des dégâts de morsure subis par vos organismes revient à l'agresseur. Exclut Sang acide.", race: RACE_SOUCHE, excl: 77),
+    t!("s_behemoth", "Métamorphose", 6, 60, 15, [77, 78], "Cocon : organe géant dont sort un Béhémoth", race: RACE_SOUCHE),
 ];
 /// Recherches de la Souche et des Transhumants (indices dans TECHS).
 pub const T_S_SPITTERS: u8 = 48;
@@ -517,6 +547,24 @@ pub const T_T_ELECTRONICS: u8 = 60;
 pub const T_T_BASTION: u8 = 61;
 pub const T_T_ARMOR: u8 = 62;
 pub const T_T_CRYSTAL: u8 = 63;
+pub const T_S_BRAMBLES: u8 = 64;
+pub const T_S_DARTS: u8 = 65;
+pub const T_S_BURSTERS: u8 = 66;
+pub const T_S_BURROWERS: u8 = 67;
+pub const T_S_ROOTWAYS: u8 = 68;
+pub const T_S_MEMORY: u8 = 69;
+pub const T_S_STICKY: u8 = 70;
+pub const T_S_STRANGLE: u8 = 71;
+pub const T_S_NURSES: u8 = 72;
+pub const T_S_SPORANGIA: u8 = 73;
+pub const T_S_TIDES: u8 = 74;
+pub const T_S_HORNETS: u8 = 75;
+pub const T_S_LEVIATHAN: u8 = 76;
+pub const T_S_ACID_BLOOD: u8 = 77;
+pub const T_S_SPINES: u8 = 78;
+pub const T_S_BEHEMOTH: u8 = 79;
+/// Mutations de la Souche (choix exclusifs) : chacune est un stade d'évolution.
+pub const MUTATIONS: [u8; 10] = [T_S_SCALES, T_S_QUICK_SAP, T_S_ACID, T_S_FERTILITY, T_S_DEEP_ROOTS, T_S_BIG_LEAVES, T_S_STICKY, T_S_STRANGLE, T_S_ACID_BLOOD, T_S_SPINES];
 pub const T_ELECTRONIC_WARFARE: u8 = 46;
 pub const T_HEAVY_NAVY: u8 = 47;
 
@@ -729,8 +777,16 @@ pub const B_T_BASTION: u16 = 69;
 pub const B_T_POLE: u16 = 70;
 /// relais logistique (voir drones.rs, « Relais logistiques »)
 pub const B_RELAY: u16 = 71;
+// Souche, suite (voir souche.rs)
+pub const B_BRAMBLE: u16 = 72;
+pub const B_RHIZOME: u16 = 73;
+pub const B_BURROW: u16 = 74;
+pub const B_MAW: u16 = 75;
+pub const B_SPORANGIUM: u16 = 76;
+pub const B_SPAWNERY: u16 = 77;
+pub const B_COCOON: u16 = 78;
 
-pub const BUILDINGS: [BuildingDef; 72] = [
+pub const BUILDINGS: [BuildingDef; 79] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -815,6 +871,14 @@ pub const BUILDINGS: [BuildingDef; 72] = [
     BuildingDef { key: "t_pole", name: "Poteau nomade", hp: 200, cost: &[], build: 1, class: BClass::Pylon, supply: 6, connect: 13, vision: 0, race: RACE_TRANSH, ..BD },
     // relais logistique (Industriels) : sans énergie ; zone de RELAY_RANGE cases, reliés à RELAY_LINK cases
     BuildingDef { key: "logistic_relay", name: "Relais logistique", size: (2, 2), hp: 600, cost: &[(IRON_PLATE, 20), (GEAR, 10), (CIRCUIT, 10)], build: 8, tech: T_AUTOMATION, class: BClass::Relay, vision: 10, ..BD },
+    // ----- Souche, suite : mur vivant, gros nœud de racines, passage souterrain, digesteur d'épaves, mortier, organe d'eau, métamorphose -----
+    BuildingDef { key: "bramble", name: "Ronce", hp: 1200, cost: &[(SEVE, 12)], build: 2, tech: T_S_BRAMBLES, class: BClass::Wall, vision: 0, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "rhizome", name: "Rhizome", size: (2, 2), hp: 1500, cost: &[(SEVE, 80), (SELS, 30)], build: 10, tech: T_S_BRAMBLES, class: BClass::Pylon, supply: 7, connect: 5, vision: 8, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "burrow", name: "Terrier", size: (2, 2), hp: 1200, cost: &[(SEVE, 100), (SELS, 40)], build: 12, tech: T_S_ROOTWAYS, class: BClass::Gate, passable: true, vision: 10, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "maw", name: "Panse", size: (2, 2), hp: 1200, cost: &[(SEVE, 90), (SELS, 20)], build: 12, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "sporangium", name: "Sporange", size: (2, 2), hp: 1600, cost: &[(SEVE, 220), (SELS, 110)], build: 18, tech: T_S_SPORANGIA, class: BClass::Turret, weapon: 82, vision: 20, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "spawnery", name: "Frayère", size: (3, 3), hp: 3500, cost: &[(SEVE, 220), (SELS, 90)], build: 22, tech: T_S_TIDES, class: BClass::Factory, factory: FactoryKind::Naval, water: true, vision: 14, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "cocoon", name: "Cocon", size: (4, 4), hp: 9000, cost: &[(SEVE, 2400), (SELS, 1100)], build: 120, tech: T_S_BEHEMOTH, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -992,12 +1056,21 @@ pub const U_EGG_M: u16 = 78;
 pub const U_EGG_L: u16 = 79;
 /// chariot de convoi des Transhumants, attelé à une soute (voir transhumants::hitch)
 pub const U_T_CART: u16 = 80;
+// Souche, suite
+pub const U_BURSTER: u16 = 81;
+pub const U_DART: u16 = 82;
+pub const U_BURROWER: u16 = 83;
+pub const U_NURSE: u16 = 84;
+pub const U_HORNET: u16 = 85;
+pub const U_MORAY: u16 = 86;
+pub const U_LEVIATHAN: u16 = 87;
+pub const U_BEHEMOTH: u16 = 88;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 81] = [
+pub const UNITS: [UnitDef; 89] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1089,6 +1162,17 @@ pub const UNITS: [UnitDef; 81] = [
     // ----- Transhumants : chariot de convoi, attelé à une soute (coût pris dans son stock), qui fait la
     // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
     UnitDef { key: "t_cart", name: "Chariot de convoi", hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
+    // ----- Souche, suite -----
+    UnitDef { key: "burster", name: "Vessie", hp: 140, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 30), (SELS, 8)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
+    UnitDef { key: "dart", name: "Dard", hp: 360, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 45), (SELS, 18)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "burrower", name: "Fouisseur", hp: 520, speed: 38, radius: 130, weapons: &[77], vision: 16, cost: &[(SEVE, 55), (SELS, 14)], build: 7, tech: T_S_BURROWERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "nurse", name: "Nourrice", hp: 700, speed: 30, radius: 160, vision: 20, cost: &[(SEVE, 65), (SELS, 24)], build: 9, tech: T_S_NURSES, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "hornet", name: "Frelon", layer: Layer::Air, hp: 300, speed: 130, radius: 110, weapons: &[78], vision: 26, cost: &[(SEVE, 45), (SELS, 18)], build: 7, tech: T_S_HORNETS, tier: 4, altitude: 2048, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    // la Frayère met bas des petits déjà formés, un par un (pas d'œufs sur l'eau)
+    UnitDef { key: "moray", name: "Murène", layer: Layer::Naval, hp: 1600, speed: 44, radius: 260, weapons: &[79], vision: 26, cost: &[(SEVE, 160), (SELS, 60)], build: 16, tech: T_S_TIDES, factory: FactoryKind::Naval, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "leviathan", name: "Léviathan", layer: Layer::Hover, hp: 14000, speed: 26, radius: 480, weapons: &[80, 81], vision: 32, cost: &[(SEVE, 900), (SELS, 420)], build: 70, tech: T_S_LEVIATHAN, factory: FactoryKind::Naval, tier: 5, bio: true, race: RACE_SOUCHE, ..UD },
+    // il sort d'un Cocon, aucune couveuse ne le pond (voir souche::tick_cocoon)
+    UnitDef { key: "behemoth", name: "Béhémoth", hp: 52000, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 2400), (SELS, 1100)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

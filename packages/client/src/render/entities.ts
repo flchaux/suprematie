@@ -234,6 +234,7 @@ function wreckGeometry(src: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+const ZAXIS = new THREE.Vector3(0, 0, 1);
 
 export interface UnitScreen {
   id: number;
@@ -262,6 +263,9 @@ function oreTint(item: number, data: GameData): THREE.Color | null {
   return c;
 }
 
+/** Enfoncement d'un fouisseur enterré (part de sa hauteur). */
+const BURIED_DEPTH = 0.43;
+
 export class Entities {
   group = new THREE.Group();
   unitMeshes: KindMesh[] = [];
@@ -278,6 +282,8 @@ export class Entities {
   wallSeg: KindMesh | null = null;
   /** Souche : tronçon de racine, du centre de la case vers un voisin relié (comme les pans de mur) */
   rootSeg: KindMesh | null = null;
+  /** Souche : pan de ronce entre deux ronces voisines du même camp */
+  brambleSeg: KindMesh | null = null;
   /** goulottes entre les sorties d'un extracteur et les tapis devant lui */
   chute: KindMesh | null = null;
   /** niveau d'un extracteur amélioré : une barre ambrée par niveau sur la façade avant du socle */
@@ -449,7 +455,8 @@ export class Entities {
       const rv = b.cls === BClass.Rail ? BUILDING_MODELS[b.key + "_virage"] : undefined;
       if (rv) this.railCurves.set(this.buildingMeshes.length - 1, new KindMesh(this.group, () => buildModel(rv), () => km.scale, TEX_PER_TILE_BUILDING));
       // segment de mur : à l'échelle du poteau (construits ensemble, à la demande)
-      if (b.cls === BClass.Wall && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.wall_seg), () => km.scale, TEX_PER_TILE_BUILDING);
+      if (b.key === "wall" && !this.wallSeg && BUILDING_MODELS.wall_seg) this.wallSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.wall_seg), () => km.scale, TEX_PER_TILE_BUILDING);
+      if (b.key === "bramble" && !this.brambleSeg && BUILDING_MODELS.bramble_seg) this.brambleSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.bramble_seg), () => km.scale, TEX_PER_TILE_BUILDING);
       if (b.key === "root" && !this.rootSeg && BUILDING_MODELS.root_seg) this.rootSeg = new KindMesh(this.group, () => buildModel(BUILDING_MODELS.root_seg), () => km.scale, TEX_PER_TILE_BUILDING);
       if (b.cls === BClass.Extractor && !this.chute && BUILDING_MODELS.goulotte) this.chute = new KindMesh(this.group, buildModel(BUILDING_MODELS.goulotte), 1, TEX_PER_TILE_BUILDING);
     }
@@ -633,6 +640,29 @@ export class Entities {
     if (this.husks.length < 400 && this.unitMeshes[kind]) this.husks.push({ kind, owner, x, z, facing, t0 });
   }
 
+  /** Racines d'une Reine enracinée : six grosses racines sortent du sol autour d'elle et y replongent. */
+  private queenRoots(x: number, y: number, z: number, k: number, height: number, slot: number): void {
+    const seg = this.rootSeg;
+    if (!seg) return;
+    for (let i = 0; i < 6; i++) {
+      seg.ensure(seg.n + 1);
+      const a = (i / 6) * Math.PI * 2 + 0.35;
+      // longues et minces, la pointe piquée dans le sol (inclinées) ; elles montent du sol en grandissant
+      const len = seg.scale * height * (2.5 + (i % 2) * 0.6);
+      const thick = seg.scale * height * 0.85;
+      tmpQ2.setFromAxisAngle(UP, a).multiply(tmpQ3.setFromAxisAngle(ZAXIS, -0.2));
+      tmpM2.compose(tmpV.set(x, y + (0.2 - 0.6 * (1 - k)) * height, z), tmpQ2, tmpS.set(len * (0.35 + 0.65 * k), thick, thick));
+      seg.body!.mesh.setMatrixAt(seg.n, tmpM2);
+      setTeamColor(seg.body!, seg.n, this.teamColors[slot]);
+      seg.n++;
+    }
+  }
+
+  /** Une unité qui apparaît là (cocon ouvert) grandit comme si elle sortait d'un œuf. */
+  addBirth(x: number, z: number, tick: number): void {
+    this.hatches.push({ x, z, t0: tick / 20 });
+  }
+
   unitHeight(kind: number, x: number, z: number): number {
     const u = this.data.units[kind];
     const g = groundHeight(this.map, x, z);
@@ -643,6 +673,8 @@ export class Entities {
       case Layer.Sub:
         return water - 0.45;
       case Layer.Hover:
+        // léviathan : il nage le ventre sous la surface, et se hisse sur la rive
+        if (u.key === "leviathan") return Math.max(g, water - 0.55);
         return Math.max(g, water) + u.altitude / TILE;
       case Layer.Air:
         return Math.max(g, water) + u.altitude / TILE;
@@ -664,6 +696,7 @@ export class Entities {
     for (const l of this.levelMeshes.values()) all.push(...l);
     if (this.wallSeg) all.push(this.wallSeg);
     if (this.rootSeg) all.push(this.rootSeg);
+    if (this.brambleSeg) all.push(this.brambleSeg);
     for (const m of [this.liftMast, this.liftTray, ...this.beltQuays.values()]) if (m) all.push(m);
     let i = 0;
     const idle: (cb: (d?: { timeRemaining(): number }) => void) => void =
@@ -681,7 +714,7 @@ export class Entities {
 
   /** Niveau de détail réduit pour tous les modèles (pièces fines retirées), selon la distance de la caméra. */
   setDetail(lo: boolean): void {
-    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.rootSeg, this.chute, this.liftMast, this.liftTray, ...this.beltQuays.values()];
+    const all: (KindMesh | null)[] = [...this.unitMeshes, ...this.buildingMeshes, this.wallSeg, this.rootSeg, this.brambleSeg, this.chute, this.liftMast, this.liftTray, ...this.beltQuays.values()];
     for (const l of this.levelMeshes.values()) all.push(...l);
     for (const l of this.beltCurves.values()) all.push(...l);
     for (const l of this.beltJunctions.values()) all.push(...l);
@@ -745,6 +778,7 @@ export class Entities {
     for (const m of this.railCurves.values()) m.begin();
     this.wallSeg?.begin();
     this.rootSeg?.begin();
+    this.brambleSeg?.begin();
     this.chute?.begin();
     this.liftMast?.begin();
     this.liftTray?.begin();
@@ -860,7 +894,8 @@ export class Entities {
         st.pack = packing;
         st.packTick = f.tick;
       }
-      const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (packing === 1 ? 300 : 200)) : 0;
+      const queen = def.key === "queen";
+      const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / (queen ? 60 : packing === 1 ? 300 : 200)) : 0;
       // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
       let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : 0;
       if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
@@ -878,6 +913,19 @@ export class Entities {
         const age = Math.max(0, simT - st.born) / BIRTH_TIME;
         if (age >= 1) st.born = undefined;
         else grow = birthScale(age);
+      }
+      // Reine enracinée : elle s'affaisse, des racines jaillissent autour d'elle (1 : enracinée)
+      if (queen) {
+        const rootK = packing === 1 ? packT : packing === 2 ? 1 - packT : flags & UF.DEPLOYED ? 1 : 0;
+        if (rootK > 0) {
+          bob -= 0.22 * rootK * km.height;
+          this.queenRoots(x, y, z, rootK, km.height, cslot(owner));
+        }
+      }
+      // fouisseur enterré : seules les épines de son dos dépassent ; la terre vole quand il s'enterre ou surgit
+      if (def.key === "burrower") {
+        bob -= (st.dep ?? 0) * km.height * BURIED_DEPTH;
+        if (Math.abs(depT - (st.dep ?? 0)) > 0.02 && Math.random() < dt * 20) fx.dirt(x, z, 0.8);
       }
       const sc = km.scale * (0.05 + 0.95 * emerge) * grow;
       // les origines des pivots sont à l'échelle du modèle : elles suivent l'unité quand elle grandit
@@ -1131,7 +1179,9 @@ export class Entities {
       // le mât d'un ascenseur est à droite du modèle : on le retourne quand la file arrive par ce côté-là (forme 2)
       const orient = mast && shape === 2 ? (dir + 2) & 3 : dir;
       dirQuat(tmpQ, orient);
-      const sc = km.scale;
+      // cocon de la Souche qui mûrit : il bat, de plus en plus vite et fort, jusqu'à s'ouvrir
+      const ripe = def.key === "cocoon" && build >= 1 ? (buf[o + 5] & 0x3ff) / 1000 : -1;
+      const sc = ripe < 0 ? km.scale : km.scale * (1 + Math.sin(simT * (3 + 9 * ripe * ripe)) * (0.008 + 0.03 * ripe));
       // les hauteurs du mât sont en cases du monde : seul son plan est à l'échelle du tapis
       const sy = (mast ? 1 : sc) * (build >= 1 ? 1 : Math.max(0.08, build));
       tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
@@ -1139,7 +1189,7 @@ export class Entities {
       const c = build < 1 ? tmpC.copy(col).lerp(new THREE.Color(0x9fe8ff), 0.5) : upg > 0 ? tmpC.copy(col).lerp(UPGRADE_TINT, 0.45 + 0.1 * Math.sin(performance.now() / 180)) : bflags & BF.UNPOWERED ? tmpC.copy(col).multiplyScalar(0.45) : col;
       setTeamColor(km.body!, km.n, c);
       // porte de transit (aux2 : charge d'ouverture, 0 à 100) : gerbe à l'ouverture, puis horizon ondulant
-      if (def.cls === BClass.Gate && build >= 1) {
+      if (def.key === "gate" && build >= 1) {
         const charge = buf[o + 6];
         if (charge >= 60) {
           // anneau : centre (0 ; 2,1 ; 0) du modèle, rayon intérieur 1,26 ; l'horizon est dans le plan de l'anneau
@@ -1252,7 +1302,7 @@ export class Entities {
           rseg.n++;
         }
       }
-      const seg = this.wallSeg;
+      const seg = def.key === "bramble" ? this.brambleSeg : this.wallSeg;
       if (def.cls === BClass.Wall && seg) {
         // un pan vers chaque voisin (est, sud, ouest, nord) qui est un mur du même camp
         const team = teamOf(owner);
@@ -1431,6 +1481,7 @@ export class Entities {
     for (const m of this.railCurves.values()) m.end();
     this.wallSeg?.end();
     this.rootSeg?.end();
+    this.brambleSeg?.end();
     this.chute?.end();
     this.liftMast?.end();
     for (const m of this.beltQuays.values()) m.end();

@@ -122,8 +122,8 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
     // bits 29 et 30 : chenillard des Transhumants qui se déploie, qui se replie (animation des stabilisateurs)
     let stealth = (crate::combat::cloaked(w, s) as i32) << 27
         | (crate::combat::radar_stealth(w, s) as i32) << 28
-        | ((c.pack == crate::transhumants::PACK_DEPLOYING) as i32) << 29
-        | ((c.pack == crate::transhumants::PACK_FOLDING) as i32) << 30;
+        | (matches!(c.pack, crate::transhumants::PACK_DEPLOYING | crate::essaim::Q_ROOTING) as i32) << 29
+        | (matches!(c.pack, crate::transhumants::PACK_FOLDING | crate::essaim::Q_UPROOTING) as i32) << 30;
     let aux = match c.orders.first() {
         Some(o) => {
             let (tx, ty) = match *o {
@@ -246,6 +246,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Orbital => ((bb.charge as u64 * 1000 / (60 * 20 * 1024)) as i32, 0),
         BClass::Shield => (bb.shield, bb.shield_down as i32),
         BClass::Gate => (bb.link as i32, bb.charge as i32),
+        // cocon de la Souche : maturation (‰)
+        BClass::Organ if bb.kind == B_COCOON => ((bb.charge * 1000 / crate::souche::COCOON_TICKS) as i32, 0),
         // anneaux de transport : montée (ticks restants), recharge
         BClass::Transfer => (bb.charge as i32, bb.cooldown as i32),
         // générateur : niveau (bits 24-25), production actuelle (kW)
@@ -674,7 +676,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id && k.relay == 0).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"egg\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"egg\":{},\"soil\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -699,7 +701,9 @@ pub fn info_unit(w: &World, id: u32) -> String {
         pickup_info(w, s),
         deliver_info(w, s),
         // œuf de la Souche : {kind (espèce portée), left (ticks avant l'éclosion), total (incubation)} ou null
-        crate::ponte::content(w, s).map_or("null".into(), |k| format!("{{\"kind\":{},\"left\":{},\"total\":{}}}", k, crate::ponte::hatch_left(w, s), c.timer))
+        crate::ponte::content(w, s).map_or("null".into(), |k| format!("{{\"kind\":{},\"left\":{},\"total\":{}}}", k, crate::ponte::hatch_left(w, s), c.timer)),
+        // Reine de la Souche : elle se tient sur son terreau (elle peut s'y enraciner)
+        w.units.kind[s] == U_QUEEN && crate::essaim::soil(w, s) != 0
     )
 }
 

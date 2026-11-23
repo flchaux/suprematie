@@ -17,48 +17,48 @@
 // n'anime pas les ailes.
 import type { ColorName, Model, Part, Vec3 } from "./types.ts";
 
-const D = Math.PI / 180;
-const r3 = (v: number): number => Math.round(v * 1000) / 1000;
-const V = (x: number, y: number, z: number): Vec3 => [r3(x), r3(y), r3(z)];
+export const D = Math.PI / 180;
+export const r3 = (v: number): number => Math.round(v * 1000) / 1000;
+export const V = (x: number, y: number, z: number): Vec3 => [r3(x), r3(y), r3(z)];
 
 // ---------- orientations (matrices 3 x 3, lignes) ----------
-type M3 = number[];
-const mul = (a: M3, b: M3): M3 => {
+export type M3 = number[];
+export const mul = (a: M3, b: M3): M3 => {
   const o: M3 = [];
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) o.push(a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j]);
   return o;
 };
-const Rx = (a: number): M3 => [1, 0, 0, 0, Math.cos(a * D), -Math.sin(a * D), 0, Math.sin(a * D), Math.cos(a * D)];
-const Ry = (a: number): M3 => [Math.cos(a * D), 0, Math.sin(a * D), 0, 1, 0, -Math.sin(a * D), 0, Math.cos(a * D)];
-const Rz = (a: number): M3 => [Math.cos(a * D), -Math.sin(a * D), 0, Math.sin(a * D), Math.cos(a * D), 0, 0, 0, 1];
-const app = (m: M3, v: Vec3): Vec3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+export const Rx = (a: number): M3 => [1, 0, 0, 0, Math.cos(a * D), -Math.sin(a * D), 0, Math.sin(a * D), Math.cos(a * D)];
+export const Ry = (a: number): M3 => [Math.cos(a * D), 0, Math.sin(a * D), 0, 1, 0, -Math.sin(a * D), 0, Math.cos(a * D)];
+export const Rz = (a: number): M3 => [Math.cos(a * D), -Math.sin(a * D), 0, Math.sin(a * D), Math.cos(a * D), 0, 0, 0, 1];
+export const app = (m: M3, v: Vec3): Vec3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
 /** Angles d'Euler (ordre XYZ, degrés) d'une matrice de rotation, comme les lit le générateur. */
-function eul(m: M3): Vec3 {
+export function eul(m: M3): Vec3 {
   const m13 = Math.max(-1, Math.min(1, m[2]));
   const y = Math.asin(m13);
   const [x, z] = Math.abs(m13) < 0.9999999 ? [Math.atan2(-m[5], m[8]), Math.atan2(-m[1], m[0])] : [Math.atan2(m[7], m[4]), 0];
   return [Math.round(x / D * 10) / 10, Math.round(y / D * 10) / 10, Math.round(z / D * 10) / 10];
 }
 /** Orientation : roulis autour de z, puis tangage autour de x, puis lacet autour de y. */
-const ypr = (yaw: number, pitch: number, roll = 0): M3 => mul(Ry(yaw), mul(Rx(pitch), Rz(roll)));
+export const ypr = (yaw: number, pitch: number, roll = 0): M3 => mul(Ry(yaw), mul(Rx(pitch), Rz(roll)));
 /** Rotation qui amène l'axe +y (cônes, cylindres) sur la direction `d`. */
-function along(d: Vec3): Vec3 {
+export function along(d: Vec3): Vec3 {
   const l = Math.hypot(d[0], d[1], d[2]) || 1;
   return eul(ypr(Math.atan2(d[0], d[2]) / D, Math.acos(d[1] / l) / D));
 }
-const add = (a: Vec3, b: Vec3, k = 1): Vec3 => V(a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k);
-const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export const add = (a: Vec3, b: Vec3, k = 1): Vec3 => V(a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k);
+export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 /** Point sur un cercle horizontal : angle `a` en degrés (0 : vers +z, 90 : vers +x). */
-const pol = (r: number, a: number, y: number): Vec3 => V(r * Math.sin(a * D), y, r * Math.cos(a * D));
+export const pol = (r: number, a: number, y: number): Vec3 => V(r * Math.sin(a * D), y, r * Math.cos(a * D));
 
 // ---------- pièces organiques ----------
 /** Boule lisse (sphère fine lissée), étirée par `sc`. */
-const blob = (r: number, pos: Vec3, sc: number | Vec3, color: ColorName, extra: Partial<Part> = {}): Part => ({ shape: "sphere", radius: r, detail: 1, smooth: true, pos, scale: sc, color, ...extra });
+export const blob = (r: number, pos: Vec3, sc: number | Vec3, color: ColorName, extra: Partial<Part> = {}): Part => ({ shape: "sphere", radius: r, detail: 1, smooth: true, pos, scale: sc, color, ...extra });
 /** Petite bille à facettes (20 triangles) : yeux, œufs, spores, bossettes. */
-const bille = (r: number, pos: Vec3, sc: number | Vec3, color: ColorName, extra: Partial<Part> = {}): Part => ({ shape: "sphere", radius: r, detail: 0, pos, scale: sc, color, ...extra });
+export const bille = (r: number, pos: Vec3, sc: number | Vec3, color: ColorName, extra: Partial<Part> = {}): Part => ({ shape: "sphere", radius: r, detail: 0, pos, scale: sc, color, ...extra });
 
 /** Contour de feuille (pointe en haut), longueur `L` sur y, largeur `W`. */
-function feuilleProfil(L: number, W: number, n = 6, arr = 0.15): [number, number][] {
+export function feuilleProfil(L: number, W: number, n = 6, arr = 0.15): [number, number][] {
   const right: [number, number][] = [];
   for (let i = 1; i < n; i++) {
     const t = i / n;
@@ -72,7 +72,7 @@ function feuilleProfil(L: number, W: number, n = 6, arr = 0.15): [number, number
  * au-dessus de l'horizontale, avec sa nervure centrale (`rib`, facultative). `tilt` : matrice appliquée
  * ensuite (corolle inclinée), autour de `org`.
  */
-function feuille(base: Vec3, yaw: number, elev: number, L: number, W: number, color: ColorName, rib?: ColorName, extra: Partial<Part> = {}, tilt?: M3, org: Vec3 = [0, 0, 0]): Part[] {
+export function feuille(base: Vec3, yaw: number, elev: number, L: number, W: number, color: ColorName, rib?: ColorName, extra: Partial<Part> = {}, tilt?: M3, org: Vec3 = [0, 0, 0]): Part[] {
   let m = ypr(yaw, 90 - elev);
   let b = base;
   if (tilt) {
@@ -90,13 +90,13 @@ function feuille(base: Vec3, yaw: number, elev: number, L: number, W: number, co
 }
 
 /** Nervure qui suit un profil tourné (lathe posé en `pos`), sur le méridien d'angle `a`, décalée de `off`. */
-function meridien(profile: [number, number][], pos: Vec3, a: number, off: number, from: number, to: number, r: number, color: ColorName, extra: Partial<Part> = {}): Part {
+export function meridien(profile: [number, number][], pos: Vec3, a: number, off: number, from: number, to: number, r: number, color: ColorName, extra: Partial<Part> = {}): Part {
   const path = profile.slice(from, to + 1).map(([rr, y]) => add(pos, pol(rr + off, a, y)));
   return { shape: "tube", radius: r, sides: 4, path, bend: 0, color, ...extra };
 }
 
 /** Racine qui part de `from` vers l'extérieur selon l'angle `a`, rampe au sol et s'y enfonce (pointe effilée). */
-function racine(from: Vec3, a: number, len: number, r: number, color: ColorName = "wood", sink = 0.12): Part[] {
+export function racine(from: Vec3, a: number, len: number, r: number, color: ColorName = "wood", sink = 0.12): Part[] {
   const d0 = Math.hypot(from[0], from[2]);
   const mid = pol(d0 + len * 0.55, a + 4, Math.max(r * 0.55, from[1] * 0.3));
   const tip = pol(d0 + len, a + 9, -r * 0.6 - sink * 0.2);
@@ -104,13 +104,13 @@ function racine(from: Vec3, a: number, len: number, r: number, color: ColorName 
 }
 
 /** Tertre de terre ou d'écorce (profil tourné bas, bord adouci), rayon `R`, hauteur `h`. */
-const tertre = (R: number, h: number, color: ColorName, y = 0): Part => ({
+export const tertre = (R: number, h: number, color: ColorName, y = 0): Part => ({
   shape: "lathe", sides: 16, pos: [0, y, 0], color,
   profile: [[0, 0], [R, 0], [R * 0.92, h * 0.35], [R * 0.72, h * 0.75], [R * 0.4, h * 0.97], [0, h]].map(([a, b]): [number, number] => [r3(a), r3(b)]),
 });
 
 /** Grappe de petites boules lumineuses (sève, œufs, spores). */
-const grappe = (c: Vec3, s: number, color: ColorName, stretch = 1.2): Part[] => [
+export const grappe = (c: Vec3, s: number, color: ColorName, stretch = 1.2): Part[] => [
   bille(0.16 * s, c, [1, stretch, 1], color),
   bille(0.12 * s, add(c, [0.19 * s, -0.04 * s, 0.07 * s]), [1, stretch, 1], color),
   bille(0.11 * s, add(c, [-0.1 * s, -0.05 * s, 0.17 * s]), [1, stretch, 1], color),
@@ -118,7 +118,7 @@ const grappe = (c: Vec3, s: number, color: ColorName, stretch = 1.2): Part[] => 
 
 // ---------- pattes (unités) ----------
 /** Points d'une chaîne de segments depuis `from` : lacet `yaw` (négatif : vers l'avant), [pente, longueur]. */
-function chaine(from: Vec3, yaw: number, segs: [number, number][]): Vec3[] {
+export function chaine(from: Vec3, yaw: number, segs: [number, number][]): Vec3[] {
   const pts: Vec3[] = [from];
   let p = from;
   const ay = yaw * D;
@@ -134,7 +134,7 @@ function chaine(from: Vec3, yaw: number, segs: [number, number][]): Vec3[] {
  * Patte (côté droit si `side` = 1, gauche si -1) : articulation ronde sur le pivot `name` à la hanche,
  * tube coudé, griffe au bout. Les pivots « jambe… » se balancent en marchant (voir faune.ts).
  */
-function patte(name: string, side: 1 | -1, hip: Vec3, yaw: number, segs: [number, number][], r: number, color: ColorName, joint: ColorName, claw: ColorName = "dry", spur?: ColorName): Part[] {
+export function patte(name: string, side: 1 | -1, hip: Vec3, yaw: number, segs: [number, number][], r: number, color: ColorName, joint: ColorName, claw: ColorName = "dry", spur?: ColorName): Part[] {
   // dernier segment de longueur 0 : allongé pour que la griffe touche le sol (y = 0)
   const last0 = segs[segs.length - 1];
   if (last0[1] === 0) {
@@ -159,13 +159,13 @@ function patte(name: string, side: 1 | -1, hip: Vec3, yaw: number, segs: [number
 }
 
 /** Six pattes en trépied alterné (avant droite, milieu gauche, arrière droite ensemble). */
-function sixPattes(hips: [Vec3, Vec3, Vec3], yaws: [number, number, number], segs: [number, number][], r: number, color: ColorName, joint: ColorName, claw?: ColorName, spur?: ColorName): Part[] {
+export function sixPattes(hips: [Vec3, Vec3, Vec3], yaws: [number, number, number], segs: [number, number][], r: number, color: ColorName, joint: ColorName, claw?: ColorName, spur?: ColorName): Part[] {
   const names = [["jambe_t_d", "jambe_t_g"], ["jambe_ar_m_d", "jambe_ar_m_g"], ["jambe_q_d", "jambe_q_g"]];
   return names.flatMap(([d, g], i) => [...patte(d, 1, hips[i], yaws[i], segs, r, color, joint, claw, spur), ...patte(g, -1, hips[i], yaws[i], segs, r, color, joint, claw, spur)]);
 }
 
 /** Quatre pattes au trot (diagonales ensemble). */
-function quatrePattes(front: Vec3, back: Vec3, yf: number, yb: number, segs: [number, number][], r: number, color: ColorName, joint: ColorName, claw?: ColorName, spur?: ColorName): Part[] {
+export function quatrePattes(front: Vec3, back: Vec3, yf: number, yb: number, segs: [number, number][], r: number, color: ColorName, joint: ColorName, claw?: ColorName, spur?: ColorName): Part[] {
   return [
     ...patte("jambe_av_d", 1, front, yf, segs, r, color, joint, claw, spur),
     ...patte("jambe_av_g", -1, front, yf, segs, r, color, joint, claw, spur),
@@ -175,16 +175,16 @@ function quatrePattes(front: Vec3, back: Vec3, yf: number, yb: number, segs: [nu
 }
 
 /** Yeux lumineux (paire, symétriques en x). */
-const yeux = (x: number, y: number, z: number, r: number, color: ColorName = "amber", extra: Partial<Part> = {}): Part => bille(r, V(x, y, z), 1, color, { mirror: true, ...extra });
+export const yeux = (x: number, y: number, z: number, r: number, color: ColorName = "amber", extra: Partial<Part> = {}): Part => bille(r, V(x, y, z), 1, color, { mirror: true, ...extra });
 
 // ---------- chitine, os, crocs ----------
-const unit = (v: Vec3): Vec3 => {
+export const unit = (v: Vec3): Vec3 => {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
   return [v[0] / l, v[1] / l, v[2] / l];
 };
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+export const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 /** Repère d'une pièce : x local selon `f`, y local vers `c` (rendu perpendiculaire), z local normal aux deux. */
-function frame(f: Vec3, c: Vec3): M3 {
+export function frame(f: Vec3, c: Vec3): M3 {
   const X = unit(f);
   const Z = unit(cross(X, c));
   const Y = cross(Z, X);
@@ -195,7 +195,7 @@ function frame(f: Vec3, c: Vec3): M3 {
  * Corne, griffe ou épine effilée : troncs de cône le long de `pts` (rayon r0 au départ, r1 au dernier coude),
  * nœuds aux coudes, pointe en cône (couleur `tip`, sinon `color`).
  */
-function effile(pts: Vec3[], r0: number, r1: number, color: ColorName, extra: Partial<Part> = {}, tip?: ColorName, sides = 6): Part[] {
+export function effile(pts: Vec3[], r0: number, r1: number, color: ColorName, extra: Partial<Part> = {}, tip?: ColorName, sides = 6): Part[] {
   const n = pts.length - 1;
   const out: Part[] = [];
   for (let i = 0; i < n; i++) {
@@ -214,7 +214,7 @@ function effile(pts: Vec3[], r0: number, r1: number, color: ColorName, extra: Pa
 }
 
 /** `n` points sur la courbe lisse (Catmull-Rom) qui passe par les points de contrôle `c`. */
-function courbe(c: Vec3[], n: number): Vec3[] {
+export function courbe(c: Vec3[], n: number): Vec3[] {
   const out: Vec3[] = [];
   const m = c.length - 1;
   for (let k = 0; k < n; k++) {
@@ -232,7 +232,7 @@ function courbe(c: Vec3[], n: number): Vec3[] {
  * Corne, côte ou racine courbe : la courbe lisse par `ctrl` en `k` tronçons de tuyau de plus en plus fins
  * (rayon r0 au départ, ressauts annelés entre tronçons), terminée en pointe (couleur `tip`, sinon `color`).
  */
-function corne(ctrl: Vec3[], r0: number, k: number, color: ColorName, extra: Partial<Part> = {}, tip?: ColorName, taper = 0.6): Part[] {
+export function corne(ctrl: Vec3[], r0: number, k: number, color: ColorName, extra: Partial<Part> = {}, tip?: ColorName, taper = 0.6): Part[] {
   const s = courbe(ctrl, 3 * k + 3);
   const out: Part[] = [];
   for (let i = 0; i < k; i++) out.push({ shape: "tube", radius: r3(r0 * (1 - (taper * i) / k)), sides: 6, path: s.slice(3 * i, 3 * i + 4), bend: 0, color, ...extra });
@@ -243,7 +243,7 @@ function corne(ctrl: Vec3[], r0: number, k: number, color: ColorName, extra: Par
 }
 
 /** Contour d'une lame en croissant (faux, mandibule, croc) : de la base (x = 0) à la pointe (x = L), courbée vers +y. */
-function croissant(L: number, W: number, curve: number, n = 4): [number, number][] {
+export function croissant(L: number, W: number, curve: number, n = 4): [number, number][] {
   const top: [number, number][] = [];
   const bot: [number, number][] = [];
   for (let i = 0; i <= n; i++) {
@@ -257,12 +257,12 @@ function croissant(L: number, W: number, curve: number, n = 4): [number, number]
 }
 
 /** Lame en croissant posée en `base`, dirigée selon `f`, courbée vers `c`, d'épaisseur `thick`. */
-function lame(base: Vec3, f: Vec3, c: Vec3, L: number, W: number, curve: number, thick: number, color: ColorName, extra: Partial<Part> = {}): Part {
+export function lame(base: Vec3, f: Vec3, c: Vec3, L: number, W: number, curve: number, thick: number, color: ColorName, extra: Partial<Part> = {}): Part {
   return { shape: "extrude", profile: croissant(L, W, curve), depth: thick, pos: V(...base), rot: eul(frame(f, c)), color, ...extra };
 }
 
 /** Plaque de chitine facettée (bille aplatie) posée en `pos`, normale `nrm`, allongée selon `f` : `sc` = [largeur, épaisseur, longueur]. */
-function plaque(r: number, pos: Vec3, nrm: Vec3, f: Vec3, sc: Vec3, color: ColorName, extra: Partial<Part> = {}): Part {
+export function plaque(r: number, pos: Vec3, nrm: Vec3, f: Vec3, sc: Vec3, color: ColorName, extra: Partial<Part> = {}): Part {
   // repère : x local = largeur, y local = normale, z local = longueur (selon f)
   const Y = unit(nrm);
   const X = unit(cross(Y, f));
@@ -408,7 +408,7 @@ const bulb: Model = {
 // chambre de ponte (sac de chair cuirassé de chitine, veines lumineuses) penche son oviducte au-dessus des
 // œufs ; œufs cuirassés à ouverture en quatre lèvres et cœur lumineux, quelques œufs tout lumineux
 const OEUF: [number, number][] = [[0, 0], [0.2, 0.04], [0.27, 0.24], [0.21, 0.46], [0.09, 0.56]];
-function oeuf(p: Vec3, s: number, color: ColorName): Part[] {
+export function oeuf(p: Vec3, s: number, color: ColorName): Part[] {
   const top = add(p, [0, 0.55 * s, 0]);
   return [
     { shape: "lathe", sides: 10, profile: OEUF.map(([r, y]): [number, number] => [r3(r * s), r3(y * s)]), pos: p, color },
@@ -453,7 +453,7 @@ const brood: Model = {
 
 // matrice : monticule d'écorce, double hélice organique (brins vert et brun, barreaux lumineux) qui tourne
 // au travail, graine lumineuse au sommet tenue par trois feuilles, bagues d'équipe en pied et en tête
-function brin(phase: number, n: number, color: ColorName): Part {
+export function brin(phase: number, n: number, color: ColorName): Part {
   const path: Vec3[] = [];
   for (let i = 0; i <= n; i++) path.push(pol(0.36, phase + i * 30, 0.32 + i * 0.07));
   return { shape: "tube", radius: 0.07, sides: 6, path, bend: 0, color, parent: "spirale" };
@@ -717,7 +717,7 @@ const shell: Model = {
 // tendus vers l'avant, barbelés d'os et terminés en crochets ; six vrilles de chitine pour pattes
 const LIANE: [number, number][] = [[0, 0], [0.4, 0.05], [0.52, 0.28], [0.46, 0.6], [0.28, 0.85], [0.14, 0.94], [0.1, 0.95]];
 const LI0: Vec3 = [0, 0.45, 0];
-function tentacule(path: Vec3[], r: number, barbs: number[], extra: Partial<Part> = {}): Part[] {
+export function tentacule(path: Vec3[], r: number, barbs: number[], extra: Partial<Part> = {}): Part[] {
   const n = path.length - 1;
   const d = sub(path[n], path[n - 1]);
   return [
@@ -747,7 +747,7 @@ const vine: Model = {
 // planeur à membranes : corps de chitine noire à plaques dorsales d'équipe, sacs de spores lumineux aux
 // épaules et sous le ventre ; grandes ailes de membrane rouille nervurées de sève, bras d'attaque d'équipe,
 // doigts de chitine, griffe de pouce et crochets d'os aux pointes ; tête allongée à mandibules ; longue queue à dard
-function aile(): Part[] {
+export function aile(): Part[] {
   // contour dans (x, z) : bord d'attaque vers l'avant, bord de fuite festonné entre les doigts
   const c: [number, number][] = [[0.2, 0.32], [0.75, 0.52], [1.35, 0.48], [1.75, 0.3], [2.25, 0.04], [1.95, -0.16], [1.7, -0.14], [1.45, -0.55], [1.2, -0.38], [0.95, -0.8], [0.7, -0.52], [0.42, -0.74], [0.2, -0.5]];
   const poignet: Vec3 = [1.35, 0.11, 0.46];

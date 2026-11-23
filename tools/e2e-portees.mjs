@@ -88,7 +88,7 @@ const cmds = await page.evaluate(async ([x, z]) => {
   return { m1, m2, m3, m4: ui.mode, out, n: ui.selUnits[0].count };
 }, [c.x, c.z]);
 check(cmds.m1 === "ferryFrom" && cmds.m2 === "ferryTo" && cmds.m3 === "ferryTo" && cmds.m4 === "", "modes de la navette (refus à 10 cases)");
-check(cmds.out.length === 1 && cmds.out[0][0] === 57 && cmds.out[0][6] === cmds.n, "ordre envoyé aux seuls transports", JSON.stringify(cmds.out[0]?.slice(0, 7)));
+check(cmds.out.length === 1 && cmds.out[0][0] === 58 && cmds.out[0][6] === cmds.n, "ordre envoyé aux seuls transports", JSON.stringify(cmds.out[0]?.slice(0, 7)));
 await page.evaluate(() => window.__game.client.setGfx({ ranges: false }));
 await page.waitForFunction(() => !window.__game.client.scene.ranges.mesh.visible, null, { timeout: 60000 }).catch(() => {});
 check(!(await rings()).visible, "réglage coupé : plus de cercles");
