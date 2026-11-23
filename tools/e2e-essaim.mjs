@@ -23,6 +23,8 @@ page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 await page.goto(`${base}/?k=testkey&demo=essaim${webgpu ? "" : "&webgl"}`);
 await page.waitForFunction(() => window.__game?.client.frame?.nBuildings > 0, null, { timeout: 150000 });
+// souris au centre : au bord de la page, elle ferait défiler la carte
+await page.mouse.move(640, 300);
 // fige la démo à un tick précis : le rendu logiciel est lent, les captures se font au calme
 const stopAt = async (tick) => {
   await page.evaluate((t) => window.__game.client.stopReplayAt(t), tick);
@@ -57,7 +59,9 @@ const look = async (x, z, distance, yaw = 0) => {
     sc.yaw = yaw;
     sc.updateCamera();
   }, [x, z, distance, yaw]);
-  await page.waitForTimeout(4000);
+  // la trame suit la caméra avec du retard (rendu logiciel) : on laisse passer plusieurs images
+  await page.evaluate(() => new Promise((r) => { let n = 0; const f = () => (++n >= 6 ? r() : requestAnimationFrame(f)); f(); }));
+  await page.waitForTimeout(3000);
 };
 const shot = async (name) => {
   await page.screenshot({ path: `${outDir}/essaim-${name}.png`, timeout: 240000 });
@@ -76,6 +80,7 @@ for (const key of ["burster", "dart", "burrower", "nurse", "hornet", "moray", "l
   [at[key]] = await find(key, true);
   check(!!at[key], `organisme : ${key}`);
 }
+const behemoths = (await find("behemoth", true)).length;
 await shot("base");
 check(await page.evaluate(([x, z]) => {
   const t = window.__game.client.scene.terreau;
@@ -121,10 +126,9 @@ check(await page.evaluate(() => window.__game.client.scene.entities.effects.acid
 
 // ---------- le cocon s'ouvre (20 s après le début) ----------
 await look(heart.x + 4, heart.z + 2, 90);
-const n0 = (await find("behemoth", true)).length;
 await stopAt(Math.max(470, await page.evaluate(() => window.__game.client.frame.tick + 5)));
 await page.waitForTimeout(2000);
-check((await find("behemoth", true)).length === n0 + 1 && (await find("cocoon")).length === 0, "le cocon s'est ouvert, un Béhémoth est né");
+check((await find("behemoth", true)).length === behemoths + 1 && (await find("cocoon")).length === 0, "le cocon s'est ouvert, un Béhémoth est né");
 await look(at.cocoon.x, at.cocoon.z, 26);
 await shot("behemoth");
 

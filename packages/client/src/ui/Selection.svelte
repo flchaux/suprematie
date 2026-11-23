@@ -124,7 +124,7 @@
       const how = empty ? `vos dépôts à moins de ${d.depot?.factorySupply ?? 30} cases n'en ont pas assez : amenez-en, ou un tapis` : "ses drones les apportent";
       if (miss.length) return { text: `En attente de : ${miss.join(", ")} (${how})`, kind: "warn" };
     }
-    if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: "En attente de lots de recherche", kind: "warn" };
+    if (bdef.cls === BClass.Lab && !info.working && ui.research) return { text: `En attente ${bdef.race === 1 ? "d'ADN" : bdef.race === 2 ? "de relevés" : "de lots de recherche"}`, kind: "warn" };
     const low = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON) && info.sat < 900 ? ` · énergie ${Math.round((info.sat / 1024) * 100)} %` : "";
     // en marche : performance de la dernière minute (débit réel rapporté au maximum de la machine)
     const perf = info.flowMax > 0 && (bdef.cls === BClass.Crafter || bdef.cls === BClass.Extractor) ? Math.min(100, Math.round((info.flow / info.flowMax) * 100)) : null;
@@ -520,7 +520,7 @@
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
       {:else if bdef.cls === BClass.Lab}
         <div class="row"><span class="kicker">Recherche</span> {ui.research ? d.techs[ui.research].name : "aucune"} <button class="icon-btn" onclick={() => (ui.showResearch = true)}><Icon name="research" size={14} /> Choisir {#if keyOf("research")}<span class="key">{keyOf("research")}</span>{/if}</button></div>
-        <div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} size={20} />{/each}</div>
+        {#if (bdef.race ?? 0) === 0}<div class="row">{#each [0, 1, 2, 3, 4, 5] as k}<Item id={PACK1 + k} n={info.inv[k]} size={20} />{/each}</div>{/if}
       {:else if bdef.cls === BClass.Silo}
         <div class="row">Missiles prêts : <b class="num">{info.ammo}</b> <button class="icon-btn primary" disabled={!info.ammo} onclick={() => client.setMode("launch")}><Icon name="target" size={14} /> Lancer</button></div>
         <div class="row"><span class="kicker">Composants</span>{#each d.missileCost as [it, n], j}<Item id={it} n={info.inv[j]} need={n} size={16} />{/each}</div>

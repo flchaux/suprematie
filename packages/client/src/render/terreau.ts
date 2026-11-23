@@ -86,10 +86,10 @@ export function applyTerreau<T>(input: T, textured = false): T {
   const veinMask = smoothstep(0.05, 0.4, patchN).mul(inside).mul(broken);
   const cn = mx_noise_float(q.mul(1.9).add(vec2(4.1, 4.4)));
   const capMask = smoothstep(0.15, 0.5, patchN.negate()).mul(inside).mul(broken);
-  const halo = float(1).sub(smoothstep(0, fwidth(vn).mul(5).add(0.012), abs(vn))).mul(veinMask);
-  // de loin, les veines s'estompent (une case ne fait plus que quelques pixels)
+  // de loin, les veines s'estompent et perdent leur halo (une case ne fait plus que quelques pixels)
   const far = smoothstep(0.02, 0.07, fwidth(p2.x).add(fwidth(p2.y)));
-  const sap = line(vn, 1.6, 0.003).mul(veinMask).mul(float(1).sub(far.mul(0.65))).add(line(cn, 1, 0.001).mul(capMask).mul(0.4)) as unknown as N;
+  const halo = float(1).sub(smoothstep(0, fwidth(vn).mul(5).add(0.012), abs(vn))).mul(veinMask).mul(float(1).sub(far));
+  const sap = line(vn, 1.6, 0.003).mul(veinMask).mul(float(1).sub(far.mul(0.75))).add(line(cn, 1, 0.001).mul(capMask).mul(0.4)) as unknown as N;
   const lit = mix(soil.add(vec3(0.02, 0.07, 0.01).mul(halo)), vec3(0.28, 0.8, 0.1), clamp(sap, 0, 1));
   // lisière : l'herbe jaunit et s'assombrit, des radicelles noires s'y enfoncent
   const fringe = smoothstep(0.12, 0.46, cov.add(d.mul(0.25))).mul(float(1).sub(k)).mul(terreauShow);

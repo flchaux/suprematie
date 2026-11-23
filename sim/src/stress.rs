@@ -701,7 +701,7 @@ pub fn essaim_demo() -> World {
     if let Some(m) = maw {
         let (cx, cy) = w.buildings[m].center();
         w.spawn_wreck(cx - 4 * TILE, cy + 5 * TILE, &[(STEEL, 400)], 2, 1 + U_LIGHT_TANK, 9000);
-        w.spawn_wreck(cx + 2 * TILE, cy + 7 * TILE, &[(STEEL, 400)], 2, 1 + U_ASSAULT_WALKER, 30000);
+        w.spawn_wreck(cx + 3 * TILE, cy + 4 * TILE, &[(STEEL, 400)], 2, 1 + U_ASSAULT_WALKER, 30000);
     }
     w.players[0].purse[ADN as usize] = 300;
     w.players[0].scars = [5200, 3100, 800, 0, 1500];

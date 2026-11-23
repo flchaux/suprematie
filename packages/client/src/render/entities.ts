@@ -234,6 +234,7 @@ function wreckGeometry(src: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
+const ZAXIS = new THREE.Vector3(0, 0, 1);
 
 export interface UnitScreen {
   id: number;
@@ -263,7 +264,7 @@ function oreTint(item: number, data: GameData): THREE.Color | null {
 }
 
 /** Enfoncement d'un fouisseur enterré (part de sa hauteur). */
-const BURIED_DEPTH = 0.52;
+const BURIED_DEPTH = 0.43;
 
 export class Entities {
   group = new THREE.Group();
@@ -646,10 +647,11 @@ export class Entities {
     for (let i = 0; i < 6; i++) {
       seg.ensure(seg.n + 1);
       const a = (i / 6) * Math.PI * 2 + 0.35;
-      const s = seg.scale * height * (1.5 + (i % 2) * 0.35);
-      tmpQ2.setFromAxisAngle(UP, a);
-      // elles montent du sol : d'abord enfouies, puis posées
-      tmpM2.compose(tmpV.set(x, y - (1 - k) * 0.5 * height - 0.04, z), tmpQ2, tmpS.set(s * (0.35 + 0.65 * k), s * 0.8, s * 0.8));
+      // longues et minces, la pointe piquée dans le sol (inclinées) ; elles montent du sol en grandissant
+      const len = seg.scale * height * (2.5 + (i % 2) * 0.6);
+      const thick = seg.scale * height * 0.85;
+      tmpQ2.setFromAxisAngle(UP, a).multiply(tmpQ3.setFromAxisAngle(ZAXIS, -0.2));
+      tmpM2.compose(tmpV.set(x, y + (0.2 - 0.6 * (1 - k)) * height, z), tmpQ2, tmpS.set(len * (0.35 + 0.65 * k), thick, thick));
       seg.body!.mesh.setMatrixAt(seg.n, tmpM2);
       setTeamColor(seg.body!, seg.n, this.teamColors[slot]);
       seg.n++;

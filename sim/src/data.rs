@@ -501,9 +501,9 @@ pub const TECHS: [TechDef; 80] = [
     t!("s_membranes", "Membranes", 3, 20, 10, [49], "Planeur à membranes : bombes de spores", race: RACE_SOUCHE),
     t!("s_scales", "Écailles", 2, 15, 8, [], "Mutation : +30 % de points de vie pour tous les organismes. Exclut Sève vive.", race: RACE_SOUCHE, excl: 53),
     t!("s_quick_sap", "Sève vive", 2, 15, 8, [], "Mutation : régénération doublée sur le terreau, et 1 % par seconde hors du terreau. Exclut Écailles.", race: RACE_SOUCHE, excl: 52),
-    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
+    t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes ; les cracheurs laissent une flaque d'acide. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
     t!("s_fertility", "Fécondité", 3, 20, 10, [52, 53], "Mutation : couveuses et croissance des organes 50 % plus rapides. Exclut Acide.", race: RACE_SOUCHE, excl: 54),
-    t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : points de vie des organes doublés. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
+    t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : racines et organes subissent 40 % de dégâts en moins. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
     t!("s_big_leaves", "Grandes frondaisons", 4, 25, 12, [54, 55], "Mutation : frondaisons et racines-puits +50 %. Exclut Racines profondes.", race: RACE_SOUCHE, excl: 56),
     // ----- Transhumants : chaque unité de recherche coûte 3 × palier relevés (voir transhumants.rs) -----
     t!("t_heavy_shop", "Atelier lourd", 1, 10, 6, [], "Canon tracté, bélier", race: RACE_TRANSH),
