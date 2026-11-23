@@ -8,7 +8,7 @@ import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttr
 import { buildingScale, buildModel, condShown, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseCond, parseDep, PLAYER_COLORS, withHatches, type DepStep, type PivotCond } from "../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "./eggAnim.ts";
 import { FLOOR_H, liftDash, liftOut, liftPad, liftUp } from "./liftAnim.ts";
-import { barInView, siteBarOf, siteBarSize, tameOf, type SiteBar } from "./siteBars.ts";
+import { barInView, broodOf, pipLayout, PIPS_PER_ROW, siteBarOf, siteBarSize, tameOf, type SiteBar } from "./siteBars.ts";
 import { teamInstancedMesh, setTeamColor, setAccentColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING, type TeamMesh } from "./materials.ts";
 import { UNIT_MODELS } from "../../../../assets/models/units.ts";
 import { ASCENSEUR_MAT, BUILDING_MODELS } from "../../../../assets/models/buildings.ts";
@@ -1232,7 +1232,7 @@ export class Entities {
       const ripe = def.key === "cocoon" && build >= 1 ? (buf[o + 5] & 0x3ff) / 1000 : -1;
       const sc = ripe < 0 ? km.scale : km.scale * (1 + Math.sin(simT * (3 + 9 * ripe * ripe)) * (0.008 + 0.03 * ripe));
       // les hauteurs du mât sont en cases du monde : seul son plan est à l'échelle du tapis
-      // frondaison ou racine-puits épuisée (plus d'herbe autour) : elle s'affaisse
+      // racine-puits épuisée, frondaison dont l'herbe est loin : elle s'affaisse
       const wilt = def.cls === BClass.Organ && build >= 1 && bflags & BF.NO_INPUT ? 0.78 : 1;
       const sy = (mast ? 1 : sc) * (build >= 1 ? wilt : Math.max(0.08, build));
       tmpM.compose(tmpV.set(cx, def.water ? this.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(sc, sy, sc));
@@ -1467,6 +1467,25 @@ export class Entities {
           tmpM.compose(tmpV.set(cx - (wdt * 0.97 * (1 - tk)) / 2, y + 2.22, tz), tmpQ, tmpS.set(wdt * 0.97 * tk, 1, (thick * 0.7) / 0.12));
           this.bars.setMatrixAt(bars, tmpM);
           this.bars.setColorAt(bars, tmpC.setRGB(0.85, 0.35 + 0.1 * Math.sin(simT * 6), 1));
+          bars++;
+        }
+      }
+      // couveuse de l'équipe : une pastille par portée possible (pleine : elle couve ; toutes ambre : limite atteinte)
+      if (def.key === "brood" && build >= 1 && !enemy && !strategic && this.data.broodLevels && bars < 5900) {
+        const br = broodOf(buf, o, this.data.broodLevels);
+        const pl = pipLayout(br.max, this.pxWorld);
+        const lift = y + km.height + 0.6;
+        const cols = Math.min(br.max, PIPS_PER_ROW);
+        tmpM.compose(tmpV.set(cx, lift, cz), tmpQ.identity(), tmpS.set(cols * pl.step + 0.14, 1, (pl.rows * pl.step + 0.14) / 0.12));
+        this.bars.setMatrixAt(bars, tmpM);
+        this.bars.setColorAt(bars, tmpC.setRGB(0.04, 0.06, 0.05));
+        bars++;
+        for (let k = 0; k < br.max; k++) {
+          const px = cx + ((k % PIPS_PER_ROW) - (cols - 1) / 2) * pl.step;
+          const pz = cz + (Math.floor(k / PIPS_PER_ROW) - (pl.rows - 1) / 2) * pl.step;
+          tmpM.compose(tmpV.set(px, lift + 0.02, pz), tmpQ, tmpS.set(pl.size, 1, pl.size / 0.12));
+          this.bars.setMatrixAt(bars, tmpM);
+          this.bars.setColorAt(bars, k >= br.n ? tmpC.setRGB(0.16, 0.2, 0.16) : br.n >= br.max ? tmpC.setRGB(1, 0.65, 0.15) : tmpC.setRGB(0.5, 1, 0.25));
           bars++;
         }
       }

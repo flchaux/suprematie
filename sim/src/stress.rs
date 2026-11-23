@@ -704,6 +704,12 @@ pub fn essaim_demo() -> World {
         w.buildings[b].repeat = true;
         w.buildings[b].wake = 0;
     }
+    // une seconde couveuse, agrandie (douze portées à la fois), qui en couve cinq
+    if let Some(b) = place_building(&mut w, 0, B_BROOD, hx - 2, hy + 5, 2) {
+        complete_building(&mut w, b);
+        w.buildings[b].level = 2;
+        w.buildings[b].queue.push((U_SPITTER, 5));
+    }
     if let Some(h) = place_building(&mut w, 0, B_SEED_HEART, hx + 12, hy + 6, 0) {
         let target = w.building_ref(h);
         for k in 0..4 {

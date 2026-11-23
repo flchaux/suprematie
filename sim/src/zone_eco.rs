@@ -149,7 +149,7 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
     // un cycle de `ticks` ticks qui consomme ou produit `n` objets : n × 100 × 1200 / ticks centièmes par minute
     let per_cycle = |n: u64, ticks: u64| n * 100 * MIN / ticks.max(1);
     // pendant une amélioration, la machine ne travaille pas (le générateur principal reste en service)
-    if (bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR) || (bb.mod_job != 0 && bb.def().class != BClass::Power) {
+    if (bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR && bb.kind != B_BROOD) || (bb.mod_job != 0 && bb.def().class != BClass::Power) {
         return;
     }
     match bb.def().class {
@@ -221,8 +221,8 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
             let lean = if crate::ameliorations::fit(bb) == crate::ameliorations::M_GEN_LEAN { 2 } else { 1 };
             cons[it as usize] += power_prod_of(bb).max(0) as u64 * 100 * MIN / e / lean;
         }
-        // organe de la Souche : centièmes par seconde (tick_organ)
-        BClass::Organ => {
+        // organe de la Souche : centièmes par seconde (tick_organ) ; racine : l'herbe qu'elle mange
+        BClass::Organ | BClass::Pylon => {
             let (s, l) = crate::souche::organ_rate(w, b);
             prod[SEVE as usize] += s.max(0) as u64 * 60;
             prod[SELS as usize] += l.max(0) as u64 * 60;
@@ -306,11 +306,13 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         if !bb.alive || bb.owner != p || !bb.complete() {
             continue;
         }
-        if !matches!(bb.def().class, BClass::Crafter | BClass::Extractor | BClass::Factory | BClass::Lab | BClass::Power | BClass::Organ) {
+        // racine de la Souche : seulement si elle mange de l'herbe (elle n'est pas comptée parmi les machines)
+        let root = bb.kind == B_ROOT;
+        if !matches!(bb.def().class, BClass::Crafter | BClass::Extractor | BClass::Factory | BClass::Lab | BClass::Power | BClass::Organ) && !(root && bb.timer > 0) {
             continue;
         }
         if in_zone(w, b, z) {
-            machines += 1;
+            machines += !root as i32;
             machine_rates(w, b, &mut prod, &mut cons);
         }
     }

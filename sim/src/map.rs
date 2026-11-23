@@ -430,3 +430,17 @@ fn flatten(height: &mut [u8], w: i32, h: i32, cx: i32, cy: i32, r_in: i32, r_out
         }
     }
 }
+
+/// Gisement sous une emprise (x, y, bw, bh) : 0 s'il n'y en a pas.
+pub fn deposit_under(map: &Map, x: i32, y: i32, bw: i32, bh: i32) -> u8 {
+    let mut item = map.deposit[map.idx(x, y)];
+    for ty in y.max(0)..(y + bh).min(map.h) {
+        for tx in x.max(0)..(x + bw).min(map.w) {
+            let d = map.deposit[map.idx(tx, ty)];
+            if d != 0 {
+                item = d;
+            }
+        }
+    }
+    item
+}

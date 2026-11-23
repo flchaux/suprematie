@@ -1,13 +1,15 @@
 //! Sol de la Souche (voir docs/spec/races.md, « Herbe mangée »).
 //!
-//! - Herbe : tout sol à terre, sans falaise ni bâtiment, qui n'est le terreau de personne. Les frondaisons et
-//!   les racines-puits la mangent case par case, tout doucement, et en font du terreau. C'est l'herbe mangée qui
-//!   donne la sève (ou les sels) : une case rapporte toujours la même chose, mais prend d'autant plus de temps
-//!   qu'elle est loin (`bite_ticks`, le carré de la distance).
+//! - Herbe : tout sol à terre, sans falaise ni bâtiment, qui n'est le terreau de personne. Les frondaisons, les
+//!   racines-puits et les racines la mangent case par case et en font du terreau. C'est l'herbe mangée qui donne la
+//!   sève (ou les sels) : une case rapporte toujours la même chose. Seule la vitesse change : une case prend d'autant
+//!   plus de temps qu'elle est loin (`bite_ticks`, le carré de la distance).
 //! - Frondaison : portée illimitée (REACH_MAX cases). Elle mange au bord du terreau de son joueur, l'herbe la plus
-//!   proche d'abord, dans une couronne de RING cases (`Building::ammo` : sa distance). L'herbe recule à mesure, sa
-//!   production décroît donc avec le temps, sans jamais s'arrêter tout à fait (`SPENT_PCT` au moins).
+//!   proche d'abord, dans une couronne de RING cases (`Building::ammo` : sa distance). L'herbe recule à mesure, elle
+//!   la mange donc de moins en moins vite. Pas de plancher : sans herbe mangée, pas de sève.
 //! - Racine-puits : elle ne sort pas de son périmètre (TAPROOT_R) ; l'herbe finie, elle est épuisée (`SPENT_PCT`).
+//! - Racine : elle mange très court, une case au-delà de sa zone (ROOT_R), ROOT_SPEED fois plus vite qu'une
+//!   frondaison, mais une case ne lui donne que ROOT_SEVE sève (moitié moins), versés quand elle est mangée.
 //! - Concurrence : une case convoitée par k organes (`World::eaters`) ne compte que pour 1/k dans l'appétit de
 //!   chacun (`Meal::share`) : deux frondaisons au même endroit ne produisent pas plus qu'une seule.
 //! - Sol mangé (`World::soil`) : un octet par case, 0 ou joueur + 1. C'est du terreau pour toujours, même si
@@ -31,12 +33,18 @@ pub const REACH_MAX: i32 = 120;
 /// (10 s plus 0,4 s par case au carré : 16 s à 4 cases, 20 s à 5, 50 s à 10, 1 min 40 à 15, 2 min 50 à 20).
 pub const BITE_BASE: u32 = 200;
 pub const BITE_FAR: u32 = 2;
+/// Racine : portée (cases depuis son centre, une de plus que sa zone), vitesse (× celle d'une frondaison à la même
+/// distance) et sève d'une case mangée (la moitié de ce qu'elle donne à une frondaison).
+pub const ROOT_R: i32 = 4;
+pub const ROOT_SPEED: u32 = 4;
+pub const ROOT_SEVE: i32 = 10;
 /// Temps d'une case pour lequel un organe seul donne sa production nominale (ticks).
 pub const LEAVES_NOMINAL: u32 = 400;
 pub const TAPROOT_NOMINAL: u32 = 450;
-/// Production d'un organe sans herbe, et plancher d'une frondaison (% de sa production normale).
+pub const ROOT_NOMINAL: u32 = LEAVES_NOMINAL / ROOT_SPEED;
+/// Production d'une racine-puits sans herbe (% de sa production normale).
 pub const SPENT_PCT: i32 = 5;
-/// Frondaison à bout : signalée sous LOW ‰ de sa production nominale, jusqu'à ce qu'elle remonte au-dessus de FINE.
+/// Frondaison lente : signalée sous LOW ‰ de sa production nominale, jusqu'à ce qu'elle remonte au-dessus de FINE.
 pub const LOW: i32 = 200;
 pub const FINE: i32 = 350;
 /// Portée (cases) du poteau le plus proche pour que le sol mangé serve de terreau (pose, réseau, guérison).
@@ -48,32 +56,37 @@ pub const EV_SPENT: i32 = 59;
 /// Organe qui mange l'herbe.
 #[inline]
 pub fn eats(kind: u16) -> bool {
-    matches!(kind, B_LEAVES | B_TAPROOT)
+    matches!(kind, B_LEAVES | B_TAPROOT | B_ROOT)
 }
 
 /// Couronne (rayons intérieur et extérieur, en cases) où un organe mange ; `rin` : distance de son herbe.
 #[inline]
 fn ring_of(kind: u16, rin: i32) -> (i32, i32) {
-    if kind == B_TAPROOT {
-        (0, TAPROOT_R)
-    } else {
-        (rin, rin + RING)
+    match kind {
+        B_TAPROOT => (0, TAPROOT_R),
+        B_ROOT => (0, ROOT_R),
+        _ => (rin, rin + RING),
     }
 }
 
-/// Temps (ticks) pour manger seul une case à la distance² `d2` (demi-cases) du centre de l'organe.
+/// Temps (ticks) pour qu'un organe seul mange une case à la distance² `d2` (demi-cases) de son centre.
 #[inline]
-pub fn bite_ticks(d2: i32) -> u32 {
-    BITE_BASE + BITE_FAR * d2.max(0) as u32
+pub fn bite_ticks(kind: u16, d2: i32) -> u32 {
+    let t = BITE_BASE + BITE_FAR * d2.max(0) as u32;
+    if kind == B_ROOT {
+        t / ROOT_SPEED
+    } else {
+        t
+    }
 }
 
 /// Temps d'une case pour la production nominale.
 #[inline]
 pub fn nominal(kind: u16) -> u32 {
-    if kind == B_TAPROOT {
-        TAPROOT_NOMINAL
-    } else {
-        LEAVES_NOMINAL
+    match kind {
+        B_TAPROOT => TAPROOT_NOMINAL,
+        B_ROOT => ROOT_NOMINAL,
+        _ => LEAVES_NOMINAL,
     }
 }
 
@@ -327,18 +340,17 @@ pub fn meal(w: &World, kind: u16, owner: u8, area: Area, (rin, rout): (i32, i32)
     if w.terreau.is_empty() {
         return m;
     }
-    let leaves = kind == B_LEAVES;
     ring(w, area, rin, rout, |i, tx, ty, d2| {
-        let ok = if leaves { edge(w, i, tx, ty, owner) } else { grass(w, i) };
+        let ok = if kind == B_TAPROOT { grass(w, i) } else { edge(w, i, tx, ty, owner) };
         if ok && !(extra > 0 && tx >= x && tx < x + bw && ty >= y && ty < y + bh) {
             m.left += 1;
-            m.all += bite_ticks(d2);
+            m.all += bite_ticks(kind, d2);
             m.near = m.near.min(d2);
             shares += 1000 / (w.eaters.get(i).copied().unwrap_or(0) as u32 + extra).max(1);
             let k = d2 + (crate::rng::hash3(tx, ty, 0x6A_55) % 40) as i32;
             if k < best {
                 best = k;
-                m.ticks = bite_ticks(d2);
+                m.ticks = bite_ticks(kind, d2);
                 m.cell = Some((i, tx, ty));
             }
         }
@@ -363,18 +375,17 @@ fn seek(w: &World, owner: u8, area: Area, from: i32, to: i32, extra: u32) -> Opt
 
 /// Production (‰ de la nominale) d'un organe qui a ce repas.
 pub fn yield_of(kind: u16, m: &Meal) -> i32 {
-    let y = if m.left == 0 { 0 } else { (nominal(kind) * m.share / m.ticks.max(1)) as i32 };
-    if m.left == 0 || kind == B_LEAVES {
-        y.max(SPENT_PCT * 10)
-    } else {
-        y
+    match (m.left, kind) {
+        (0, B_TAPROOT) => SPENT_PCT * 10,
+        (0, _) => 0,
+        _ => (nominal(kind) * m.share / m.ticks.max(1)) as i32,
     }
 }
 
-/// Organe de la Souche, une fois par passage (souche::tick_organ) : il mange l'herbe. Son rendement (‰ de la
+/// Organe de la Souche, une fois par passage (toutes les `period` ticks) : il mange l'herbe. Son rendement (‰ de la
 /// production nominale) est gardé dans `timer`, l'avancement de la case (millièmes de tick) dans `charge`, la
-/// distance de son herbe (frondaison) dans `ammo`. Épuisé ou à bout : `stalled`.
-pub fn graze(w: &mut World, b: usize) {
+/// distance de son herbe (frondaison) dans `ammo`. Racine-puits épuisée ou frondaison lente : `stalled`.
+pub fn graze(w: &mut World, b: usize, period: u32) {
     let kind = w.buildings[b].kind;
     if !eats(kind) || w.buildings[b].net == 0 {
         return;
@@ -408,7 +419,11 @@ pub fn graze(w: &mut World, b: usize) {
     }
     let y = yield_of(kind, &m);
     let was = w.buildings[b].stalled;
-    let spent = if leaves { y < LOW || (was && y < FINE) } else { m.left == 0 };
+    let spent = match kind {
+        B_LEAVES => y < LOW || (was && y < FINE),
+        B_TAPROOT => m.left == 0,
+        _ => false,
+    };
     let bb = &mut w.buildings[b];
     bb.stalled = spent;
     bb.timer = y as u16;
@@ -416,22 +431,56 @@ pub fn graze(w: &mut World, b: usize) {
         let (cx, cy) = bb.center();
         w.ev(EV_SPENT, cx, cy, kind as i32, owner as i32);
     }
+    if kind != B_ROOT {
+        yield_sap(w, b, &m, period);
+    }
     let Some((i, tx, ty)) = m.cell else { return };
     let bb = &mut w.buildings[b];
-    bb.charge += crate::souche::ORGAN_PERIOD * m.share;
+    bb.charge += period * m.share;
     if bb.charge < m.ticks * 1000 {
         return;
     }
     bb.charge -= m.ticks * 1000;
+    let net = bb.net;
+    if kind == B_ROOT {
+        crate::souche::feed(w, owner, net, ROOT_SEVE, 0);
+    }
     eat(w, owner, i);
     w.ev(EV_GRAZE, tx * TILE + TILE / 2, ty * TILE + TILE / 2, kind as i32, owner as i32);
+}
+
+/// Sève ou sels que l'herbe donne à une frondaison ou à une racine-puits pendant un passage, au prorata de la case
+/// qu'elle mange (racine-puits épuisée : SPENT_PCT % de sa production nominale). Le reste, en cent-millièmes, est
+/// gardé dans `progress`.
+fn yield_sap(w: &mut World, b: usize, m: &Meal, period: u32) {
+    const UNIT: u64 = 100_000;
+    let kind = w.buildings[b].kind;
+    let full = crate::souche::full_rate(w, b);
+    let cell = per_cell(kind, full);
+    let part = |cell: i32, full: i32| -> u64 {
+        match (m.left, kind) {
+            (0, B_TAPROOT) => full as u64 * 10 * SPENT_PCT as u64 * period as u64 / 20,
+            (0, _) => 0,
+            _ => cell as u64 * period as u64 * m.share as u64 / m.ticks.max(1) as u64,
+        }
+    };
+    let sels = full.1 > 0;
+    let gain = if sels { part(cell.1, full.1) } else { part(cell.0, full.0) };
+    let bb = &mut w.buildings[b];
+    let sum = bb.progress as u64 + gain;
+    bb.progress = (sum % UNIT) as u32;
+    bb.working = gain > 0;
+    let (n, net, owner) = ((sum / UNIT) as i32, bb.net, bb.owner);
+    if n > 0 {
+        crate::souche::feed(w, owner, net, if sels { 0 } else { n }, if sels { n } else { 0 });
+    }
 }
 
 /// Un organe mange `n` cases d'un coup (démonstrations).
 pub fn graze_now(w: &mut World, b: usize, n: u32) {
     for _ in 0..n {
         w.buildings[b].charge = 100_000_000;
-        graze(w, b);
+        graze(w, b, crate::souche::ORGAN_PERIOD);
         w.buildings[b].charge = 0;
     }
 }
@@ -561,9 +610,17 @@ pub fn layer(w: &World, player: i32) -> Vec<i32> {
     out
 }
 
-/// Fiche d'un organe qui mange l'herbe (JSON) : distance de l'herbe qu'il mange (cases), secondes par case, part qui
-/// lui revient (‰), production (‰ de la nominale), épuisé ou à bout ; racine-puits : cases d'herbe qui restent dans
-/// son périmètre, cases du périmètre, secondes pour tout manger.
+/// Ce que donne une case d'herbe à un organe du joueur (sève, sels), en centièmes ; `full` : sa production nominale.
+#[inline]
+fn per_cell(kind: u16, full: (i32, i32)) -> (i32, i32) {
+    let t = nominal(kind) as i32;
+    (full.0 * t / 20, full.1 * t / 20)
+}
+
+/// Fiche d'un organe qui mange l'herbe (JSON) : distance de l'herbe qu'il mange (cases), dixièmes de seconde par case,
+/// part qui lui revient (‰), production (‰ de la nominale), ce que donne une case (centièmes de sève, de sels),
+/// épuisé ou lent ; racine et racine-puits : cases d'herbe qui restent à leur portée, secondes pour tout manger ;
+/// racine-puits : cases du périmètre.
 pub fn info(w: &World, b: usize) -> String {
     let bb = &w.buildings[b];
     if !eats(bb.kind) {
@@ -571,9 +628,10 @@ pub fn info(w: &World, b: usize) -> String {
     }
     let (bw, bh) = bb.size();
     let area = (bb.x, bb.y, bw, bh);
-    let p = if bb.complete() { view(w, bb.kind, bb.owner, area, ring_of(bb.kind, bb.ammo as i32), 0) } else { preview_at(w, bb.kind, bb.owner, area) };
+    let full = crate::souche::full_rate(w, b);
+    let p = if bb.complete() { view(w, bb.kind, bb.owner, area, ring_of(bb.kind, bb.ammo as i32), 0, full) } else { preview_at(w, bb.kind, bb.owner, area, full) };
     format!(
-        ",\"soil\":{{\"near\":{},\"secs\":{},\"share\":{},\"rate\":{},\"left\":{},\"total\":{},\"all\":{},\"spent\":{},\"pct\":{}}}",
+        ",\"soil\":{{\"near\":{},\"tenths\":{},\"share\":{},\"rate\":{},\"left\":{},\"total\":{},\"all\":{},\"cellSeve\":{},\"cellSels\":{},\"spent\":{},\"pct\":{}}}",
         p[0],
         p[1],
         p[3],
@@ -581,38 +639,95 @@ pub fn info(w: &World, b: usize) -> String {
         p[5],
         p[6],
         p[7],
+        p[8],
+        p[9],
         bb.complete() && bb.stalled,
         SPENT_PCT
     )
 }
 
-/// [distance de l'herbe (cases ; -1 : aucune), secondes par case, rayon à montrer, part (‰), production (‰), cases
-/// d'herbe, cases du périmètre, secondes pour tout manger] ; les trois dernières pour une racine-puits seulement.
-fn view(w: &World, kind: u16, owner: u8, area: Area, ring: (i32, i32), extra: u32) -> [i32; 8] {
+/// [distance de l'herbe (cases ; -1 : aucune), dixièmes de seconde par case, rayon à montrer, part (‰), production (‰),
+/// cases d'herbe à portée, cases du périmètre, secondes pour tout manger, centièmes de sève et de sels par case] ; cases
+/// et durée : racine et racine-puits seulement, périmètre : racine-puits seulement.
+fn view(w: &World, kind: u16, owner: u8, area: Area, ring: (i32, i32), extra: u32, full: (i32, i32)) -> [i32; 10] {
     let m = meal(w, kind, owner, area, ring, extra);
     let (x, y, bw, bh) = area;
     let near = if m.left == 0 { -1 } else { crate::fixed::isqrt(m.near as u64) as i32 / 2 };
-    let secs = (m.ticks as u64 * 50 / m.share.max(1) as u64) as i32;
-    let tap = kind == B_TAPROOT;
-    let all = if tap { (m.all as u64 * 50 / m.share.max(1) as u64) as i32 } else { 0 };
-    let total = if tap { ground_total(w, x, y, bw, bh) } else { 0 };
-    [near, secs, ring.1, m.share as i32, yield_of(kind, &m), if tap { m.left as i32 } else { 0 }, total, all]
+    let tenths = (m.ticks as u64 * 500 / m.share.max(1) as u64) as i32;
+    let short = kind != B_LEAVES;
+    let all = if short { (m.all as u64 * 50 / m.share.max(1) as u64) as i32 } else { 0 };
+    let total = if kind == B_TAPROOT { ground_total(w, x, y, bw, bh) } else { 0 };
+    let (s, l) = per_cell(kind, full);
+    [near, tenths, ring.1, m.share as i32, yield_of(kind, &m), if short { m.left as i32 } else { 0 }, total, all, s, l]
 }
 
 /// Organe pas encore poussé : il mangera l'herbe la plus proche.
-fn preview_at(w: &World, kind: u16, owner: u8, area: Area) -> [i32; 8] {
+fn preview_at(w: &World, kind: u16, owner: u8, area: Area, full: (i32, i32)) -> [i32; 10] {
     let rin = if kind == B_LEAVES { seek(w, owner, area, 0, REACH_MAX, 1).unwrap_or(REACH_MAX) } else { 0 };
-    view(w, kind, owner, area, ring_of(kind, rin), 1)
+    view(w, kind, owner, area, ring_of(kind, rin), 1, full)
 }
 
-/// Aperçu de pose d'un organe pour le joueur (voir `view`).
+/// Aperçu de pose d'un organe pour le joueur (voir `view`) ; racines : voir `line_yield`.
 pub fn preview(w: &World, owner: u8, kind: u16, x: i32, y: i32) -> Vec<i32> {
-    if kind as usize >= BUILDINGS.len() || !eats(kind) {
+    if kind as usize >= BUILDINGS.len() || !eats(kind) || kind == B_ROOT {
         return Vec::new();
     }
     let (bw, bh) = crate::buildings::dims(kind, 0);
     if x < 0 || y < 0 || x >= w.map.w || y >= w.map.h {
         return Vec::new();
     }
-    preview_at(w, kind, owner, (x, y, bw, bh)).to_vec()
+    let full = crate::souche::full_rate_at(w, owner, kind, x, y);
+    preview_at(w, kind, owner, (x, y, bw, bh), full).to_vec()
+}
+
+/// Ce que rapportera une file de racines posée là : cases d'herbe à sa portée une fois poussée, et la sève qu'elle en
+/// tirera (moins la part des organes qui convoitent déjà ces cases).
+pub fn line_yield(w: &World, owner: u8, cells: &[(i32, i32, u8)]) -> (i32, i32) {
+    if w.terreau.is_empty() || owner >= 8 || cells.is_empty() {
+        return (0, 0);
+    }
+    let sp = bdef(B_ROOT).supply;
+    let pad = ROOT_R.max(sp) + 1;
+    let x0 = (cells.iter().map(|c| c.0).min().unwrap_or(0) - pad).max(0);
+    let y0 = (cells.iter().map(|c| c.1).min().unwrap_or(0) - pad).max(0);
+    let x1 = (cells.iter().map(|c| c.0).max().unwrap_or(0) + pad + 1).min(w.map.w);
+    let y1 = (cells.iter().map(|c| c.1).max().unwrap_or(0) + pad + 1).min(w.map.h);
+    if x1 <= x0 || y1 <= y0 {
+        return (0, 0);
+    }
+    let (bw, bh) = (x1 - x0, y1 - y0);
+    // par case : racines de la file qui l'ont à portée (ZONE : dans la zone de l'une d'elles, ce n'est plus de l'herbe)
+    const ZONE: u16 = u16::MAX;
+    let mut n = vec![0u16; (bw * bh) as usize];
+    for &(x, y, _) in cells {
+        for ty in (y - sp).max(y0)..(y + sp + 1).min(y1) {
+            for tx in (x - sp).max(x0)..(x + sp + 1).min(x1) {
+                n[((ty - y0) * bw + tx - x0) as usize] = ZONE;
+            }
+        }
+    }
+    for &(x, y, _) in cells {
+        ring(w, (x, y, 1, 1), 0, ROOT_R, |_, tx, ty, _| {
+            if tx >= x0 && tx < x1 && ty >= y0 && ty < y1 {
+                let v = &mut n[((ty - y0) * bw + tx - x0) as usize];
+                if *v < ZONE - 1 {
+                    *v += 1;
+                }
+            }
+            true
+        });
+    }
+    let (mut left, mut milli) = (0i32, 0i64);
+    for (k, &v) in n.iter().enumerate() {
+        if v == 0 || v == ZONE {
+            continue;
+        }
+        let i = w.map.idx(x0 + k as i32 % bw, y0 + k as i32 / bw);
+        if grass(w, i) {
+            left += 1;
+            let others = w.eaters.get(i).copied().unwrap_or(0) as i64;
+            milli += ROOT_SEVE as i64 * 1000 * v as i64 / (v as i64 + others);
+        }
+    }
+    (left, ((milli + 500) / 1000) as i32)
 }

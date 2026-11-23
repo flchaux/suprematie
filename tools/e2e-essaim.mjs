@@ -117,6 +117,7 @@ await page.mouse.move(px.x + 1, px.y + 1);
 await page.waitForFunction(() => window.__game.ui.lineCost, null, { timeout: 60000 }).catch(() => {});
 const cost = await page.evaluate(() => ({ line: window.__game.ui.lineCost, text: document.querySelector(".linecost")?.textContent ?? "" }));
 check(!!cost.line && cost.line.pct >= 10 && cost.line.cost[0]?.[1] >= 5, "coût d'une racine éloignée dans le bandeau", JSON.stringify(cost));
+check(/herbe :\s*\d+ cases?, \+\d+ sève.*bilan\s*[+-]?\d+/.test(cost.text), "ce qu'elle rapporte et le bilan", cost.text);
 await shot("cout");
 await page.evaluate(() => window.__game.client.cancelMode());
 await page.mouse.move(640, 300);
@@ -132,7 +133,7 @@ await page.evaluate(() => window.__game.client.startBuild(window.__game.ui.data.
 await page.mouse.move(700, 420);
 await page.mouse.move(702, 421);
 await page.waitForFunction(() => window.__game.ui.grass, null, { timeout: 60000 }).catch(() => {});
-check(await page.evaluate(() => (window.__game.ui.grass?.near ?? -1) >= 0 && /herbe à \d+ cases · débit/.test(document.querySelector(".mode")?.textContent ?? "")), "herbe à manger dans le bandeau de pose", JSON.stringify(await page.evaluate(() => window.__game.ui.grass)));
+check(await page.evaluate(() => (window.__game.ui.grass?.near ?? -1) >= 0 && /herbe à \d+ cases · une case toutes les \d+ s, ≈ \d+ sève\/min/.test(document.querySelector(".mode")?.textContent ?? "")), "herbe à manger dans le bandeau de pose", JSON.stringify(await page.evaluate(() => window.__game.ui.grass)));
 await shot("herbe");
 await page.evaluate(() => window.__game.client.cancelMode());
 await page.mouse.move(640, 300);
@@ -152,6 +153,30 @@ await page.waitForFunction(() => window.__game.ui.buildingInfo?.souche?.heart, n
 const fed = await page.evaluate(() => window.__game.ui.buildingInfo?.souche?.heart);
 check(fed?.fed === 480 && [...(await page.evaluate(() => [...document.querySelectorAll(".sel .kicker")].map((e) => e.textContent)))].includes("Sacrifices"), "graine-mère : quatre carapaces sacrifiées", JSON.stringify(fed));
 await shot("graine");
+await select(null);
+
+// ---------- couveuse : limite de portées, agrandissement ----------
+const broods = await find("brood");
+const small = broods.find((b) => b.x > heart.x);
+const big = broods.find((b) => b.x < heart.x);
+/** Fiche de la couveuse : compte, places, places libres. */
+const places = () => page.evaluate(() => ({ text: document.querySelector(".sel .brood")?.textContent ?? "", all: document.querySelectorAll(".sel .place").length, free: document.querySelectorAll(".sel .place.empty").length }));
+await look(heart.x + 2, heart.z + 4, 30);
+await select(big?.ref ?? null);
+await page.waitForFunction(() => document.querySelectorAll(".sel .place").length === 12, null, { timeout: 60000 }).catch(() => {});
+let pl = await places();
+check(pl.all === 12 && pl.free >= 6 && pl.free < 12 && /\d \/ 12/.test(pl.text) && !/limite/.test(pl.text), "couveuse agrandie : douze places", JSON.stringify(pl));
+await shot("couveuse12");
+await select(small?.ref ?? null);
+await page.waitForFunction(() => document.querySelectorAll(".sel .place").length === 3, null, { timeout: 60000 }).catch(() => {});
+pl = await places();
+check(pl.all === 3 && pl.free === 0 && /3 \/ 3/.test(pl.text) && /limite atteinte/.test(pl.text), "couveuse : trois places, limite atteinte", JSON.stringify(pl));
+await shot("couveuse");
+await page.evaluate(() => [...document.querySelectorAll(".sel .upcard button")].find((b) => /6 portées/.test(b.textContent))?.click());
+await run(20);
+await page.waitForFunction(() => (window.__game.ui.buildingInfo?.upgrade ?? 0) > 0, null, { timeout: 60000 }).catch(() => {});
+const growing = await page.evaluate(() => [...document.querySelectorAll(".sel .status")].map((e) => e.textContent).join(" | "));
+check(/elle pond toujours/.test(growing), "agrandissement lancé, elle pond toujours", growing);
 await select(null);
 
 // ---------- Matrice : caractère acquis ----------

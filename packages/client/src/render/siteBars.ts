@@ -66,6 +66,24 @@ export function barInView(cx: number, cz: number, view: readonly [number, number
   return cx >= view[0] - margin && cx <= view[2] + margin && cz >= view[1] - margin && cz <= view[3] + margin;
 }
 
+/** Couveuse de la Souche : portées en train de couver et limite de son niveau (mot 5 : niveau, bits 24-25 ; portées, bits 26-29). */
+export function broodOf(buf: Int32Array, o: number, levels: readonly { litters: number }[]): { n: number; max: number } {
+  const w = buf[o + 5];
+  return { n: (w >>> 26) & 15, max: levels[(w >>> 24) & 3]?.litters ?? levels[0]?.litters ?? 0 };
+}
+
+/** Pastilles par rangée, au-dessus d'une couveuse. */
+export const PIPS_PER_ROW = 6;
+
+/**
+ * Pastilles d'une couveuse : pas (cases) et côté d'une pastille, nombre de rangées. Elles gardent au moins quelques
+ * pixels de loin, et ne dépassent pas la couveuse (3 cases) de plus d'un cinquième.
+ */
+export function pipLayout(max: number, pxWorld: number): { step: number; size: number; rows: number } {
+  const step = Math.min(0.6, Math.max(0.42, 7 * pxWorld));
+  return { step, size: step * 0.74, rows: Math.ceil(max / PIPS_PER_ROW) };
+}
+
 /**
  * Nid de mordeurs qu'une Reine de la Souche apprivoise (mot 5 : joueur + 1, 0 s'il n'y en a pas ; mot 6 :
  * avancement en millièmes). Null pour un autre bâtiment ou un nid tranquille.

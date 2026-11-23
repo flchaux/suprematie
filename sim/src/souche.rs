@@ -10,8 +10,8 @@
 //! - Graine-mère : elle ne pousse que des organismes qui s'y sacrifient (`sacrifice`, 10 000 sève).
 //! - Croissance : les autres organes posés par un semeur poussent seuls en tirant la sève et les sels de son réseau
 //!   (`grow`), une fois et demie plus lentement qu'un chantier d'ingénieur de puissance 10.
-//! - Production : graine-mère, frondaisons (qui se font de l'ombre) et racines-puits sur les gisements
-//!   remplissent leur réseau (`tick_organ`). Les couveuses prennent le coût des unités dans leur réseau.
+//! - Production : graine-mère, frondaisons, racines-puits sur les gisements et racines (l'herbe qu'elles mangent,
+//!   voir soil.rs) remplissent leur réseau (`tick_organ`, `tick_root`). Les œufs y puisent leur prix (ponte.rs).
 //! - Organes qui agissent : panse (digère les épaves), terrier (passage souterrain d'un bout à l'autre du
 //!   réseau), sporange (chaque tir coûte de la sève), ronce (mur vivant), cocon (il en sort un Béhémoth),
 //!   racines étrangleuses. Organismes, flaques d'acide, Reine enracinée : essaim.rs.
@@ -417,12 +417,13 @@ pub fn far_of(bb: &Building) -> u16 {
     }
 }
 
-/// Coût d'une file posée d'un coup (aperçu) : [supplément le plus fort (%), puis objet, total, pour chaque
-/// objet du coût].
+/// Coût d'une file posée d'un coup (aperçu) : [supplément le plus fort (%), cases d'herbe qu'elle mangera et sève
+/// qu'elle en tirera (racines, voir soil::line_yield), puis objet, total, pour chaque objet du coût].
 pub fn line_cost(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> Vec<i32> {
     let hearts = hearts(w, owner);
     let pcts: Vec<u16> = cells.iter().map(|&(x, y, d)| far_pct(&hearts, kind, x, y, d)).collect();
-    let mut out = vec![pcts.iter().copied().max().unwrap_or(0) as i32];
+    let (grass, seve) = if kind == B_ROOT { crate::soil::line_yield(w, owner, cells) } else { (0, 0) };
+    let mut out = vec![pcts.iter().copied().max().unwrap_or(0) as i32, grass, seve];
     for &(it, n) in bdef(kind).cost {
         out.push(it as i32);
         out.push(pcts.iter().map(|&p| far_cost(n, p) as i32).sum());
@@ -475,8 +476,8 @@ pub fn grow(w: &mut World, b: usize) {
     }
 }
 
-/// Production par seconde d'un organe (sève, sels), en centièmes. Celle d'une frondaison ou d'une racine-puits
-/// vient de l'herbe qu'elle mange (distance, concurrence, épuisement ; voir soil.rs).
+/// Production par seconde d'un organe (sève, sels), en centièmes. Celle d'une frondaison, d'une racine-puits ou d'une
+/// racine vient de l'herbe qu'elle mange (distance, concurrence, épuisement ; voir soil.rs).
 pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
     let (s, l) = full_rate(w, b);
     let bb = &w.buildings[b];
@@ -485,19 +486,36 @@ pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
     }
     // rendement tenu par soil::graze
     let k = bb.timer as i32;
-    (s * k / 1000, l * k / 1000)
+    ((s * k + 500) / 1000, (l * k + 500) / 1000)
 }
 
 /// Production nominale d'un organe.
-fn full_rate(w: &World, b: usize) -> (i32, i32) {
+pub fn full_rate(w: &World, b: usize) -> (i32, i32) {
     let bb = &w.buildings[b];
-    let big = if has(w, bb.owner, T_S_BIG_LEAVES) { 150 } else { 100 };
-    match bb.kind {
+    rate_of(w, bb.owner, bb.kind, bb.recipe, if bb.kind == B_TAPROOT { crate::buildings::purity_of(bb) as i32 } else { 100 })
+}
+
+/// Production nominale d'un organe que le joueur poserait là.
+pub fn full_rate_at(w: &World, owner: u8, kind: u16, x: i32, y: i32) -> (i32, i32) {
+    let (mut item, mut pur) = (0, 100);
+    if kind == B_TAPROOT {
+        let (bw, bh) = buildings::dims(kind, 0);
+        item = crate::map::deposit_under(&w.map, x, y, bw, bh);
+        pur = w.map.purity_under(x, y, bw, bh) as i32;
+    }
+    rate_of(w, owner, kind, item, pur)
+}
+
+/// Production nominale d'un type d'organe du joueur ; racine-puits : son gisement et sa pureté (%).
+fn rate_of(w: &World, owner: u8, kind: u16, item: u8, pur: i32) -> (i32, i32) {
+    let big = if has(w, owner, T_S_BIG_LEAVES) { 150 } else { 100 };
+    match kind {
         B_SEED_HEART => (100, 0),
         B_LEAVES => (big, 0),
+        // une case toutes les ROOT_NOMINAL ticks
+        B_ROOT => (crate::soil::ROOT_SEVE * 100 * 20 / crate::soil::ROOT_NOMINAL as i32, 0),
         B_TAPROOT => {
-            let pur = crate::buildings::purity_of(bb) as i32;
-            let (s, l) = match bb.recipe {
+            let (s, l) = match item {
                 HYDROCARBON => (300, 0),
                 IRON_ORE | COPPER_ORE | SILICON => (0, 100),
                 CRYSTAL => (0, 200),
@@ -514,7 +532,12 @@ pub fn tick_organ(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + ORGAN_PERIOD;
     let kind = w.buildings[b].kind;
     match kind {
-        B_LEAVES | B_TAPROOT => crate::soil::graze(w, b),
+        // (leur production vient de l'herbe qu'elles mangent, elle y est comptée)
+        B_LEAVES | B_TAPROOT => {
+            crate::soil::graze(w, b, ORGAN_PERIOD);
+            regen_building(w, b);
+            return;
+        }
         B_MAW => tick_maw(w, b),
         B_COCOON if tick_cocoon(w, b) => return,
         _ => {}
@@ -538,11 +561,14 @@ pub fn tick_organ(w: &mut World, b: usize) {
     regen_building(w, b);
 }
 
-/// Racine, rhizome ou ronce poussés (toutes les 2 s) : régénération ; les racines étranglent ce qu'elles
-/// touchent (mutation Racines étrangleuses).
+/// Racine, rhizome ou ronce poussés (toutes les 2 s) : régénération ; les racines mangent l'herbe toute proche
+/// (soil::graze) et étranglent ce qu'elles touchent (mutation Racines étrangleuses).
 pub fn tick_root(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + 2 * ORGAN_PERIOD;
     regen_building(w, b);
+    if w.buildings[b].kind == B_ROOT {
+        crate::soil::graze(w, b, 2 * ORGAN_PERIOD);
+    }
     if w.buildings[b].def().class == BClass::Pylon && has(w, w.buildings[b].owner, T_S_STRANGLE) {
         strangle(w, b);
     }
@@ -954,7 +980,11 @@ pub fn info(w: &World, b: usize) -> String {
     let n = w.nets.get(bb.net as usize).filter(|_| bb.net != 0);
     let (s, l, st) = n.map_or((0, 0, 0), |n| (n.seve, n.sels, n.store));
     let (rs, rl) = if bb.complete() { organ_rate(w, b) } else { (0, 0) };
-    let adapt = if bb.kind == B_MATRIX { crate::essaim::adapt_info(w, bb.owner) } else { String::new() };
+    let adapt = match bb.kind {
+        B_MATRIX => crate::essaim::adapt_info(w, bb.owner),
+        B_BROOD => crate::ponte::brood_info(w, b),
+        _ => String::new(),
+    };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
     let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
     format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), heart_info(bb), adapt)

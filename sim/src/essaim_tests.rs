@@ -687,9 +687,12 @@ fn far_roots_cost_more() {
     assert_eq!(w.buildings[far].paid[0], 8);
     // aperçu d'une file : le total et le supplément le plus fort
     let cells: Vec<(i32, i32, u8)> = (0..3).map(|k| (hx + 3 + k, hy + 1, 0)).collect();
-    assert_eq!(souche::line_cost(&w, 0, B_ROOT, &cells), vec![6, SEVE as i32, 12]);
+    let v = souche::line_cost(&w, 0, B_ROOT, &cells);
+    assert_eq!((v[0], &v[3..]), (6, &[SEVE as i32, 12][..]));
     let cells: Vec<(i32, i32, u8)> = (0..3).map(|k| (hx + 54 + k, hy + 1, 0)).collect();
-    assert_eq!(souche::line_cost(&w, 0, B_ROOT, &cells), vec![108, SEVE as i32, 24]);
+    let v = souche::line_cost(&w, 0, B_ROOT, &cells);
+    assert_eq!((v[0], &v[3..]), (108, &[SEVE as i32, 24][..]));
+    assert!(v[1] > 10 && v[2] > 7 * v[1] && v[2] < 10 * v[1], "dix sève par case d'herbe, moins la part des racines voisines : {v:?}");
     // les autres organes gardent leur prix
     assert_eq!(souche::far_pct(&h, B_LEAVES, hx + 40, hy, 0), 0);
     assert_eq!(souche::far_pct(&h, B_RHIZOME, hx + 12, hy, 0), 20);

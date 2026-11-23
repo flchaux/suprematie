@@ -3,7 +3,7 @@
 use crate::buildings::{complete_building, place_building};
 use crate::data::*;
 use crate::fixed::{dist2, TILE};
-use crate::orders::{O_FACTORY_QUEUE, O_MOVE};
+use crate::orders::{O_FACTORY_QUEUE, O_MOVE, O_UPGRADE};
 use crate::ponte::{self, EV_HATCH};
 use crate::world::*;
 
@@ -406,6 +406,118 @@ fn the_demo_lays_and_hatches_in_a_loop() {
     assert_eq!(hatched.into_iter().collect::<Vec<_>>(), vec![U_GNAWER, U_SPITTER, U_SHELL, U_MEMBRANE], "les quatre couveuses font éclore leur espèce");
     assert!(most >= 10, "plusieurs portées couvent en même temps ({most})");
     assert!(crushed > 0, "les chars adverses ont détruit des œufs");
+}
+
+/// Niveaux de la couveuse : 3, 6 puis 12 portées à la fois, payés par son réseau ; elle pond pendant sa croissance.
+#[test]
+fn a_brood_grows_to_six_then_twelve_litters() {
+    let mut w = game();
+    let b = brood(&mut w);
+    let net = w.buildings[b].net as usize;
+    let r = w.building_ref(b) as i32;
+    let fill = |w: &mut World| {
+        w.nets[net].store = 2000;
+        w.nets[net].seve = 900;
+        w.nets[net].sels = 900;
+    };
+    let count = |w: &World| ponte::litters(w, Some(w.building_ref(b))).len();
+    assert_eq!(BROOD_LEVELS.iter().map(|l| l.litters).collect::<Vec<_>>(), vec![3, 6, 12]);
+    // sans de quoi payer, rien ne se passe
+    w.nets[net].seve = 10;
+    order(&mut w, 0, O_UPGRADE, &[r]);
+    assert_eq!(w.buildings[b].upgrade, 0);
+    fill(&mut w);
+    order(&mut w, 0, O_UPGRADE, &[r]);
+    assert!(w.buildings[b].upgrade > 0);
+    assert!((695..=705).contains(&w.nets[net].seve) && (815..=825).contains(&w.nets[net].sels), "payé par le réseau : {} {}", w.nets[net].seve, w.nets[net].sels);
+    // annulée : le réseau est remboursé
+    order(&mut w, 0, O_UPGRADE, &[r]);
+    assert!(w.buildings[b].upgrade == 0 && w.nets[net].seve >= 895);
+    order(&mut w, 0, O_UPGRADE, &[r]);
+    // elle pond pendant sa croissance, trois portées au plus
+    w.players[0].set_tech(udef(U_SHELL).tech);
+    queue(&mut w, b, U_SHELL, 30);
+    let mut most = 0;
+    for _ in 0..60 {
+        fill(&mut w);
+        steps(&mut w, 4);
+        most = most.max(count(&w));
+    }
+    assert_eq!(most, 3, "elle pond pendant sa croissance, dans la limite de son niveau");
+    assert!(w.buildings[b].upgrade > 0 && w.buildings[b].level == 0);
+    let peak = |w: &mut World, ticks: u32| {
+        let mut most = 0;
+        for _ in 0..ticks / 20 {
+            fill(w);
+            steps(w, 20);
+            most = most.max(count(w));
+        }
+        most
+    };
+    peak(&mut w, BROOD_LEVELS[1].time as u32 * 20);
+    assert_eq!((w.buildings[b].level, w.buildings[b].upgrade), (1, 0));
+    assert_eq!(peak(&mut w, 700), 6);
+    assert!(crate::render::info_building(&w, w.building_ref(b)).contains("\"brood\":{\"max\":6,\"litters\":[["));
+    // relue en pleine croissance, la partie continue à l'identique
+    order(&mut w, 0, O_UPGRADE, &[r]);
+    steps(&mut w, 100);
+    let mut again = crate::save::restore(&crate::save::snapshot(&w)).expect("relue");
+    for _ in 0..200 {
+        assert_eq!(again.step(&[]), w.step(&[]));
+    }
+    peak(&mut w, BROOD_LEVELS[2].time as u32 * 20);
+    assert_eq!(w.buildings[b].level, 2);
+    assert_eq!(peak(&mut w, 900), 12);
+    // pas de niveau de plus
+    let seve = w.nets[net].seve;
+    order(&mut w, 0, O_UPGRADE, &[r]);
+    assert!(w.buildings[b].upgrade == 0 && w.nets[net].seve >= seve - 10);
+    // l'affichage en dit autant : niveau, portées qui couvent
+    queue(&mut w, b, U_SHELL, 5);
+    peak(&mut w, 100);
+    let n = count(&w);
+    assert!(n >= 2);
+    let counts = ponte::litter_counts(&w);
+    assert_eq!(counts, vec![(w.building_ref(b), n as u32)]);
+    let f = crate::render::render(&w, 0, 0, w.map.w, w.map.h, 2, 0, false);
+    let word = f.windows(6).find(|k| k[0] == r && k[1] & 0xff == B_BROOD as i32).map(|k| k[5]).expect("couveuse dans l'image");
+    assert_eq!((word >> 24 & 3, word >> 26 & 15), (2, n as i32));
+}
+
+/// Une portée garde sa place jusqu'à son dernier œuf, quelle que soit l'espèce ; tous détruits, la place est rendue.
+#[test]
+fn a_litter_keeps_its_place_until_its_last_egg() {
+    let mut w = game();
+    let b = brood(&mut w);
+    let net = w.buildings[b].net as usize;
+    w.nets[net].store = 5000;
+    let count = |w: &World| ponte::litters(w, Some(w.building_ref(b))).len();
+    for kind in [U_SHELL, U_GNAWER, U_GNAWER, U_GNAWER] {
+        w.players[0].set_tech(udef(kind).tech);
+        queue(&mut w, b, kind, 1);
+    }
+    for _ in 0..8 {
+        w.nets[net].seve = 900;
+        w.nets[net].sels = 900;
+        steps(&mut w, 20);
+    }
+    let l = ponte::litters(&w, Some(w.building_ref(b)));
+    assert_eq!(l.len(), 3, "{l:?}");
+    assert_eq!(l.iter().map(|x| (x.kind, x.eggs)).collect::<Vec<_>>(), vec![(U_SHELL, batch(U_SHELL)), (U_GNAWER, 6), (U_GNAWER, 6)]);
+    assert!(l[0].laid < l[1].laid && l[1].laid < l[2].laid);
+    // la première portée perd ses œufs un à un
+    let of = |w: &World, laid: i32| eggs(w).into_iter().filter(|&s| w.units.cold[s].pack_fuel == laid).collect::<Vec<_>>();
+    let first = of(&w, l[1].laid);
+    for (k, &s) in first.iter().enumerate() {
+        assert_eq!(count(&w), 3, "{k} œufs détruits");
+        assert!(!ponte::has_room(&w, b), "{k} œufs détruits");
+        crate::combat::damage_unit(&mut w, s, 10_000, 1);
+        w.step(&[]);
+    }
+    assert!(of(&w, l[1].laid).is_empty());
+    // la place rendue, la dernière portée de la file est pondue
+    steps(&mut w, 2 * crate::souche::ORGAN_PERIOD + LAY_TICKS);
+    assert!(count(&w) == 3 && w.buildings[b].queue.is_empty(), "{} portées", count(&w));
 }
 
 #[test]

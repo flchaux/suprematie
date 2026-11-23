@@ -106,13 +106,15 @@ fn leaves_eat_the_edge_of_the_grass_and_turn_it_into_terreau() {
     }
     // plus l'herbe est loin, plus elle met de temps
     assert!(souche::organ_rate(&w, l).0 < early, "{} puis {}", early, souche::organ_rate(&w, l).0);
-    assert_eq!((soil::bite_ticks(8 * 8), soil::bite_ticks(20 * 20), soil::bite_ticks(40 * 40)), (328, 1000, 3400));
+    let bite = |d: i32| soil::bite_ticks(B_LEAVES, 4 * d * d);
+    assert_eq!((bite(4), bite(10), bite(20)), (328, 1000, 3400));
     check_terreau(&mut w);
 }
 
-/// Portée illimitée : l'herbe proche finie, la frondaison va plus loin, de moins en moins vite.
+/// Portée illimitée : l'herbe proche finie, la frondaison va plus loin, de moins en moins vite ; sa production est
+/// toujours celle de l'herbe qu'elle mange, sans plancher.
 #[test]
-fn leaves_reach_without_limit_but_yield_less_and_less() {
+fn leaves_reach_without_limit_but_eat_slower_and_slower() {
     let mut w = game(0);
     let (_, hx, hy) = base(&mut w, 0, 70);
     let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
@@ -136,11 +138,14 @@ fn leaves_reach_without_limit_but_yield_less_and_less() {
     println!("rendement {rates:?}, distance {dist:?}");
     assert!(rates.windows(2).all(|k| k[1] <= k[0]) && rates[0] > 100 && rates[2] < 40, "{rates:?}");
     assert!(dist.windows(2).all(|k| k[1] > k[0]) && *dist.last().unwrap() >= 38, "{dist:?}");
-    assert_eq!(*rates.last().unwrap(), soil::SPENT_PCT, "au loin, le plancher");
-    // et elle mange encore : une case à 40 cases prend du temps, mais vient
-    let n = eaten(&w);
-    steps(&mut w, 14_000);
-    assert!(eaten(&w) > n, "elle mange toujours");
+    // elle mange encore : une case à 40 cases prend du temps, mais vient, et donne 20 sève comme les autres
+    let (n, m) = (eaten(&w), meal_of(&w, l));
+    let made = w.players[0].produced[SEVE as usize];
+    steps(&mut w, 2 * m.ticks);
+    let got = (w.players[0].produced[SEVE as usize] - made) as i32 - 2 * m.ticks as i32 / 20;
+    let k = (eaten(&w) - n) as i32;
+    assert!((1..=3).contains(&k), "{k} cases en {} ticks", 2 * m.ticks);
+    assert!((38..=42).contains(&got), "{got} sève pour deux cases");
     check_terreau(&mut w);
 }
 
@@ -196,7 +201,7 @@ fn a_tired_leaf_warns_once_and_recovers_when_grass_comes_back() {
     let n = w.buildings[heart].net as usize;
     w.nets[n].seve = 0;
     steps(&mut w, 400);
-    // vingt secondes : 20 sève de la graine-mère, une de la frondaison (plancher de 5 %)
+    // vingt secondes : 20 sève de la graine-mère, et ce que donne l'herbe lointaine
     let got = w.nets[n].seve;
     assert!((20..=24).contains(&got), "sève : {got}");
     // le câble meurt : ses cases redeviennent de l'herbe, la frondaison s'en aperçoit en 30 s au plus
@@ -323,6 +328,103 @@ fn taproots_graze_too_and_dry_up() {
     steps(&mut w, 40);
     assert!(w.buildings[t].stalled);
     assert_eq!(souche::organ_rate(&w, t), (3 * soil::SPENT_PCT, 0));
+}
+
+/// Une racine mange très court (une case au-delà de sa zone), quatre fois plus vite qu'une frondaison, pour moitié
+/// moins de sève par case.
+#[test]
+fn roots_eat_a_very_short_way_four_times_faster_for_half_the_sap() {
+    for d in 1..12 {
+        let d2 = 4 * d * d;
+        assert_eq!(soil::bite_ticks(B_ROOT, d2), soil::bite_ticks(B_LEAVES, d2) / 4);
+    }
+    let mut w = game(0);
+    let (heart, hx, hy) = base(&mut w, 0, 50);
+    // à l'écart de la graine-mère : une file droite de 20 racines, la sève comptée à partir de là
+    let line: Vec<usize> = (0..30).map(|k| put(&mut w, 0, B_ROOT, hx + 3 + k, hy + 1)).collect();
+    let net = w.buildings[heart].net;
+    assert!(line.iter().all(|&r| w.buildings[r].net == net && net != 0));
+    let made = w.players[0].produced[SEVE as usize];
+    steps(&mut w, 42);
+    // de quoi manger, en partage avec ses voisines
+    let mid = &w.buildings[line[15]];
+    let m = soil::meal(&w, B_ROOT, 0, (mid.x, mid.y, 1, 1), (0, soil::ROOT_R), 0);
+    assert!(m.left == 10 && m.share == 200 && m.near == 64, "cinq racines convoitent chaque case : {} cases, part {}", m.left, m.share);
+    assert!((80..=100).contains(&m.ticks), "une case à 4 cases : {} ticks", m.ticks);
+    assert!(souche::organ_rate(&w, line[15]).0 > 0);
+    let mut t = 42;
+    let mut last = 0;
+    while t < 4000 && (eaten(&w) != last || t < 1500) {
+        last = eaten(&w);
+        steps(&mut w, 500);
+        t += 500;
+    }
+    let n = eaten(&w) as i32;
+    // deux cases par racine (une de chaque côté), et le bout
+    assert!((60..=76).contains(&n), "{n} cases pour 30 racines");
+    let got = (w.players[0].produced[SEVE as usize] - made) as i32 - t as i32 / 20;
+    assert!((got - soil::ROOT_SEVE * n).abs() <= 2, "{got} sève pour {n} cases");
+    for (i, &o) in w.soil.iter().enumerate() {
+        if o != 0 {
+            let (tx, ty) = (i as i32 % w.map.w, i as i32 / w.map.w);
+            let near = line.iter().map(|&r| (w.buildings[r].x - tx).pow(2) + (w.buildings[r].y - ty).pow(2)).min().unwrap();
+            assert!((10..=20).contains(&near), "une case au-delà de sa zone : ({}, {})", tx - hx, ty - hy);
+        }
+    }
+    // l'herbe de sa portée finie, elle ne donne plus rien, sans alerte ; elle ne va pas plus loin
+    assert!(line.iter().all(|&r| souche::organ_rate(&w, r) == (0, 0) && !w.buildings[r].stalled));
+    steps(&mut w, 1000);
+    assert_eq!(eaten(&w) as i32, n);
+    check_terreau(&mut w);
+    // hors de tout réseau vivant, elle ne mange pas
+    remove_building(&mut w, line[2], false);
+    remove_building(&mut w, heart, false);
+    for x in 0..10 {
+        let i = w.map.idx(hx + 18 + x, hy + 5);
+        w.soil[i] = 0;
+        w.terreau[i] = 0;
+    }
+    let cut = line[20];
+    steps(&mut w, 4);
+    w.buildings[cut].net = 0;
+    let k = w.buildings[cut].charge;
+    soil::graze(&mut w, cut, 40);
+    assert_eq!(w.buildings[cut].charge, k);
+}
+
+/// Rentabilité d'une racine selon sa distance à la graine-mère : 20 sève d'herbe par racine d'une file droite, pour un
+/// prix qui monte de 2 % par case ; elle se paie jusqu'à 200 cases. L'aperçu de pose annonce ce qu'elle rapporte.
+#[test]
+fn a_root_pays_for_itself_up_to_two_hundred_cells() {
+    let mut w = game(0);
+    let (_, hx, hy) = base(&mut w, 0, 60);
+    let first: Vec<usize> = (0..6).map(|k| put(&mut w, 0, B_ROOT, hx + 3 + k, hy + 1)).collect();
+    soil::ensure(&mut w);
+    // ce qu'annonce l'aperçu d'une file de 30 racines de plus, sur un pré intact
+    let cells: Vec<(i32, i32, u8)> = (0..30).map(|k| (hx + 9 + k, hy + 1, 0)).collect();
+    let v = souche::line_cost(&w, 0, B_ROOT, &cells);
+    let (grass, seve, cost) = (v[1], v[2], v[4]);
+    let made = w.players[0].produced[SEVE as usize] as i32;
+    for &(x, y, _) in &cells {
+        put(&mut w, 0, B_ROOT, x, y);
+    }
+    steps(&mut w, 3000);
+    let got = w.players[0].produced[SEVE as usize] as i32 - made - 150;
+    println!("30 racines de plus : {grass} cases d'herbe, {seve} sève annoncée, {got} tirée (toute la file), {cost} de prix");
+    assert!((60..=76).contains(&grass), "{grass}");
+    // les six premières racines mangent aussi leur herbe (120 sève et le bout de file)
+    assert!((got - seve - 130).abs() <= 50, "annoncé {seve}, tiré {got} avec les six premières");
+    assert!(first.iter().all(|&r| w.buildings[r].alive));
+    // prix d'une racine à d cases, contre les 20 sève qu'elle rapporte
+    let heart = [(0, 0, 3, 3)];
+    let price = |d: i32| souche::far_cost(bdef(B_ROOT).cost[0].1, souche::far_pct(&heart, B_ROOT, 2 + d, 1, 0)) as i32;
+    let gain = 2 * soil::ROOT_SEVE;
+    println!("distance : prix, bilan d'une racine en file droite (deux côtés d'herbe), d'un seul côté");
+    for d in [1, 10, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300] {
+        println!("{d:>4} cases : {:>2} sève, {:+}, {:+}", price(d), gain - price(d), gain / 2 - price(d));
+    }
+    assert_eq!((price(1), price(50), price(100), price(200)), (4, 8, 12, 20));
+    assert!((1..=200).all(|d| price(d) <= gain) && (207..300).all(|d| price(d) > gain));
 }
 
 #[test]
@@ -460,4 +562,37 @@ fn four_hundred_leaves_profile() {
     let t = std::time::Instant::now();
     steps(&mut w, 2000);
     println!("{n} frondaisons : {:.3} ms/tick, {} cases mangées", t.elapsed().as_secs_f64() * 1000.0 / 2000.0, w.soil_n);
+}
+
+/// Temps par tick de mille racines qui mangent, puis qui n'ont plus rien à manger (mesure, à la demande).
+#[test]
+#[ignore]
+fn thousand_roots_profile() {
+    let mut w = game(0);
+    let (_, hx, hy) = base(&mut w, 0, 70);
+    // un peigne : un câble est-ouest, des rangs nord-sud toutes les dix cases
+    let mut n = 0;
+    for k in 0..60 {
+        for x in [hx + 3 + k, hx - 1 - k] {
+            n += place_building(&mut w, 0, B_ROOT, x, hy + 1, 0).map(|b| complete_building(&mut w, b)).is_some() as i32;
+        }
+    }
+    for x in (hx - 50..=hx + 60).step_by(10) {
+        for k in 1..50 {
+            for y in [hy + 1 + k, hy + 1 - k] {
+                n += place_building(&mut w, 0, B_ROOT, x, y, 0).map(|b| complete_building(&mut w, b)).is_some() as i32;
+            }
+        }
+    }
+    rebuild_power(&mut w);
+    let ms = |w: &mut World, t: u32| {
+        let at = std::time::Instant::now();
+        steps(w, t);
+        at.elapsed().as_secs_f64() * 1000.0 / t as f64
+    };
+    let (eat, rest) = (ms(&mut w, 1000), {
+        steps(&mut w, 2000);
+        ms(&mut w, 1000)
+    });
+    println!("{n} racines : {eat:.3} ms/tick pendant qu'elles mangent, {rest:.3} ensuite ; {} cases mangées", w.soil_n);
 }

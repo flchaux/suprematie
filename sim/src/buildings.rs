@@ -371,15 +371,7 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     let gen = w.buildings[slot].gen.wrapping_add(1);
     let mut recipe = RECIPE_NONE;
     if def.class == BClass::Extractor || (def.class == BClass::Organ && def.deposit != 0) {
-        recipe = w.map.deposit[w.map.idx(x, y)];
-        for ty in y..y + bh {
-            for tx in x..x + bw {
-                let d = w.map.deposit[w.map.idx(tx, ty)];
-                if d != 0 {
-                    recipe = d;
-                }
-            }
-        }
+        recipe = crate::map::deposit_under(&w.map, x, y, bw, bh);
     }
     let (fx, fy) = front_tile(x, y, bw, bh, dir);
     let floor = floor_of(dir);
@@ -1948,9 +1940,17 @@ pub fn update_buildings(w: &mut World) {
             // amélioration en cours : le bâtiment ne travaille pas (sa production en cours attend) ; le
             // générateur principal, resté en service, garde l'apport de son dépôt collé (sans partage)
             let main = bb.kind == B_MAIN_GENERATOR;
+            // couveuse : elle pond pendant sa croissance
+            let brood = bb.kind == B_BROOD;
             tick_upgrade(w, b);
             if main && w.buildings[b].upgrade > 0 && w.tick.is_multiple_of(DEPOT_FEED_PERIOD) {
                 feed_generator_from_depot(w, b);
+            }
+            if brood && !paused(&w.buildings[b]) && w.tick >= w.buildings[b].wake {
+                tick_factory(w, b);
+            }
+            if brood && w.buildings[b].upgrade > 0 {
+                w.buildings[b].wake = 0;
             }
             continue;
         }
@@ -2092,7 +2092,7 @@ fn tick_router(w: &mut World, b: usize) {
 }
 
 /// Amélioration possible du bâtiment : (coût, recherche, durée en ticks). Extracteur : niveau suivant
-/// (EXTRACTOR_LEVELS) ; assembleur : modèle suivant (ASSEMBLER_UPGRADES).
+/// (EXTRACTOR_LEVELS) ; assembleur : modèle suivant (ASSEMBLER_UPGRADES) ; couveuse : plus de portées (BROOD_LEVELS).
 pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
     match bb.def().class {
         BClass::Extractor => EXTRACTOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
@@ -2100,6 +2100,7 @@ pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
         BClass::Power if bb.kind == B_GENERATOR => GENERATOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Power if bb.kind == B_MAIN_GENERATOR => MAIN_GENERATOR_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Crafter if bb.kind == B_FURNACE => FURNACE_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
+        BClass::Factory if bb.kind == B_BROOD => BROOD_LEVELS.get(bb.level as usize + 1).map(|l| (l.cost, l.tech, l.time as u32 * 20)),
         BClass::Crafter => ASSEMBLER_UPGRADES.iter().find(|u| u.0 == bb.kind).map(|u| (bdef(u.1).cost, bdef(u.1).tech, u.2 as u32 * 20)),
         _ => None,
     }
@@ -2107,9 +2108,10 @@ pub fn upgrade_spec(bb: &Building) -> Option<(&'static [(u8, u16)], u8, u32)> {
 
 /**
  * Ordre UPGRADE sur l'extracteur ou l'assembleur `b` : lance son amélioration (il doit être terminé, la
- * recherche faite et le coût disponible dans les dépôts proches, payé aussitôt : drones::pay_near). Le
- * bâtiment ne travaille plus jusqu'à la fin (voir tick_upgrade). Sur une amélioration en cours, l'ordre
- * l'annule et rembourse (dépôt le plus proche).
+ * recherche faite et le coût disponible dans les dépôts proches, payé aussitôt : drones::pay_near ; couveuse :
+ * dans son réseau de racines). Le bâtiment ne travaille plus jusqu'à la fin (voir tick_upgrade), sauf le générateur
+ * principal et la couveuse. Sur une amélioration en cours, l'ordre l'annule et rembourse (dépôt le plus proche, ou
+ * réseau).
  */
 pub fn upgrade(w: &mut World, b: usize) -> bool {
     let bb = &w.buildings[b];
@@ -2128,7 +2130,17 @@ pub fn upgrade(w: &mut World, b: usize) -> bool {
         return true;
     }
     let (x, y) = w.buildings[b].center();
-    if !w.players[owner as usize].has_tech(tech) || !crate::drones::pay_near(w, owner, x, y, cost) {
+    if !w.players[owner as usize].has_tech(tech) {
+        return false;
+    }
+    let paid = if w.buildings[b].def().race == RACE_SOUCHE {
+        let net = w.buildings[b].net;
+        let dues: Vec<(u8, i32)> = cost.iter().map(|&(it, n)| (it, n as i32)).collect();
+        net != 0 && crate::souche::take_all(w, owner, net, &dues)
+    } else {
+        crate::drones::pay_near(w, owner, x, y, cost)
+    };
+    if !paid {
         return false;
     }
     w.buildings[b].upgrade = 1;
@@ -2270,6 +2282,7 @@ fn tick_upgrade(w: &mut World, b: usize) {
     match bb.def().class {
         BClass::Extractor => bb.level += 1,
         BClass::Crafter if bb.kind == B_FURNACE => bb.level += 1,
+        BClass::Factory => bb.level += 1,
         BClass::Power => {
             bb.level += 1;
             w.power_dirty = true;
@@ -2733,8 +2746,8 @@ fn tick_factory(w: &mut World, b: usize) {
     // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche (voir ponte.rs)
     let n = batch(kind);
     if !w.buildings[b].working {
-        // couveuse : reliée à un réseau, et pas plus de BROOD_LITTERS portées en train de couver
-        if litter && (w.buildings[b].net == 0 || !crate::ponte::has_room(w, b, kind)) {
+        // couveuse : reliée à un réseau, et pas plus de portées en train de couver que son niveau n'en permet
+        if litter && (w.buildings[b].net == 0 || !crate::ponte::has_room(w, b)) {
             w.buildings[b].wake = w.tick + crate::souche::ORGAN_PERIOD;
             return;
         }
