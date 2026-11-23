@@ -105,6 +105,9 @@ pub const M_LAB_FAST: u8 = 38;
 pub const M_LAB_FIELD: u8 = 39;
 pub const M_SHOP_FAST: u8 = 40;
 pub const M_SHOP_VETS: u8 = 41;
+/// Radar (cases) de l'Arche et du pisteur aménagés.
+pub const ARK_RADAR: i32 = 70;
+pub const TRACKER_RADAR: i32 = 45;
 pub const M_BASTION_LONG: u8 = 42;
 pub const M_BASTION_SHIELD: u8 = 43;
 // unités
@@ -266,21 +269,28 @@ pub fn weapons_of(w: &World, s: usize) -> ([u8; 2], usize) {
     v[..n].copy_from_slice(&def.weapons[..n]);
     let mods = w.units.cold[s].mods;
     if mods != 0 {
-        match (w.units.kind[s], at(mods, 0)) {
-            (U_ARK, M_W_SIEGE) => v[0] = W_SIEGE,
-            (U_ARK, M_W_FLAME) => v[0] = W_FLAME,
-            (U_ARK, M_W_ROCKETS) => v[0] = W_ROCKETS,
-            (U_ARK, M_W_RAIL) => v[0] = W_RAIL,
-            (U_ARK, M_W_FLAK) => v[1] = W_FLAK,
-            (U_RIDER, M_RIDER_TWIN) => v[0] = W_RIDER_TWIN,
-            (U_HARROW, M_HARROW_LONG) => v[0] = W_HARROW_LONG,
-            (U_HARROW, M_HARROW_MIXED) => v[0] = W_HARROW_MIXED,
-            (U_TOWED_GUN, M_GUN_LONG) => v[0] = W_GUN_LONG,
-            (U_TOWED_GUN, M_GUN_CLUSTER) => v[0] = W_GUN_CLUSTER,
-            _ => {}
+        if let Some((k, wi)) = mod_weapon(w.units.kind[s], at(mods, 0)) {
+            v[k] = wi;
         }
     }
     (v, n)
+}
+
+/// Arme donnée par l'amélioration `m` à une unité `kind` : (rang de l'arme remplacée, arme).
+pub fn mod_weapon(kind: u16, m: u8) -> Option<(usize, u8)> {
+    Some(match (kind, m) {
+        (U_ARK, M_W_SIEGE) => (0, W_SIEGE),
+        (U_ARK, M_W_FLAME) => (0, W_FLAME),
+        (U_ARK, M_W_ROCKETS) => (0, W_ROCKETS),
+        (U_ARK, M_W_RAIL) => (0, W_RAIL),
+        (U_ARK, M_W_FLAK) => (1, W_FLAK),
+        (U_RIDER, M_RIDER_TWIN) => (0, W_RIDER_TWIN),
+        (U_HARROW, M_HARROW_LONG) => (0, W_HARROW_LONG),
+        (U_HARROW, M_HARROW_MIXED) => (0, W_HARROW_MIXED),
+        (U_TOWED_GUN, M_GUN_LONG) => (0, W_GUN_LONG),
+        (U_TOWED_GUN, M_GUN_CLUSTER) => (0, W_GUN_CLUSTER),
+        _ => return None,
+    })
 }
 
 /// Portée (cases) à laquelle l'unité `s` s'approche pour attaquer `target` (une unité, un bâtiment, ou NONE : le
@@ -374,10 +384,10 @@ pub fn unit_radar(w: &World, s: usize) -> i32 {
     let mods = w.units.cold[s].mods;
     if mods != 0 {
         if w.units.kind[s] == U_ARK && has(mods, M_RADAR) {
-            return 70;
+            return ARK_RADAR;
         }
         if w.units.kind[s] == U_TRACKER && has(mods, M_TRACKER_RADAR) {
-            return 45;
+            return TRACKER_RADAR;
         }
     }
     udef(w.units.kind[s]).radar
@@ -1348,15 +1358,24 @@ fn js(s: &str) -> String {
 pub fn mods_json() -> String {
     let list: Vec<String> = MODS
         .iter()
-        .map(|d| {
+        .enumerate()
+        .map(|(i, d)| {
+            let m = i as u8;
+            // arme donnée (rang de l'arme remplacée, arme ; -1 : aucune) et radar, pour les cercles de portée
+            let (slot, wi) = if m == M_BASTION_LONG { (0, W_BASTION_LONG as i32) } else { mod_weapon(d.host, m).map_or((0, -1), |(k, wi)| (k, wi as i32)) };
+            let radar = match m {
+                M_RADAR => ARK_RADAR,
+                M_TRACKER_RADAR => TRACKER_RADAR,
+                _ => 0,
+            };
             let mut cost: Vec<String> = d.cost.iter().map(|&(it, n)| format!("[{},{}]", it, n)).collect();
             if d.releves > 0 {
                 cost.push(format!("[{},{}]", RELEVES, d.releves));
             }
             let host = if d.host == NO_KIND { -1 } else { d.host as i32 };
             format!(
-                "{{\"key\":{},\"name\":{},\"desc\":{},\"icon\":{},\"host\":{},\"slot\":{},\"rank\":{},\"base\":{},\"tech\":{},\"cost\":[{}],\"time\":{}}}",
-                js(d.key), js(d.name), js(d.desc), js(d.icon), host, d.slot, d.rank, d.base, d.tech, cost.join(","), d.time
+                "{{\"key\":{},\"name\":{},\"desc\":{},\"icon\":{},\"host\":{},\"slot\":{},\"rank\":{},\"base\":{},\"tech\":{},\"cost\":[{}],\"time\":{},\"weapon\":[{},{}],\"radar\":{}}}",
+                js(d.key), js(d.name), js(d.desc), js(d.icon), host, d.slot, d.rank, d.base, d.tech, cost.join(","), d.time, slot, wi, radar
             )
         })
         .collect();

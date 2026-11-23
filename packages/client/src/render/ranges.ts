@@ -2,7 +2,7 @@
 // morte (portée minimale) et radar. Les cercles d'une même famille sont fondus : seul le contour de leur
 // réunion est tracé (une armée de vingt chars montre une ligne, pas vingt cercles).
 import * as THREE from "three/webgpu";
-import type { BuildingDef, UnitDef, WeaponDef } from "@supreme/shared";
+import type { BuildingDef, ModDef, UnitDef, WeaponDef } from "@supreme/shared";
 import { groundHeight, type MapData } from "./terrain.ts";
 
 export type RangeKind = "ground" | "air" | "sub" | "min" | "radar";
@@ -40,13 +40,24 @@ export function rangesOf(weapons: WeaponDef[], radar: number): Partial<Record<Ra
   return out;
 }
 
-/** Portées d'un type d'unité ; `cannon` : arme qui remplace la sienne (canon renforcé du commandant). */
-export function unitRanges(d: UnitDef, weapons: WeaponDef[], cannon = -1): Partial<Record<RangeKind, number>> {
-  const list = cannon >= 0 ? [cannon, ...d.weapons.slice(1)] : d.weapons;
-  return rangesOf(list.map((i) => weapons[i]).filter(Boolean), d.radar);
+/** Armes et radar d'un porteur avec ses améliorations (Transhumants) installées. */
+function fitted(weapons: number[], radar: number, mods: ModDef[]): { weapons: number[]; radar: number } {
+  const list = [...weapons];
+  for (const m of mods) {
+    if (m.weapon[1] >= 0) list[m.weapon[0]] = m.weapon[1];
+    radar = Math.max(radar, m.radar);
+  }
+  return { weapons: list, radar };
 }
-export function buildingRanges(d: BuildingDef, weapons: WeaponDef[]): Partial<Record<RangeKind, number>> {
-  return rangesOf(d.weapon >= 0 && weapons[d.weapon] ? [weapons[d.weapon]] : [], d.radar);
+
+/** Portées d'une unité ; `cannon` : arme qui remplace la sienne (canon renforcé du commandant). */
+export function unitRanges(d: UnitDef, weapons: WeaponDef[], cannon = -1, mods: ModDef[] = []): Partial<Record<RangeKind, number>> {
+  const f = fitted(cannon >= 0 ? [cannon, ...d.weapons.slice(1)] : d.weapons, d.radar, mods);
+  return rangesOf(f.weapons.map((i) => weapons[i]).filter(Boolean), f.radar);
+}
+export function buildingRanges(d: BuildingDef, weapons: WeaponDef[], mods: ModDef[] = []): Partial<Record<RangeKind, number>> {
+  const f = fitted(d.weapon >= 0 ? [d.weapon] : [], d.radar, mods);
+  return rangesOf(f.weapons.map((i) => weapons[i]).filter(Boolean), f.radar);
 }
 
 /** Trop de cercles : un seul par maille, de plus en plus grande, jusqu'à tenir dans `max`. */

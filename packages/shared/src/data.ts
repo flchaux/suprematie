@@ -42,6 +42,8 @@ export interface UnitDef {
 export interface ModDef {
   key: string; name: string; desc: string; icon: string; host: number; slot: number; rank: number; base: number; tech: number;
   cost: [number, number][]; time: number;
+  /** arme donnée : [rang de l'arme remplacée, arme (-1 : aucune)] ; radar donné (cases, 0 : aucun) */
+  weapon: [number, number]; radar: number;
 }
 /** Fiche des améliorations d'une unité ou d'un module : installées (par emplacement), en cours (ticks restants, total),
  * disponible à portée pour payer (relevés compris), état de l'Arche. */

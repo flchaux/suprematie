@@ -1,7 +1,7 @@
 // Cercles de portée : familles d'armes et contour de la réunion des cercles.
 import { describe, it, expect } from "vitest";
-import type { WeaponDef } from "@supreme/shared";
-import { rangesOf, thin, unionOutline } from "../src/render/ranges.ts";
+import type { ModDef, UnitDef, WeaponDef } from "@supreme/shared";
+import { rangesOf, thin, unionOutline, unitRanges } from "../src/render/ranges.ts";
 
 const w = (range: number, mask: number, minRange = 0): WeaponDef => ({ dmg: 1, range, cooldown: 1, proj: 0, aoe: 0, mask, salvo: 1, sustain: 0, minRange });
 
@@ -12,6 +12,13 @@ describe("portées", () => {
     // arme mixte : un seul contour ; bombe ou morsure : aucun
     expect(rangesOf([w(30, 11)], 0)).toEqual({ ground: 30 });
     expect(rangesOf([w(3, 3)], 0)).toEqual({});
+  });
+  it("suit les armes et le radar des améliorations", () => {
+    const mod = (weapon: [number, number], radar: number) => ({ weapon, radar }) as ModDef;
+    const u = { weapons: [0, 1], radar: 0 } as UnitDef;
+    const ws = [w(24, 3), w(28, 8), w(52, 3), w(40, 8)];
+    expect(unitRanges(u, ws)).toEqual({ ground: 24, air: 28 });
+    expect(unitRanges(u, ws, -1, [mod([0, 2], 0), mod([1, 3], 0), mod([0, -1], 70)])).toEqual({ ground: 52, air: 40, radar: 70 });
   });
   it("ne garde que le contour de la réunion", () => {
     const one = unionOutline([{ x: 0, z: 0, r: 10 }], 96);

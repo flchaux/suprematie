@@ -650,7 +650,7 @@ export class GameClient {
     }
   }
 
-  private rangeBuildings: { at: number; key: string; list: { kind: number; x: number; z: number }[] } = { at: 0, key: "", list: [] };
+  private rangeBuildings: { at: number; key: string; list: { ref: number; kind: number; x: number; z: number }[] } = { at: 0, key: "", list: [] };
   /** Cercles de portée de la sélection : positions affichées (interpolées) des unités, centres des bâtiments. */
   private selectionRanges(now: number): Record<RangeKind, Circle[]> | null {
     const data = this.data;
@@ -661,9 +661,16 @@ export class GameClient {
     const put = (r: Partial<Record<RangeKind, number>>, x: number, z: number) => {
       for (const k in r) out[k as RangeKind].push({ x, z, r: r[k as RangeKind]! });
     };
+    // améliorations des Transhumants installées sur une unité ou un module
+    const modsOf = (ref: number) => (ent.modViews.get(ref)?.mods ?? []).filter((m) => m > 0).map((m) => data.mods[m]);
     const byKind = new Map<number, Partial<Record<RangeKind, number>>>();
     for (const u of ent.screen) {
       if (!this.selected.has(u.id)) continue;
+      const fit = modsOf(u.id);
+      if (fit.length) {
+        put(unitRanges(data.units[u.kind], data.weapons, -1, fit), u.x, u.z);
+        continue;
+      }
       let r = byKind.get(u.kind);
       if (!r) {
         const d = data.units[u.kind];
@@ -678,20 +685,20 @@ export class GameClient {
     const key = [...refs].join();
     const cache = this.rangeBuildings;
     if (key !== cache.key || (refs.size && now - cache.at > 250)) {
-      const list: { kind: number; x: number; z: number }[] = [];
+      const list: { ref: number; kind: number; x: number; z: number }[] = [];
       if (refs.size) {
         for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
           if (!refs.has(f.buf[o] >>> 0)) continue;
           const kind = f.buf[o + 1] & 0xff;
           const d = data.buildings[kind];
-          list.push({ kind, x: (f.buf[o + 2] & 0xffff) + d.w / 2, z: (f.buf[o + 2] >>> 16) + d.h / 2 });
+          list.push({ ref: f.buf[o] >>> 0, kind, x: (f.buf[o + 2] & 0xffff) + d.w / 2, z: (f.buf[o + 2] >>> 16) + d.h / 2 });
         }
       }
       // vue stratégique : les bâtiments peuvent manquer à l'image, on garde les derniers connus
       if (key !== cache.key || list.length) this.rangeBuildings = { at: now, key, list };
       else cache.at = now;
     }
-    for (const b of this.rangeBuildings.list) put(buildingRanges(data.buildings[b.kind], data.weapons), b.x, b.z);
+    for (const b of this.rangeBuildings.list) put(buildingRanges(data.buildings[b.kind], data.weapons, modsOf(b.ref)), b.x, b.z);
     return out;
   }
 

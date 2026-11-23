@@ -392,7 +392,7 @@ export class Entities {
   /** améliorations des Transhumants : clé → indice */
   private modIds: Map<string, number>;
   private modFor: Frame | null = null;
-  private modViews = new Map<number, ModView>();
+  modViews = new Map<number, ModView>();
   /** trappes ouvertes des bâtiments qui reçoivent des objets (entrée cyan, sortie ambre) ; les fermées sont dans leur modèle */
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
