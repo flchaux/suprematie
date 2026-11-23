@@ -38,6 +38,7 @@ export interface SimExports {
   anciens_demo(): number;
   ponte_demo(): number;
   essaim_demo(): number;
+  taming_demo(): number;
   lifts_demo(): number;
   chantiers_demo(): number;
   relais_demo(): number;
@@ -210,6 +211,10 @@ export class Sim {
   }
   ponteDemo(): number {
     return this.ex.ponte_demo() >>> 0;
+  }
+  /** Démo de l'apprivoisement d'un nid par la Reine (voir sim/src/stress.rs, taming_demo). */
+  tamingDemo(): number {
+    return this.ex.taming_demo() >>> 0;
   }
   /** Démo de la Souche, suite : nouveaux organes et organismes (voir sim/src/stress.rs, essaim_demo). */
   essaimDemo(): number {

@@ -408,10 +408,11 @@ export class GameClient {
     if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers" || scene === "nomades") ui.me = 0;
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
+    // ?demo=apprivoisement : la Reine de la Souche charme un nid de mordeurs (joueur 0)
     // ?demo=essaim : nouveaux organes et organismes de la Souche, Reine enracinée, flaques d'acide (joueur 0)
     // ?demo=arche : Arche à tourelles et bouclier, Arche nue à équiper, modules aménagés des Transhumants (joueur 0)
     // ?demo=relais : chaîne de relais logistiques qui ravitaille un chantier et une usine éloignés (joueur 0)
-    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "nomades" || scene === "arche" || scene === "relais";
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "apprivoisement" || scene === "nomades" || scene === "arche" || scene === "relais";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }
@@ -861,6 +862,7 @@ export class GameClient {
           } else if (seen(c / TILE, d / TILE)) pushMessage(`${ui.names[a] ?? "Un joueur"} a capturé un EPPZ`, "alert");
           break;
         case EV.TAMED:
+          if (seen(c / TILE, d / TILE)) fx?.tamed(c / TILE, d / TILE, new THREE.Color(ownerColor(a, this.frame!.players)));
           // nid de mordeurs apprivoisé par une Reine de la Souche
           if (a === ui.me) {
             pushMessage("Nid apprivoisé : il est greffé à votre essaim et fait naître des mordeurs pour vous", "good");

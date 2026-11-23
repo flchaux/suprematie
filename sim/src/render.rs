@@ -267,6 +267,11 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         }
         // rail : forme (0 droit, 1 + c virage entre les côtés c et c + 1), d'après les rails voisins
         BClass::Rail => (crate::logistics::rail_shape(w, b) as i32, 0),
+        // nid sauvage qu'une Reine de la Souche apprivoise : joueur + 1 (0 : aucun), avancement ‰
+        BClass::Nest => {
+            let (tamer, t) = crate::nature::tame_state(w, b);
+            (tamer as i32, t)
+        }
         // répartiteur : ses sorties, comme un niveau (modèles splitter_n2 et splitter_n3)
         BClass::Router if bb.kind == B_SPLITTER => ((bb.split as i32) << 24, 0),
         _ => (0, 0),
@@ -697,7 +702,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id && k.relay == 0).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"mods\":{},\"egg\":{},\"soil\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"mods\":{},\"egg\":{},\"soil\":{},\"tame\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -725,7 +730,9 @@ pub fn info_unit(w: &World, id: u32) -> String {
         // œuf de la Souche : {kind (espèce portée), left (ticks avant l'éclosion), total (incubation)} ou null
         crate::ponte::content(w, s).map_or("null".into(), |k| format!("{{\"kind\":{},\"left\":{},\"total\":{}}}", k, crate::ponte::hatch_left(w, s), c.timer)),
         // Reine de la Souche : elle se tient sur son terreau (elle peut s'y enraciner)
-        w.units.kind[s] == U_QUEEN && crate::essaim::soil(w, s) != 0
+        w.units.kind[s] == U_QUEEN && crate::essaim::soil(w, s) != 0,
+        // apprivoisement d'un nid (‰ ; -1 : aucun)
+        crate::nature::queen_tame(w, s)
     )
 }
 

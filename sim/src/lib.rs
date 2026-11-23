@@ -477,6 +477,15 @@ pub extern "C" fn essaim_demo() -> u32 {
     h
 }
 
+/// Démo de l'apprivoisement d'un nid par la Reine de la Souche (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn taming_demo() -> u32 {
+    let w = stress::taming_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des déplacements en formation orientée (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn formation_demo() -> u32 {

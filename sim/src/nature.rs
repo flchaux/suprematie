@@ -988,6 +988,20 @@ pub fn wild_nest(w: &World, r: u32) -> Option<usize> {
     w.nature.nests.iter().position(|n| n.b == r && n.species == SPECIES_BEASTS)
 }
 
+/// Apprivoisement en cours du nid `b`, pour l'affichage : (joueur + 1, avancement ‰) ; (0, 0) : aucun.
+pub fn tame_state(w: &World, b: usize) -> (u8, i32) {
+    let r = w.building_ref(b);
+    w.nature.nests.iter().find(|n| n.b == r).map_or((0, 0), |n| (n.tamer, n.tame as i32 * 1000 / TAME_TICKS as i32))
+}
+
+/// Avancement (‰) du nid que la Reine `s` apprivoise (0 : pas encore assez près) ; -1 : elle n'en apprivoise pas.
+pub fn queen_tame(w: &World, s: usize) -> i32 {
+    let Some(&Order::Tame { target }) = w.units.cold[s].orders.first() else { return -1 };
+    let Some(b) = w.building(target) else { return -1 };
+    let (tamer, t) = tame_state(w, b);
+    if tamer == w.units.owner[s] + 1 { t } else { 0 }
+}
+
 /// Le nid `b` est-il en train d'être apprivoisé par un joueur de l'équipe `team` ?
 pub fn tamed_by_team(w: &World, b: usize, team: u8) -> bool {
     let r = w.building_ref(b);
