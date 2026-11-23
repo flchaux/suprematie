@@ -72,7 +72,7 @@ fn leaves_eat_the_grass_around_and_turn_it_into_terreau() {
     soil::ensure(&mut w);
     let before = soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2);
     assert!((80..=177).contains(&before), "herbe du périmètre : {before}");
-    // une case toutes les 8 s, comptée dans le sol mangé et dans le terreau du joueur
+    // une case toutes les 20 s, comptée dans le sol mangé et dans le terreau du joueur
     steps(&mut w, soil::LEAVES_BITE + 40);
     assert_eq!(eaten(&w), 1);
     assert_eq!(w.soil_n, 1);
@@ -267,7 +267,7 @@ fn preview_layer_and_save_tell_the_same_ground() {
             w.map.occ[i] = 0;
         }
     }
-    assert_eq!((p[2], p[3]), (8, soil::LEAVES_R));
+    assert_eq!((p[2], p[3]), (20, soil::LEAVES_R));
     assert!(soil::preview(&w, B_BULB, gx, gy).is_empty());
     steps(&mut w, 5 * soil::LEAVES_BITE);
     let n = eaten(&w);

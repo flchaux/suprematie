@@ -20,8 +20,8 @@ use crate::world::*;
 pub const LEAVES_R: i32 = 7;
 pub const TAPROOT_R: i32 = 9;
 /// Temps pour manger une case (ticks).
-pub const LEAVES_BITE: u32 = 160;
-pub const TAPROOT_BITE: u32 = 200;
+pub const LEAVES_BITE: u32 = 400;
+pub const TAPROOT_BITE: u32 = 500;
 /// Production d'un organe épuisé (% de sa production normale).
 pub const SPENT_PCT: i32 = 10;
 /// Portée (cases) du poteau le plus proche pour que le sol mangé serve de terreau (pose, réseau, guérison).
