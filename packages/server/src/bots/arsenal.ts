@@ -12,7 +12,10 @@
 import type { BotBuilding, Cmd } from "@supreme/shared";
 import { setFilters, setPause, setRecipe, upgrade, BUILD_FULL } from "@supreme/shared";
 import { ARSENAL_ID, type ArsenalPlan, type ArsenalSlot, type Placement } from "./layout.ts";
-import { landComponents } from "./ai.ts";
+import { landComponents } from "./land.ts";
+import { newProject } from "./engineers.ts";
+import { slotKind, slotRecipe, slotEst, slotAvailable, hasFactorySlot } from "./builders.ts";
+import { researchWants } from "./research.ts";
 import type { SkirmishAI, EngBuilder } from "./ai.ts";
 
 /** Ateliers de la rangée centrale ; les câbles vont droit à l'atelier de circuits collé (voir planArsenal). */
@@ -88,7 +91,7 @@ export function arsenalBuilt(ai: SkirmishAI): number {
   const p = ai.arsenal.plan;
   if (!p) return 0;
   let n = 0;
-  for (const s of p.slots) if (built(ai, s.x, s.y, ai.slotKind(s.type))) n++;
+  for (const s of p.slots) if (built(ai, s.x, s.y, slotKind(ai, s.type))) n++;
   return n;
 }
 
@@ -97,8 +100,8 @@ export function arsenalPacks(ai: SkirmishAI, packs: Set<number>): void {
   const p = ai.arsenal.plan;
   if (!p || !p.slots.some((s) => s.type === "lab" && built(ai, s.x, s.y, ai.ids.b.lab))) return;
   for (const s of p.slots) {
-    if (!s.type.startsWith("A:pack") || !built(ai, s.x, s.y, ai.slotKind(s.type))) continue;
-    const r = ai.slotRecipe(s.type);
+    if (!s.type.startsWith("A:pack") || !built(ai, s.x, s.y, slotKind(ai, s.type))) continue;
+    const r = slotRecipe(ai, s.type);
     if (r !== undefined) packs.add(ai.ctx.data.recipes[r].output[0]);
   }
 }
@@ -111,7 +114,7 @@ export function arsenalBuilders(ai: SkirmishAI, L: EngBuilder[]): void {
   const m0 = ai.planner.modules[0];
   const it = ai.ids.item;
   // l'usine du module principal (ingénieurs, armée) passe avant
-  if (!m0 || ai.openingIdx < ai.persona.opening.length || !ai.hasFactorySlot()) return;
+  if (!m0 || ai.openingIdx < ai.persona.opening.length || !hasFactorySlot(ai)) return;
   if (!A.plan) {
     if (A.next <= ai.tick) L.push({ name: "arsenal", prio: 812, est: [115, 30], make: () => makeArsenal(ai) });
     return;
@@ -137,14 +140,14 @@ export function arsenalBuilders(ai: SkirmishAI, L: EngBuilder[]): void {
         const g = ai.planner.planGenerator(mod);
         if (!g) return null;
         mod.prod += 400;
-        return ai.newProject("power" + ARSENAL_ID, g, {});
+        return newProject(ai, "power" + ARSENAL_ID, g, {});
       },
     });
   }
   relayBuilder(ai, dep, L);
   refineryBuilder(ai, L);
   const s = nextSlot(ai);
-  if (s) L.push({ name: "arsslot", prio: n < 12 ? 808 : 782, est: ai.slotEst(s.type), make: () => makeSlot(ai, s) });
+  if (s) L.push({ name: "arsslot", prio: n < 12 ? 808 : 782, est: slotEst(ai, s.type), make: () => makeSlot(ai, s) });
   if (A.mineNext <= ai.tick && n >= 3) {
     const ore = nextMine(ai, n);
     if (ore >= 0) L.push({ name: "arsmine", prio: ore === it.iron_ore && mineCount(ai, ore) === 0 ? 868 : ore === it.iron_ore || ore === it.copper_ore ? 774 : ore === it.hydrocarbon ? 809 : 786, est: [45, 15], make: () => makeMine(ai, ore) });
@@ -246,7 +249,7 @@ function makeRefinery(ai: SkirmishAI) {
     const places = ai.planner.planMineRefinery(s.x, s.y, dep.x, dep.y);
     if (!places) continue;
     A.refinery = { x: places[0].x, y: places[0].y };
-    return ai.newProject("fuelref", places, { remote: true });
+    return newProject(ai, "fuelref", places, { remote: true });
   }
   return null;
 }
@@ -279,7 +282,7 @@ function makeRelays(ai: SkirmishAI, dep: BotBuilding, t: [number, number]) {
   if (!fresh.length) return null;
   for (const [x, y] of fresh) ai.planner.mark(x, y, 2, 2);
   A.relays.push(...fresh);
-  return ai.newProject("relay", fresh.map(([x, y]) => ({ kind: ai.ids.b.logistic_relay, x, y, dir: 0, tag: "relay" })), {});
+  return newProject(ai, "relay", fresh.map(([x, y]) => ({ kind: ai.ids.b.logistic_relay, x, y, dir: 0, tag: "relay" })), {});
 }
 
 /** Les tapis de l'arsenal ne passent pas devant les extracteurs (ils y prendraient du minerai brut). */
@@ -333,7 +336,7 @@ function makeArsenal(ai: SkirmishAI) {
       plan.mod.prod += d.powerProd;
     }
     ai.log("arsenal en", plan.depot[0], plan.depot[1], cols, "colonnes, liaison", A.link ? "tracée" : "impossible : " + ai.planner.lastFail);
-    return ai.newProject("arsenal", plan.base, { critical: true });
+    return newProject(ai, "arsenal", plan.base, { critical: true });
   }
   A.tries++;
   A.next = ai.tick + 2400;
@@ -345,7 +348,7 @@ function rebuildBase(ai: SkirmishAI) {
   const places = plan.base.filter((p) => ai.placementState(p) !== 3);
   ai.arsenal.broken = false;
   ai.arsenal.next = ai.tick + 2400;
-  return places.length ? ai.newProject("arsenal", places, {}) : null;
+  return places.length ? newProject(ai, "arsenal", places, {}) : null;
 }
 
 /** Trace une liaison (bras, tapis) depuis le dépôt d'un module jusqu'au tapis d'amenée de l'arsenal. */
@@ -371,7 +374,7 @@ function planLink(ai: SkirmishAI): Placement[] | null {
 function makeLink(ai: SkirmishAI) {
   const A = ai.arsenal;
   const places = planLink(ai);
-  if (places) return ai.newProject("arslink", places, {});
+  if (places) return newProject(ai, "arslink", places, {});
   ai.log("liaison de l'arsenal impossible :", ai.planner.lastFail);
   A.linkTries++;
   A.linkNext = ai.tick + 1800;
@@ -382,10 +385,10 @@ function nextSlot(ai: SkirmishAI): ArsenalSlot | null {
   const plan = ai.arsenal.plan as ArsenalPlan;
   if (ai.projects.some((p) => p.name === "arsslot")) return null;
   for (const s of plan.slots) {
-    if (s.tries >= 4 || s.next > ai.tick || !ai.slotAvailable(s.type)) continue;
+    if (s.tries >= 4 || s.next > ai.tick || !slotAvailable(ai, s.type)) continue;
     // palier 4 : seulement si le palier 3 est atteint
     if (s.type === "A:pack4" && !ai.has(ai.ids.t.chemistry)) continue;
-    if (!built(ai, s.x, s.y, ai.slotKind(s.type)) || !armsBuilt(ai, s)) return s;
+    if (!built(ai, s.x, s.y, slotKind(ai, s.type)) || !armsBuilt(ai, s)) return s;
   }
   return null;
 }
@@ -403,7 +406,7 @@ function armsBuilt(ai: SkirmishAI, s: ArsenalSlot): boolean {
 function makeSlot(ai: SkirmishAI, s: ArsenalSlot) {
   const plan = ai.arsenal.plan as ArsenalPlan;
   const b = ai.ids.b;
-  const kind = ai.slotKind(s.type);
+  const kind = slotKind(ai, s.type);
   const places: Placement[] = [{ kind, x: s.x, y: s.y, dir: 0, tag: s.type }, { kind: b.inserter, ...s.ins, tag: "in" }];
   if (!noOut(s)) places.push({ kind: b.inserter, ...s.outs, tag: "out" });
   const first = s.tries === 0;
@@ -423,7 +426,7 @@ function makeSlot(ai: SkirmishAI, s: ArsenalSlot) {
       plan.mod.prod += d.powerProd;
     }
   }
-  return ai.newProject("arsslot", places, {});
+  return newProject(ai, "arsslot", places, {});
 }
 
 // ---------- Mines propres ----------
@@ -437,7 +440,7 @@ function nextMine(ai: SkirmishAI, n: number): number {
   const it = ai.ids.item;
   const want: [number, number][] = [[it.iron_ore, n >= 9 ? 3 : n >= 5 ? 2 : 1], [it.copper_ore, n >= 6 ? 1 : 0]];
   const plan = ai.arsenal.plan as ArsenalPlan;
-  const ready = (type: string) => plan.slots.some((s) => s.type === type && built(ai, s.x, s.y, ai.slotKind(type)));
+  const ready = (type: string) => plan.slots.some((s) => s.type === type && built(ai, s.x, s.y, slotKind(ai, type)));
   // hydrocarbure : d'abord le combustible des générateurs voisins (leurs drones puisent au dépôt), puis la raffinerie
   if (n >= 4) want.unshift([it.hydrocarbon, ready("R:fuel") && n >= 14 ? 2 : 1]);
   if (ready("F:wafer")) want.unshift([it.silicon, 1]);
@@ -475,7 +478,7 @@ function makeMine(ai: SkirmishAI, ore: number) {
       plan.mod.use += b.powerUse;
       plan.mod.prod += b.powerProd;
     }
-    return ai.newProject("arsmine", places, { spot: s, remote: d > 45, critical: true });
+    return newProject(ai, "arsmine", places, { spot: s, remote: d > 45, critical: true });
   }
   ai.failUntil.set("arsmine" + ore, ai.tick + 2400);
   return null;
@@ -518,7 +521,7 @@ export function arsenalThink(ai: SkirmishAI, out: Cmd[]): void {
   let steel = false;
   const ask = (i: number, n: number) => need.set(i, (need.get(i) ?? 0) + n);
   for (const s of plan.slots) {
-    const b = built(ai, s.x, s.y, ai.slotKind(s.type));
+    const b = built(ai, s.x, s.y, slotKind(ai, s.type));
     if (!b) continue;
     const ci = sim.infoBuilding(b.ref) as Info | null;
     if (!ci) continue;
@@ -531,7 +534,7 @@ export function arsenalThink(ai: SkirmishAI, out: Cmd[]): void {
       }
       continue;
     }
-    const r = ai.slotRecipe(s.type) as number;
+    const r = slotRecipe(ai, s.type) as number;
     const rec = data.recipes[r];
     if (b.recipe !== r) {
       if (ai.has(rec.tech) && ai.tick - (A.lastRecipe[b.ref] ?? -1e9) > 100) {
@@ -659,7 +662,7 @@ function targetOf(ai: SkirmishAI, item: string): number {
     if (item === "engine") return 6;
   }
   if (item === "processor" && !ai.has(ai.ids.t.chemistry)) return 6;
-  if (item.startsWith("pack")) return ai.researchWants(Number(item.slice(4))) ? TARGET[item] ?? 10 : 0;
+  if (item.startsWith("pack")) return researchWants(ai, Number(item.slice(4))) ? TARGET[item] ?? 10 : 0;
   return TARGET[item] ?? 40;
 }
 

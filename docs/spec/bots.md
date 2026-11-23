@@ -19,6 +19,27 @@ Organisation reprise de Supreme Commander ([exemple de builder dans le code de F
 - Dépôts et drones (voir [economie.md](economie.md)) : les bots ne gèrent pas eux-mêmes le ravitaillement (sauf les relais logistiques de leur arsenal, voir plus bas). Ils lisent dans `stock` le total de leurs dépôts et des soutes de leurs constructeurs ; la simulation fait charger d'abord leur soute aux ingénieurs dont le chantier est loin des dépôts, et le drone de chaque générateur va chercher l'hydrocarbure de leurs mines de combustible (à moins de 30 cases ; le gisement d'hydrocarbure le plus proche d'un départ est à 9 à 19 cases).
 - Tapis d'amenée et dépôts : un tapis d'amenée ne démarre jamais contre un dépôt de module ou d'arsenal, sauf s'il y entre par son avant (`Planner.startLeaks`, appelé par `planMine` et `planExtractor`). Un début de file qui part d'une face d'un dépôt, ou qui la longe, en devient la sortie (voir Tapis de sortie dans [logistique.md](logistique.md)) : le dépôt y pose son stock à la cadence du tapis, ce stock tourne en boucle sur le tapis principal et manque aux chantiers. Test : `packages/server/test/layout.test.ts`. Une base tracée avant le 23 novembre 2026 (sauvegarde) peut avoir une telle amenée : son dépôt laisse alors en circulation de quoi remplir ces tapis.
 
+## Organisation du code
+
+Dossier `packages/server/src/bots/`. `ai.ts` ne garde que la classe `SkirmishAI` : l'état du bot, ses requêtes de base (`has`, `stock`, `baseCenter`, `enemySum`, `reachable`, `placementState`…) et la boucle de décision `think`, qui appelle les gestionnaires dans un ordre fixe. Le reste est réparti par thème, en fonctions qui reçoivent le bot en premier paramètre (`pickTarget(ai, …)`), comme `navy.ts`, `arsenal.ts` et `landing.ts` :
+
+| Module | Thème |
+| --- | --- |
+| `strategy.ts` | Adversaire visé (`pickTarget`), rapports de force (`analyse`), objectifs d'attaque (`objective`), appels à l'aide entre alliés |
+| `land.ts` | Terres joignables à pied (`landComponents`, `landNear`) |
+| `engineers.ts` | Gestionnaire des ingénieurs : chantiers (`Project`), bâtisseurs, coûts et réserves, recyclage des épaves |
+| `builders.ts` | Liste des builders d'ingénieurs et leurs priorités (`engBuilders`), fabrication des chantiers (emplacements des modules, extracteurs, tourelles, dépôts, modules) |
+| `fuel.ts` | Combustible des générateurs : dépôts collés, mines de combustible |
+| `economy.ts` | Régulation des recettes par la demande (`economy`), dépôts pleins (`unjam`), amélioration du générateur principal |
+| `factories.ts` | Gestionnaire des usines : production, composition de l'armée |
+| `research.ts` | Gestionnaire de la recherche |
+| `commander.ts` | Mise à l'abri du commandant |
+
+Autres modules : `army.ts` (pelotons), `intel.ts` (cartes de menace), `layout.ts` (tracé des modules et de l'arsenal), `personas.ts` (personnalités), et ceux de la marine, des transports et de l'arsenal (plus bas).
+
+- Un module de thème importe `SkirmishAI` avec `import type` : aucun import de `ai.ts` à l'exécution. `ai.ts` réexporte `landComponents` et `EngBuilder`.
+- Node exécute le TypeScript du serveur tel quel : un appel à une méthode ou à une fonction qui n'existe plus ne casse qu'à l'exécution. Après un déplacement de code ou une fusion de master, lancer `npx tsc --noEmit -p packages/server/tsconfig.json` (4 erreurs connues, aucune nouvelle).
+
 ## Marine
 
 Code : `packages/server/src/bots/water.ts` (analyse de l'eau), `navy.ts` (usine navale, flotte), `arsenal.ts` (composants). Les bots ne jouent que les Industriels.
@@ -47,7 +68,7 @@ Les modules « sushi » fournissent mal les paliers 2 à 4 : leur tapis principa
 - Un dépôt, une boucle de tapis qui en part (trois bras) et y revient, et des ateliers le long de la boucle. Les filtres du dépôt choisissent ce qui circule : à chaque décision, les deux objets les plus demandés par les ateliers. Ce dont personne n'a besoin revient au dépôt ; chaque atelier s'arrête (pause) quand son produit est en réserve, chaque source quand le dépôt en a assez, donc la boucle ne se bouche pas. Ateliers : engrenages, câbles collés aux circuits, pièces de bras, lots 1 à 4, munitions, moteurs, carburant, plaquettes, processeurs, composites, laboratoires ; fonderies d'acier sur le tapis d'amenée. La longueur (3 à 7 colonnes) suit la place.
 - Pièges de la simulation évités : un objet ne doit pas arriver à un atelier à la fois d'un voisin collé et de la boucle (bras bloqué, main pleine) ; aucun atelier n'est servi par le dépôt lui-même ; un tapis qui passe devant un extracteur en reçoit le minerai brut ; un générateur sans combustible ne relie plus ses voisins (les ouvrages de l'arsenal ne comptent que les relais et le générateur principal : `Planner.robust`, `bridge`).
   - Deux défauts des dépôts, que ce tracé contournait, sont corrigés dans la simulation depuis le 23 novembre 2026 (voir Sorties d'un dépôt dans [economie.md](economie.md)) : le bras d'un dépôt qui n'avait rien à prendre gardait son tour et bloquait les autres bras de ce dépôt (d'où l'absence d'atelier servi par le dépôt), et un dépôt ne posait qu'environ 0,9 objet par seconde sur un tapis simple (6,7 aujourd'hui ; un bras : 1,4). Le tracé de l'arsenal n'a pas été revu depuis.
-- Fer et cuivre : liaison depuis le dépôt principal (bras et tapis, tracée en même temps que l'arsenal), filtrée selon ce qui manque, et mines propres. Les mines du module principal sont mises en pause quand son dépôt est presque plein d'une plaque (`unjam`), et ce dépôt est agrandi.
+- Fer et cuivre : liaison depuis le dépôt principal (bras et tapis, tracée en même temps que l'arsenal), filtrée selon ce qui manque, et mines propres. Les mines du module principal sont mises en pause quand son dépôt est presque plein d'une plaque (`unjam`, dans `economy.ts`), et ce dépôt est agrandi.
 - Relais logistiques : ils relient l'arsenal au dépôt principal, aux dépôts pleins d'hydrocarbure quand des générateurs sont à sec, à la raffinerie posée sur une mine de combustible (à défaut d'hydrocarbure à l'arsenal) et aux usines navales lointaines. L'acier en trop améliore les mines de fer proches.
 
 ## Sauvegarde et contrôle

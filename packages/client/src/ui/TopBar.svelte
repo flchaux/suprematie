@@ -43,7 +43,7 @@
             <span class="meter"><span style:width={Math.min(100, load * 100) + "%"}></span></span>
             <span class="auto num" class:warn={zp[4] >= 0 && zp[4] < 60}>{zp[4] < 0 ? (zp[0] > 0 ? "rien ne brûle" : "éteinte") : "autonomie " + autonomy(zp[4])}</span>
           </span>
-          <span class="tt"><b>Énergie de la zone</b><br />Consommée / produite : <span class="num">{power(zp[1])}</span> / <span class="num">{power(zp[0])}</span>{#if zp[3] < 1024 && zp[1] > 0} <b class="bad">({Math.round((zp[3] / 1024) * 100)} % servis)</b>{/if}<br />Puissance installée : <span class="num">{power(zp[2])}</span>{#if zp[4] >= 0}<br />Autonomie à cette charge : <span class="num">{autonomy(zp[4])}</span>{/if}<br /><span class="dim">Un bâtiment hors réseau ou sous-alimenté ralentit. Total de vos zones : {power(ui.powerUse)} / {power(ui.powerProd)}.</span></span>
+          <span class="tt"><b>Énergie de la zone</b><br />Consommée / produite : <span class="num">{power(zp[1])}</span> / <span class="num">{power(zp[0])}</span>{#if zp[3] < 1024 && zp[1] > 0} <b class="bad">({Math.round((zp[3] / 1024) * 100)} % servis)</b>{/if}<br />Puissance installée : <span class="num">{power(zp[2])}</span>{#if zp[4] >= 0}<br />Autonomie à cette charge : <span class="num">{autonomy(zp[4])}</span>{/if}<br /><span class="dim">Toutes vos zones : {power(ui.powerUse)} / {power(ui.powerProd)}.</span></span>
         </span>
       {/if}
     </div>

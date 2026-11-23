@@ -83,7 +83,7 @@
     </div>
     {#if ui.mode}
       {@const m = MODE_LABEL[ui.mode]}
-      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt} (direction et virages automatiques d'après les tapis voisins ; {keyOf("rotate")} force la direction){/if}{/if}{#if ui.mode === "build" && ([BClass.Belt, BClass.Router, BClass.Inserter] as number[]).includes(ui.data?.buildings[ui.buildKind]?.cls ?? -1)}. Peut remplacer vos tapis{/if}{#if ui.mode === "build" && ui.grass}{@const gr = ui.grass}<b class="num nowrap" class:bad={gr.near < 0 || gr.rate < 300}>· {#if gr.near < 0}{gr.total ? "plus d'herbe dans son périmètre" : "plus d'herbe"}{:else}{gr.total ? `herbe : ${gr.left} cases (≈ ${Math.max(1, Math.round(gr.all / 60))} min)` : `herbe à ${gr.near} cases`} · débit {Math.round(gr.rate / 10)} %{gr.share < 950 ? ` · part ${Math.round(gr.share / 10)} %` : ""}{/if}</b>{/if}{#if ui.mode === "build" && ui.lineCost}<b class="num nowrap linecost">· {ui.lineCost.n} {ui.data?.buildings[ui.buildKind]?.name.toLowerCase() ?? ""}{ui.lineCost.n > 1 ? "s" : ""} : {#each ui.lineCost.cost as [it, n]}<span class:bad={n > (it === SEVE ? ui.seve : ui.sels)}><Item id={it} {n} size={15} /></span>{/each}{#if ui.lineCost.pct}<span class="dim">(+{ui.lineCost.pct} %{ui.lineCost.n > 1 ? " au plus loin" : ""})</span>{/if}</b>{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
+      <div class="mode panel"><Icon name={m?.[0] ?? "target"} size={15} /> {m?.[1] ?? ui.mode}{#if (ui.mode === "build" || ui.mode === "paste") && keyOf("rotate")}, {keyOf("rotate")} pour tourner{#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt} (direction automatique ; {keyOf("rotate")} force la direction){/if}{/if}{#if ui.mode === "build" && ([BClass.Belt, BClass.Router, BClass.Inserter] as number[]).includes(ui.data?.buildings[ui.buildKind]?.cls ?? -1)}. Peut remplacer vos tapis{/if}{#if ui.mode === "build" && ui.grass}{@const gr = ui.grass}<b class="num nowrap" class:bad={gr.near < 0 || gr.rate < 300}>· {#if gr.near < 0}{gr.total ? "plus d'herbe dans son périmètre" : "plus d'herbe"}{:else}{gr.total ? `herbe : ${gr.left} cases (≈ ${Math.max(1, Math.round(gr.all / 60))} min)` : `herbe à ${gr.near} cases`} · débit {Math.round(gr.rate / 10)} %{gr.share < 950 ? ` · part ${Math.round(gr.share / 10)} %` : ""}{/if}</b>{/if}{#if ui.mode === "build" && ui.lineCost}<b class="num nowrap linecost">· {ui.lineCost.n} {ui.data?.buildings[ui.buildKind]?.name.toLowerCase() ?? ""}{ui.lineCost.n > 1 ? "s" : ""} : {#each ui.lineCost.cost as [it, n]}<span class:bad={n > (it === SEVE ? ui.seve : ui.sels)}><Item id={it} {n} size={15} /></span>{/each}{#if ui.lineCost.pct}<span class="dim">(+{ui.lineCost.pct} %{ui.lineCost.n > 1 ? " au plus loin" : ""})</span>{/if}</b>{/if}{#if plans.status && (ui.mode === "copy" || ui.mode === "paste")} <b class="num nowrap">· {plans.status}</b>{/if} <span class="key">Échap</span></div>
     {/if}
     <div class="messages">
       {#each ui.messages.filter((m) => now - m.time < 10000) as m (m.id)}
@@ -151,10 +151,10 @@
         {:else}<span class="dim">Aucune zone alimentée</span>{/each}
         {#if ui.race === 1}
           {#if dead}<div class="pnet"><i class="deadsw"></i><span class="dim">{dead} réseau{dead > 1 ? "x" : ""} à sec (sans sève)</span></div>{/if}
-          <span class="dim small">Une couleur par réseau de racines : le terreau de même couleur partage sa réserve. Couper une racine coupe le réseau.</span>
+          <span class="dim small">Une couleur par réseau de racines.</span>
         {:else}
         {#if dead}<div class="pnet"><i class="deadsw"></i><span class="dim">{dead} zone{dead > 1 ? "s" : ""} sans combustible ou sans générateur</span></div>{/if}
-        <span class="dim small">Une couleur par réseau : des zones de même couleur sont reliées. Consommation / production · autonomie à cette charge.</span>
+        <span class="dim small">Une couleur par réseau · consommation / production · autonomie</span>
         {/if}
       </div>
     {/if}
@@ -162,7 +162,7 @@
       <div class="floorbadge panel"><span class="kicker">Sorties</span> <SplitIcon mode={ui.buildSplit} size={22} /> <b>{["gauche, avant et droite", "gauche et avant", "droite et avant"][ui.buildSplit]}</b> <span class="dim">· molette pour changer</span></div>
     {/if}
     {#if ui.mode === "build" && ui.data?.buildings[ui.buildKind]?.cls === BClass.Belt}
-      <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette : monter ou descendre la suite de la file (la partie tracée garde son niveau) ; les ascenseurs se posent seuls</span></div>
+      <div class="floorbadge panel"><span class="kicker">Niveau</span> <b>{["Sol", "Étage 1", "Étage 2"][ui.buildFloor]}</b> <span class="dim">· molette : monter ou descendre</span></div>
     {/if}
     {#if plans.show}<Plans />{/if}
     {#if ui.gameOver}<EndReport />{/if}
