@@ -16,6 +16,10 @@ Spécification : docs/spec/architecture.md (simulation déterministe, performanc
 - Ces numéros sont attribués à la main. Deux sessions parallèles peuvent prendre le même : après une fusion de master, vérifier que les codes d'ordres, d'événements et la version de sauvegarde sont toujours uniques.
 - Unité, bâtiment, recherche ou objet nouveau : skill `ajouter-contenu`.
 
+## Organisation
+- `buildings.rs` garde la boucle `update_buildings` et ré-exporte ses sous-modules (`buildings/*.rs`, un par thème : pose, énergie, sorties, jumelles, objets, dépôt, production, usine…). `crate::buildings::xxx` reste valable partout ; le tableau des modules est dans docs/spec/architecture.md.
+- Une fonction nouvelle va dans le sous-module de son thème. Un fichier qui dépasse 1 000 lignes se découpe de la même façon : il coûte cher à lire et se fusionne mal entre sessions parallèles.
+
 ## Tests
 - Un fichier `*_tests.rs` par thème, déclaré dans `lib.rs` (`#[cfg(test)] mod …`).
 - Un test nouveau doit échouer sur l'ancien comportement : le vérifier avant de corriger.

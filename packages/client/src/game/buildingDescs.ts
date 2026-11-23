@@ -57,7 +57,7 @@ export const BUILDING_DESCS: Record<string, string> = {
   // ----- Souche -----
   seed_heart: "Cœur d'un réseau de racines, avec sa réserve. Pousse grâce aux organismes qui s'y sacrifient ; trois au plus.",
   root: "Étend le terreau et relie les organes, qui partagent la réserve du réseau. Plus chère loin de la graine-mère.",
-  leaves: "Change l'herbe proche en terreau et en sève. Sans herbe ou trop serrée, elle produit moins.",
+  leaves: "Change l'herbe au bord du terreau en terreau et en sève. Plus l'herbe recule, moins elle produit.",
   taproot: "Tire d'un gisement de la sève (hydrocarbure) ou des sels. Sans herbe autour, elle produit moins.",
   bulb: "Agrandit la réserve de sève et de sels du réseau.",
   brood: "Pond gratuitement des portées d'œufs ; chaque œuf puise son prix dans le réseau avant d'éclore.",

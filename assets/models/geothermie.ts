@@ -1,4 +1,4 @@
-// Centrale géothermique (voir sim/src/buildings.rs, geo_output) : posée sur un geyser, sans combustible.
+// Centrale géothermique (voir sim/src/buildings/energie.rs, geo_output) : posée sur un geyser, sans combustible.
 //
 // Dalle de béton 3 x 3 ; au centre, la tête de puits sur le geyser (collerette, vanne à volant, dôme
 // grillagé) ; derrière, une haute cheminée de vapeur évasée à bandeau d'équipe et anneau lumineux ; à

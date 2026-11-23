@@ -1007,9 +1007,8 @@ export class GameClient {
             this.alertPos = { x: a / TILE, z: c / TILE };
             if (!this.spentTimer) {
               this.spentTimer = window.setTimeout(() => {
-                const list = [...this.spent].map(([k, n]) => `${n} ${this.data?.buildings[k]?.key === "taproot" ? (n > 1 ? "racines-puits" : "racine-puits") : n > 1 ? "frondaisons" : "frondaison"}`).join(", ");
-                const many = [...this.spent.values()].reduce((x, y) => x + y, 0) > 1;
-                pushMessage(`${list} ${many ? "épuisées" : "épuisée"} : plus d'herbe autour, étendez votre réseau (Espace pour y aller)`, "alert");
+                const list = [...this.spent].map(([k, n]) => (this.data?.buildings[k]?.key === "taproot" ? `${n} racine${n > 1 ? "s" : ""}-puits épuisée${n > 1 ? "s" : ""}` : `${n} frondaison${n > 1 ? "s" : ""} à bout`)).join(", ");
+                pushMessage(`${list} : l'herbe est loin, étendez votre réseau (Espace pour y aller)`, "alert");
                 this.spent.clear();
                 this.spentTimer = 0;
               }, 1500);
@@ -3150,10 +3149,10 @@ export class GameClient {
     let grass: typeof ui.grass = null;
     let grassR = 0;
     if (def.key === "leaves" || def.key === "taproot") {
-      const v = (await this.query<number[]>("soilPreview", [ui.buildKind, cells[0].x, cells[0].y])) ?? [];
-      if (v.length === 6) {
-        grass = { left: v[0], total: v[1], secs: v[2], share: v[4], rate: v[5] };
-        grassR = v[3] + 0.5;
+      const v = (await this.query<number[]>("soilPreview", [ui.me, ui.buildKind, cells[0].x, cells[0].y])) ?? [];
+      if (v.length === 8) {
+        grass = { near: v[0], secs: v[1], share: v[3], rate: v[4], left: v[5], total: v[6], all: v[7] };
+        grassR = v[2] + 0.5;
       }
     }
     // racines et rhizomes de la Souche : leur coût monte avec la distance à la graine-mère

@@ -18,6 +18,8 @@ import { TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { T, kindPowers } from "./intel.ts";
 import { isShip } from "./navy.ts";
 import { convoy, isTransport, landingOwns } from "./landing.ts";
+import { landNear } from "./land.ts";
+import { pickTarget, objective, postDistress, distressFor } from "./strategy.ts";
 import type { SkirmishAI } from "./ai.ts";
 
 type Mission = "form" | "attack" | "retreat" | "guard" | "raid" | "strike";
@@ -154,7 +156,7 @@ export class Army {
         const [cx, cy] = us.length ? centroid(us) : [0, 0];
         const T_ = 256;
         return `${p.id}:${p.family}/${p.mission}/${p.units.size}→J${p.targetPlayer}@${Math.round(cx / T_)},${Math.round(cy / T_)}${p.mission !== "form" ? `>${Math.round(p.ox / T_)},${Math.round(p.oy / T_)}${p.staged ? "" : " rgt " + Math.round(p.sx / T_) + "," + Math.round(p.sy / T_)} ord ${us.filter((u) => u.nOrders > 0).length}` : ""}`;
-      }).join(" "), "cible terre", ai.pickTarget(true), "taille", this.attackSize);
+      }).join(" "), "cible terre", pickTarget(ai, true), "taille", this.attackSize);
     }
     for (const p of this.platoons.slice()) {
       const us = units(p);
@@ -174,7 +176,7 @@ export class Army {
     const power = this.power(ai, us, false);
     // appel à l'aide : nos installations ou celles d'un allié
     if (p.mission === "form" || p.mission === "guard") {
-      const d = ai.distressFor(cx, cy, power, false);
+      const d = distressFor(ai, cx, cy, power, false);
       if (d) {
         if (p.mission !== "guard" || dist2(p.ox, p.oy, d.x, d.y) > (20 * TILE) ** 2) {
           p.mission = "guard";
@@ -237,7 +239,7 @@ export class Army {
     }
     // attaque ou raid
     if (!ai.view.players[p.targetPlayer]?.alive || ai.sameTeam(p.targetPlayer) || (!amphib && !ai.reachable(p.targetPlayer))) {
-      const t = ai.pickTarget(!amphib);
+      const t = pickTarget(ai, !amphib);
       if (t < 0) {
         this.merge(p, form, us);
         return;
@@ -279,7 +281,7 @@ export class Army {
     }
     // objectif atteint ou invalide : choisir le suivant
     if (p.ox === 0 || this.cleared(ai, p)) {
-      const obj = p.mission === "raid" ? ai.objective(p.targetPlayer, power, !amphib, 3) : ai.objective(p.targetPlayer, power, !amphib, 1);
+      const obj = p.mission === "raid" ? objective(ai, p.targetPlayer, power, !amphib, 3) : objective(ai, p.targetPlayer, power, !amphib, 1);
       if (!obj) {
         const st = ai.ctx.map.starts[p.targetPlayer];
         p.ox = st[0] * TILE;
@@ -326,7 +328,7 @@ export class Army {
     const c = ai.unitById(ai.me.commander);
     if (c && ai.level !== "facile") {
       const [bx, by] = ai.baseCenter();
-      if (dist2(c.x, c.y, bx, by) > (30 * TILE) ** 2 || ai.pickTarget(p.family !== "amphib") < 0) {
+      if (dist2(c.x, c.y, bx, by) > (30 * TILE) ** 2 || pickTarget(ai, p.family !== "amphib") < 0) {
         rx = c.x;
         ry = c.y;
       }
@@ -341,7 +343,7 @@ export class Army {
     const delay = P.attackDelay * (ai.level === "facile" ? 1.6 : 1);
     const ready = tick >= delay || (ai.underPressure && us.length >= need * 2);
     if (!ready) return;
-    const tgt = ai.pickTarget(!amphib);
+    const tgt = pickTarget(ai, !amphib);
     if (tgt < 0) return;
     // les renforts rejoignent l'attaque en cours sur la même cible
     const running = this.platoons.find((q) => q !== p && q.family === p.family && q.mission === "attack" && q.targetPlayer === tgt && q.units.size > 0);
@@ -363,7 +365,7 @@ export class Army {
       }
     }
     // lancement : assez nombreux, et (LOUD) assez fort pour la défense de l'objectif
-    const obj = ai.objective(tgt, power, !amphib, 1);
+    const obj = objective(ai, tgt, power, !amphib, 1);
     const defense = obj ? ai.enemySum(T.Surface, obj[0], obj[1], R_LOCAL) : 0;
     const strongEnough = ai.level === "facile" || power > defense * 1.3;
     // assez nombreux depuis longtemps : on attaque quand même (une armée qui attend ne sert à rien)
@@ -380,7 +382,7 @@ export class Army {
       launchObj = null;
       for (const e of ai.enemyIds) {
         if (!amphib && !ai.reachable(e)) continue;
-        const o = ai.objective(e, power, !amphib, 3);
+        const o = objective(ai, e, power, !amphib, 3);
         if (!o) continue;
         const d = ai.enemySum(T.Surface, o[0], o[1], R_LOCAL);
         if (d < bestDef) {
@@ -431,7 +433,7 @@ export class Army {
     p.sy = p.oy - (dy / d) * back;
     // regroupement sur la terre ferme reliée à l'objectif (la ligne droite peut traverser un lac)
     if (p.family !== "amphib" && p.family !== "air") {
-      const pt = ai.landNear(p.sx, p.sy, p.ox, p.oy);
+      const pt = landNear(ai, p.sx, p.sy, p.ox, p.oy);
       p.sx = pt[0];
       p.sy = pt[1];
     }
@@ -470,7 +472,7 @@ export class Army {
     // (l'escadrille reste en mission « form » : c'est elle qui accueille les nouveaux chasseurs)
     const power = this.power(ai, us, true);
     // 1) interception : aviation ennemie près de nos installations ou de celles d'un allié
-    const d = ai.distressFor(...centroid(us), power, true);
+    const d = distressFor(ai, ...centroid(us), power, true);
     if (d) {
       this.order(p, us, d.x, d.y, tick, out, true, 6);
       return;
@@ -503,7 +505,7 @@ export class Army {
     const power = this.power(ai, us, false);
     if (p.mission === "form") {
       // défense de la base contre une attaque terrestre
-      const d = ai.distressFor(...centroid(us), power, false);
+      const d = distressFor(ai, ...centroid(us), power, false);
       if (d && dist2(d.x, d.y, ...ai.baseCenter()) < (80 * TILE) ** 2) {
         this.order(p, us, d.x, d.y, tick, out, true, 6);
         return;
@@ -515,12 +517,12 @@ export class Army {
         p.lastOrder = tick;
       }
       if (us.length < this.airSize) return;
-      const tgt = ai.pickTarget(false);
+      const tgt = pickTarget(ai, false);
       if (tgt < 0) return;
       // LOUD : l'escadrille part quand elle surpasse l'antiaérien de son objectif (ou quand elle est
       // très nombreuse) ; sinon elle s'accumule
       if (ai.level !== "facile" && us.length < 40) {
-        const obj = ai.objective(tgt, power, false, 2);
+        const obj = objective(ai, tgt, power, false, 2);
         const c = ai.unitById(ai.view.players[tgt].commander);
         const aaObj = obj ? ai.enemySum(T.AntiAir, obj[0], obj[1], 14) : Infinity;
         const aaCmd = c ? ai.enemySum(T.AntiAir, c.x, c.y, 14) : Infinity;
@@ -551,7 +553,7 @@ export class Army {
       return;
     }
     if (!ai.view.players[p.targetPlayer]?.alive || ai.sameTeam(p.targetPlayer)) {
-      const t = ai.pickTarget(false);
+      const t = pickTarget(ai, false);
       if (t < 0) {
         this.merge(p, form, us);
         return;
@@ -576,7 +578,7 @@ export class Army {
     }
     p.directOn = 0;
     if (p.ox === 0 || this.cleared(ai, p)) {
-      const obj = ai.objective(p.targetPlayer, power, false, 2);
+      const obj = objective(ai, p.targetPlayer, power, false, 2);
       if (!obj) {
         const st = ai.ctx.map.starts[p.targetPlayer];
         p.ox = st[0] * TILE;
@@ -656,7 +658,7 @@ export class Army {
       });
       if (n === 0) continue;
       const t = { x: x / n, y: y / n, n, power: power + air, air, tick };
-      ai.postDistress(t.x, t.y, power, air > power);
+      postDistress(ai, t.x, t.y, power, air > power);
       if (!worst || t.power > worst.power) worst = t;
     }
     if (worst) {

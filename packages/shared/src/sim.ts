@@ -24,7 +24,7 @@ export interface SimExports {
   can_place_line(nWords: number): number;
   line_cost(nWords: number): number;
   soil_layer(player: number): number;
-  soil_preview(kind: number, x: number, y: number): number;
+  soil_preview(player: number, kind: number, x: number, y: number): number;
   tile_info(x: number, y: number): number;
   building_at(x: number, y: number): number;
   tile_pass(x: number, y: number): number;
@@ -183,9 +183,12 @@ export class Sim {
   soilLayer(player: number): Int32Array {
     return this.outI32(this.ex.soil_layer(player)).slice();
   }
-  /** Pose d'une frondaison ou d'une racine-puits : [herbe à manger, cases du périmètre, secondes par case, rayon]. */
-  soilPreview(kind: number, x: number, y: number): number[] {
-    return Array.from(this.outI32(this.ex.soil_preview(kind, x, y)));
+  /**
+   * Pose d'une frondaison ou d'une racine-puits : [distance de l'herbe (cases, -1 : aucune), secondes par case, rayon à
+   * montrer, part (‰), production (‰), puis pour une racine-puits : cases d'herbe, cases du périmètre, secondes en tout].
+   */
+  soilPreview(player: number, kind: number, x: number, y: number): number[] {
+    return Array.from(this.outI32(this.ex.soil_preview(player, kind, x, y)));
   }
   /** Coût d'une file posée d'un coup : [supplément le plus fort (%), puis objet, total…] (arguments de canPlaceLine). */
   lineCost(args: number[]): number[] {

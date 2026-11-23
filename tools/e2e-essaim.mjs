@@ -132,7 +132,7 @@ await page.evaluate(() => window.__game.client.startBuild(window.__game.ui.data.
 await page.mouse.move(700, 420);
 await page.mouse.move(702, 421);
 await page.waitForFunction(() => window.__game.ui.grass, null, { timeout: 60000 }).catch(() => {});
-check(await page.evaluate(() => (window.__game.ui.grass?.total ?? 0) > 100 && document.querySelector(".mode")?.textContent.includes("herbe à manger")), "herbe à manger dans le bandeau de pose", JSON.stringify(await page.evaluate(() => window.__game.ui.grass)));
+check(await page.evaluate(() => (window.__game.ui.grass?.near ?? -1) >= 0 && /herbe à \d+ cases · débit/.test(document.querySelector(".mode")?.textContent ?? "")), "herbe à manger dans le bandeau de pose", JSON.stringify(await page.evaluate(() => window.__game.ui.grass)));
 await shot("herbe");
 await page.evaluate(() => window.__game.client.cancelMode());
 await page.mouse.move(640, 300);

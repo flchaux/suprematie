@@ -65,16 +65,21 @@ fn eaten(w: &World) -> usize {
     w.soil.iter().filter(|&&o| o != 0).count()
 }
 
+/// Repas d'une frondaison poussée du joueur.
+fn meal_of(w: &World, b: usize) -> soil::Meal {
+    let bb = &w.buildings[b];
+    soil::meal(w, B_LEAVES, bb.owner, (bb.x, bb.y, 2, 2), (bb.ammo as i32, bb.ammo as i32 + soil::RING), 0)
+}
+
 #[test]
-fn leaves_eat_the_grass_around_and_turn_it_into_terreau() {
+fn leaves_eat_the_edge_of_the_grass_and_turn_it_into_terreau() {
     let mut w = game(0);
     let (_, hx, hy) = base(&mut w, 0, 30);
     let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
-    soil::ensure(&mut w);
-    let m = soil::meal(&w, B_LEAVES, hx + 4, hy, 2, 2, 0);
-    assert!((80..=177).contains(&m.left), "herbe du périmètre : {}", m.left);
-    assert_eq!(m.share, 1000, "seule à la convoiter");
-    // la première case, la plus proche, prend de 8 à 20 s selon sa distance
+    steps(&mut w, 40);
+    let m = meal_of(&w, l);
+    assert!(m.left >= 5 && m.share == 1000, "{} cases au bord, seule à les convoiter : {}", m.left, m.share);
+    // la première case, la plus proche, prend de 10 à 20 s selon sa distance
     assert!((200..=400).contains(&m.ticks), "{} ticks", m.ticks);
     steps(&mut w, m.ticks + 60);
     assert_eq!(eaten(&w), 1);
@@ -85,23 +90,57 @@ fn leaves_eat_the_grass_around_and_turn_it_into_terreau() {
     steps(&mut w, 6000);
     let n = eaten(&w) - before;
     assert!((15..=30).contains(&n), "une vingtaine de cases en 5 min : {n}");
-    assert_eq!(soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2), m.left as i32 - eaten(&w) as i32);
     // c'est l'herbe mangée qui donne la sève : 20 par case (et une par seconde de la graine-mère)
     let got = (w.players[0].produced[SEVE as usize] - made) as i32 - 300;
-    assert!((got - 20 * n as i32).abs() <= 30, "{got} sève pour {n} cases");
+    assert!((got - 20 * n as i32).abs() <= 40, "{got} sève pour {n} cases");
     for (i, &o) in w.soil.iter().enumerate() {
         if o != 0 {
             assert_eq!(o, 1);
             assert_eq!(w.terreau[i] & 1, 1, "la case mangée est du terreau");
-            // au plus près d'abord (un tirage rend le bord irrégulier)
             let (tx, ty) = (i as i32 % w.map.w, i as i32 / w.map.w);
-            assert!((tx - hx - 5).abs() <= 6 && (ty - hy - 1).abs() <= 6, "case ({}, {})", tx - hx, ty - hy);
+            assert!((tx - hx - 5).abs() <= 6 && (ty - hy - 1).abs() <= 6, "au plus près d'abord : ({}, {})", tx - hx, ty - hy);
+            // toujours au bord du terreau : pas d'îlot
+            let near = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dy)| w.terreau[w.map.idx(tx + dx, ty + dy)] & 1 != 0);
+            assert!(near, "case isolée ({}, {})", tx - hx, ty - hy);
         }
     }
     // plus l'herbe est loin, plus elle met de temps
     assert!(souche::organ_rate(&w, l).0 < early, "{} puis {}", early, souche::organ_rate(&w, l).0);
-    assert!(soil::bite_ticks(15 * 15) == 610 && soil::bite_ticks(4 * 4) == 280);
-    assert!(!w.buildings[l].stalled);
+    assert_eq!((soil::bite_ticks(8 * 8), soil::bite_ticks(20 * 20), soil::bite_ticks(40 * 40)), (328, 1000, 3400));
+    check_terreau(&mut w);
+}
+
+/// Portée illimitée : l'herbe proche finie, la frondaison va plus loin, de moins en moins vite.
+#[test]
+fn leaves_reach_without_limit_but_yield_less_and_less() {
+    let mut w = game(0);
+    let (_, hx, hy) = base(&mut w, 0, 70);
+    let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
+    steps(&mut w, 40);
+    let mut rates = vec![souche::organ_rate(&w, l).0];
+    let mut dist = vec![w.buildings[l].ammo];
+    // tout est mangé autour d'elle, de plus en plus loin
+    for r in [8, 14, 22, 40] {
+        for y in hy - r..hy + r + 3 {
+            for x in hx - r + 4..hx + r + 7 {
+                let i = w.map.idx(x, y);
+                if w.terreau[i] == 0 {
+                    soil::eat(&mut w, 0, i);
+                }
+            }
+        }
+        steps(&mut w, 80);
+        rates.push(souche::organ_rate(&w, l).0);
+        dist.push(w.buildings[l].ammo);
+    }
+    println!("rendement {rates:?}, distance {dist:?}");
+    assert!(rates.windows(2).all(|k| k[1] <= k[0]) && rates[0] > 100 && rates[2] < 40, "{rates:?}");
+    assert!(dist.windows(2).all(|k| k[1] > k[0]) && *dist.last().unwrap() >= 38, "{dist:?}");
+    assert_eq!(*rates.last().unwrap(), soil::SPENT_PCT, "au loin, le plancher");
+    // et elle mange encore : une case à 40 cases prend du temps, mais vient
+    let n = eaten(&w);
+    steps(&mut w, 14_000);
+    assert!(eaten(&w) > n, "elle mange toujours");
     check_terreau(&mut w);
 }
 
@@ -115,55 +154,57 @@ fn two_leaves_on_the_same_grass_do_not_double_the_sap() {
         let before = w.players[0].produced[SEVE as usize];
         steps(&mut w, 4000);
         check_terreau(&mut w);
-        let rates: Vec<i32> = organs.iter().map(|&b| soil::meal(&w, B_LEAVES, w.buildings[b].x, w.buildings[b].y, 2, 2, 0).share as i32).collect();
-        ((w.players[0].produced[SEVE as usize] - before) as i32 - 200, eaten(&w) as i32, rates)
+        let shares: Vec<u32> = organs.iter().map(|&b| meal_of(&w, b).share).collect();
+        ((w.players[0].produced[SEVE as usize] - before) as i32 - 200, eaten(&w) as i32, shares)
     };
     let (one, n1, _) = seve(&[(4, 0)]);
     let (two, n2, shares) = seve(&[(4, 0), (4, 2)]);
     let (apart, _, free) = seve(&[(4, 0), (-3, 0)]);
     println!("seule {one} ({n1} cases), collées {two} ({n2} cases) {shares:?}, écartées {apart} {free:?}");
     // (la seconde, deux cases plus loin, a un peu d'herbe à elle)
-    assert!(two * 100 < one * 135, "collées : {two} contre {one} pour une seule");
-    assert!(n2 * 100 < n1 * 130, "elles ne mangent pas deux fois plus vite : {n2} contre {n1}");
-    assert!(shares.iter().all(|&s| s < 700), "chacune n'a qu'une part : {shares:?}");
+    assert!(two * 100 < one * 140, "collées : {two} contre {one} pour une seule");
+    assert!(n2 * 100 < n1 * 140, "elles ne mangent pas deux fois plus vite : {n2} contre {n1}");
+    assert!(shares.iter().all(|&s| s < 750), "chacune n'a qu'une part : {shares:?}");
     assert!(apart > two, "de part et d'autre de la graine-mère, elles se gênent moins : {apart}");
 }
 
+/// À bout (sous un cinquième de son rendement), une frondaison le signale une fois ; de l'herbe revenue plus près
+/// la relance.
 #[test]
-fn without_grass_an_organ_is_spent_and_barely_produces() {
+fn a_tired_leaf_warns_once_and_recovers_when_grass_comes_back() {
     let mut w = game(0);
-    let (heart, hx, hy) = base(&mut w, 0, 30);
+    let (heart, hx, hy) = base(&mut w, 0, 40);
     let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
-    // il ne reste qu'une case d'herbe dans le périmètre (tout le reste, alentour, est déjà mangé)
+    // un long câble : la frondaison est loin de l'herbe, sauf s'il meurt
+    let roots: Vec<usize> = (0..14).map(|k| put(&mut w, 0, B_ROOT, hx + 3 + k, hy + 2)).collect();
     soil::ensure(&mut w);
-    for y in hy - 14..hy + 16 {
-        for x in hx - 10..hx + 20 {
+    for y in hy - 25..hy + 28 {
+        for x in hx - 20..hx + 30 {
             let i = w.map.idx(x, y);
-            if w.terreau[i] == 0 && (x, y) != (hx + 9, hy) {
+            if w.terreau[i] == 0 {
                 soil::eat(&mut w, 0, i);
             }
         }
     }
-    assert_eq!(soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2), 1);
     let mut events = 0;
-    for _ in 0..1000 {
+    for _ in 0..400 {
         w.step(&[]);
         events += w.events.chunks(5).filter(|e| e[0] == soil::EV_SPENT).count();
     }
-    assert!(w.buildings[l].stalled, "épuisée");
+    assert!(w.buildings[l].stalled, "à bout : {}", souche::organ_rate(&w, l).0);
     assert_eq!(events, 1, "une seule alerte");
-    assert_eq!(souche::organ_rate(&w, l), (soil::SPENT_PCT, 0));
     let n = w.buildings[heart].net as usize;
     w.nets[n].seve = 0;
     steps(&mut w, 400);
-    // vingt secondes : 20 sève de la graine-mère, 2 de la frondaison
+    // vingt secondes : 20 sève de la graine-mère, une de la frondaison (plancher de 5 %)
     let got = w.nets[n].seve;
-    assert!((21..=23).contains(&got), "sève : {got}");
-    // une frondaison plantée là l'est tout de suite ; plus loin, au bord de l'herbe, elle produit
-    let poor = put(&mut w, 0, B_LEAVES, hx - 3, hy);
-    let rich = put(&mut w, 0, B_LEAVES, hx + 14, hy);
-    steps(&mut w, 40);
-    assert!(w.buildings[poor].stalled && !w.buildings[rich].stalled);
+    assert!((20..=24).contains(&got), "sève : {got}");
+    // le câble meurt : ses cases redeviennent de l'herbe, la frondaison s'en aperçoit en 30 s au plus
+    for &r in &roots[2..] {
+        remove_building(&mut w, r, false);
+    }
+    steps(&mut w, 700);
+    assert!(!w.buildings[l].stalled && w.buildings[l].ammo < 12, "herbe à {} cases", w.buildings[l].ammo);
 }
 
 #[test]
@@ -171,7 +212,7 @@ fn grass_is_dry_open_ground_that_is_nobodys_terreau() {
     let mut w = game(0);
     let (_, hx, hy) = base(&mut w, 0, 40);
     soil::ensure(&mut w);
-    let count = |w: &World| soil::grass_left(w, B_LEAVES, hx + 20, hy, 2, 2);
+    let count = |w: &World| soil::grass_left(w, hx + 20, hy, 2, 2);
     let open = count(&w);
     // de l'eau, une falaise, un bâtiment, une racine (sa zone est du terreau), le sol d'un autre joueur
     let i = w.map.idx(hx + 25, hy);
@@ -267,17 +308,20 @@ fn taproots_graze_too_and_dry_up() {
     w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: hx + 4, y: hy, purity: 0 });
     w.wear.resize(w.map.spots.len(), 0);
     let t = put(&mut w, 0, B_TAPROOT, hx + 4, hy);
-    soil::ensure(&mut w);
+    steps(&mut w, 40);
     let near = souche::organ_rate(&w, t).0;
     assert!(near > 300, "herbe toute proche : {near}");
     steps(&mut w, 2000);
-    assert!((4..=9).contains(&eaten(&w)), "{} cases", eaten(&w));
+    assert!((4..=10).contains(&eaten(&w)), "{} cases", eaten(&w));
+    // elle ne sort pas de son périmètre
     for i in 0..w.terreau.len() {
-        if w.terreau[i] == 0 {
+        let (x, y) = (i as i32 % w.map.w, i as i32 / w.map.w);
+        if w.terreau[i] == 0 && (x - hx).abs() < 22 && (y - hy).abs() < 22 {
             soil::eat(&mut w, 0, i);
         }
     }
     steps(&mut w, 40);
+    assert!(w.buildings[t].stalled);
     assert_eq!(souche::organ_rate(&w, t), (3 * soil::SPENT_PCT, 0));
 }
 
@@ -287,16 +331,20 @@ fn preview_layer_and_save_tell_the_same_ground() {
     let (_, hx, hy) = base(&mut w, 0, 30);
     let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
     soil::ensure(&mut w);
-    // aperçu de pose : l'herbe qu'aura la frondaison une fois posée (son emprise n'est pas mangée)
+    // aperçu de pose : ce qu'aura la frondaison une fois poussée (sa voisine convoite la même herbe)
+    steps(&mut w, 40);
     let (gx, gy) = (hx + 4, hy + 3);
-    let p = soil::preview(&w, B_LEAVES, gx, gy);
+    let p = soil::preview(&w, 0, B_LEAVES, gx, gy);
     let twin = put(&mut w, 0, B_LEAVES, gx, gy);
-    let m = soil::meal(&w, B_LEAVES, gx, gy, 2, 2, 0);
-    assert_eq!((p[0], p[4]), (m.left as i32, m.share as i32), "comme une fois posée");
-    assert_eq!(p[3], soil::LEAVES_R);
-    assert!(p[4] < 800, "la voisine convoite la même herbe : {}", p[4]);
+    steps(&mut w, 40);
+    let m = meal_of(&w, twin);
+    assert!((p[3] - m.share as i32).abs() < 60, "part : aperçu {}, posée {}", p[3], m.share);
+    assert!((p[4] - w.buildings[twin].timer as i32).abs() < 120, "rendement : aperçu {}, posée {}", p[4], w.buildings[twin].timer);
+    assert!(p[3] < 900 && p[0] >= 1 && p[2] == p[0] + soil::RING, "{p:?}");
     remove_building(&mut w, twin, false);
-    assert!(soil::preview(&w, B_BULB, gx, gy).is_empty());
+    assert!(soil::preview(&w, 0, B_BULB, gx, gy).is_empty());
+    let t = soil::preview(&w, 0, B_TAPROOT, gx, gy);
+    assert!(t[2] == soil::TAPROOT_R && t[5] > 50 && t[6] >= t[5], "{t:?}");
     steps(&mut w, 2200);
     let n = eaten(&w);
     assert!(n >= 4);
@@ -378,4 +426,38 @@ fn incremental_terreau_matches_a_full_rebuild() {
     }
     check_terreau(&mut w);
     assert!(born > 60 && dead > 20, "{born} poteaux poussés, {dead} morts");
+}
+
+/// Temps par tick d'une très grosse base : 400 frondaisons au milieu d'un pré déjà mangé (mesure, à la demande).
+#[test]
+#[ignore]
+fn four_hundred_leaves_profile() {
+    let mut w = game(0);
+    let (_, hx, hy) = base(&mut w, 0, 70);
+    soil::ensure(&mut w);
+    for y in hy - 60..hy + 60 {
+        for x in hx - 60..hx + 60 {
+            let i = w.map.idx(x, y);
+            if w.terreau[i] == 0 && (x - hx).pow(2) + (y - hy).pow(2) < 42 * 42 {
+                soil::eat(&mut w, 0, i);
+            }
+        }
+    }
+    for k in 0..40 {
+        put(&mut w, 0, B_ROOT, hx + 3 + k, hy + 1);
+        put(&mut w, 0, B_ROOT, hx - 1 - k, hy + 1);
+    }
+    let mut n = 0;
+    for y in (hy - 14..hy + 14).step_by(2) {
+        for x in (hx - 40..hx + 40).step_by(2) {
+            if n < 400 && place_building(&mut w, 0, B_LEAVES, x, y, 0).map(|b| complete_building(&mut w, b)).is_some() {
+                n += 1;
+            }
+        }
+    }
+    rebuild_power(&mut w);
+    steps(&mut w, 100);
+    let t = std::time::Instant::now();
+    steps(&mut w, 2000);
+    println!("{n} frondaisons : {:.3} ms/tick, {} cases mangées", t.elapsed().as_secs_f64() * 1000.0 / 2000.0, w.soil_n);
 }
