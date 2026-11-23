@@ -38,7 +38,7 @@ Dossier `packages/server/src/bots/`. `ai.ts` ne garde que la classe `SkirmishAI`
 Autres modules : `army.ts` (pelotons), `intel.ts` (cartes de menace), `layout.ts` (tracé des modules et de l'arsenal), `personas.ts` (personnalités), et ceux de la marine, des transports et de l'arsenal (plus bas).
 
 - Un module de thème importe `SkirmishAI` avec `import type` : aucun import de `ai.ts` à l'exécution. `ai.ts` réexporte `landComponents` et `EngBuilder`.
-- Le serveur n'a pas de tsconfig : un appel à une méthode ou à une fonction qui n'existe plus ne casse qu'à l'exécution. Après un déplacement de code, passer `tsc --noEmit` sur `packages/server/src` avec un tsconfig temporaire (`strict`, `allowImportingTsExtensions`, `moduleResolution: bundler`, `skipLibCheck`).
+- Node exécute le TypeScript du serveur tel quel : un appel à une méthode ou à une fonction qui n'existe plus ne casse qu'à l'exécution. Après un déplacement de code ou une fusion de master, lancer `npx tsc --noEmit -p packages/server/tsconfig.json` (4 erreurs connues, aucune nouvelle).
 
 ## Marine
 

@@ -13,6 +13,7 @@
       "Bash(node tools/determinism.mjs)",
       "Bash(node tools/determinism.mjs *)",
       "Bash(npx tsc --noEmit -p packages/client/tsconfig.json)",
+      "Bash(npx tsc --noEmit -p packages/server/tsconfig.json)",
       "Bash(npm run test:rust)",
       "Bash(npm run test:ai)",
       "Bash(node tools/bench/ai-check.ts)",

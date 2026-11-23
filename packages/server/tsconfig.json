@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "paths": { "@supreme/shared": ["../shared/src/index.ts"], "@supreme/shared/*": ["../shared/src/*"] }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "../../tools/bench/*.ts"]
+}
