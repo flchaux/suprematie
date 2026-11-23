@@ -302,8 +302,8 @@ pub extern "C" fn soil_layer(player: i32) -> *const u8 {
 
 /// Aperçu de pose d'une frondaison ou d'une racine-puits (voir soil::preview).
 #[no_mangle]
-pub extern "C" fn soil_preview(kind: i32, x: i32, y: i32) -> *const u8 {
-    let v = with_world(|w| if kind < 0 { Vec::new() } else { soil::preview(w, kind as u16, x, y) }, Vec::new());
+pub extern "C" fn soil_preview(player: i32, kind: i32, x: i32, y: i32) -> *const u8 {
+    let v = with_world(|w| if kind < 0 || !(0..8).contains(&player) { Vec::new() } else { soil::preview(w, player as u8, kind as u16, x, y) }, Vec::new());
     set_out_i32(&v)
 }
 

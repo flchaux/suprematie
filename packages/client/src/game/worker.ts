@@ -124,7 +124,7 @@ onmessage = async (e: MessageEvent<In>) => {
       else if (m.q === "lineCost") result = sim.lineCost(m.a);
       else if (m.q === "formation") result = Array.from(sim.formationPreview(m.a));
       else if (m.q === "soil") result = sim.soilLayer(m.a[0]);
-      else if (m.q === "soilPreview") result = sim.soilPreview(m.a[0], m.a[1], m.a[2]);
+      else if (m.q === "soilPreview") result = sim.soilPreview(m.a[0], m.a[1], m.a[2], m.a[3]);
       else if (m.q === "twinPreview") result = Array.from(sim.twinPreview(m.a));
       else if (m.q === "reachStock") result = Array.from(sim.reachStock(m.a));
       else if (m.q === "canPlaceMany") {
