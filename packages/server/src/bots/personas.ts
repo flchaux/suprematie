@@ -30,6 +30,11 @@ export interface Persona {
   techBias: number;
   /** Bonus de priorité des défenses. */
   defenseBias: number;
+  /** Goût pour la marine (0 à 1) : à partir de 0,5, l'IA s'en dote dès que l'eau sert ; en dessous, seulement
+   * sur une île ou contre une flotte ennemie. */
+  naval: number;
+  /** Transports voulus quand un débarquement peut servir. */
+  transports: number;
 }
 
 const MIN = 1200;
@@ -75,6 +80,8 @@ export const PERSONAS: Record<string, Persona> = {
     moduleDelay: 5 * MIN,
     techBias: 0,
     defenseBias: 0,
+    naval: 0.7,
+    transports: 3,
   },
   rush: {
     name: "rush",
@@ -95,6 +102,8 @@ export const PERSONAS: Record<string, Persona> = {
     moduleDelay: 6 * MIN,
     techBias: -50,
     defenseBias: -100,
+    naval: 0.2,
+    transports: 2,
   },
   turtle: {
     name: "turtle",
@@ -116,6 +125,8 @@ export const PERSONAS: Record<string, Persona> = {
     moduleDelay: 6 * MIN,
     techBias: 20,
     defenseBias: 150,
+    naval: 0.6,
+    transports: 2,
   },
   tech: {
     name: "tech",
@@ -136,5 +147,7 @@ export const PERSONAS: Record<string, Persona> = {
     moduleDelay: 6 * MIN,
     techBias: 100,
     defenseBias: 30,
+    naval: 0.8,
+    transports: 3,
   },
 };

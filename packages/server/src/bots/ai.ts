@@ -15,11 +15,14 @@
 import type { Bot, BotContext } from "./types.ts";
 import { serialize, deserialize } from "node:v8";
 import type { BotView, Cmd, BotUnit, BotBuilding, PlayerView } from "@supreme/shared";
-import { build, move, target, harvest, O, factoryQueue, rally, setRecipe, research, hasTech, isFauna, smeltRecipe, upgrade, RECIPE_NONE, BUILD_FULL } from "@supreme/shared";
+import { build, move, target, harvest, O, factoryQueue, rally, setRecipe, setPause, research, hasTech, isFauna, smeltRecipe, upgrade, RECIPE_NONE, BUILD_FULL, Layer } from "@supreme/shared";
 import { Ids, indexView, TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { Planner, CELLS, type Module, type Placement, type Slot, type CellSlot } from "./layout.ts";
 import { PERSONAS, AIR_PLAN, TECH_PLAN, ARMY_PLAN, MAIN_AIR_PLAN, type Persona } from "./personas.ts";
 import { Army } from "./army.ts";
+import { newArsenal, arsenalDepot, arsenalWanted, arsenalBuilders, arsenalThink, arsenalPacks, arsenalBuilt, pendingYard, type ArsenalState } from "./arsenal.ts";
+import { newNavy, navyGoal, navyBuilders, navyFactories, navyThink, navyResearch, type NavyState } from "./navy.ts";
+import { newLanding, landingGoal, landingBuilders, landingFactories, landingThink, landingResearch, transports, isolated, type LandingState } from "./landing.ts";
 import { intelOf, teamBoard, kindPowers, T, type Intel, type TeamBoard } from "./intel.ts";
 
 interface Project {
@@ -67,7 +70,7 @@ interface Crafter {
   slot: Slot;
 }
 
-interface EngBuilder {
+export interface EngBuilder {
   name: string;
   prio: number;
   remote?: boolean;
@@ -214,6 +217,19 @@ export class SkirmishAI implements Bot {
   noFuelDepot = new Map<number, number>();
   /** tick de la dernière mine de combustible lancée */
   lastFuelMine = -1e9;
+  // marine et transports : données simples (sauvegardées telles quelles ; absentes d'une vieille sauvegarde,
+  // elles gardent leur valeur de départ)
+  arsenal: ArsenalState = newArsenal();
+  navy: NavyState = newNavy();
+  landing: LandingState = newLanding();
+  /** l'arsenal manque de fer (voir arsenalThink) */
+  ironForArsenal = false;
+  /** générateurs sans combustible (compté seulement quand l'IA a un arsenal) */
+  dryGens = 0;
+  /** dépôts (cases) bien pourvus en hydrocarbure, à relier aux générateurs à sec */
+  fuelDepots: [number, number][] = [];
+  /** extracteurs mis en pause par l'IA (voir unjam, arsenal.ts) */
+  pausedMines = new Set<number>();
 
   constructor(ctx: BotContext) {
     this.ctx = ctx;
@@ -603,6 +619,10 @@ export class SkirmishAI implements Bot {
       const top = this.engBuilders(this.builderUnits()[0] ?? ({} as BotUnit)).sort((a, b) => b.prio - a.prio).slice(0, 5).map((b) => `${b.name}:${b.prio}`);
       this.log("état", "recherche", this.me.research, "plan", JSON.stringify([...this.pendingPlan.values()]), "chantiers", this.projects.map((p) => `${p.name}[${p.builders.length}]`).join(","), "priorités", top.join(" "), "commandant", ((c) => (c ? `${Math.round(c.x / TILE)},${Math.round(c.y / TILE)} ordres ${c.nOrders} (${c.order})` : "?"))(this.unitById(this.me.commander)), "abri", this.cmdHoldUntil > this.tick);
     }
+    if (this.thinkN % 10 === 3) {
+      navyGoal(this);
+      landingGoal(this);
+    }
     this.underPressure = this.tick - this.lastThreat < 1200;
     const prof = this.prof;
     let t0 = prof ? performance.now() : 0;
@@ -614,13 +634,24 @@ export class SkirmishAI implements Bot {
     };
     this.engineers(out);
     lap("ingénieurs");
-    if (this.thinkN % 2 === 0) this.economy(out);
-    if (this.thinkN % 2 === 1) this.factories(out);
+    if (this.thinkN % 2 === 0) {
+      this.economy(out);
+      arsenalThink(this, out);
+    }
+    if (this.thinkN % 2 === 1) {
+      this.factories(out);
+      navyFactories(this, out);
+      landingFactories(this, out);
+    }
     lap("économie/usines");
     if (this.thinkN % 4 === 0) this.researchMgr(out);
     if (this.thinkN % 20 === 7) this.mainGenUpgrade(out);
     // niveau normal : tactique deux fois moins réactive que le niveau difficile
-    if (this.level !== "normal" || this.thinkN % 2 === 0) this.army.think(this, this.ix, this.tick, out);
+    if (this.level !== "normal" || this.thinkN % 2 === 0) {
+      this.army.think(this, this.ix, this.tick, out);
+      navyThink(this, out);
+      landingThink(this, out);
+    }
     this.commander(out);
     lap("armée");
     return out;
@@ -1010,7 +1041,7 @@ export class SkirmishAI implements Bot {
       // énergie
       // un réseau qui manque de combustible n'a pas besoin de générateurs de plus (voir fuelBuilders)
       const starved = this.powerLow.has(m) && !this.fuelShort();
-      if (m.prod < m.use * 1.1 + 60 || starved) {
+      if ((m.prod < m.use * 1.1 + 60 || starved) && this.dryGens < 3) {
         L.push({
           name: "power" + m.id,
           prio: m.prod < m.use || starved ? 960 : 700,
@@ -1088,7 +1119,9 @@ export class SkirmishAI implements Bot {
       const want = Math.min(P.turrets + Math.floor(minutes / 8) * (P.turrets > 4 ? 2 : 1), P.turrets * 3 + 2);
       const threatened = this.underPressure;
       // antiaérien : quand l'aviation ennemie dépasse notre défense (la moitié des tourelles au plus)
-      const wantAA = this.level !== "facile" && this.has(this.ids.t.aa_turret) && this.airRatio > 0.4 && this.turretsAA < Math.min(12, 2 + this.airRatio * 4);
+      // (sur une île, l'ennemi vient par les airs : trois tourelles d'avance, et le double quand il vole)
+      const island = this.arsenal.plan !== null && isolated(this);
+      const wantAA = this.level !== "facile" && this.has(this.ids.t.aa_turret) && (this.airRatio > 0.4 || (island && this.turretsAA < 3)) && this.turretsAA < Math.min(12, (island ? 4 : 2) + this.airRatio * 4);
       const airRaid = this.army.threat && this.army.threat.air > 0 && this.tick - this.army.threat.tick < 200;
       if (this.turretsPlanned < want || (threatened && this.turretsPlanned < want + 4) || wantAA) {
         const heavy = this.has(this.ids.t.heavy_turret) && this.stock(it.steel) > 60 && this.stock(it.ammo) > 20 && this.turretsPlanned % 2 === 1;
@@ -1105,10 +1138,14 @@ export class SkirmishAI implements Bot {
     const coreDone = m0.slots.some((s) => s.type.startsWith("factory")) && !this.projects.some((p) => p.module === m0 && p.name.startsWith("slot"));
     // le module technologique attend que l'usine soit placée (sinon le commandant, seul constructeur,
     // part poser un tapis loin de la base au lieu de l'usine qui donne les ingénieurs)
-    const techFirst = !mods.some((m) => m.role === "tech") && m0.slots.some((s) => s.type === "lab") && this.hasFactorySlot();
+    // l'arsenal fournit aussi la recherche : il passe avant un module technologique
+    const arsenal = arsenalWanted(this);
+    const techFirst = !arsenal && !mods.some((m) => m.role === "tech") && m0.slots.some((s) => s.type === "lab") && this.hasFactorySlot();
     if (allBuilt && mods.length < maxMods && this.factoryLost && !this.hasFactorySlot()) {
       // usine impossible dans le module principal : un module d'armée, sans attendre
       L.push({ name: "module", prio: 950, remote: true, est: [150, 60], make: () => this.makeModule() });
+    } else if (arsenal && (arsenalBuilt(this) < 14 || this.stock(it.iron_plate) < 500)) {
+      // pas de module de plus tant que l'arsenal n'est pas en marche, ou que le fer lui manque
     } else if (allBuilt && mods.length < maxMods && this.tick > P.moduleDelay && (planDone || rich || coreDone || techFirst || this.tick > P.moduleDelay * 2)) {
       L.push({ name: "module", prio: techFirst ? 810 : 520, remote: true, est: [150, 60], make: () => this.makeModule() });
     }
@@ -1119,6 +1156,9 @@ export class SkirmishAI implements Bot {
       L.push({ name: "depot", prio: 830, est: [8], make: () => this.makeDepot(m0) });
     }
     this.fuelBuilders(L);
+    arsenalBuilders(this, L);
+    navyBuilders(this, L);
+    landingBuilders(this, L);
     return L;
   }
 
@@ -1190,7 +1230,7 @@ export class SkirmishAI implements Bot {
     // réserve vide : une mine de plus, le temps que la précédente se fasse sentir
     const short = this.fuelShort() && this.tick - this.lastFuelMine > 2400;
     if (short) want = Math.max(want, n + 1);
-    if (n >= Math.min(want, 10) || (n > 0 && this.stock(this.ids.item.hydrocarbon) > 150)) return;
+    if (n >= Math.min(want, 10) || (n > 0 && this.stock(this.ids.item.hydrocarbon) > 150 && this.dryGens < 2)) return;
     L.push({ name: "fuel", prio: n === 0 ? 995 : short ? 950 : 770, remote: n > 0, est: [18, 5], make: () => this.makeFuelMine(n) });
   }
 
@@ -1458,7 +1498,7 @@ export class SkirmishAI implements Bot {
     // l'aviation d'abord si un adversaire n'est pas joignable par la terre
     let plan = P.planN[this.modulePlansUsed % P.planN.length];
     const hasAir = this.planner.modules.some((mm) => mm.role === "air");
-    const hasTech = this.planner.modules.some((mm) => mm.role === "tech");
+    const hasTech = this.arsenal.plan !== null || this.planner.modules.some((mm) => mm.role === "tech");
     const airReady = this.has(this.ids.t.electronics) && this.has(this.ids.t.hydrocarbons);
     // pas d'aviation sans les recherches ; pas d'armée de terre en plus si personne n'est joignable
     // progression technologique garantie : recherche à l'arrêt, ou déjà un module secondaire sans technologie
@@ -1619,6 +1659,12 @@ export class SkirmishAI implements Bot {
     const it = this.ids.item;
     this.stockHist.push(Array.from(this.me.stock));
     if (this.stockHist.length > 30) this.stockHist.shift();
+    if (this.thinkN % 4 === 0 && arsenalWanted(this)) this.unjam(out);
+    else if (this.pausedMines.size && !arsenalWanted(this)) {
+      // plus d'arsenal en vue : les mines reprennent
+      out.push(setPause([...this.pausedMines], false));
+      this.pausedMines.clear();
+    }
     this.loadAvg += (this.me.powerUse - this.loadAvg) * 0.05;
     const sim = this.ctx.sim;
     const data = this.ctx.data;
@@ -1699,6 +1745,24 @@ export class SkirmishAI implements Bot {
       if (this.stock(it.circuit) < (m.role === "main" ? 15 : 40)) D.add(it.circuit);
       if (this.stock(it.steel) < (m.role === "main" ? 0 : 60)) D.add(it.steel);
     }
+    // générateurs à sec : en poser d'autres ne sert à rien tant que le combustible ne les atteint pas (relais
+    // logistiques de l'arsenal)
+    if (this.thinkN % 30 === 0) {
+      this.dryGens = 0;
+      this.fuelDepots = [];
+      if (arsenalWanted(this) && this.arsenal.plan) {
+        for (const b of this.ix.buildingsBy[this.ctx.slot]) {
+          if (b.build < BUILD_FULL) continue;
+          if (b.kind === this.ids.b.generator) {
+            const g = sim.infoBuilding(b.ref) as { fuel: number } | null;
+            if (g && g.fuel <= 0) this.dryGens++;
+          } else if (b.kind === this.ids.b.depot) {
+            const d = sim.infoBuilding(b.ref) as { stash: number[] } | null;
+            if (d && (d.stash[it.hydrocarbon] ?? 0) >= 120) this.fuelDepots.push([b.x + 1, b.y + 1]);
+          }
+        }
+      }
+    }
     // énergie réelle : satisfaction du réseau d'un bâtiment de chaque module
     if (this.thinkN % 30 === 0) {
       for (const m of this.planner.modules) {
@@ -1748,15 +1812,82 @@ export class SkirmishAI implements Bot {
     }
   }
 
+  /**
+   * Dépôt de module presque plein d'une plaque : le tapis principal, qui y finit, se boucherait (plus rien
+   * ne passerait, pas même l'autre plaque). Les mines de cette plaque sont mises en pause, sauf (une à la
+   * fois) quand un fabricant du module en manque ; le dépôt est agrandi dès que possible.
+   */
+  unjam(out: Cmd[]): void {
+    const it = this.ids.item;
+    const sim = this.ctx.sim;
+    for (const m of this.planner.modules) {
+      const dp = m.bus.find((p) => p.kind === this.ids.b.depot);
+      if (!dp) continue;
+      const ref = sim.buildingAt(dp.x, dp.y);
+      const b = ref ? this.ix.bref.get(ref) : undefined;
+      if (!b || b.owner !== this.ctx.slot || b.kind !== this.ids.b.depot || b.build < BUILD_FULL) continue;
+      const inf = sim.infoBuilding(ref) as { stash: number[] } | null;
+      if (!inf) continue;
+      const cap = b.level > 0 ? 2000 : 600;
+      if (b.level === 0 && !b.upgrading && this.has(this.ids.t.automation) && inf.stash.some((n) => n >= cap * 0.5) && this.stock(it.steel) >= 20 && this.stock(it.gear) >= 12 && this.stock(it.circuit) >= 8) out.push(upgrade(ref));
+      for (const [ore, plate] of [[it.iron_ore, it.iron_plate], [it.copper_ore, it.copper_plate]]) {
+        const key = m.id * 100 + ore;
+        const n = Math.max(inf.stash[plate] ?? 0, inf.stash[ore] ?? 0);
+        const high = n >= cap * 0.8;
+        const low = n < cap * 0.7;
+        if (!high && !low) continue;
+        let hungry = false;
+        if (high) {
+          for (const c of this.crafters) {
+            if (c.module !== m || !c.ref || c.paused) continue;
+            const r = this.ctx.data.recipes[c.recipe];
+            const j = r.inputs.findIndex(([i]) => i === plate);
+            if (j < 0) continue;
+            const ci = sim.infoBuilding(c.ref) as { inv: number[]; recipe: number } | null;
+            if (ci && ci.recipe === c.recipe && ci.inv[j] < r.inputs[j][1]) {
+              hungry = true;
+              break;
+            }
+          }
+        }
+        let allowed = high ? (hungry ? 1 : 0) : 99;
+        const on: number[] = [];
+        const off: number[] = [];
+        for (const s of this.spots) {
+          if (s.st !== 1 || (s as SpotState & { key?: number }).key !== key) continue;
+          const e = sim.buildingAt(s.x, s.y);
+          const eb = e ? this.ix.bref.get(e) : undefined;
+          if (!eb || eb.owner !== this.ctx.slot || eb.build < BUILD_FULL) continue;
+          if (allowed > 0) {
+            allowed--;
+            if (this.pausedMines.delete(e)) on.push(e);
+          } else if (!this.pausedMines.has(e)) {
+            this.pausedMines.add(e);
+            off.push(e);
+          }
+        }
+        if (on.length) out.push(setPause(on, false));
+        if (off.length) out.push(setPause(off, true));
+      }
+    }
+  }
+
   /** La recherche a-t-elle encore besoin de lots de ce palier ? */
   researchWants(tier: number): boolean {
     const techs = this.ctx.data.techs;
-    for (const k of this.persona.research) {
+    for (const k of this.researchList()) {
       const t = this.ids.t[k];
       if (t === undefined || this.has(t)) continue;
       if (techs[t].tier >= tier) return true;
     }
     return false;
+  }
+
+  /** Recherches voulues : celles de la marine et des transports, puis de la personnalité, puis leur suite. */
+  researchList(): string[] {
+    const n = navyResearch(this);
+    const l = landingResearch(this);
+    return [...n.first, ...l.first, ...this.persona.research, ...n.later, ...l.later];
   }
 
   // ---------- Usines ----------
@@ -1766,8 +1897,14 @@ export class SkirmishAI implements Bot {
     const engTarget = Math.min(P.maxEngineers, P.engineers + Math.floor(this.tick / (6 * 1200)));
     let engs = this.engineerCount();
     let landArmy = 0;
-    for (const u of this.ix.unitsBy[this.ctx.slot]) if (this.combatKinds[u.kind] && data.units[u.kind].layer !== 4) landArmy++;
+    for (const u of this.ix.unitsBy[this.ctx.slot]) if (this.combatKinds[u.kind] && data.units[u.kind].layer <= Layer.Hover) landArmy++;
     const weights = this.armyWeights();
+    const ldep = arsenalDepot(this);
+    const thrifty = this.ironForArsenal && this.arsenal.link > 0 && !this.underPressure && landArmy > Math.max(40, this.army.attackSize * 1.3) && this.landRatio < 0.9;
+    // une île arme de quoi remplir ses transports, en plus de sa garnison
+    const landCap = 24 + (this.landing.wanted ? transports(this).length * 10 : 0);
+    // passagers à fournir aux transports : le tapis de la cellule de robots passe avant le stock
+    const boarding = this.landing.wanted && landArmy < landCap - 24 + 8;
     for (const b of this.ix.buildingsBy[this.ctx.slot]) {
       if (data.buildings[b.kind].cls !== 8 || b.build < BUILD_FULL) continue;
       let fi = this.factoryInfo.get(b.ref);
@@ -1797,19 +1934,26 @@ export class SkirmishAI implements Bot {
       if (this.me.unitCount >= 950) continue;
       const avail = this.availableAt(fi.module, fi.slot);
       const fk = data.buildings[b.kind].factory;
-      if (fk === 1 && fi.module.noLand && !this.underPressure) continue;
+      if (fk === 1 && fi.module.noLand && !this.underPressure && !boarding) continue;
+      // usine aérienne que ses drones nourrissent au dépôt de l'arsenal : elle lui laisse l'acier des navires et
+      // des transports
+      const fed = fk === 2 && ldep !== null && Math.hypot(b.x - ldep.x, b.y - ldep.y) <= 30;
+      if (fed && (this.stock(this.ids.item.steel) < 60 || pendingYard(this))) continue;
       let pick = -1;
       const eng = this.ids.u.eng1;
       if (fk === 1 && engs < engTarget && this.canBuild(eng, avail)) {
         pick = eng;
         engs++;
-      } else if (fk === 1 && this.pickTarget(true) < 0 && !this.canBuild(this.ids.u.hover_tank, avail) && ((landArmy > 24 && !this.underPressure) || (landArmy > 50 && !this.baseInvaded()))) {
+      } else if (fk === 1 && this.pickTarget(true) < 0 && !this.canBuild(this.ids.u.hover_tank, avail) && ((landArmy > landCap && !this.underPressure) || (landArmy > 50 && !this.baseInvaded()))) {
         // personne n'est joignable par la terre (et pas d'amphibies) : garder les ressources pour l'aviation
         continue;
-      } else if (this.stock(this.ids.item.iron_plate) < 40 && !this.underPressure && engs >= 1) {
+      } else if (this.stock(this.ids.item.iron_plate) < 40 && !this.underPressure && engs >= 1 && !boarding) {
         // le stock de construction passe d'abord
         continue;
-      } else if (this.starvedSince && this.tick - this.starvedSince > 600 && !this.underPressure && engs >= 1) {
+      } else if (thrifty && fk === 1) {
+        // armée suffisante et arsenal à court de fer : il passe d'abord
+        continue;
+      } else if (this.starvedSince && this.tick - this.starvedSince > 600 && !this.underPressure && engs >= 1 && !boarding) {
         // les constructeurs attendent des ressources depuis 30 s : pause des unités de combat
         if (this.debug && this.thinkN % 30 === 1) this.log("usines en pause : stock de construction insuffisant");
         continue;
@@ -1822,6 +1966,8 @@ export class SkirmishAI implements Bot {
         for (const [key, wgt] of Object.entries(weights)) {
           const k = this.ids.u[key];
           if (k === undefined || data.units[k].factory !== fk || !this.canBuild(k, avail)) continue;
+          // (et pas de nuée de chasseurs quand l'ennemi ne vole pas)
+          if (fed && (key === "interceptor" || key === "asf") && (counts.get(k) ?? 0) >= 6 + this.airRatio * 12) continue;
           if ((this.starved.get(fi.module.id * 100 + k) ?? 0) > this.tick) continue;
           // les unités de palier supérieur sont préférées quand elles sont disponibles
           const tierBonus = 1 + data.units[k].tier * 0.3;
@@ -1936,6 +2082,7 @@ export class SkirmishAI implements Bot {
         for (const it of this.availableAt(m, lab)) packs.add(it);
       }
     }
+    arsenalPacks(this, packs);
     const pack1 = this.ids.item.pack1;
     // recherches urgentes selon les rapports de force, puis la liste de la personnalité
     const urgent: string[] = [];
@@ -1944,7 +2091,9 @@ export class SkirmishAI implements Bot {
       if (this.anyUnreachable()) urgent.push("electronics", "hydrocarbons", "mobile_artillery", "assault", "heavy_air");
       if (this.landRatio > 1.5) urgent.push("heavy_turret");
     }
-    for (const k of [...urgent, ...this.persona.research]) {
+    // l'antiaérien passe avant la marine et les transports quand l'aviation ennemie domine
+    const first = [...navyResearch(this).first, ...landingResearch(this).first];
+    for (const k of [...(this.airRatio > 0.5 ? urgent : []), ...first, ...urgent, ...this.researchList()]) {
       const t = this.ids.t[k];
       if (t === undefined || this.has(t)) continue;
       const td = techs[t];

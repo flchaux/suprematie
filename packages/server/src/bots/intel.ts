@@ -83,6 +83,8 @@ export class Intel {
   aaUnits: number[];
   aaTurrets: number[];
   eco: number[];
+  /** puissance des navires (hors de l'armée de terre) */
+  navy: number[];
 
   constructor(view: BotView, data: GameData, mapW: number, mapH: number) {
     const np = view.players.length;
@@ -101,6 +103,7 @@ export class Intel {
     this.aaUnits = new Array(np).fill(0);
     this.aaTurrets = new Array(np).fill(0);
     this.eco = new Array(np).fill(0);
+    this.navy = new Array(np).fill(0);
     const kp = kindPowers(data);
     // unités de commandement de toutes les races (robot, Reine, Arche) : hors de l'armée de terre
     const cmd = data.units.map((u) => !!u.commander);
@@ -119,8 +122,11 @@ export class Intel {
         this.air[u.owner] += g;
         this.airToAir[u.owner] += a;
       } else {
-        L[T.Surface][c] += g;
-        if (!cmd[u.kind]) this.land[u.owner] += g;
+        const layer = data.units[u.kind].layer;
+        // un sous-marin ne menace que ce qui flotte : hors de la carte des menaces au sol
+        if (layer !== Layer.Sub) L[T.Surface][c] += g;
+        if (layer === Layer.Naval || layer === Layer.Sub) this.navy[u.owner] += g;
+        else if (!cmd[u.kind]) this.land[u.owner] += g;
         this.aaUnits[u.owner] += a;
       }
       L[T.AntiAir][c] += a;

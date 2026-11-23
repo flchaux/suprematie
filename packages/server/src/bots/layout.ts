@@ -185,6 +185,43 @@ export interface Module {
   use: number; // consommation prévue (kW)
   prod: number; // production prévue (kW)
   role: string;
+  /** arsenal : case visée par les tapis d'amenée (son dépôt), au lieu du bout du tapis principal */
+  hub?: [number, number];
+}
+
+/** Identifiant du faux module d'un arsenal (réseaux de tapis à part, voir `bnet`). */
+export const ARSENAL_ID = 100;
+
+/** Emplacement d'un atelier de l'arsenal : le bâtiment (2 × 2) et ses bras. */
+export interface ArsenalSlot {
+  type: string; // "A:gear", "F:steel", "R:fuel", "C:composite", "lab"
+  x: number;
+  y: number;
+  /** bras d'entrée (tapis -> atelier) et de sortie (atelier -> tapis) */
+  ins: { x: number; y: number; dir: number };
+  outs: { x: number; y: number; dir: number };
+  /** fonderie d'acier sur la boucle (faute de place le long du tapis d'amenée) */
+  loop?: boolean;
+  tries: number;
+  next: number;
+}
+
+/** Arsenal : dépôt, boucle de tapis qui en part et y revient, ateliers des deux côtés et au milieu. */
+export interface ArsenalPlan {
+  mod: Module;
+  depot: [number, number];
+  /** dépôt, tapis et bras de sortie, relais */
+  base: Placement[];
+  slots: ArsenalSlot[];
+}
+
+/** Cases libres d'une zone carrée (côté S, coin (bx, by)), en table de sommes de largeur W1. */
+export interface FreeGrid {
+  bx: number;
+  by: number;
+  S: number;
+  W1: number;
+  sum: Int32Array;
 }
 
 const BAND = 7; // demi-largeur de la bande réservée
@@ -519,6 +556,297 @@ export class Planner {
     return null;
   }
 
+  // ---------- Arsenal ----------
+  /** Réserve les cases devant un extracteur : un tapis qui y passerait recevrait du minerai brut. */
+  lockFront(x: number, y: number, dir: number): void {
+    const f: [number, number][] = dir === 0 ? [[x + 2, y], [x + 2, y + 1]] : dir === 1 ? [[x, y + 2], [x + 1, y + 2]] : dir === 2 ? [[x - 1, y], [x - 1, y + 1]] : [[x, y - 1], [x + 1, y - 1]];
+    for (const [fx, fy] of f) if (this.inside(fx, fy) && (this.plan[this.idx(fx, fy)] === P_FREE || this.plan[this.idx(fx, fy)] === P_KEEP)) this.plan[this.idx(fx, fy)] = P_LANE;
+  }
+
+  /** Table de sommes des cases libres autour de (cx, cy), pour juger un rectangle en O(1). */
+  freeGrid(cx: number, cy: number, R: number): FreeGrid {
+    const belt = this.ids.b.belt1;
+    const S = 2 * R + 1;
+    const bx = cx - R;
+    const by = cy - R;
+    const W1 = S + 1;
+    const sum = new Int32Array(W1 * W1);
+    for (let ly = 0; ly < S; ly++) {
+      let row = 0;
+      for (let lx = 0; lx < S; lx++) {
+        const x = bx + lx;
+        const y = by + ly;
+        if (this.inside(x, y) && this.plan[this.idx(x, y)] === P_FREE && this.sim.canPlace(this.slot, belt, x, y, 0)) row++;
+        sum[(ly + 1) * W1 + lx + 1] = sum[ly * W1 + lx + 1] + row;
+      }
+    }
+    return { bx, by, S, W1, sum };
+  }
+
+  /**
+   * Cherche la place d'un arsenal de `cols` colonnes d'ateliers près de (cx, cy), et le réserve. Repère local
+   * (u le long, v en travers, quatre orientations) : le dépôt en (0..1, 2..3) ; deux bras en (0..1, 1), et un
+   * troisième du côté u = -1, posent ses objets sur le tapis aller (v = 0, vers +u), qui tourne au bout et
+   * revient par v = 5 jusqu'au dépôt (côté v = 4). Rangée centrale v = 2..3 : ateliers `inner`, du tapis aller au
+   * tapis retour ; un atelier de câbles y est collé à l'atelier de circuits qui le suit et lui donne tout son
+   * produit (les câbles ne passent pas par la boucle : un objet reçu à la fois du voisin et de la boucle
+   * laisserait le bras bloqué, la main pleine d'un objet dont l'atelier ne veut plus). Rangées v = -3..-2 (bras vers le tapis aller) et
+   * v = 7..8 (bras vers le tapis retour) : ateliers `outer`, un toutes les trois cases là où la place le
+   * permet. Il faut la place de `min` ateliers en tout.
+   * Côté u < 0, un tapis d'amenée (v = 3) entre dans le dépôt, entre quatre fonderies d'acier qui y prennent
+   * leur fer et y reposent leur acier si la place le permet (sinon, elles sont sur la boucle). `weight` :
+   * pénalité d'une position du dépôt et du bout du tapis d'amenée.
+   */
+  planArsenal(grid: FreeGrid, cx: number, cy: number, radius: number, cols: number, min: number, inner: string[], outer: string[], weight: (x: number, y: number, tx: number, ty: number) => number): ArsenalPlan | null {
+    const belt = this.ids.b.belt1;
+    const U = 4 + 3 * cols;
+    const { bx, by, S, W1, sum } = grid;
+    /** Le rectangle local (bornes comprises) est-il libre ? */
+    const free = (ox: number, oy: number, d: number, u0: number, v0: number, u1: number, v1: number): boolean => {
+      const nd = (d + 1) & 3;
+      const xa = ox + u0 * DX[d] + v0 * DX[nd];
+      const ya = oy + u0 * DY[d] + v0 * DY[nd];
+      const xb = ox + u1 * DX[d] + v1 * DX[nd];
+      const yb = oy + u1 * DY[d] + v1 * DY[nd];
+      const ax = Math.min(xa, xb) - bx;
+      const ex = Math.max(xa, xb) - bx;
+      const ay = Math.min(ya, yb) - by;
+      const ey = Math.max(ya, yb) - by;
+      if (ax < 0 || ay < 0 || ex >= S || ey >= S) return false;
+      return sum[(ey + 1) * W1 + ex + 1] - sum[ay * W1 + ex + 1] - sum[(ey + 1) * W1 + ax] + sum[ay * W1 + ax] === (ex - ax + 1) * (ey - ay + 1);
+    };
+    // rangée centrale : une case libre entre deux ateliers, sauf après un atelier de câbles
+    const inPos: number[] = [];
+    for (let k = 0, u = 4; k < inner.length; k++) {
+      const glued = inner[k] === "A:cable";
+      if (u + (glued ? 3 : 1) > U - 2) break;
+      inPos.push(u);
+      u += glued ? 2 : 3;
+    }
+    const ni = inPos.length;
+    const row = (j: number, v: number): [number, number, number, number] => [4 + 3 * j, v, 5 + 3 * j, v + 1];
+    let best: { ox: number; oy: number; d: number; long: boolean } | null = null;
+    let bs = Infinity;
+    for (let d = 0; d < 4; d++) {
+      const nd = (d + 1) & 3;
+      const X = (ox: number, u: number, v: number) => ox + u * DX[d] + v * DX[nd];
+      const Y = (oy: number, u: number, v: number) => oy + u * DY[d] + v * DY[nd];
+      for (let oy = cy - radius; oy <= cy + radius; oy += 2) {
+        for (let ox = cx - radius; ox <= cx + radius; ox += 2) {
+          const mid = Math.hypot(X(ox, U >> 1, 2) - cx, Y(oy, U >> 1, 2) - cy) * 0.3;
+          if (mid >= bs || !free(ox, oy, d, -4, -1, U, 6)) continue;
+          const long = free(ox, oy, d, -12, 0, -5, 6);
+          const end = long ? -12 : -4;
+          let w = weight(X(ox, 0, 2), Y(oy, 0, 2), X(ox, end, 3), Y(oy, end, 3)) + mid;
+          if (w >= bs) continue;
+          let n = ni + (long ? 4 : 0);
+          for (let j = 0; j < cols; j++) {
+            if (free(ox, oy, d, ...row(j, -3))) n++;
+            if (free(ox, oy, d, ...row(j, 7))) n++;
+          }
+          if (n < min) continue;
+          // chaque atelier en moins vaut huit cases de détour
+          w += (ni + cols * 2 + 4 - n) * 8;
+          if (w >= bs) continue;
+          bs = w;
+          best = { ox, oy, d, long };
+        }
+      }
+    }
+    if (!best) return this.fail("pas de place pour l'arsenal");
+    const { ox, oy, d, long } = best;
+    const m: Module = { id: ARSENAL_ID, ox, oy, d, L: 30, H: 0, cursor: [0, 0], hi: [0, 0], frontier: 0, slots: [], bus: [], cx: 0, cy: 0, full: true, feeders: 0, use: 0, prod: 0, role: "arsenal" };
+    m.cx = this.wx(m, U >> 1, 2);
+    m.cy = this.wy(m, U >> 1, 2);
+    const spots: { u0: number; v: number }[] = [];
+    for (let j = 0; j < cols; j++) for (const v of [-3, 7]) if (free(ox, oy, d, ...row(j, v))) spots.push({ u0: 4 + 3 * j, v });
+    // emprise réservée (avec un couloir d'une case autour) ; le bout du tapis d'amenée reste ouvert
+    const end = long ? -12 : -4;
+    for (let u = end; u <= U + 1; u++) {
+      for (let v = -4; v <= 9; v++) {
+        const x = this.wx(m, u, v);
+        const y = this.wy(m, u, v);
+        if (!this.inside(x, y) || this.plan[this.idx(x, y)] !== P_FREE) continue;
+        const open = u <= end + (long ? 0 : 1) && v >= 1 && v <= 5;
+        // (des tapis peuvent longer l'arsenal, pas des bâtiments : un fabricant collé à un autre lui donne ses produits)
+        const inside = u >= -4 ? v >= -3 && v <= 8 && u <= U : v >= 0 && v <= 6;
+        this.plan[this.idx(x, y)] = !open && inside ? P_RES : P_KEEP;
+      }
+    }
+    const plus = this.ldir(m, 0, 1);
+    const minus = this.ldir(m, 0, -1);
+    const base: Placement[] = [];
+    const tiles: [number, number][] = [];
+    const [dx, dy] = this.sq(m, 0, 2, 2);
+    base.push({ kind: this.ids.b.depot, x: dx, y: dy, dir: 0, tag: "depot" });
+    this.mark(dx, dy, 2, P_DEPOT);
+    for (let t = 0; t < 4; t++) this.bnet[this.idx(dx + (t & 1), dy + (t >> 1))] = ARSENAL_ID * 2 + 2;
+    m.hub = [this.wx(m, 0, 2), this.wy(m, 0, 2)];
+    const put = (u: number, v: number, dir: number) => {
+      const x = this.wx(m, u, v);
+      const y = this.wy(m, u, v);
+      base.push({ kind: belt, x, y, dir, tag: "bus" });
+      this.mark(x, y, 1, P_BLD);
+      tiles.push([x, y]);
+    };
+    // départ de la boucle, pour le troisième bras du dépôt
+    put(-2, 2, minus);
+    put(-2, 1, minus);
+    put(-2, 0, d);
+    put(-1, 0, d);
+    for (let u = 0; u < U; u++) put(u, 0, d);
+    for (let v = 0; v < 5; v++) put(U, v, plus);
+    for (let u = U; u >= 2; u--) put(u, 5, (d + 2) & 3);
+    put(1, 5, minus);
+    put(1, 4, minus);
+    const arm = (u: number, v: number, dir: number) => {
+      const x = this.wx(m, u, v);
+      const y = this.wy(m, u, v);
+      this.mark(x, y, 1, P_BLD);
+      return { x, y, dir };
+    };
+    for (const u of [0, 1]) base.push({ kind: this.ids.b.inserter, ...arm(u, 1, minus), tag: "out" });
+    base.push({ kind: this.ids.b.inserter, ...arm(-1, 2, (d + 2) & 3), tag: "out" });
+    // tapis d'amenée : les mines et la liaison le rejoignent par son bout
+    for (let u = end + 1; u < 0; u++) {
+      put(u, 3, d);
+      const i = this.idx(this.wx(m, u, 3), this.wy(m, u, 3));
+      if (u <= end + (long ? 3 : 1)) this.plan[i] = P_BELT;
+      this.bdir[i] = d;
+      this.bnet[i] = ARSENAL_ID * 2 + 2;
+    }
+    // fonderies d'acier sur le tapis d'amenée (pas sur le dépôt : un bras du dépôt qui ne trouve rien à
+    // prendre garderait son tour et bloquerait les bras de la boucle)
+    const steel: ArsenalSlot[] = [];
+    const gaps: [number, number][] = [];
+    if (long) {
+      for (const u0 of [-8, -5]) {
+        for (const v of [0, 5]) {
+          const [x, y] = this.sq(m, u0, v, 2);
+          this.mark(x, y, 2, P_BLD);
+          steel.push({ type: "F:steel", x, y, ins: arm(u0, v === 0 ? 2 : 4, v === 0 ? minus : plus), outs: arm(u0 + 1, v === 0 ? 2 : 4, v === 0 ? plus : minus), tries: 0, next: 0 });
+        }
+      }
+      gaps.push([this.wx(m, -9, 2), this.wy(m, -9, 2)], [this.wx(m, -3, 4), this.wy(m, -3, 4)], [this.wx(m, -6, 1), this.wy(m, -6, 1)]);
+    }
+    const slots: ArsenalSlot[] = [];
+    const add = (type: string, u0: number, v: number) => {
+      const [x, y] = this.sq(m, u0, v, 2);
+      this.mark(x, y, 2, P_BLD);
+      const ins = v === 2 ? arm(u0, 1, plus) : v === -3 ? arm(u0, -1, minus) : arm(u0, 6, plus);
+      const outs = v === 2 ? arm(u0 + 1, 4, plus) : v === -3 ? arm(u0 + 1, -1, plus) : arm(u0 + 1, 6, minus);
+      slots.push({ type, x, y, ins, outs, loop: true, tries: 0, next: 0 });
+    };
+    for (let k = 0; k < ni; k++) {
+      add(inner[k], inPos[k], 2);
+      gaps.push([this.wx(m, inPos[k] + 1, 1), this.wy(m, inPos[k] + 1, 1)], [this.wx(m, inPos[k], 4), this.wy(m, inPos[k], 4)]);
+    }
+    // ateliers extérieurs : d'abord ceux que la rangée centrale n'a pas pu prendre
+    const list = [...outer.slice(0, 2), ...inner.slice(ni), ...outer.slice(2)];
+    if (!long) list.splice(1, 0, "F:steel", "F:steel", "F:steel");
+    spots.forEach(({ u0, v }, t) => {
+      if (t < list.length) add(list[t], u0, v);
+    });
+    if (steel.length) {
+      slots.splice(3, 0, steel[0]);
+      slots.splice(8, 0, steel[1]);
+      slots.push(steel[2], steel[3]);
+    }
+    // aucun relais devant le bout du tapis d'amenée, ni sur le chemin qui y mène
+    const mouth: number[] = [];
+    for (let k = 0; k < 4; k++) for (const v of [2, 3, 4]) {
+      const x = this.wx(m, end - k, v);
+      const y = this.wy(m, end - k, v);
+      if (this.inside(x, y) && (this.plan[this.idx(x, y)] === P_KEEP || this.plan[this.idx(x, y)] === P_FREE)) mouth.push(this.idx(x, y));
+    }
+    const was = mouth.map((i) => this.plan[i]);
+    for (const i of mouth) this.plan[i] = P_RES;
+    if (long) for (const v of [2, 4]) for (const u of [-11, -10]) gaps.push([this.wx(m, u, v), this.wy(m, u, v)]);
+    this.robust(() => {
+      base.push(...this.powerBelts(tiles, gaps));
+      return base;
+    });
+    mouth.forEach((i, k) => {
+      if (this.plan[i] === P_RES) this.plan[i] = was[k];
+    });
+    return { mod: m, depot: [dx, dy], base, slots };
+  }
+
+  /** Longueur du tapis qui irait d'une face libre du dépôt (dx, dy) à chaque case (jusqu'à `r` cases de lui). */
+  linkReach(dx: number, dy: number, r: number): Map<number, number> {
+    const seen = new Map<number, number>();
+    const queue: number[] = [];
+    const add = (x: number, y: number, n: number) => {
+      if (Math.abs(x - dx) > r || Math.abs(y - dy) > r || !this.inside(x, y)) return;
+      const i = this.idx(x, y);
+      if (seen.has(i) || !this.beltFree(x, y)) return;
+      seen.set(i, n);
+      queue.push(i);
+    };
+    for (let k = 0; k < 2; k++) {
+      for (const [x, y, d] of [[dx + 2, dy + k, 0], [dx + k, dy + 2, 1], [dx - 1, dy + k, 2], [dx + k, dy - 1, 3]]) {
+        if (!this.inside(x, y)) continue;
+        const p = this.plan[this.idx(x, y)];
+        if ((p === P_FREE || p === P_KEEP) && this.sim.canPlace(this.slot, this.ids.b.inserter, x, y, 0)) add(x + DX[d], y + DY[d], 1);
+      }
+    }
+    for (let k = 0; k < queue.length; k++) {
+      const i = queue[k];
+      const n = (seen.get(i) as number) + 1;
+      for (let d = 0; d < 4; d++) add((i % this.w) + DX[d], ((i / this.w) | 0) + DY[d], n);
+    }
+    return seen;
+  }
+
+  /**
+   * Liaison d'un dépôt (dx, dy) au réseau `net` d'un module : un bras sur une de ses faces libres, qui pose
+   * sur un tapis jusqu'au réseau (ou directement sur un tapis de ce réseau : liaison doublée).
+   */
+  planLink(dx: number, dy: number, m: Module, net: number, maxNodes = 30000): Placement[] | null {
+    const ins = this.ids.b.inserter;
+    const faces: [number, number, number][] = [];
+    for (let k = 0; k < 2; k++) faces.push([dx + 2, dy + k, 0], [dx + k, dy + 2, 1], [dx - 1, dy + k, 2], [dx + k, dy - 1, 3]);
+    let best: number[] | null = null;
+    let arm: [number, number, number] | null = null;
+    let fails = 0;
+    for (const [x, y, d] of faces) {
+      const x1 = x + DX[d];
+      const y1 = y + DY[d];
+      if (!this.inside(x, y) || !this.inside(x1, y1)) continue;
+      const i = this.idx(x, y);
+      if ((this.plan[i] !== P_FREE && this.plan[i] !== P_KEEP) || !this.sim.canPlace(this.slot, ins, x, y, 0)) continue;
+      const j = this.idx(x1, y1);
+      if (this.plan[j] === P_BELT && this.bnet[j] === net) {
+        best = [];
+        arm = [x, y, d];
+        break;
+      }
+      if (!this.beltFree(x1, y1)) continue;
+      const saved = this.plan[i];
+      this.plan[i] = P_BLD;
+      const path = this.astar(x1, y1, m, net, maxNodes, best ? best.length : 1e9);
+      this.plan[i] = saved;
+      if (path && (!best || path.length < best.length)) {
+        best = path;
+        arm = [x, y, d];
+      }
+      // (recherche longue : deux échecs suffisent, les autres faces donnent sur la même zone)
+      if (!path && !best && ++fails >= 2) break;
+    }
+    if (!best || !arm) return this.fail("pas de chemin depuis le dépôt");
+    this.mark(arm[0], arm[1], 1, P_BLD);
+    const places: Placement[] = [{ kind: ins, x: arm[0], y: arm[1], dir: arm[2], tag: "out" }];
+    places.push(...this.pathPlaces(best, net));
+    const tiles = this.pathTiles(best);
+    const [ax, ay] = arm;
+    this.robust(() => {
+      places.push(...this.powerBelts(tiles), ...this.ensurePower(ax, ay, 1, 1));
+      return places;
+    });
+    m.feeders++;
+    return places;
+  }
+
   // ---------- Énergie ----------
   covered(x: number, y: number, w: number, h: number): boolean {
     for (const p of this.poles) {
@@ -589,6 +917,10 @@ export class Planner {
       }
     }
     if (bestP) return [this.takePole(pyl, bestP[0], bestP[1])];
+    if (this.noGen) {
+      const pos = this.findFree(pyl, x + (w >> 1), y + (h >> 1), 1, pd.supply, 0);
+      return pos && this.supplies(pos[0], pos[1], 1, pd.supply, x, y, w, h) ? [this.takePole(pyl, pos[0], pos[1])] : [];
+    }
     // générateur qui couvre directement le rectangle
     const sup = gd.supply;
     let bestG: [number, number] | null = null;
@@ -610,6 +942,103 @@ export class Planner {
     }
     if (process.env.BOTDEBUG) console.log("pas d'énergie pour", x, y, w, h);
     return [];
+  }
+
+  /** Réseau électrique de chaque poteau prévu (numéro de groupe), de proche en proche. */
+  powerGroups(): number[] {
+    const g = this.poles.map(() => -1);
+    let n = 0;
+    for (let a = 0; a < this.poles.length; a++) {
+      if (g[a] >= 0) continue;
+      g[a] = n;
+      const stack = [a];
+      while (stack.length) {
+        const i = stack.pop() as number;
+        const p = this.poles[i];
+        for (let j = 0; j < this.poles.length; j++) {
+          if (g[j] >= 0) continue;
+          const q = this.poles[j];
+          const r = Math.min(p.connect, q.connect);
+          if ((p.x + p.s / 2 - q.x - q.s / 2) ** 2 + (p.y + p.s / 2 - q.y - q.s / 2) ** 2 > r * r) continue;
+          g[j] = n;
+          stack.push(j);
+        }
+      }
+      n++;
+    }
+    return g;
+  }
+
+  /**
+   * Relie le réseau électrique qui couvre (x, y) à celui de la base (le premier poteau : générateur
+   * principal de départ), par une file de relais. Un réseau à part ne vivrait que de ses générateurs,
+   * dont les drones ne trouvent pas forcément de combustible.
+   */
+  bridge(x: number, y: number): Placement[] {
+    if (!this.poles.length) return [];
+    const g = this.powerGroups();
+    const pyl = this.ids.b.pylon;
+    const step = this.ids.data.buildings[pyl].connect - 5;
+    let mine = -1;
+    // (une case couverte par deux réseaux peut dépendre de celui qui est éteint : tous sont reliés)
+    for (let k = 0; k < this.poles.length && mine < 0; k++) {
+      const p = this.poles[k];
+      if (g[k] !== g[0] && this.supplies(p.x, p.y, p.s, p.supply, x, y, 1, 1)) mine = g[k];
+    }
+    if (mine < 0) return [];
+    let best: [Pole, Pole] | null = null;
+    let bd = Infinity;
+    this.poles.forEach((p, a) => {
+      if (g[a] !== mine) return;
+      this.poles.forEach((q, b) => {
+        if (g[b] !== g[0]) return;
+        const d = (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = [q, p];
+        }
+      });
+    });
+    if (!best) return [];
+    const [q, p] = best as [Pole, Pole];
+    const n = Math.ceil(Math.sqrt(bd) / step);
+    const out: Placement[] = [];
+    for (let k = 1; k < n; k++) {
+      const px = Math.round(q.x + ((p.x - q.x) * k) / n);
+      const py = Math.round(q.y + ((p.y - q.y) * k) / n);
+      const pos = this.findFree(pyl, px, py, 0, 4, 0);
+      if (pos) out.push(this.takePole(pyl, pos[0], pos[1]));
+    }
+    return out;
+  }
+
+  /** tracé sans générateur (voir `robust`) : les relais se posent sans lien, `bridgeAll` les relie ensuite */
+  noGen = false;
+
+  /**
+   * Tracé d'un ouvrage dont l'alimentation ne doit dépendre d'aucun générateur : un générateur sans combustible
+   * ne forme plus de zone et ne relie plus ses voisins. Seuls comptent les relais et le générateur principal,
+   * et chaque zone est reliée à celle de la base par des relais.
+   */
+  robust(fn: () => Placement[] | null): Placement[] | null {
+    const all = this.poles;
+    const gen = this.ids.data.buildings[this.ids.b.generator].w;
+    const kept = all.filter((p) => p.s !== gen);
+    const n = kept.length;
+    this.poles = kept;
+    this.noGen = true;
+    const places = fn();
+    if (places) places.push(...this.bridgeAll(places));
+    this.noGen = false;
+    this.poles = [...all, ...kept.slice(n)];
+    return places;
+  }
+
+  /** Relie à la base le réseau qui couvre chaque placement (une seule case hors tension arrête toute une file). */
+  bridgeAll(places: Placement[]): Placement[] {
+    const out: Placement[] = [];
+    for (const p of places) if (this.ids.data.buildings[p.kind].powerUse > 0) out.push(...this.bridge(p.x, p.y));
+    return out;
   }
 
   /**
@@ -702,7 +1131,7 @@ export class Planner {
       if (best < 0) break;
       const x = best % this.w;
       const y = (best / this.w) | 0;
-      if (!bestLinked) {
+      if (!bestLinked && !this.noGen) {
         const link = this.linkPylon(x, y);
         if (!link) break;
         out.push(...link);
@@ -992,6 +1421,47 @@ export class Planner {
     return [{ kind: ext, x: sx, y: sy, dir: best.dir, tag: "extractor" }, this.takeFuelDepot(best.x, best.y, sx, sy, 2)];
   }
 
+  /**
+   * Raffinerie sur le dépôt d'une mine de combustible (extracteur en (sx, sy)) : un bras l'alimente depuis ce
+   * dépôt, un autre y remet le carburant, où les drones et les relais logistiques viennent le prendre.
+   */
+  planMineRefinery(sx: number, sy: number, dx: number, dy: number): Placement[] | null {
+    const ins = this.ids.b.inserter;
+    const ref = this.ids.b.refinery;
+    const ok = (x: number, y: number) => this.inside(x, y) && (this.plan[this.idx(x, y)] === P_FREE || this.plan[this.idx(x, y)] === P_LANE || this.plan[this.idx(x, y)] === P_KEEP);
+    const opts: { rx: number; ry: number; a: [number, number, number]; b: [number, number, number] }[] = [
+      { rx: dx + 3, ry: dy, a: [dx + 2, dy, 0], b: [dx + 2, dy + 1, 2] },
+      { rx: dx, ry: dy + 3, a: [dx, dy + 2, 1], b: [dx + 1, dy + 2, 3] },
+      { rx: dx - 3, ry: dy, a: [dx - 1, dy, 2], b: [dx - 1, dy + 1, 0] },
+      { rx: dx, ry: dy - 3, a: [dx, dy - 1, 3], b: [dx + 1, dy - 1, 1] },
+    ];
+    for (const o of opts) {
+      let free = ok(o.a[0], o.a[1]) && ok(o.b[0], o.b[1]);
+      for (let t = 0; t < 4 && free; t++) {
+        const x = o.rx + (t & 1);
+        const y = o.ry + (t >> 1);
+        free = ok(x, y) && !(x >= sx - 1 && x < sx + 3 && y >= sy - 1 && y < sy + 3);
+      }
+      if (!free || !this.sim.canPlace(this.slot, ref, o.rx, o.ry, 0) || !this.sim.canPlace(this.slot, ins, o.a[0], o.a[1], 0) || !this.sim.canPlace(this.slot, ins, o.b[0], o.b[1], 0)) continue;
+      const places: Placement[] = [
+        { kind: ref, x: o.rx, y: o.ry, dir: 0, tag: "R:fuel" },
+        { kind: ins, x: o.a[0], y: o.a[1], dir: o.a[2], tag: "in" },
+        { kind: ins, x: o.b[0], y: o.b[1], dir: o.b[2], tag: "out" },
+      ];
+      this.mark(o.rx, o.ry, 2, P_BLD);
+      this.mark(o.a[0], o.a[1], 1, P_BLD);
+      this.mark(o.b[0], o.b[1], 1, P_BLD);
+      return this.robust(() => {
+        for (const p of places.slice()) {
+          const s = this.ids.data.buildings[p.kind].w;
+          places.push(...this.ensurePower(p.x, p.y, s, s));
+        }
+        return places;
+      });
+    }
+    return this.fail("pas de place pour la raffinerie");
+  }
+
   findGenNear(px: number, py: number, r: number): [number, number] | null {
     let best: [number, number] | null = null;
     let bestD = 1e9;
@@ -1061,6 +1531,7 @@ export class Planner {
 
   /** Cible d'un réseau : tête du tapis principal ou dépôt. */
   netTarget(m: Module, net: number): [number, number] {
+    if (m.hub) return m.hub;
     return net % 2 === 1 ? [this.wx(m, 0, 0), this.wy(m, 0, 0)] : [this.wx(m, m.L, 0), this.wy(m, m.L, 0)];
   }
 
@@ -1079,6 +1550,11 @@ export class Planner {
     for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] !== P_FREE && this.plan[this.idx(tx, ty)] !== P_KEEP && this.plan[this.idx(tx, ty)] !== P_LANE) return this.fail("case du gisement réservée (" + this.plan[this.idx(tx, ty)] + ")");
     const [hx, hy] = this.netTarget(m, net);
     const inE = (x: number, y: number) => x >= sx && x < sx + 2 && y >= sy && y < sy + 2;
+    // arsenal : pas de tapis devant l'extracteur, à côté de la fonderie (il y verserait du minerai brut)
+    const front = (d: number): [number, number][] => {
+      if (!m.hub) return [];
+      return d === 0 ? [[sx + 2, sy], [sx + 2, sy + 1]] : d === 1 ? [[sx, sy + 2], [sx + 1, sy + 2]] : d === 2 ? [[sx - 1, sy], [sx - 1, sy + 1]] : [[sx, sy - 1], [sx + 1, sy - 1]];
+    };
     interface Cand {
       d: number;
       fx: number;
@@ -1136,7 +1612,7 @@ export class Planner {
           if (inE(ix, iy)) continue;
           const bx = ix + DX[idir];
           const by = iy + DY[idir];
-          if (inE(bx, by) || inF(bx, by)) continue;
+          if (inE(bx, by) || inF(bx, by) || front(d).some(([x, y]) => x === bx && y === by)) continue;
           if (!this.inside(ix, iy) || !this.inside(bx, by)) continue;
           const pi = this.plan[this.idx(ix, iy)];
           if (pi !== P_FREE && pi !== P_KEEP) continue;
@@ -1169,6 +1645,7 @@ export class Planner {
         block(c.fx + (k & 1), c.fy + (k >> 1));
       }
       block(c.ix, c.iy);
+      for (const [x, y] of front(c.d)) if (this.plan[this.idx(x, y)] !== P_BLD) block(x, y);
       const path = this.astar(c.bx, c.by, m, net, maxNodes, best ? best.path.length : 1e9);
       for (let k = saved.length - 1; k >= 0; k--) this.plan[saved[k][0]] = saved[k][1];
       if (path && (!best || path.length < best.path.length)) best = { c, path };
@@ -1191,6 +1668,7 @@ export class Planner {
     places.push({ kind: ins, x: c.ix, y: c.iy, dir: c.idir, tag: "out" });
     this.mark(c.ix, c.iy, 1, P_BLD);
     places.push(...this.pathPlaces(best.path, net));
+    for (const [x, y] of front(c.d)) if (this.inside(x, y) && this.plan[this.idx(x, y)] === P_FREE) this.plan[this.idx(x, y)] = P_LANE;
     places.push(...this.powerBelts(this.pathTiles(best.path)));
     places.push(...this.ensurePower(sx, sy, 2, 2));
     places.push(...this.ensurePower(c.fx, c.fy, 2, 2));
@@ -1228,7 +1706,7 @@ export class Planner {
 
   /** Planifie un extracteur sur le gisement et son tapis jusqu'au module. */
   planExtractor(m: Module, sx: number, sy: number, maxNodes = 9000): Placement[] | null {
-    const net = m.id * 2 + 1;
+    const net = m.id * 2 + (m.hub ? 2 : 1);
     const ext = this.ids.b.extractor;
     if (!this.sim.canPlace(this.slot, ext, sx, sy, 0)) return null;
     for (let ty = sy; ty < sy + 2; ty++) for (let tx = sx; tx < sx + 2; tx++) if (this.plan[this.idx(tx, ty)] === P_BLD) return null;
