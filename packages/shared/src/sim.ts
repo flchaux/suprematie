@@ -184,13 +184,17 @@ export class Sim {
     return this.outI32(this.ex.soil_layer(player)).slice();
   }
   /**
-   * Pose d'une frondaison ou d'une racine-puits : [distance de l'herbe (cases, -1 : aucune), secondes par case, rayon à
-   * montrer, part (‰), production (‰), puis pour une racine-puits : cases d'herbe, cases du périmètre, secondes en tout].
+   * Pose d'une frondaison ou d'une racine-puits : [distance de l'herbe (cases, -1 : aucune), dixièmes de seconde par case,
+   * rayon à montrer, part (‰), production (‰), pour une racine-puits : cases d'herbe, cases du périmètre, secondes en tout
+   * (0 sinon), puis centièmes de sève et de sels que donne une case].
    */
   soilPreview(player: number, kind: number, x: number, y: number): number[] {
     return Array.from(this.outI32(this.ex.soil_preview(player, kind, x, y)));
   }
-  /** Coût d'une file posée d'un coup : [supplément le plus fort (%), puis objet, total…] (arguments de canPlaceLine). */
+  /**
+   * Coût d'une file posée d'un coup : [supplément le plus fort (%), cases d'herbe et sève qu'elle en tirera (racines),
+   * puis objet, total…] (arguments de canPlaceLine).
+   */
   lineCost(args: number[]): number[] {
     return Array.from(this.outI32(this.ex.line_cost(this.writeI32(args))));
   }

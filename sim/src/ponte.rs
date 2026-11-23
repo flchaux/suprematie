@@ -2,8 +2,8 @@
 //!
 //! Les couveuses ne font pas naître leurs organismes un par un. Une entrée de file est une **portée**
 //! (`UnitDef::litter`, 3 à 6 selon l'espèce) : la couveuse la pond presque aussitôt (`data::LAY_TICKS`), sans
-//! rien payer, tous ses œufs d'un coup devant elle (`lay`), tant que moins de `BROOD_LITTERS` de ses portées
-//! couvent encore.
+//! rien payer, tous ses œufs d'un coup devant elle (`lay`), tant qu'elle n'en couve pas déjà autant que son niveau le
+//! permet (`data::BROOD_LEVELS` : 3, 6, puis 12). Une portée occupe sa place jusqu'à son dernier œuf (`litters`).
 //!
 //! Un œuf est une unité (`U_EGG_S`, `U_EGG_M`, `U_EGG_L` selon la taille de l'espèce) : immobile, sans
 //! arme, il ne reçoit pas d'ordre, et l'ennemi peut le détruire comme n'importe quelle unité. C'est lui qui
@@ -18,8 +18,8 @@
 //!
 //! Rien de nouveau n'est sérialisé. Un œuf garde dans ses champs d'unité : l'espèce qu'il porte
 //! (`UnitCold::work` = type + 1), son avancement (`xp`, centièmes de tick), la durée de l'incubation (`timer`,
-//! ticks), l'attente avant de réessayer de puiser (`stuck`), sa couveuse (`parent`) et l'ordre de ralliement
-//! (`orders`), dont l'organisme hérite. `ready_tick` vaut `DRAWS` ; un œuf d'une sauvegarde plus ancienne, déjà
+//! ticks), l'attente avant de réessayer de puiser (`stuck`), sa couveuse (`parent`), sa portée (`pack_fuel` : tick de
+//! la ponte) et l'ordre de ralliement (`orders`), dont l'organisme hérite. `ready_tick` vaut `DRAWS` ; un œuf d'une sauvegarde plus ancienne, déjà
 //! payé, y garde son tick d'éclosion.
 
 use crate::data::*;
@@ -30,8 +30,6 @@ use crate::world::*;
 /// Incubation de base d'un œuf, en ticks (10 s), et par seconde de fabrication de l'organisme (2 s).
 pub const INCUBATION: u32 = 200;
 pub const INCUBATION_PER_SEC: u32 = 40;
-/// Portées d'une couveuse qui couvent en même temps, au plus.
-pub const BROOD_LITTERS: usize = 3;
 /// `UnitCold::ready_tick` d'un œuf qui paie son éclosion à mesure (les œufs plus anciens ont un tick d'éclosion).
 pub const DRAWS: u32 = u32::MAX;
 /// Attente (ticks) d'un œuf qui n'a pas trouvé de quoi puiser.
@@ -86,11 +84,92 @@ fn egg_net(w: &World, s: usize) -> u16 {
     }
 }
 
-/// La couveuse peut-elle pondre une portée de `kind` (pas trop d'œufs encore à éclore) ?
-pub fn has_room(w: &World, b: usize, kind: u16) -> bool {
-    let r = w.building_ref(b);
-    let n = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.cold[s].parent == r && is_egg(w.units.kind[s])).count();
-    n + batch(kind) as usize <= BROOD_LITTERS * batch(kind) as usize
+/// Portées qu'une couveuse peut couver en même temps, à son niveau.
+pub fn max_litters(bb: &Building) -> usize {
+    BROOD_LEVELS[(bb.level as usize).min(BROOD_LEVELS.len() - 1)].litters as usize
+}
+
+/// Une portée en train de couver : sa couveuse, le tick de sa ponte, l'espèce, les œufs qui restent, le plus long temps
+/// avant l'éclosion (ticks), la durée de l'incubation, et un de ses œufs attend-il de quoi puiser.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Litter {
+    pub mother: u32,
+    pub laid: i32,
+    pub kind: u16,
+    pub eggs: u16,
+    pub left: u32,
+    pub total: u32,
+    pub wait: bool,
+}
+
+/// Portées en train de couver, par couveuse (référence) puis par ponte ; `only` : celles de cette couveuse seulement.
+/// Les œufs d'une sauvegarde plus ancienne (sans tick de ponte) sont regroupés par espèce et par taille de portée.
+pub fn litters(w: &World, only: Option<u32>) -> Vec<Litter> {
+    let mut out: Vec<Litter> = Vec::new();
+    for s in 0..w.units.alive.len() {
+        if !w.units.alive[s] || !is_egg(w.units.kind[s]) {
+            continue;
+        }
+        let c = &w.units.cold[s];
+        if c.parent == NONE || only.is_some_and(|r| r != c.parent) {
+            continue;
+        }
+        let Some(kind) = content(w, s) else { continue };
+        let (left, wait) = (hatch_left(w, s), c.ready_tick == DRAWS && c.stuck > 0);
+        match out.iter_mut().find(|l| l.mother == c.parent && l.laid == c.pack_fuel && l.kind == kind && (l.laid != 0 || l.eggs < batch(kind))) {
+            Some(l) => {
+                l.eggs += 1;
+                l.left = l.left.max(left);
+                l.wait |= wait;
+            }
+            None => out.push(Litter { mother: c.parent, laid: c.pack_fuel, kind, eggs: 1, left, total: c.timer as u32, wait }),
+        }
+    }
+    out.sort_by_key(|l| (l.mother, l.laid, l.kind));
+    out
+}
+
+/// Nombre de portées en train de couver, par couveuse (référence croissante), pour l'affichage.
+pub fn litter_counts(w: &World) -> Vec<(u32, u32)> {
+    let mut keys: Vec<(u32, i32, u16)> = Vec::new();
+    for s in 0..w.units.alive.len() {
+        if w.units.alive[s] && is_egg(w.units.kind[s]) && w.units.cold[s].parent != NONE {
+            if let Some(kind) = content(w, s) {
+                keys.push((w.units.cold[s].parent, w.units.cold[s].pack_fuel, kind));
+            }
+        }
+    }
+    keys.sort_unstable();
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    let mut k = 0;
+    while k < keys.len() {
+        let n = keys[k..].iter().take_while(|&&x| x == keys[k]).count();
+        // œufs d'une ancienne sauvegarde (sans tick de ponte) : autant de portées qu'il en faut pour les contenir
+        let l = if keys[k].1 != 0 { 1 } else { n.div_ceil(batch(keys[k].2).max(1) as usize) as u32 };
+        match out.last_mut().filter(|o| o.0 == keys[k].0) {
+            Some(o) => o.1 += l,
+            None => out.push((keys[k].0, l)),
+        }
+        k += n;
+    }
+    out
+}
+
+/// La couveuse peut-elle pondre une portée de plus ?
+pub fn has_room(w: &World, b: usize) -> bool {
+    litters(w, Some(w.building_ref(b))).len() < max_litters(&w.buildings[b])
+}
+
+/// Fiche d'une couveuse (JSON) : portées au plus, et celles qui couvent ([espèce, œufs, ticks avant l'éclosion, durée,
+/// en attente de sève ou de sels]), la plus proche d'éclore d'abord.
+pub fn brood_info(w: &World, b: usize) -> String {
+    if !w.buildings[b].complete() {
+        return String::new();
+    }
+    let mut v = litters(w, Some(w.building_ref(b)));
+    v.sort_by_key(|l| (l.left, l.laid));
+    let list: Vec<String> = v.iter().map(|l| format!("[{},{},{},{},{}]", l.kind, l.eggs, l.left, l.total, l.wait as u8)).collect();
+    format!(",\"brood\":{{\"max\":{},\"litters\":[{}]}}", max_litters(&w.buildings[b]), list.join(","))
 }
 
 /// Couveuse d'une sauvegarde plus ancienne : ce qu'elle avait pris pour une portée retourne au réseau.
@@ -228,12 +307,15 @@ pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: Optio
         Some(target) if crate::souche::sacrifice_value(kind) > 0 => Order::Sacrifice { target },
         _ => Order::Move { x: rx, y: ry, gx: rx, gy: ry, attack: false, pace: 0, wait: 0 },
     });
+    let tick = w.tick;
     let c = &mut w.units.cold[s];
     c.work = kind as u32 + 1;
     c.ready_tick = DRAWS;
     c.xp = 0;
     c.timer = incubation(kind).min(u16::MAX as u32) as u16;
     c.parent = parent;
+    // la portée, reconnue à son tick de ponte (jamais 0)
+    c.pack_fuel = tick as i32 + 1;
     c.orders.extend(order);
     id
 }

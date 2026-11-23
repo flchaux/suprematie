@@ -308,7 +308,7 @@ pub extern "C" fn soil_preview(player: i32, kind: i32, x: i32, y: i32) -> *const
 }
 
 /// Coût d'une file posée d'un coup (voir souche::line_cost). Tampon d'entrée (i32) : [joueur, type, puis
-/// (x, y, dir)…] ; renvoie [supplément le plus fort (%), puis objet, total, pour chaque objet du coût].
+/// (x, y, dir)…] ; renvoie [supplément le plus fort (%), cases d'herbe, sève tirée, puis objet, total, pour chaque objet].
 #[no_mangle]
 pub extern "C" fn line_cost(n_words: u32) -> *const u8 {
     let a = read_i32s(n_words);

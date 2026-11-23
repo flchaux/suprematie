@@ -364,15 +364,7 @@ pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: 
     let gen = w.buildings[slot].gen.wrapping_add(1);
     let mut recipe = RECIPE_NONE;
     if def.class == BClass::Extractor || (def.class == BClass::Organ && def.deposit != 0) {
-        recipe = w.map.deposit[w.map.idx(x, y)];
-        for ty in y..y + bh {
-            for tx in x..x + bw {
-                let d = w.map.deposit[w.map.idx(tx, ty)];
-                if d != 0 {
-                    recipe = d;
-                }
-            }
-        }
+        recipe = crate::map::deposit_under(&w.map, x, y, bw, bh);
     }
     let (fx, fy) = front_tile(x, y, bw, bh, dir);
     let floor = floor_of(dir);

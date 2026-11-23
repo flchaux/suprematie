@@ -252,6 +252,20 @@ pub const MAIN_GENERATOR_LEVELS: [MainGeneratorLevel; 2] = [
     MainGeneratorLevel { supply: 27, connect: 45, cost: &[(STEEL, 60), (ENGINE, 15), (CIRCUIT, 40)], tech: T_ELECTRONICS, time: 60 },
 ];
 
+/// Niveaux d'une couveuse de la Souche (amélioration sur place, payée par son réseau de racines ; elle pond pendant ce
+/// temps) : portées qui couvent en même temps au plus, coût de passage, recherche et durée (secondes).
+pub struct BroodLevel {
+    pub litters: u16,
+    pub cost: &'static [(u8, u16)],
+    pub tech: u8,
+    pub time: u16,
+}
+pub const BROOD_LEVELS: [BroodLevel; 3] = [
+    BroodLevel { litters: 3, cost: &[], tech: 0, time: 0 },
+    BroodLevel { litters: 6, cost: &[(SEVE, 200), (SELS, 80)], tech: 0, time: 30 },
+    BroodLevel { litters: 12, cost: &[(SEVE, 500), (SELS, 200)], tech: 0, time: 60 },
+];
+
 /// Améliorations des assembleurs sur place : (type actuel, type visé, durée en secondes). Le coût et la
 /// recherche sont ceux du bâtiment visé ; la recette, le stock et la production en cours sont gardés.
 pub const ASSEMBLER_UPGRADES: [(u16, u16, u16); 2] = [(B_ASSEMBLER1, B_ASSEMBLER1 + 1, 20), (B_ASSEMBLER1 + 1, B_ASSEMBLER1 + 2, 30)];
@@ -1385,9 +1399,10 @@ pub fn data_json() -> String {
     let furn: Vec<String> = FURNACE_LEVELS.iter().map(|l| format!("{{\"speed\":{},\"power\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.speed, l.power, cost_js(l.cost), l.tech, l.time)).collect();
     let gens: Vec<String> = GENERATOR_LEVELS.iter().map(|l| format!("{{\"prod\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.prod, cost_js(l.cost), l.tech, l.time)).collect();
     let mains: Vec<String> = MAIN_GENERATOR_LEVELS.iter().map(|l| format!("{{\"supply\":{},\"connect\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.supply, l.connect, cost_js(l.cost), l.tech, l.time)).collect();
+    let broods: Vec<String> = BROOD_LEVELS.iter().map(|l| format!("{{\"litters\":{},\"cost\":{},\"tech\":{},\"time\":{}}}", l.litters, cost_js(l.cost), l.tech, l.time)).collect();
     let asm: Vec<String> = ASSEMBLER_UPGRADES.iter().map(|u| format!("[{},{},{}]", u.0, u.1, u.2)).collect();
     s.push_str(&format!(
-        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{},\"droneCap\":{},\"droneSpeed\":{},\"factoryDrones\":{},\"factorySupply\":{},\"near\":{},\"relayRange\":{},\"relayLink\":{},\"relayDrones\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
+        "],\"missileCost\":{},\"interceptorCost\":{},\"carriers\":[{}],\"extractorLevels\":[{}],\"furnaceLevels\":[{}],\"generatorLevels\":[{}],\"mainGeneratorLevels\":[{}],\"broodLevels\":[{}],\"assemblerUpgrades\":[{}],\"depot\":{{\"cap\":[{},{}],\"upgradeCost\":{},\"upgradeTech\":{},\"upgradeTime\":{},\"maxFilters\":{},\"droneCap\":{},\"droneSpeed\":{},\"factoryDrones\":{},\"factorySupply\":{},\"near\":{},\"relayRange\":{},\"relayLink\":{},\"relayDrones\":{}}},\"fuel\":{{\"hydrocarbon\":{},\"refined\":{},\"cell\":{},\"tankUnits\":{}}}}}",
         cost_js(MISSILE_COST),
         cost_js(INTERCEPTOR_COST),
         carriers.join(","),
@@ -1395,6 +1410,7 @@ pub fn data_json() -> String {
         furn.join(","),
         gens.join(","),
         mains.join(","),
+        broods.join(","),
         asm.join(","),
         DEPOT_CAP[0],
         DEPOT_CAP[1],

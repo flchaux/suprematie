@@ -79,8 +79,8 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
     // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche (voir ponte.rs)
     let n = batch(kind);
     if !w.buildings[b].working {
-        // couveuse : reliée à un réseau, et pas plus de BROOD_LITTERS portées en train de couver
-        if litter && (w.buildings[b].net == 0 || !crate::ponte::has_room(w, b, kind)) {
+        // couveuse : reliée à un réseau, et pas plus de portées en train de couver que son niveau n'en permet
+        if litter && (w.buildings[b].net == 0 || !crate::ponte::has_room(w, b)) {
             w.buildings[b].wake = w.tick + crate::souche::ORGAN_PERIOD;
             return;
         }

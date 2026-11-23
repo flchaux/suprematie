@@ -76,6 +76,8 @@ export interface GameData {
   generatorLevels?: { prod: number; cost: [number, number][]; tech: number; time: number }[];
   /** niveaux du générateur principal : rayon de zone et portée de liaison (cases), coût, recherche et durée (s) ; il reste en service pendant le chantier */
   mainGeneratorLevels?: { supply: number; connect: number; cost: [number, number][]; tech: number; time: number }[];
+  /** niveaux de la couveuse : portées qui couvent en même temps, coût (pris dans son réseau), recherche et durée (s) de passage à ce niveau ; elle pond pendant ce temps */
+  broodLevels?: { litters: number; cost: [number, number][]; tech: number; time: number }[];
   assemblerUpgrades?: [number, number, number][];
   /** véhicules de transport : 0 train, 1 drone de fret (speed : sous-unités par tick) */
   carriers: { capacity: number; speed: number; buffer: number; cost: [number, number][] }[];

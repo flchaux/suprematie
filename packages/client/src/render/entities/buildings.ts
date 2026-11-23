@@ -8,7 +8,7 @@ import type { GameData } from "@supreme/shared";
 import { BUILDING_WORDS, BF, BClass, NATURE_TEAM, pausableClass } from "@supreme/shared";
 import { condShown } from "../../models/generator.ts";
 import { FLOOR_H, liftDash } from "../liftAnim.ts";
-import { barInView, siteBarOf, tameOf } from "../siteBars.ts";
+import { barInView, broodOf, pipLayout, PIPS_PER_ROW, siteBarOf, tameOf } from "../siteBars.ts";
 import { setTeamColor, setAccentColor } from "../materials.ts";
 import { ASCENSEUR_MAT } from "../../../../../assets/models/buildings.ts";
 import { groundHeight, HSCALE } from "../terrain.ts";
@@ -391,6 +391,25 @@ export function drawBuildings(e: Entities, ctx: FrameCtx): void {
         tmpM.compose(tmpV.set(cx - (wdt * 0.97 * (1 - tk)) / 2, y + 2.22, tz), tmpQ, tmpS.set(wdt * 0.97 * tk, 1, (thick * 0.7) / 0.12));
         e.bars.setMatrixAt(bars, tmpM);
         e.bars.setColorAt(bars, tmpC.setRGB(0.85, 0.35 + 0.1 * Math.sin(simT * 6), 1));
+        bars++;
+      }
+    }
+    // couveuse de l'équipe : une pastille par portée possible (pleine : elle couve ; toutes ambre : limite atteinte)
+    if (def.key === "brood" && build >= 1 && !enemy && !strategic && e.data.broodLevels && bars < 5900) {
+      const br = broodOf(buf, o, e.data.broodLevels);
+      const pl = pipLayout(br.max, e.pxWorld);
+      const lift = y + km.height + 0.6;
+      const cols = Math.min(br.max, PIPS_PER_ROW);
+      tmpM.compose(tmpV.set(cx, lift, cz), tmpQ.identity(), tmpS.set(cols * pl.step + 0.14, 1, (pl.rows * pl.step + 0.14) / 0.12));
+      e.bars.setMatrixAt(bars, tmpM);
+      e.bars.setColorAt(bars, tmpC.setRGB(0.04, 0.06, 0.05));
+      bars++;
+      for (let k = 0; k < br.max; k++) {
+        const px = cx + ((k % PIPS_PER_ROW) - (cols - 1) / 2) * pl.step;
+        const pz = cz + (Math.floor(k / PIPS_PER_ROW) - (pl.rows - 1) / 2) * pl.step;
+        tmpM.compose(tmpV.set(px, lift + 0.02, pz), tmpQ, tmpS.set(pl.size, 1, pl.size / 0.12));
+        e.bars.setMatrixAt(bars, tmpM);
+        e.bars.setColorAt(bars, k >= br.n ? tmpC.setRGB(0.16, 0.2, 0.16) : br.n >= br.max ? tmpC.setRGB(1, 0.65, 0.15) : tmpC.setRGB(0.5, 1, 0.25));
         bars++;
       }
     }

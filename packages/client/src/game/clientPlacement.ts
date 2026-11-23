@@ -318,8 +318,8 @@ export async function updateGhost(gc: GameClient): Promise<void> {
   let grassR = 0;
   if (def.key === "leaves" || def.key === "taproot") {
     const v = (await gc.query<number[]>("soilPreview", [ui.me, ui.buildKind, cells[0].x, cells[0].y])) ?? [];
-    if (v.length === 8) {
-      grass = { near: v[0], secs: v[1], share: v[3], rate: v[4], left: v[5], total: v[6], all: v[7] };
+    if (v.length === 10) {
+      grass = { near: v[0], tenths: v[1], share: v[3], left: v[5], total: v[6], all: v[7], seve: v[8], sels: v[9] };
       grassR = v[2] + 0.5;
     }
   }
@@ -331,8 +331,8 @@ export async function updateGhost(gc: GameClient): Promise<void> {
     cells.forEach((c, i) => okAt[i] && args.push(c.x, c.y, c.dir));
     const v = (await gc.query<number[]>("lineCost", args)) ?? [];
     const cost: [number, number][] = [];
-    for (let i = 1; i + 1 < v.length; i += 2) cost.push([v[i], v[i + 1]]);
-    lineCost = args.length > 2 ? { n: (args.length - 2) / 3, cost, pct: v[0] ?? 0 } : null;
+    for (let i = 3; i + 1 < v.length; i += 2) cost.push([v[i], v[i + 1]]);
+    lineCost = args.length > 2 ? { n: (args.length - 2) / 3, cost, pct: v[0] ?? 0, grass: v[1] ?? 0, seve: v[2] ?? 0 } : null;
   }
   if (seq !== gc.ghostSeq || ui.mode !== "build") return;
   ui.lineCost = lineCost;

@@ -169,7 +169,8 @@ fn upgrade_permille(bb: &Building) -> i32 {
     }
 }
 
-fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
+/// `broods` : portées en train de couver par couveuse (ponte::litter_counts).
+fn building_words(w: &World, b: usize, broods: &[(u32, u32)], out: &mut Vec<i32>) {
     let bb = &w.buildings[b];
     let def = bb.def();
     let mut flags = 0;
@@ -204,7 +205,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             }
             BClass::Extractor if bb.out >= 5 => flags |= 64,
             BClass::Lab if !bb.working && w.players.get(bb.owner as usize).is_some_and(|p| p.research != 0) => flags |= 32,
-            // (couveuse dont trois portées couvent : elle attend, il ne lui manque rien)
+            // (couveuse au complet : elle attend une éclosion, il ne lui manque rien ; ses portées sont montrées à part)
             BClass::Factory if !bb.working && bb.queue.first().is_some_and(|q| udef(q.0).litter == 0 || bb.net == 0) => flags |= 32,
             // Souche : frondaison ou racine-puits épuisée (plus d'herbe autour)
             BClass::Organ if bb.stalled => flags |= 32,
@@ -232,6 +233,13 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
         BClass::Factory => {
             let front = bb.queue.first().map(|q| q.0 as i32 + 1).unwrap_or(0);
             let total: i32 = bb.queue.iter().map(|q| q.1 as i32).sum();
+            // couveuse : niveau (bits 24-25), portées en train de couver (bits 26-29)
+            let brood = if bb.kind == B_BROOD {
+                let n = broods.binary_search_by_key(&w.building_ref(b), |x| x.0).map_or(0, |k| broods[k].1);
+                (bb.level as i32 & 3) << 24 | (n.min(15) as i32) << 26
+            } else {
+                0
+            };
             let pr = if let Some(&(k, _)) = bb.queue.first() {
                 if bb.working {
                     (bb.progress as u64 * 1000 / (factory_ticks(k) as u64 * crate::buildings::RECIPE_SCALE as u64).max(1)) as i32
@@ -241,7 +249,7 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             } else {
                 0
             };
-            (front | total << 8, pr)
+            (front | (total & 0xffff) << 8 | brood, pr)
         }
         BClass::Turret => (bb.turret as i32, 0),
         // bras : main, phase, minuterie ; rotation (quarts de tour) dans aux2
@@ -318,6 +326,7 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
     }
     out[3] = nu;
     // bâtiments dans la zone
+    let broods = if w.players.iter().any(|p| p.race == RACE_SOUCHE) { crate::ponte::litter_counts(w) } else { Vec::new() };
     let mut nb = 0;
     let (mx0, my0, mx1, my1) = (x0 - 8, y0 - 8, x1 + 8, y1 + 8);
     for b in 0..w.buildings.len() {
@@ -329,7 +338,7 @@ pub fn render(w: &World, x0: i32, y0: i32, x1: i32, y1: i32, detail: i32, player
         if detail == 0 && small {
             continue;
         }
-        building_words(w, b, &mut out);
+        building_words(w, b, &broods, &mut out);
         nb += 1;
     }
     out[4] = nb;

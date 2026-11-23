@@ -123,9 +123,17 @@ pub fn update_buildings(w: &mut World) {
             // amélioration en cours : le bâtiment ne travaille pas (sa production en cours attend) ; le
             // générateur principal, resté en service, garde l'apport de son dépôt collé (sans partage)
             let main = bb.kind == B_MAIN_GENERATOR;
+            // couveuse : elle pond pendant sa croissance
+            let brood = bb.kind == B_BROOD;
             tick_upgrade(w, b);
             if main && w.buildings[b].upgrade > 0 && w.tick.is_multiple_of(DEPOT_FEED_PERIOD) {
                 feed_generator_from_depot(w, b);
+            }
+            if brood && !paused(&w.buildings[b]) && w.tick >= w.buildings[b].wake {
+                tick_factory(w, b);
+            }
+            if brood && w.buildings[b].upgrade > 0 {
+                w.buildings[b].wake = 0;
             }
             continue;
         }
