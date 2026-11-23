@@ -16,12 +16,13 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 89 unités (55 des Industriels et de la faune, 18 de la Souche dont 3 œufs, 16 des Transhumants), 79 bâtiments (53 dont le relais logistique, 16, 10 : neuf modules et le poteau nomade) et 80 recherches (48, 26, 6)", () => {
-    expect(data.units.length).toBe(89);
-    expect(data.buildings.length).toBe(79);
+  it("contient 92 unités (55 des Industriels et de la faune, 18 de la Souche dont 3 œufs, 19 des Transhumants dont 3 tourelles d'Arche), 80 bâtiments (53 dont le relais logistique, 16, 11 : neuf modules, le poteau nomade et le groupe de l'Arche) et 92 recherches (48, 26, 18)", () => {
+    expect(data.units.length).toBe(92);
+    expect(data.buildings.length).toBe(80);
     expect(data.buildings.filter((b) => b.race === 1).length).toBe(16);
-    expect(data.buildings.filter((b) => b.race === 2).length).toBe(10);
-    expect(data.techs.length).toBe(80);
+    expect(data.buildings.filter((b) => b.race === 2).length).toBe(11);
+    expect(data.techs.length).toBe(92);
+    expect(data.techs.filter((t) => t.race === 2).length).toBe(18);
     expect(data.techs.filter((t) => t.race === 1).length).toBe(26);
     expect(data.races.map((r) => r.key)).toEqual(["industriels", "souche", "transhumants"]);
     expect(data.units.filter((u) => u.race === 1).length).toBe(18);
@@ -30,7 +31,16 @@ describe("données", () => {
     expect(eggs.map((u) => u.key)).toEqual(["egg_s", "egg_m", "egg_l"]);
     for (const u of eggs) expect([u.factory, u.litter, u.speed, u.weapons.length]).toEqual([0, 0, 0, 0]);
     expect(data.units.filter((u) => u.litter > 0).map((u) => [u.key, u.litter])).toEqual([["sower", 3], ["gnawer", 6], ["spitter", 4], ["shell", 3], ["vine", 4], ["membrane", 3], ["burster", 5], ["dart", 4], ["burrower", 4], ["nurse", 3], ["hornet", 4]]);
-    expect(data.units.filter((u) => u.race === 2).length).toBe(16);
+    expect(data.units.filter((u) => u.race === 2).length).toBe(19);
+    // tourelles de l'Arche : aucune usine ne les produit, elles ne reçoivent pas d'ordres
+    expect(data.units.filter((u) => u.turret).map((u) => [u.key, u.factory])).toEqual([["turret_gun", 0], ["turret_aa", 0], ["turret_mortar", 0]]);
+    expect(data.turretKinds.map((k) => data.units[k].key)).toEqual(["turret_gun", "turret_aa", "turret_mortar"]);
+    // améliorations : cinq emplacements pour l'Arche, deux choix par module ; le coût compte les relevés (objet 30)
+    expect(data.arkSlots.map((s) => s.key)).toEqual(["arm", "hull", "deck", "drive", "support"]);
+    const ark = data.units.findIndex((u) => u.key === "ark");
+    expect(data.mods.filter((m) => m.host === ark).length).toBe(25);
+    for (const u of data.units.filter((u) => u.deploys >= 0)) expect(data.mods.filter((m) => data.units[m.host] === u).length, u.key).toBe(2);
+    expect(data.mods.find((m) => m.key === "ark_turrets2")?.cost).toContainEqual([30, 40]);
     // une unité de commandement par race
     expect(data.units.filter((u) => u.commander).map((u) => u.key)).toEqual(["commander", "queen", "ark"]);
     expect(data.units[0].key).toBe("commander");

@@ -37,7 +37,7 @@
   </div>
   <div class="grid" class:armed={kb.buildStep === "item"}>
     {#if CATS.length === 0}
-      <p class="nomad">Les Transhumants ne construisent pas : sélectionnez un chenillard et déployez-le (bouton « Déployer » ou touche de déploiement) pour qu'il devienne son module ; repliez un module depuis sa fiche pour repartir.</p>
+      <p class="nomad">Les Transhumants ne construisent pas : sélectionnez un chenillard et déployez-le (bouton « Déployer » ou touche de déploiement) pour qu'il devienne son module ; repliez un module depuis sa fiche pour repartir. Sélectionnez l'Arche seule pour ses améliorations.</p>
     {/if}
     {#each CATS[cat]?.[2] ?? [] as key, n}
       {@const i = idx[key]}

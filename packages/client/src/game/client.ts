@@ -409,8 +409,9 @@ export class GameClient {
     // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
     // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
     // ?demo=essaim : nouveaux organes et organismes de la Souche, Reine enracinée, flaques d'acide (joueur 0)
+    // ?demo=arche : Arche à tourelles et bouclier, Arche nue à équiper, modules aménagés des Transhumants (joueur 0)
     // ?demo=relais : chaîne de relais logistiques qui ravitaille un chantier et une usine éloignés (joueur 0)
-    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "nomades" || scene === "relais";
+    this.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "nomades" || scene === "arche" || scene === "relais";
     if (this.demoOrders) ui.me = 0;
     this.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
   }

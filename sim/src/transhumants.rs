@@ -260,7 +260,8 @@ fn deploy(w: &mut World, s: usize) {
     buildings::complete_building(w, b);
     let def = bdef(bkind);
     let bb = &mut w.buildings[b];
-    bb.mods = mods;
+    // (au-delà du premier octet : équipements des chariots rentrés, voir stow_carts)
+    bb.mods = mods & 0xff;
     bb.mod_job = mod_job;
     bb.mod_left = mod_left;
     bb.hp = ((def.hp as i64 * hp as i64 / max as i64) as i32).clamp(1, def.hp);
@@ -274,13 +275,15 @@ fn deploy(w: &mut World, s: usize) {
     if def.class == BClass::Depot {
         bb.stash = stock;
     }
-    if mods != 0 {
+    if mods & 0xff != 0 {
         crate::ameliorations::applied(w, crate::ameliorations::Host::B(b));
     }
     // soute : ses chariots de convoi ressortent (déjà payés)
     if bkind == B_T_HOLD {
-        for _ in 0..fuel.clamp(0, CARTS_PER_HOLD as i32) {
-            spawn_cart(w, b);
+        for k in 0..fuel.clamp(0, CARTS_PER_HOLD as i32) as u8 {
+            if let Some(s) = spawn_cart(w, b) {
+                w.units.cold[s].mods = crate::ameliorations::at(mods, 1 + k) as u64;
+            }
         }
     }
     if def.class == BClass::Extractor {
@@ -500,7 +503,7 @@ pub fn fold(w: &mut World, b: usize) {
         refund.push((bb.recipe, bb.out as i32));
     }
     // soute : ses chariots de convoi rentrent avec elle (nombre gardé à bord, dans `pack_fuel`)
-    let carts = if bb.kind == B_T_HOLD { stow_carts(w, b) } else { 0 };
+    let (carts, cart_mods) = if bb.kind == B_T_HOLD { stow_carts(w, b) } else { (0, 0) };
     let aboard = if def.class == BClass::Depot { std::mem::take(&mut w.buildings[b].stash) } else { Vec::new() };
     for (it, n) in w.buildings[b].stash.iter().enumerate() {
         if *n > 0 {
@@ -529,7 +532,7 @@ pub fn fold(w: &mut World, b: usize) {
         c.pack_recipe = recipe;
         c.pack_fuel = if ukind == U_CH_HOLD { carts } else { fuel };
         c.hold = aboard;
-        c.mods = mods;
+        c.mods = mods | cart_mods;
         c.mod_job = mod_job;
         c.mod_left = mod_left;
         w.units.hp[s] = ((max as i64 * ratio as i64 / 1000) as i32).clamp(1, max);
@@ -780,10 +783,14 @@ fn unload(w: &mut World, s: usize, h: usize) {
 }
 
 /// Repli de la soute `h` : ses chariots rentrent (leur chargement va dans son stock) ; renvoie leur nombre,
-/// gardé à bord du chenillard.
-fn stow_carts(w: &mut World, h: usize) -> i32 {
+/// gardé à bord du chenillard, et leurs équipements (octets 1 à 6 de `UnitCold::mods` du chenillard ; une
+/// installation en cours est remboursée).
+fn stow_carts(w: &mut World, h: usize) -> (i32, u64) {
     let carts = carts_of(w, h);
-    for &s in &carts {
+    let mut mods = 0;
+    for (k, &s) in carts.iter().enumerate() {
+        crate::ameliorations::cancel(w, crate::ameliorations::Host::U(s));
+        mods |= (w.units.cold[s].mods & 0xff) << (8 * (1 + k.min(6)));
         let cargo = std::mem::take(&mut w.units.cold[s].hold);
         for (it, &n) in cargo.iter().enumerate() {
             if n > 0 {
@@ -792,7 +799,7 @@ fn stow_carts(w: &mut World, h: usize) -> i32 {
         }
         vanish(w, s);
     }
-    carts.len() as i32
+    (carts.len() as i32, mods)
 }
 
 /// Vitesse (‰) d'une foreuse nomade : deux fois un extracteur, moins l'usure de son gisement.
@@ -826,7 +833,7 @@ pub fn update(w: &mut World) {
     }
     for (i, d) in drilled.iter().enumerate() {
         let v = &mut w.wear[i];
-        *v = if *d > 0 { (*v + *d).min(WEAR_MAX.max(*v)) } else { v.saturating_sub(WEAR_STEP) };
+        *v = if *d > 0 { (*v + *d).min(WEAR_MAX) } else { v.saturating_sub(WEAR_STEP) };
     }
 }
 
@@ -878,8 +885,8 @@ pub fn kill_credit(w: &mut World, killer: u8, tier: u8) {
 }
 
 /// Butin du joueur `looter` (unité qui pille : `by`) sur une victime de `victim` détruite en (x, y) qui valait
-/// `cost` : LOOT_PCT % de chaque objet (plus avec des améliorations ; arrondi au plus proche), versés à la réserve du pillard la plus proche (dépôt, soute,
-/// Arche). Rien pour un autre peuple, un allié ou la faune ; ni monnaie de race, ni sève, ni sels.
+/// `cost` : LOOT_PCT % de chaque objet (plus avec des améliorations ; arrondi au plus proche), versés à la réserve
+/// du pillard la plus proche (dépôt, soute, Arche). Rien pour un autre peuple, un allié ou la faune ; ni monnaie de race, ni sève, ni sels.
 fn loot(w: &mut World, looter: u8, by: usize, victim: u8, x: i32, y: i32, cost: &[(u8, u32)]) {
     if !w.players.get(looter as usize).is_some_and(|p| p.race == RACE_TRANSH) {
         return;
@@ -1004,5 +1011,5 @@ pub fn info(w: &World, b: usize) -> String {
     // (pas de chenillard : poteau, groupe de l'Arche)
     let ch = chenillard_of(bb.kind);
     let mods = crate::ameliorations::info(w, crate::ameliorations::Host::B(b));
-    format!(",\"transh\":{{\"unit\":{},\"wear\":{},\"speed\":{},\"mods\":{}{}}}", if ch == NO_KIND { -1 } else { ch as i32 }, wear, crate::ameliorations::module_speed(bb), mods, poles)
+    format!(",\"transh\":{{\"unit\":{},\"wear\":{},\"speed\":{},\"kw\":{},\"mods\":{}{}}}", if ch == NO_KIND { -1 } else { ch as i32 }, wear, crate::ameliorations::module_speed(bb), crate::buildings::power_prod_of(bb), mods, poles)
 }

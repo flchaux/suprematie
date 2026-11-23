@@ -439,6 +439,36 @@ fn a_module_keeps_its_upgrade_when_it_folds_and_deploys() {
 }
 
 #[test]
+fn a_folding_hold_keeps_the_fittings_of_its_carts() {
+    let (mut w, _) = ark_game(true);
+    let h = place_building(&mut w, 0, B_T_HOLD, 262, 255, 0).unwrap();
+    complete_building(&mut w, h);
+    put(&mut w.buildings[h].stash, IRON_PLATE, 100);
+    put(&mut w.buildings[h].stash, GEAR, 50);
+    let r = w.building_ref(h) as i32;
+    for _ in 0..3 {
+        order(&mut w, 0, O_HITCH, &[r]);
+    }
+    let carts = crate::transhumants::carts_of(&w, h);
+    let ids: Vec<i32> = carts.iter().map(|&s| id(&w, s)).collect();
+    fit_now(&mut w, ids[0], M_CART_BIG);
+    fit_now(&mut w, ids[2], M_CART_FAST);
+    assert_eq!(cart_cap(&w, carts[0]), 40);
+    fit_now(&mut w, r, M_HOLD_BIG);
+    order(&mut w, 0, O_PACK, &[1, r]);
+    steps(&mut w, 250);
+    let c = (0..w.units.alive.len()).find(|&u| w.units.alive[u] && w.units.kind[u] == U_CH_HOLD).unwrap();
+    let cid = id(&w, c);
+    order(&mut w, 0, O_DEPLOY, &[1, cid]);
+    steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 3);
+    let h2 = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].kind == B_T_HOLD).unwrap();
+    assert_eq!((w.buildings[h2].mods, crate::drones::store_cap(&w.buildings[h2])), (M_HOLD_BIG as u64, 1500));
+    let mut mods: Vec<u64> = crate::transhumants::carts_of(&w, h2).iter().map(|&s| w.units.cold[s].mods).collect();
+    mods.sort_unstable();
+    assert_eq!(mods, [0, M_CART_BIG as u64, M_CART_FAST as u64]);
+}
+
+#[test]
 fn yield_upgrades_give_more_for_the_same_ore() {
     let (mut w, _) = ark_game(true);
     let b = place_building(&mut w, 0, B_T_FURNACE, 262, 255, 0).unwrap();

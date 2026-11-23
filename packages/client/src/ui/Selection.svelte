@@ -375,15 +375,15 @@
         {@const base = Math.round((bdef.powerProd * (info.purity || 100) * (info.clock ?? 100)) / 10000)}
         <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> kW <span class="dim">· de <span class="num">{Math.round(base / 2)}</span> à <span class="num">{Math.round(base * 1.5)}</span> kW selon le geyser</span></div>
         <span class="dim small">Sans combustible : la vapeur du geyser monte et retombe en une minute, la production suit (moyenne <span class="num">{base}</span> kW).</span>
-      {:else if bdef.key === "eppz_socket" && info.build >= 65536}
+      {:else if (bdef.key === "eppz_socket" || bdef.key === "ark_dock") && info.build >= 65536}
         {@const out = info.genOut ?? 0}
         <div class="row small"><span class="kicker">Fournit</span> <span class="num">{out}</span> / <span class="num">{Math.round((bdef.powerProd * (info.clock ?? 100)) / 100)}</span> kW</div>
-        <span class="dim small">EPPZ installé : aucune combustion, la production ne s'épuise pas.</span>
+        <span class="dim small">{bdef.key === "ark_dock" ? "Relié à l'Arche" : "EPPZ installé"} : aucune combustion, la production ne s'épuise pas.</span>
       {:else if bdef.cls === BClass.Power && info.build >= 65536}
         {@const gl = d.generatorLevels && bdef.key === "generator" ? d.generatorLevels : null}
         {@const main = bdef.key === "main_generator"}
         {@const ml = main ? d.mainGeneratorLevels : null}
-        {@const kw = Math.round(((info.upgrade > 0 && !main ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : bdef.powerProd) * (info.clock ?? 100)) / 100)}
+        {@const kw = Math.round(((info.upgrade > 0 && !main ? 0 : gl ? gl[Math.min(info.level ?? 0, gl.length - 1)].prod : info.transh?.kw || bdef.powerProd) * (info.clock ?? 100)) / 100)}
         {@const fu = d.fuel}
         {@const cell = bdef.key === "crystal_reactor"}
         {@const unit = fu ? (cell ? fu.cell : fu.hydrocarbon) : 0}
@@ -790,7 +790,8 @@
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / total) * 100}%"></span></div>
       {/if}
-      {#if ui.unitInfo.mods && ui.me >= 0}<Upgrades mi={ui.unitInfo.mods} refs={ui.selUnits[0].ids} />{/if}
+      <!-- l'Arche a son propre panneau (Game.svelte) -->
+      {#if ui.unitInfo.mods && !ui.unitInfo.mods.ark && ui.me >= 0}<Upgrades mi={ui.unitInfo.mods} refs={ui.selUnits[0].ids} />{/if}
       {#if ui.unitInfo.egg}
         <!-- œuf de la Souche : l'organisme qu'il porte, et le temps avant l'éclosion -->
         {@const eg = ui.unitInfo.egg}
@@ -891,7 +892,7 @@
         {#if has("hyper_cruiser")}<button class="cmd" onclick={() => client.setMode("jump")} title="Saut hyperespace"><Icon name="jump" size={17} /></button>{/if}
       </div>
     {/if}
-    {#if anyEng}<span class="dim small">Choisissez un bâtiment à droite. Clic droit sur une épave : recycler.</span>{/if}
+    {#if anyEng}<span class="dim small">{ui.race === 2 ? "" : "Choisissez un bâtiment à droite. "}Clic droit sur une épave : recycler.</span>{/if}
   </div>
 {:else if ui.selPlan && d}
   <!-- construction prévue (fantôme) : on peut l'annuler -->

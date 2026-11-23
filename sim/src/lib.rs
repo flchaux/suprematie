@@ -399,6 +399,14 @@ pub extern "C" fn anciens_demo() -> u32 {
 
 /// Démo des Transhumants : soute, chariots de convoi en navette, générateur et poteaux (remplace le monde courant).
 #[no_mangle]
+pub extern "C" fn arche_demo() -> u32 {
+    let w = stress::arche_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
+#[no_mangle]
 pub extern "C" fn nomades_demo() -> u32 {
     let w = stress::nomades_demo();
     let h = w.hash();

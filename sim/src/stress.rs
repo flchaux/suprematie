@@ -984,6 +984,70 @@ pub fn chantiers_demo() -> World {
     w
 }
 
+/// Démonstration des améliorations des Transhumants (`?demo=arche`, joueur 0) : une Arche à grande bulle, canon lourd
+/// et couronne de neuf tourelles déployées, une Arche nue à équiper, les modules aménagés, et un siège de chars.
+pub fn arche_demo() -> World {
+    use crate::ameliorations as am;
+    let mut w = World::new(&[29, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 0, RACE_TRANSH as i32, RACE_INDUS as i32]);
+    w.infinite_grid = true;
+    let (cx, cy) = (w.map.w / 2, w.map.h / 2);
+    flat(&mut w, cx - 46, cy - 30, cx + 46, cy + 30);
+    for (t, d) in TECHS.iter().enumerate() {
+        if d.race == RACE_TRANSH {
+            w.players[0].set_tech(t as u8);
+        }
+    }
+    w.players[0].purse[RELEVES as usize] = 600;
+    let Some(a) = w.unit(w.players[0].commander) else { return w };
+    let place = |w: &mut World, s: usize, x: i32, y: i32| {
+        w.units.x[s] = x * TILE + TILE / 2;
+        w.units.y[s] = y * TILE + TILE / 2;
+        w.units.px[s] = w.units.x[s];
+        w.units.py[s] = w.units.y[s];
+        w.units.facing[s] = 0;
+    };
+    place(&mut w, a, cx - 8, cy);
+    let fitted = [am::M_W_SIEGE, am::M_SHIELD3, am::M_TURRETS3, am::M_ENGINE2, am::M_REPAIR];
+    w.units.cold[a].mods = fitted.iter().fold(0u64, |m, &k| m | (k as u64) << (8 * am::MODS[k as usize].slot));
+    w.units.cold[a].shield = 9000;
+    for it in 1..=ENERGY_CELL {
+        crate::drones::put(&mut w.units.cold[a].hold, it, 400);
+    }
+    am::order_turrets(&mut w, a, 1);
+    // une Arche nue, à équiper ; ses composants viennent de la soute de la première
+    let id = w.spawn_unit(U_ARK, 0, (cx - 14) * TILE, (cy + 12) * TILE);
+    if let Some(b) = w.unit(id) {
+        w.units.facing[b] = 0;
+    }
+    // modules aménagés (premier choix d'un côté, second de l'autre) et chenillards
+    let kinds = [B_T_FURNACE, B_T_ASSEMBLER, B_T_GENERATOR, B_T_HOLD, B_T_LAB, B_T_BASTION];
+    for (k, &kind) in kinds.iter().enumerate() {
+        for (j, y) in [cy - 14, cy - 10].into_iter().enumerate() {
+            let Some(b) = place_building(&mut w, 0, kind, cx - 28 + 3 * k as i32, y, 0) else { continue };
+            complete_building(&mut w, b);
+            let host = crate::transhumants::chenillard_of(kind);
+            let ids: Vec<u8> = (1..am::MODS.len() as u8).filter(|&m| am::MODS[m as usize].host == host).collect();
+            w.buildings[b].mods = ids.get(j).copied().unwrap_or(0) as u64;
+            w.buildings[b].fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
+        }
+    }
+    for (k, kind) in [U_RIDER, U_RAM, U_HARROW, U_TOWED_GUN].into_iter().enumerate() {
+        w.spawn_unit(kind, 0, (cx - 26) * TILE, (cy - 2 + 3 * k as i32) * TILE);
+    }
+    for k in 0..10 {
+        w.spawn_unit(U_LIGHT_TANK, 1, (cx + 40 + (k % 2) * 2) * TILE, (cy - 10 + 2 * k) * TILE);
+    }
+    for s in 0..w.units.alive.len() {
+        if w.units.alive[s] && w.units.owner[s] == 1 && w.units.kind[s] == U_LIGHT_TANK {
+            w.units.hp[s] = 6000;
+            let (x, y) = ((cx - 8) * TILE, cy * TILE);
+            w.units.cold[s].orders.push(Order::Move { x, y, gx: x, gy: y, attack: true, eta: 0 });
+        }
+    }
+    w.power_dirty = true;
+    w
+}
+
 /// Démo des Transhumants (`?demo=nomades`) : une soute déployée et garnie, trois chariots de convoi (deux
 /// rapportent la sortie d'une fonderie éloignée, un livre des plaques à un assembleur éloigné), un
 /// générateur nomade et une file de poteaux relais. Réseau partout.

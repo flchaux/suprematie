@@ -6,6 +6,7 @@
   import TopBar from "./TopBar.svelte";
   import BuildBar from "./BuildBar.svelte";
   import Selection from "./Selection.svelte";
+  import Upgrades from "./Upgrades.svelte";
   import Research from "./Research.svelte";
   import Stats from "./Stats.svelte";
   import Help from "./Help.svelte";
@@ -58,6 +59,8 @@
     paste: ["paste", "Plan : clic gauche pour construire (Maj : garder l'outil), clic droit pour annuler"],
   };
   const MSG_ICON: Record<string, string> = { alert: "alert", good: "check", chat: "chat", info: "flag" };
+  /** notre Arche sélectionnée seule : ses améliorations */
+  const arkMods = $derived(ui.me >= 0 && ui.selForeign < 0 && ui.selUnits.length === 1 && ui.unitInfo?.mods?.ark ? ui.unitInfo.mods : null);
 </script>
 
 <div class="game" class:hidden={ui.screen !== "game"}>
@@ -73,7 +76,8 @@
         <span class="corner tl"></span><span class="corner br"></span>
       </div>
       <Selection />
-      {#if ui.canBuild}<BuildBar />{/if}
+      <!-- Arche des Transhumants : ses améliorations à la place du menu de construction (la race ne construit pas) -->
+      {#if arkMods}<div class="panel arkpanel"><Upgrades mi={arkMods} refs={ui.selUnits[0].ids} /></div>{:else if ui.canBuild}<BuildBar />{/if}
     </div>
     {#if ui.mode}
       {@const m = MODE_LABEL[ui.mode]}
@@ -171,6 +175,8 @@
   .selbox { position: absolute; display: none; border: 1px solid var(--accent); background: rgba(62, 240, 255, 0.07); box-shadow: 0 0 12px rgba(62, 240, 255, 0.35), inset 0 0 18px rgba(62, 240, 255, 0.08); pointer-events: none; }
   .bottom { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 8px; align-items: flex-end; pointer-events: none; }
   .bottom > :global(*) { pointer-events: auto; }
+  .arkpanel { padding: 9px 11px; min-width: 0; flex-shrink: 0; width: min(600px, calc(100vw - 545px)); max-height: 60vh; overflow-y: auto; scrollbar-width: thin; }
+  @media (max-width: 1080px) { .arkpanel :global(.mods.wide) { flex-direction: column; } .arkpanel :global(.wide .opts) { flex-wrap: wrap; } }
   .pingbtn { position: absolute; right: 8px; top: 8px; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; background: rgba(5, 10, 16, 0.75); border: 1px solid var(--line); color: var(--accent); cursor: pointer; }
   .pingbtn:hover, .pingbtn.on { color: var(--amber); border-color: var(--amber); }
   .minimap { position: relative; padding: 5px; line-height: 0; flex-shrink: 0; }

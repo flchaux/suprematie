@@ -48,6 +48,15 @@
           <li>Les épaves se recyclent en plaques de fer et en acier.</li>
           <li><b>Récolte du commandant</b> : sa fonderie intégrée lui permet de récolter un gisement libre de fer, de cuivre ou de silicium (clic droit dessus, ou touche M puis clic). Il extrait le minerai et le fond lui-même : une plaque toutes les 4 s (plaquette de silicium : 6 s, après l'électronique), mise dans sa soute, qui compte comme un dépôt (600 par objet). C'est deux fois moins qu'un extracteur et une fonderie de base : un dépannage, pas une usine. Un ennemi à portée de son canon met la récolte en pause ; un nouvel ordre l'arrête.</li>
         </ul>
+        {#if ui.race === 2}
+          <h3>Transhumants</h3>
+          <ul>
+            <li><b>Améliorations</b> : sélectionnez l'<b>Arche</b> seule. Elle a cinq emplacements (armement, coque, pont, mobilité, soutien) ; chacun ne garde qu'une branche. Une amélioration coûte des composants (soute de l'Arche, réserves et soutes repliées à moins de 30 cases) et des relevés, et s'installe en 25 à 90 s, même en roulant ; l'annuler rend tout, la remplacer par une autre branche rend la moitié des composants.</li>
+            <li>Chaque <b>module</b> et chaque <b>unité</b> a un aménagement au choix parmi deux, dans sa fiche ; un module le garde quand il se replie et se redéploie. Plusieurs unités du même type se sélectionnent et s'équipent ensemble.</li>
+            <li><b>Tourelles</b> (pont) : 1, 3 puis 9. « Déployer » (touche {keyOf("deploy") || "Déployer"}) les pose autour de l'Arche à l'arrêt. Consigne « suivre » : elles rentrent quand l'Arche part et se redéploient où elle s'arrête ; « tenir la place » : elles restent en avant-poste jusqu'au rappel. Une tourelle détruite se reconstruit à bord (30 s, payée).</li>
+            <li><b>Relevés</b> : gagnés en explorant et en détruisant des ennemis ; ils paient la recherche et une part des améliorations. La recherche débloque surtout des améliorations.</li>
+          </ul>
+        {/if}
         <h3>Furtivité et radar</h3>
         <ul>
           <li>Une unité ennemie apparaît à vue, ou en écho au <b>radar</b>. Le <b>bombardier furtif</b> n'apparaît jamais au radar ; un <b>brouilleur mobile</b> en fait autant pour les alliés dans sa bulle (12 cases).</li>

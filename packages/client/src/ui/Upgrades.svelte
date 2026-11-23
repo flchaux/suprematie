@@ -6,7 +6,7 @@
   import { canPay } from "../game/reach.ts";
   import { factoryUnitKinds } from "../game/catalog.ts";
   import { UNIT_DESCS } from "../game/unitDescs.ts";
-  import { Factory, RACE_TRANSH, TU, type ModInfo } from "@supreme/shared";
+  import { Factory, RACE_TRANSH, RELEVES, TU, type ModInfo } from "@supreme/shared";
   import { keyOf } from "../game/keys.svelte.ts";
   import { sprite } from "./sprites.ts";
   import Cost from "./Cost.svelte";
@@ -70,8 +70,9 @@
 </script>
 
 {#if d && list.length}
-  <div class="mods">
-    <div class="mh"><span class="kicker">Améliorations{isArk ? " de l'Arche" : ""}</span>{#if refs.length > 1}<span class="dim small">appliquées aux <span class="num">{refs.length}</span> sélectionnés, payées une à une</span>{/if}</div>
+  <div class="mods" class:wide={isArk}>
+   <div class="col">
+    <div class="mh"><span class="kicker">Améliorations{isArk ? " de l'Arche" : ""}</span>{#if isArk}<span class="dim small" title="Relevés : gagnés en explorant et en détruisant des ennemis"><span class="num">{mi.reach[RELEVES] ?? 0}</span> relevés</span>{/if}{#if refs.length > 1}<span class="dim small">appliquées aux <span class="num">{refs.length}</span> sélectionnés, payées une à une</span>{/if}</div>
     {#each slots as sl, si}
       {@const cur = mods[mi.mods[si] ?? 0]}
       <div class="slot">
@@ -118,7 +119,10 @@
       </div>
     {/if}
 
-    {#if ark && ark.turrets.length}
+   </div>
+   {#if ark}
+   <div class="col side">
+    {#if ark.turrets.length}
       <div class="sub">
         <div class="mh">
           <span class="kicker">Tourelles</span><span class="dim small"><span class="num">{outN}</span> dehors sur <span class="num">{ark.turrets.length}</span></span>
@@ -138,24 +142,24 @@
           {/each}
         </div>
         <div class="row small"><span class="dim">Toutes en :</span>
-          {#each TUR as tt, k}<button class="icon-btn" class:on={ark.turrets.every((t) => t[1] === k)} title={tt.desc} onclick={() => client.arkTurretType(-1, k)}><Icon name={tt.icon} size={14} /> {tt.name}</button>{/each}
+          {#each TUR as tt, k}<button class="icon-btn" class:on={ark.turrets.every((t) => t[1] === k)} title={`${tt.name} : ${tt.desc}`} onclick={() => client.arkTurretType(-1, k)}><Icon name={tt.icon} size={14} /></button>{/each}
         </div>
       </div>
     {/if}
-    {#if ark && mods[mi.mods[3]]?.key === "ark_boost"}
+    {#if mods[mi.mods[3]]?.key === "ark_boost"}
       <div class="row small">
         <button class="icon-btn" class:on={ark.boost > 0} disabled={ark.boostReady > 0} title="Surcharge : 12 s à vitesse +60 % et cadence de tir +50 %, puis 90 s de recharge" onclick={() => client.arkBoost()}><Icon name="mod_boost" size={14} /> Surcharge</button>
         {#if ark.boost > 0}<span class="good">en cours, {secs(ark.boost)} s</span>{:else if ark.boostReady > 0}<span class="dim num">prête dans {secs(ark.boostReady)} s</span>{:else}<span class="dim">prête</span>{/if}
       </div>
     {/if}
-    {#if ark && ark.shieldMax > 0}
+    {#if ark.shieldMax > 0}
       {@const sh = ui.unitInfo?.shield ?? 0}
       <div class="row small" title="Le bouclier arrête les tirs venus du dehors qui visent ce qui est dans la bulle. Brisé, il revient après 10 s."><span class="kicker">Bouclier</span><span class="shb"><span style:width={(sh / ark.shieldMax) * 100 + "%"}></span></span><span class="num">{sh} / {ark.shieldMax}</span><span class="dim">· {ark.shieldR} cases</span></div>
     {/if}
-    {#if ark && mods[mi.mods[4]]?.key === "ark_dynamo"}
+    {#if mods[mi.mods[4]]?.key === "ark_dynamo"}
       <div class="row small"><span class="kicker">Groupe</span><span class={ark.dock ? "good" : "dim"}>{ark.dock ? "posé : 500 kW sans combustible" : "à bord : posé après 3 s à l'arrêt"}</span></div>
     {/if}
-    {#if workUnits.length && ark}
+    {#if workUnits.length}
       <div class="sub">
         <div class="mh"><span class="kicker">Atelier embarqué</span>{#if ark.queue.length}<span class="small">{d.units[ark.queue[0][0]].name}{#if !ark.paid}<span class="bad"> · attend ses composants</span>{/if}</span>{:else}<span class="dim small">file vide</span>{/if}</div>
         {#if ark.queue.length}<div class="upbar"><span style:width={ark.prog / 10 + "%"}></span></div>{/if}
@@ -174,19 +178,28 @@
         </div>
       </div>
     {/if}
+    {#if !ark.turrets.length && !workUnits.length && ark.shieldMax <= 0}<span class="dim small">Les tourelles, le bouclier et l'atelier embarqué se commandent ici, une fois installés. Les composants viennent de la soute de l'Arche et de vos réserves à moins de 30 cases ; les relevés, de l'exploration et des ennemis détruits.</span>{/if}
+   </div>
+   {/if}
   </div>
 {/if}
 
 <style>
-  .mods { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--line); background: rgba(255, 181, 71, 0.03); }
+  .mods { padding: 6px 8px; border: 1px solid var(--line); background: rgba(255, 181, 71, 0.03); }
+  .col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  /* Arche : emplacements à gauche, tourelles, bouclier et atelier à droite */
+  .mods.wide { display: flex; gap: 12px; align-items: flex-start; border: none; background: none; padding: 0; }
+  .wide .side { flex: 1; min-width: 190px; padding-left: 10px; border-left: 1px solid var(--line); }
+  .side .sub:first-child { border-top: none; padding-top: 0; }
   .mh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .slot { display: flex; align-items: center; gap: 8px; }
-  .sn { display: flex; align-items: center; gap: 6px; width: 132px; flex-shrink: 0; color: var(--amber); }
+  .sn { display: flex; align-items: center; gap: 6px; width: 112px; flex-shrink: 0; color: var(--amber); }
   .st { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; color: var(--text, #dfe8ee); }
   .st b { font-size: 11.5px; font-weight: 600; }
-  .st .tiny { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+  .st .tiny { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 92px; }
   .opts { display: flex; gap: 4px; flex-wrap: wrap; }
-  .mb { position: relative; width: 36px; height: 34px; padding: 0; display: grid; place-items: center; color: var(--good); }
+  .wide .opts { flex-wrap: nowrap; }
+  .mb { position: relative; width: 34px; height: 32px; padding: 0; display: grid; place-items: center; color: var(--good); }
   .mb.branch { margin-left: -3px; border-left-style: dashed; }
   .mb:disabled { opacity: 1; }
   .mb.ok { --b-line: rgba(77, 255, 176, 0.45); }
@@ -208,7 +221,7 @@
   .icon-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(62, 240, 255, 0.12); }
   .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .turs { display: flex; gap: 4px; flex-wrap: wrap; }
-  .tb { position: relative; width: 34px; height: 34px; padding: 0 0 3px; display: grid; place-items: center; color: var(--dim); }
+  .tb { position: relative; width: 30px; height: 32px; padding: 0 0 3px; display: grid; place-items: center; color: var(--dim); }
   .tb.s1 { color: var(--amber); --b-line: rgba(255, 181, 71, 0.5); }
   .tb.up { color: var(--good); --b-line: rgba(77, 255, 176, 0.55); }
   .tb.s3 { color: var(--bad); --b-line: rgba(255, 90, 79, 0.5); }
@@ -218,8 +231,8 @@
   .shb { width: 110px; height: 6px; background: rgba(255, 255, 255, 0.08); }
   .shb > span { display: block; height: 100%; background: linear-gradient(90deg, #3e9bff, var(--accent)); }
   .wus { display: flex; gap: 4px; flex-wrap: wrap; }
-  .wu { position: relative; width: 44px; height: 44px; padding: 2px; display: grid; place-items: center; }
-  .wu img { width: 38px; height: 38px; object-fit: contain; }
+  .wu { position: relative; width: 36px; height: 36px; padding: 2px; display: grid; place-items: center; }
+  .wu img { width: 30px; height: 30px; object-fit: contain; }
   .wu.locked { opacity: 0.4; }
   .ab { font-weight: 700; font-size: 11px; }
   .qn { position: absolute; right: 2px; bottom: 1px; font-size: 11px; color: var(--accent-ink); background: var(--accent); padding: 0 3px; font-weight: 600; }

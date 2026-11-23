@@ -3,7 +3,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim } from "../src/sim.ts";
-import { parseFrame } from "../src/render.ts";
+import { frameMods, parseFrame } from "../src/render.ts";
+import { arkTurrets, installMod, O, pack } from "../src/orders.ts";
 import { simParams, racesFromParams, type LobbyState } from "../src/protocol.ts";
 import { RACE_INDUS, RACE_SOUCHE, RACE_TRANSH, type GameData } from "../src/data.ts";
 
@@ -41,5 +42,25 @@ describe("races", () => {
     expect(kinds.every((id) => id > 0)).toBe(true);
     const keys = new Set(data.units.filter((u) => u.commander).map((u) => u.key));
     expect(keys).toEqual(new Set(["commander", "queen", "ark"]));
+  });
+
+  it("Transhumants : une amélioration s'installe sur l'Arche et apparaît dans le tampon de rendu", async () => {
+    const s = await Sim.load(wasm);
+    const data = JSON.parse(s.dataJson()) as GameData;
+    s.init(simParams(lobby([RACE_TRANSH, RACE_INDUS])));
+    const f0 = parseFrame(s.render(0, 0, 512, 512, 2, 0, false));
+    const ark = f0.players[0].commander;
+    expect(frameMods(f0).size).toBe(0);
+    // les composants de départ sont dans la soute repliée, à côté de l'Arche
+    const id = data.mods.findIndex((m) => m.key === "ark_engine1");
+    const out: number[] = [];
+    pack(0, installMod(id, [ark]), out);
+    s.step(Int32Array.from(out));
+    const f1 = parseFrame(s.render(0, 0, 512, 512, 2, 0, false));
+    expect(frameMods(f1).get(ark)).toEqual({ mods: [0, 0, 0, 0, 0], job: id });
+    for (let t = 0; t < data.mods[id].time * 20 + 2; t++) s.step(new Int32Array(0));
+    const f2 = parseFrame(s.render(0, 0, 512, 512, 2, 0, false));
+    expect(frameMods(f2).get(ark)).toEqual({ mods: [0, 0, 0, id, 0], job: 0 });
+    expect(arkTurrets([ark], 1)).toEqual([O.ARK_TURRETS, 1, 1, ark]);
   });
 });

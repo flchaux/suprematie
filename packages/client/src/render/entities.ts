@@ -2,7 +2,7 @@
 // chaque pièce mobile (tourelle) est un mesh instancié séparé. Interpolation entre les deux derniers ticks.
 // Les effets (feu, fumée, débris) sont dans effects.ts.
 import * as THREE from "three/webgpu";
-import type { GameData, Frame } from "@supreme/shared";
+import type { GameData, Frame, ModView } from "@supreme/shared";
 import { frameMods, UNIT_WORDS, BUILDING_WORDS, ITEM_WORDS, PROJ_WORDS, WRECK_WORDS, SHIELD_WORDS, CARRIER_WORDS, UF, BF, BClass, Layer, PACK1, NATURE_COLOR, NATURE_TEAM, RECEIVER_CLASSES, pausableClass } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, vec3, float, time, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, condShown, depMatrix, fallbackModel, hatchFace, HATCH_Y, parseCond, parseDep, PLAYER_COLORS, withHatches, type DepStep, type PivotCond } from "../models/generator.ts";
@@ -391,6 +391,8 @@ export class Entities {
   animFrame = 0;
   /** améliorations des Transhumants : clé → indice */
   private modIds: Map<string, number>;
+  private modFor: Frame | null = null;
+  private modViews = new Map<number, ModView>();
   /** trappes ouvertes des bâtiments qui reçoivent des objets (entrée cyan, sortie ambre) ; les fermées sont dans leur modèle */
   hatchFrame: THREE.InstancedMesh;
   hatchHole: THREE.InstancedMesh;
@@ -772,7 +774,11 @@ export class Entities {
     };
     const teamOf = (p: number) => f.players[p]?.team ?? p;
     // améliorations des Transhumants : pièces dessinées selon ce qui est installé
-    const mods = frameMods(f);
+    if (this.modFor !== f) {
+      this.modFor = f;
+      this.modViews = frameMods(f);
+    }
+    const mods = this.modViews;
     const modOf = (ref: number) => {
       const m = mods.get(ref)?.mods;
       return (key: string) => !!m && m.includes(this.modIds.get(key) ?? -1);

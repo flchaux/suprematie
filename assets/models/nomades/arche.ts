@@ -217,7 +217,7 @@ function soutien(): Part[] {
     { shape: "box", size: [0.8, 0.1, 0.1], pos: [-1.46, 2.34, -1.7], rot: [0, 0, -12], color: "faction" },
     { shape: "cylinder", sides: 5, radius: 0.02, height: 0.6, pos: [-1.78, 2.0, -1.7], color: "steel" },
     ...[0, 120, 240].map((a): Part => ({ shape: "box", size: [0.05, 0.26, 0.05], pos: [q(-1.78 + Math.cos((a * Math.PI) / 180) * 0.1), 1.6, q(-1.7 + Math.sin((a * Math.PI) / 180) * 0.1)], rot: [0, a, 14], color: "dark" })),
-    { shape: "bevel", size: [0.5, 0.2, 0.5], pos: [0.5, 1.07, -2.0], bevel: 0.08, color: "ore" },
+    { shape: "bevel", size: [0.5, 0.2, 0.5], pos: [0.5, 1.07, -2.0], bevel: 0.08, color: "copper" },
   ];
   return [
     ...groupe("si:ark_repair#fixe_bras", bras),

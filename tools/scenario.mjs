@@ -1,5 +1,5 @@
 // Générateur d'ordres aléatoires (mais reproductibles) pour les tests.
-import { O, pack, move, moveFormation, build, target, factoryQueue, research, point, harvest } from "../packages/shared/src/orders.ts";
+import { O, pack, move, moveFormation, build, target, factoryQueue, research, point, harvest, installMod, cancelMod, arkTurrets, arkTurretType, arkBoost, arkQueue } from "../packages/shared/src/orders.ts";
 import { parseBotDump } from "../packages/shared/src/render.ts";
 
 export function randomOrders(seed, sim) {
@@ -31,6 +31,17 @@ export function randomOrders(seed, sim) {
     for (let p = 0; p < np; p++) {
       const mine = view.units.filter((u) => u.owner === p);
       if (mine.length === 0) continue;
+      // Transhumants : améliorations de l'Arche (unité 62), tourelles, surcharge, atelier embarqué
+      const ark = mine.find((v) => v.kind === 62);
+      if (ark && rnd(2) === 0) {
+        const q = rnd(12);
+        if (q < 4) pack(p, installMod(1 + rnd(25), [ark.id]), out);
+        else if (q === 4) pack(p, cancelMod([ark.id]), out);
+        else if (q < 8) pack(p, arkTurrets([ark.id], rnd(4)), out);
+        else if (q < 10) pack(p, arkTurretType(ark.id, rnd(10) - 1, rnd(3)), out);
+        else if (q === 10) pack(p, arkBoost([ark.id]), out);
+        else pack(p, arkQueue(ark.id, 63 + rnd(14), rnd(3) - 1), out);
+      }
       const r = rnd(10);
       const u = mine[rnd(mine.length)];
       const tx = (u.x >> 8) + rnd(41) - 20;
