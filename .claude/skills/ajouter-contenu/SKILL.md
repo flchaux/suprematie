@@ -19,7 +19,7 @@ Les tables sont dans `sim/src/data.rs`. Le client et les bots les reçoivent par
 1. **Données** : `UnitDef { key, name, …, ..UD }` à la fin de `UNITS`. Par défaut : usine terrestre, Industriels, palier 1. `tech` est le numéro de la recherche, `weapons` des indices dans `WEAPONS`. Souche : `bio: true`, et `litter` de 3 à 6 pour un organisme de couveuse.
 2. **Automatique** : le panneau d'usine (`factoryUnitKinds`, par usine et par race), les contrôles de race, la puissance estimée par les bots.
 3. **Modèle** : une description de pièces sous la clé de l'unité, dans la table de sa race (`UNIT_MODELS` dans `assets/models/units.ts`, ou les tables de `souche*.ts` et `transhumants.ts` qu'elle reprend). Sans modèle, le jeu dessine une boîte de repli sans erreur. Vérifier avec `npm run viewer:capture units <clé>` ; la capture réécrit `tools/viewer/data.json`, qui est versionné.
-4. **Description** : `packages/client/src/game/unitDescs.ts`. Un test échoue si elle manque.
+4. **Description** : `packages/client/src/game/unitDescs.ts`. Un test échoue si elle manque. Courte : une ou deux phrases, sans exemple (règle dans docs/spec/rendu.md).
 5. **Icône** : skill `generer-images`. Sans icône, l'interface affiche une abréviation du nom.
 6. **Bots** (ils ne jouent que les Industriels) : une unité n'est jamais produite tant que sa clé n'est pas dans les poids d'armée (`persona.army` dans `packages/server/src/bots/personas.ts`, corrigés par `armyWeights`), ou dans les listes de la marine (`navy.ts`) et de l'aviation (`landing.ts`).
 7. **Spécification** : tableaux de `docs/spec/contenu.md` pour les Industriels, `docs/spec/races.md` pour la Souche et les Transhumants.
@@ -29,7 +29,7 @@ Les tables sont dans `sim/src/data.rs`. Le client et les bots les reçoivent par
 1. **Données** : `BuildingDef { key, name, …, ..BD }` à la fin de `BUILDINGS`. La classe par défaut est `Wall`.
 2. **Comportement** : une classe existante (`BClass`) suffit souvent. Une classe nouvelle demande : la variante dans l'enum Rust et son double numérique `BClass` dans `packages/shared/src/data.ts` ; l'ajouter à `needs_tick` ; une branche dans le `match` de `update_buildings` ; et `accepts` et `insert_item` s'il reçoit des objets. Ces fonctions sont dans le module `buildings` de la simulation. `packages/server/src/bots/intel.ts` cite quelques classes par leur numéro.
 3. **Menu de construction** : sa clé dans `BUILD_CATS` ou `SOUCHE_CATS` (`packages/client/src/game/catalog.ts`). Sinon le bâtiment existe mais n'est jamais proposé. Au clavier, un onglet offre dix places (chiffres 1 à 9, puis 0).
-4. **Description** : `packages/client/src/game/buildingDescs.ts`. Un test échoue si elle manque.
+4. **Description** : `packages/client/src/game/buildingDescs.ts`. Un test échoue si elle manque. Courte : une ou deux phrases, sans exemple (règle dans docs/spec/rendu.md).
 5. **Modèle** : `BUILDING_MODELS` (`assets/models/buildings.ts`) ou la table de sa race. Les variantes se rattachent par suffixe de clé (`_seg`, `_virage_g`…).
 6. **Icône** : skill `generer-images`. Sans icône, le menu montre le pictogramme de la catégorie.
 7. **Bots** : un bâtiment n'est jamais construit sans code (plans de `layout.ts`, tourelles dans le code de l'IA).
