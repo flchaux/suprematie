@@ -91,6 +91,19 @@ pub fn insert(w: &mut World, b: usize, item: u8) {
     }
 }
 
+/// Un bras trouverait-il ici un objet que `want` accepte ? Même choix que `take`, sans rien prendre.
+pub fn offers(w: &World, b: usize, want: &dyn Fn(u8) -> bool) -> bool {
+    let bb = &w.buildings[b];
+    match bb.def().class {
+        BClass::Warehouse => {
+            let it = bb.recipe;
+            it != 0 && (it as usize) < N && crate::drones::has(&bb.stash, it) > 0 && want(it)
+        }
+        BClass::Station | BClass::CargoPad => bb.stash.len() >= 2 * N && (1..N).any(|i| bb.stash[N + i] > 0 && want(i as u8)),
+        _ => false,
+    }
+}
+
 /// Un bras prend un objet : entrepôt (l'objet choisi, s'il est en stock) ou gare (objets reçus).
 pub fn take(w: &mut World, b: usize, want: &[bool; NUM_ITEMS]) -> u8 {
     match w.buildings[b].def().class {

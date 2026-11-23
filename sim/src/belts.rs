@@ -87,6 +87,54 @@ impl Line {
     pub fn room_at(&self, p: i32) -> bool {
         self.slot_at(p).is_some()
     }
+    /// La file tourne-t-elle : alimentée, ou portée par le combustible qu'elle transporte ?
+    pub fn runs(&self) -> bool {
+        self.powered || self.items.iter().any(|&(it, _)| crate::buildings::is_fuel(it))
+    }
+    /// Ticks avant qu'un objet puisse être posé en `p` : Some(0) s'il y a la place tout de suite ; sinon
+    /// le temps que l'objet qui gêne s'écarte, s'il a de quoi avancer jusque-là (la file tourne et n'est
+    /// pas tassée jusqu'à lui) ; None si la file est bouchée à cet endroit : la place viendra d'ailleurs
+    /// (sortie qui se libère, objet retiré), on ne sait pas quand. Le délai est celui d'une file qui
+    /// avance à pleine vitesse : une file qui se tasse peut demander un nouvel essai.
+    pub fn room_wait(&self, p: i32) -> Option<u32> {
+        if p < 0 || p > self.len() - ITEM_GAP / 2 {
+            return None;
+        }
+        // objets en aval de p (ou en p) : position du dernier, et de quoi il peut encore avancer (somme des
+        // écarts au-delà du minimum, depuis l'avant de la file)
+        let mut pos = 0;
+        let mut slack = 0;
+        let mut k = 0usize;
+        while k < self.items.len() {
+            let g = self.items[k].1;
+            if pos + g > p {
+                break;
+            }
+            slack += (g - if k == 0 { 0 } else { ITEM_GAP }).max(0);
+            pos += g;
+            k += 1;
+        }
+        // distance que l'objet gênant doit parcourir : celui d'amont doit passer p puis s'en écarter,
+        // celui d'aval seulement s'en écarter
+        let mut need = 0;
+        if k < self.items.len() {
+            let g = self.items[k].1;
+            if pos + g - p < ITEM_GAP {
+                need = pos + g - p + ITEM_GAP;
+                slack += (g - if k == 0 { 0 } else { ITEM_GAP }).max(0);
+            }
+        }
+        if need == 0 && k > 0 && p - pos < ITEM_GAP {
+            need = ITEM_GAP - (p - pos);
+        }
+        if need == 0 {
+            return Some(0);
+        }
+        if slack < need || self.speed <= 0 || !self.runs() {
+            return None;
+        }
+        Some(((need + self.speed - 1) / self.speed) as u32)
+    }
     pub fn insert_at(&mut self, item: u8, p: i32) -> bool {
         let Some((k, pos)) = self.slot_at(p) else { return false };
         if k < self.items.len() {
@@ -534,7 +582,7 @@ pub fn update_belts(w: &mut World) {
         }
         // une file qui transporte du combustible est alimentée par lui : elle tourne même sans courant
         let l = &w.belts.lines[li];
-        if l.items.is_empty() || (!l.powered && !l.items.iter().any(|&(it, _)| crate::buildings::is_fuel(it))) {
+        if l.items.is_empty() || !l.runs() {
             continue;
         }
         // l'objet de tête est arrivé au bout : tenter de le faire sortir
@@ -631,6 +679,17 @@ pub fn belt_has_room(w: &World, b: usize) -> bool {
     }
     let l = &w.belts.lines[bb.line as usize];
     l.room_at(l.tile_center(bb.line_idx as usize))
+}
+
+/// Ticks avant qu'un objet puisse être posé sur la case de tapis `b` (au centre) : Some(0) s'il y a la
+/// place, None si la file est bouchée ou arrêtée (voir `Line::room_wait`).
+pub fn room_wait(w: &World, b: usize) -> Option<u32> {
+    let bb = &w.buildings[b];
+    if bb.line == NONE {
+        return None;
+    }
+    let l = &w.belts.lines[bb.line as usize];
+    l.room_wait(l.tile_center(bb.line_idx as usize))
 }
 
 /// Prend sur la case de tapis `b` un objet accepté par `want`.

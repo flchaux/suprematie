@@ -521,6 +521,8 @@ mod ponte_tests;
 mod zone_eco_tests;
 #[cfg(test)]
 mod pause_tests;
+#[cfg(test)]
+mod sorties_tests;
 pub mod stress;
 #[cfg(test)]
 mod ameliorations_tests;
