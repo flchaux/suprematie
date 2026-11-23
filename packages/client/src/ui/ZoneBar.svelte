@@ -6,6 +6,7 @@
   import { SEVE, SELS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
+  import { itemTip } from "../game/itemDescs.ts";
 
   // ressources de base (plaques, acier, engrenages, câbles, circuits) : seules montrées, barre repliée ;
   // dépliée, s'y ajoutent les minerais et les autres objets qui ont un stock ou un débit dans la zone
@@ -103,8 +104,9 @@
       {@const team = !souche ? (ui.teamStock[id] ?? 0) : 0}
       <span class="tip res" class:full={fill >= 1} class:near={fill >= 0.85 && fill < 1}>
         <Item {id} {n} size={18} />{#if capped}<span class="cap"><span style:width={fill * 100 + "%"}></span></span>{/if}{#if team > 0}<span class="team num">+{team >= 10000 ? Math.floor(team / 1000) + "k" : team}</span>{/if}
-        <span class="tt">
+        <span class="tt full">
           <b>{ui.data?.items[id].name}</b><br />
+          {#if ui.data}{@html itemTip(ui.data, id, ui.race, false)}<br /><br />{/if}
           {#if id === ADN || id === RELEVES}
             <span class="num">{n}</span> en réserve (pour tout votre camp)<br />
           {:else if souche}

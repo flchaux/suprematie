@@ -1,9 +1,11 @@
 import { mount } from "svelte";
 import App from "./ui/App.svelte";
 import "./ui/style.css";
-import { installTooltips } from "./ui/tooltips.ts";
+import { installTooltips, setItemTips } from "./ui/tooltips.ts";
+import { itemTip } from "./game/itemDescs.ts";
 
 installTooltips();
+setItemTips((id, named) => (ui.data ? itemTip(ui.data, id, ui.race, named) : ""));
 
 mount(App, { target: document.getElementById("app")! });
 

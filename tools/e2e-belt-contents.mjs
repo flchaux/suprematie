@@ -93,7 +93,7 @@ if (pick) {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const el = document.querySelector(".sel .belt");
       const lane = [...el.querySelectorAll(".lane .bslot.full img")].length;
-      const line = [...el.querySelectorAll(".row.wrap .item")].map((it) => [it.getAttribute("title"), Number(it.querySelector(".num")?.textContent ?? 0)]);
+      const line = [...el.querySelectorAll(".row.wrap .item")].map((it) => [it.getAttribute("aria-label"), Number(it.querySelector(".num")?.textContent ?? 0)]);
       const names = client.data.items.map((i) => i.name);
       return { text: el.textContent.replace(/\s+/g, " ").trim(), lane, line, want: info.belt, names, ui: window.__game.ui?.buildingInfo?.belt ?? null };
     }, pick.ref);
