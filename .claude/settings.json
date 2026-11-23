@@ -1,5 +1,29 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(node tools/cargo.mjs test *)",
+      "Bash(node tools/cargo.mjs clippy *)",
+      "Bash(npm run build:sim)",
+      "Bash(npm run setup)",
+      "Bash(npx vitest run)",
+      "Bash(npm run test:js)",
+      "Bash(npx eslint packages)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:determinism)",
+      "Bash(node tools/determinism.mjs)",
+      "Bash(node tools/determinism.mjs *)",
+      "Bash(npx tsc --noEmit -p packages/client/tsconfig.json)",
+      "Bash(npm run test:rust)",
+      "Bash(npm run test:ai)",
+      "Bash(node tools/bench/ai-check.ts)",
+      "Bash(node tools/bench/ai-check.ts *)",
+      "Bash(node tools/bench/naval-check.ts *)",
+      "Bash(node tools/bench/stress.ts)",
+      "Bash(node tools/bench/stress.ts *)",
+      "Bash(npm test)",
+      "Bash(systemctl is-active *)",
+      "Bash(npm run deploy -- --etat)"
+    ],
     "deny": [
       "Read(./target/**)",
       "Read(./**/dist/**)",
