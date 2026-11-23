@@ -16,6 +16,8 @@ import type { BotUnit, Cmd } from "@supreme/shared";
 import { move, target, O, Layer } from "@supreme/shared";
 import { TILE, dist2, unitsNear, type ViewIndex } from "./util.ts";
 import { T, kindPowers } from "./intel.ts";
+import { isShip } from "./navy.ts";
+import { convoy, isTransport, landingOwns } from "./landing.ts";
 import type { SkirmishAI } from "./ai.ts";
 
 type Mission = "form" | "attack" | "retreat" | "guard" | "raid" | "strike";
@@ -83,6 +85,27 @@ export class Army {
     return { id: this.nextId++, family, units: new Set(), mission, targetPlayer: tgt, ox: 0, oy: 0, sx: 0, sy: 0, staged: false, stageSince: 0, tx: 0, ty: 0, lastOrder: -1e9, launched: 0, launchPower: 0, directOn: 0, since: tick, quiet: tick, readySince: 0 };
   }
 
+  /** Unités terrestres du peloton en formation (réserve où puise un débarquement). */
+  reserve(ai: SkirmishAI, mine: Map<number, BotUnit>): BotUnit[] {
+    const l: BotUnit[] = [];
+    for (const p of this.platoons) {
+      if (p.mission !== "form" || (p.family !== "land" && p.family !== "amphib")) continue;
+      for (const id of p.units) {
+        const u = mine.get(id);
+        if (u && !u.carried) l.push(u);
+      }
+    }
+    return l;
+  }
+
+  /** Retire des unités de leurs pelotons (confiées à un débarquement). */
+  release(ids: number[]): void {
+    for (const id of ids) {
+      this.of.get(id)?.units.delete(id);
+      this.of.delete(id);
+    }
+  }
+
   familyOf(ai: SkirmishAI, kind: number): Family {
     const d = ai.ctx.data.units[kind];
     if (d.layer === Layer.Air) {
@@ -96,7 +119,9 @@ export class Army {
   think(ai: SkirmishAI, ix: ViewIndex, tick: number, out: Cmd[]): void {
     const me = ai.ctx.slot;
     const mine = new Map<number, BotUnit>();
-    for (const u of ix.unitsBy[me]) if (ai.isCombat(u.kind)) mine.set(u.id, u);
+    // les navires et les troupes d'un débarquement ont leurs propres missions (navy.ts, landing.ts)
+    const landed = landingOwns(ai);
+    for (const u of ix.unitsBy[me]) if (ai.isCombat(u.kind) && !isShip(ai, u.kind) && !isTransport(ai, u.kind) && !landed.has(u.id)) mine.set(u.id, u);
     for (const p of this.platoons) {
       for (const id of p.units) {
         if (!mine.has(id)) {
@@ -458,7 +483,13 @@ export class Army {
       this.order(p, us, sx, sy, tick, out, false, 10);
       return;
     }
-    // 3) patrouille au-dessus de la base
+    // 3) escorte d'un débarquement en vol
+    const lead = convoy(ai);
+    if (lead) {
+      this.order(p, us, lead.x, lead.y, tick, out, true, 10);
+      return;
+    }
+    // 4) patrouille au-dessus de la base
     const [bx, by] = ai.baseCenter();
     if (tick - p.lastOrder > 400) {
       const [rx, ry] = ai.rallyPoint();
