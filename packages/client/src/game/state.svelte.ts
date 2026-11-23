@@ -34,7 +34,7 @@ export const ui = $state({
    */
   buildReach: null as number[] | null,
   /** Souche : herbe qu'aura à manger la frondaison ou la racine-puits à poser : cases, périmètre, secondes par case */
-  grass: null as null | { left: number; total: number; secs: number; share: number; rate: number },
+  grass: null as null | { /** distance de l'herbe (cases ; -1 : aucune), secondes par case */ near: number; secs: number; share: number; rate: number; /** racine-puits : herbe et cases du périmètre, secondes en tout */ left: number; total: number; all: number },
   /** Souche : racines ou rhizomes en cours de tracé : nombre posable, coût total [objet, quantité], supplément le plus fort (%) */
   lineCost: null as null | { n: number; cost: [number, number][]; pct: number },
   /** lieu de `buildReach` : « cursor » (fantôme), « builder » (constructeur choisi), « view » (centre de l'écran) */

@@ -480,11 +480,11 @@ pub fn grow(w: &mut World, b: usize) {
 pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
     let (s, l) = full_rate(w, b);
     let bb = &w.buildings[b];
-    if crate::soil::feed_r(bb.kind) == 0 {
+    if !crate::soil::eats(bb.kind) {
         return (s, l);
     }
-    let (bw, bh) = bb.size();
-    let k = crate::soil::yield_of(bb.kind, &crate::soil::meal(w, bb.kind, bb.x, bb.y, bw, bh, !bb.complete() as u32));
+    // rendement tenu par soil::graze
+    let k = bb.timer as i32;
     (s * k / 1000, l * k / 1000)
 }
 
