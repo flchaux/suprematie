@@ -1,29 +1,41 @@
 //! Ponte de la Souche (voir docs/spec/races.md).
 //!
 //! Les couveuses ne font pas naître leurs organismes un par un. Une entrée de file est une **portée**
-//! (`UnitDef::litter`, 3 à 6 selon l'espèce) : la couveuse paie la portée entière, la porte pendant la
-//! moitié du temps de fabrication cumulé de ses organismes (`data::factory_ticks`), puis pond tous ses
-//! œufs d'un coup devant elle (`lay`).
+//! (`UnitDef::litter`, 3 à 6 selon l'espèce) : la couveuse la pond presque aussitôt (`data::LAY_TICKS`), sans
+//! rien payer, tous ses œufs d'un coup devant elle (`lay`), tant que moins de `BROOD_LITTERS` de ses portées
+//! couvent encore.
 //!
 //! Un œuf est une unité (`U_EGG_S`, `U_EGG_M`, `U_EGG_L` selon la taille de l'espèce) : immobile, sans
-//! arme, il ne reçoit pas d'ordre, et l'ennemi peut le détruire comme n'importe quelle unité. Il éclot
-//! `INCUBATION` ticks après la ponte (un tiers de moins avec Fécondité) : l'œuf disparaît sans mort ni
-//! cadavre et l'organisme prend sa place (`hatch`), blessé dans la même proportion que l'œuf.
+//! arme, il ne reçoit pas d'ordre, et l'ennemi peut le détruire comme n'importe quelle unité. C'est lui qui
+//! paie : il puise le prix de son organisme dans le réseau de son terreau (à défaut, celui de sa couveuse), petit
+//! à petit, à mesure qu'il avance vers l'éclosion (`tick_egg`) ; sans sève ou sans sels, il attend. Durée :
+//! 10 s plus 2 s par seconde de fabrication (`incubation`), plus vite avec Fécondité ou une Reine enracinée.
+//! À l'éclosion, l'œuf disparaît sans mort ni cadavre et l'organisme prend sa place (`hatch`), blessé dans la même
+//! proportion que l'œuf.
 //!
-//! Un nid greffé (nid de mordeurs apprivoisé, `nature::Den`) pond de la même façon, sans coût : une
-//! portée de `nature::DEN_LITTER` œufs de mordeurs devant lui.
+//! Un nid greffé (nid de mordeurs apprivoisé, `nature::Den`) pond de la même façon, une portée de
+//! `nature::DEN_LITTER` œufs de mordeurs devant lui ; ils n'ont pas de prix, leurs œufs ne puisent rien.
 //!
 //! Rien de nouveau n'est sérialisé. Un œuf garde dans ses champs d'unité : l'espèce qu'il porte
-//! (`UnitCold::work` = type + 1), le tick d'éclosion (`ready_tick`), la durée de l'incubation (`timer`)
-//! et l'ordre de ralliement de la couveuse (`orders`), dont l'organisme hérite.
+//! (`UnitCold::work` = type + 1), son avancement (`xp`, centièmes de tick), la durée de l'incubation (`timer`,
+//! ticks), l'attente avant de réessayer de puiser (`stuck`), sa couveuse (`parent`) et l'ordre de ralliement
+//! (`orders`), dont l'organisme hérite. `ready_tick` vaut `DRAWS` ; un œuf d'une sauvegarde plus ancienne, déjà
+//! payé, y garde son tick d'éclosion.
 
 use crate::data::*;
 use crate::fixed::{dist2, TILE};
 use crate::map::P_LAND;
 use crate::world::*;
 
-/// Incubation d'un œuf, en ticks (15 s).
-pub const INCUBATION: u32 = 300;
+/// Incubation de base d'un œuf, en ticks (10 s), et par seconde de fabrication de l'organisme (2 s).
+pub const INCUBATION: u32 = 200;
+pub const INCUBATION_PER_SEC: u32 = 40;
+/// Portées d'une couveuse qui couvent en même temps, au plus.
+pub const BROOD_LITTERS: usize = 3;
+/// `UnitCold::ready_tick` d'un œuf qui paie son éclosion à mesure (les œufs plus anciens ont un tick d'éclosion).
+pub const DRAWS: u32 = u32::MAX;
+/// Attente (ticks) d'un œuf qui n'a pas trouvé de quoi puiser.
+const RETRY: u16 = 10;
 /// Événement : un œuf a éclos (x, y, type de l'œuf | type de l'organisme << 8, joueur | orientation << 8).
 pub const EV_HATCH: i32 = 48;
 /// Temps restant affiché d'un œuf qui n'éclora pas (voir `hatch_left`).
@@ -45,9 +57,52 @@ pub fn egg_of(kind: u16) -> u16 {
     }
 }
 
-/// Durée de l'incubation pour ce joueur (Fécondité : couveuses 50 % plus rapides).
-pub fn incubation(w: &World, owner: u8) -> u32 {
-    INCUBATION * 100 / crate::souche::brood_speed(w, owner).max(1)
+/// Durée de l'incubation d'un organisme (ticks, à vitesse normale).
+pub fn incubation(kind: u16) -> u32 {
+    INCUBATION + INCUBATION_PER_SEC * udef(kind).build as u32
+}
+
+/// Vitesse d'incubation (%) d'un œuf du joueur dans le réseau `net` : Fécondité, Reine enracinée.
+fn egg_speed(w: &World, owner: u8, net: u16) -> u32 {
+    let mut v = crate::souche::brood_speed(w, owner);
+    if net != 0 && crate::essaim::royal_net(w, owner) == net {
+        v = v * crate::essaim::Q_BROOD / 100;
+    }
+    v.max(1)
+}
+
+/// Couveuse de l'œuf, si elle vit encore.
+fn mother(w: &World, s: usize) -> Option<usize> {
+    w.building(w.units.cold[s].parent).filter(|&b| w.buildings[b].owner == w.units.owner[s])
+}
+
+/// Réseau où puise l'œuf : celui de son terreau, à défaut celui de sa couveuse.
+fn egg_net(w: &World, s: usize) -> u16 {
+    let n = crate::souche::net_at(w, w.units.owner[s], w.units.x[s] / TILE, w.units.y[s] / TILE);
+    if n != 0 {
+        n
+    } else {
+        mother(w, s).map_or(0, |b| w.buildings[b].net)
+    }
+}
+
+/// La couveuse peut-elle pondre une portée de `kind` (pas trop d'œufs encore à éclore) ?
+pub fn has_room(w: &World, b: usize, kind: u16) -> bool {
+    let r = w.building_ref(b);
+    let n = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.cold[s].parent == r && is_egg(w.units.kind[s])).count();
+    n + batch(kind) as usize <= BROOD_LITTERS * batch(kind) as usize
+}
+
+/// Couveuse d'une sauvegarde plus ancienne : ce qu'elle avait pris pour une portée retourne au réseau.
+pub fn give_back(w: &mut World, b: usize) {
+    if w.buildings[b].stash.iter().all(|&n| n == 0) {
+        return;
+    }
+    let stash = std::mem::take(&mut w.buildings[b].stash);
+    let net = w.buildings[b].net;
+    for (it, n) in stash.into_iter().enumerate() {
+        crate::souche::refund(w, net, it as u8, n as i32);
+    }
 }
 
 /// Espèce portée par l'œuf `s`, s'il en porte une.
@@ -56,14 +111,36 @@ pub fn content(w: &World, s: usize) -> Option<u16> {
     (is_egg(w.units.kind[s]) && k >= 1 && (k as usize) <= UNITS.len()).then(|| (k - 1) as u16)
 }
 
-/// Ticks avant l'éclosion de l'œuf `s` (EGG_NEVER s'il ne porte rien : il n'éclora pas).
-#[inline]
+/// Ticks avant l'éclosion de l'œuf `s`, à son rythme normal (EGG_NEVER s'il ne porte rien : il n'éclora pas).
 pub fn hatch_left(w: &World, s: usize) -> u32 {
-    if content(w, s).is_some() {
-        w.units.cold[s].ready_tick.saturating_sub(w.tick).min(EGG_NEVER - 1)
-    } else {
-        EGG_NEVER
+    if content(w, s).is_none() {
+        return EGG_NEVER;
     }
+    let c = &w.units.cold[s];
+    if c.ready_tick != DRAWS {
+        return c.ready_tick.saturating_sub(w.tick).min(EGG_NEVER - 1);
+    }
+    let left = (c.timer as u32 * 100).saturating_sub(c.xp);
+    left.div_ceil(crate::souche::brood_speed(w, w.units.owner[s]).max(1)).min(EGG_NEVER - 1)
+}
+
+/// Œuf qui paie son éclosion : le réseau où il puise, son espèce et la durée de son incubation (ticks, à la vitesse
+/// de son joueur).
+pub fn egg_load(w: &World, s: usize) -> Option<(u16, u16, u32)> {
+    let k = content(w, s)?;
+    if w.units.cold[s].ready_tick != DRAWS {
+        return None;
+    }
+    Some((egg_net(w, s), k, w.units.cold[s].timer as u32 * 100 / crate::souche::brood_speed(w, w.units.owner[s]).max(1)))
+}
+
+/// Fiche d'un œuf (JSON) : espèce, ticks avant l'éclosion, durée, ce qu'il a déjà puisé de son prix, en attente.
+pub fn info(w: &World, s: usize) -> String {
+    let Some(k) = content(w, s) else { return "null".into() };
+    let c = &w.units.cold[s];
+    let draws = c.ready_tick == DRAWS;
+    let paid: Vec<String> = udef(k).cost.iter().map(|&(it, n)| format!("[{},{},{}]", it, if draws { drawn(n, c.xp, c.timer) } else { n as u32 }, n)).collect();
+    format!("{{\"kind\":{},\"left\":{},\"total\":{},\"paid\":[{}],\"wait\":{}}}", k, hatch_left(w, s), c.timer, paid.join(","), draws && c.stuck > 0)
 }
 
 /// Sens de la sortie d'un bâtiment (vecteur unité).
@@ -139,28 +216,33 @@ fn clutch_spots(w: &World, cx: i32, cy: i32, d: (i32, i32), r: i32, n: usize) ->
     out
 }
 
-/// Pond un œuf de l'espèce `kind` en (x, y) pour `owner` ; à l'éclosion l'organisme ira en `rally`, ou
-/// restera sur place s'il n'y en a pas.
-pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: Option<(i32, i32)>) -> u32 {
-    let inc = incubation(w, owner);
+/// Pond un œuf de l'espèce `kind` en (x, y) pour `owner` ; `parent` : sa couveuse (NONE : aucune). À l'éclosion
+/// l'organisme ira en `rally` (se sacrifier, si c'est une graine-mère en croissance), ou restera sur place s'il
+/// n'y en a pas.
+pub fn lay_egg(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, rally: Option<(i32, i32)>, parent: u32) -> u32 {
     let facing = w.rng.below(65536) as u16;
     let id = w.spawn_unit(egg_of(kind), owner, x, y);
     let s = slot_of(id);
     w.units.facing[s] = facing;
+    let order = rally.map(|(rx, ry)| match crate::souche::heart_under(w, owner, rx, ry) {
+        Some(target) if crate::souche::sacrifice_value(kind) > 0 => Order::Sacrifice { target },
+        _ => Order::Move { x: rx, y: ry, gx: rx, gy: ry, attack: false, eta: 0 },
+    });
     let c = &mut w.units.cold[s];
     c.work = kind as u32 + 1;
-    c.ready_tick = w.tick + inc;
-    c.timer = inc.min(u16::MAX as u32) as u16;
-    if let Some((rx, ry)) = rally {
-        c.orders.push(Order::Move { x: rx, y: ry, gx: rx, gy: ry, attack: false, eta: 0 });
-    }
+    c.ready_tick = DRAWS;
+    c.xp = 0;
+    c.timer = incubation(kind).min(u16::MAX as u32) as u16;
+    c.parent = parent;
+    c.orders.extend(order);
     id
 }
 
 /// Pond une portée de `n` œufs de l'espèce `kind` autour de (cx, cy), vers `d` (voir `clutch_spots`).
-pub fn lay_clutch(w: &mut World, owner: u8, kind: u16, n: usize, cx: i32, cy: i32, d: (i32, i32), rally: Option<(i32, i32)>) -> Vec<u32> {
+#[allow(clippy::too_many_arguments)]
+pub fn lay_clutch(w: &mut World, owner: u8, kind: u16, n: usize, cx: i32, cy: i32, d: (i32, i32), rally: Option<(i32, i32)>, parent: u32) -> Vec<u32> {
     let r = udef(egg_of(kind)).radius;
-    clutch_spots(w, cx, cy, d, r, n).into_iter().map(|(x, y)| lay_egg(w, owner, kind, x, y, rally)).collect()
+    clutch_spots(w, cx, cy, d, r, n).into_iter().map(|(x, y)| lay_egg(w, owner, kind, x, y, rally, parent)).collect()
 }
 
 /// La couveuse `b` pond la portée de l'espèce `kind` devant sa sortie.
@@ -181,13 +263,49 @@ pub fn lay_from(w: &mut World, b: usize, kind: u16, n: usize, rally: Option<(i32
     // centre de la portée : un rang d'œufs entre lui et la façade
     let ahead = half + 3 * r + 44;
     let owner = bb.owner;
-    lay_clutch(w, owner, kind, n, cx + d.0 * ahead, cy + d.1 * ahead, d, rally)
+    let parent = w.building_ref(b);
+    lay_clutch(w, owner, kind, n, cx + d.0 * ahead, cy + d.1 * ahead, d, rally, parent)
 }
 
-/// Un tick d'un œuf (appelé par `units::update_units` à la place des ordres et des armes) : il éclot
-/// quand son heure est venue. Un œuf qui ne porte rien (vitrine des modèles) reste un œuf.
+/// Quantité puisée d'un objet de prix `n` à l'avancement `xp` (centièmes de tick) d'une incubation de `timer` ticks.
+fn drawn(n: u16, xp: u32, timer: u16) -> u32 {
+    (n as u64 * xp as u64).div_ceil(timer.max(1) as u64 * 100).min(n as u64) as u32
+}
+
+/// Un tick d'un œuf (appelé par `units::update_units` à la place des ordres et des armes) : il avance et puise ce
+/// qu'il doit dans son réseau ; payé en entier, il éclot. Un œuf qui ne porte rien (vitrine des modèles) reste un
+/// œuf.
 pub fn tick_egg(w: &mut World, s: usize) {
-    if w.tick >= w.units.cold[s].ready_tick && content(w, s).is_some() {
+    let Some(kind) = content(w, s) else { return };
+    let c = &mut w.units.cold[s];
+    if c.ready_tick != DRAWS {
+        if w.tick >= c.ready_tick {
+            hatch(w, s);
+        }
+        return;
+    }
+    if c.stuck > 0 {
+        c.stuck -= 1;
+        if c.stuck > 0 {
+            return;
+        }
+    }
+    let owner = w.units.owner[s];
+    let (xp, timer) = (w.units.cold[s].xp, w.units.cold[s].timer);
+    let near = mother(w, s).map_or(0, |b| w.buildings[b].net);
+    let p2 = (xp + egg_speed(w, owner, near)).min(timer as u32 * 100);
+    let cost = udef(kind).cost;
+    let need = |k: usize| drawn(cost[k].1, p2, timer) - drawn(cost[k].1, xp, timer);
+    if (0..cost.len()).any(|k| need(k) > 0) {
+        let net = egg_net(w, s);
+        let dues: Vec<(u8, i32)> = (0..cost.len()).map(|k| (cost[k].0, need(k) as i32)).collect();
+        if !crate::souche::take_all(w, owner, net, &dues) {
+            w.units.cold[s].stuck = RETRY;
+            return;
+        }
+    }
+    w.units.cold[s].xp = p2;
+    if p2 >= timer as u32 * 100 {
         hatch(w, s);
     }
 }

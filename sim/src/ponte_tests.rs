@@ -4,7 +4,7 @@ use crate::buildings::{complete_building, place_building};
 use crate::data::*;
 use crate::fixed::{dist2, TILE};
 use crate::orders::{O_FACTORY_QUEUE, O_MOVE};
-use crate::ponte::{self, EV_HATCH, INCUBATION};
+use crate::ponte::{self, EV_HATCH};
 use crate::world::*;
 
 /// Partie à deux joueurs sans faune : Souche (joueur 0) contre Industriels.
@@ -86,34 +86,34 @@ fn litter_sizes_are_three_to_six() {
     }
     assert_eq!(batch(U_GNAWER), 6);
     assert_eq!(batch(U_LIGHT_TANK), 1);
-    // gestation : la moitié du temps cumulé de la portée
-    assert_eq!(factory_ticks(U_GNAWER), 6 * 4 * 20 / 2);
+    // ponte presque immédiate ; l'incubation suit l'organisme : 10 s, plus 2 s par seconde de fabrication
+    assert_eq!(factory_ticks(U_GNAWER), LAY_TICKS);
+    assert_eq!(ponte::incubation(U_GNAWER), 18 * 20);
+    assert_eq!(ponte::incubation(U_SHELL), 38 * 20);
     assert_eq!(factory_ticks(U_LIGHT_TANK), udef(U_LIGHT_TANK).build as u32 * 20);
     assert_eq!(ponte::egg_of(U_GNAWER), U_EGG_S);
     assert_eq!(ponte::egg_of(U_SPITTER), U_EGG_M);
     assert_eq!(ponte::egg_of(U_SHELL), U_EGG_L);
 }
 
+/// La portée est pondue presque aussitôt, sans rien coûter ; ses œufs puisent ensuite leur prix dans le réseau,
+/// petit à petit, et éclosent ensemble.
 #[test]
-fn a_brood_lays_a_whole_litter_that_hatches() {
+fn a_brood_lays_a_whole_litter_that_pays_for_itself_and_hatches() {
     let mut w = game();
     let b = brood(&mut w);
     let h = heart(&w);
     let net = w.buildings[h].net as usize;
-    let (seve, sels, count) = (w.nets[net].seve, w.nets[net].sels, w.players[0].unit_count);
+    let count = w.players[0].unit_count;
     queue(&mut w, b, U_GNAWER, 1);
     let t = until_laid(&mut w, 400);
-    assert!(t + 3 >= factory_ticks(U_GNAWER) && t < factory_ticks(U_GNAWER) + 30, "gestation : {t} ticks");
-    // la portée entière est pondue d'un coup, et payée d'un coup
+    assert!(t <= LAY_TICKS + 25, "ponte : {t} ticks");
     let laid = eggs(&w);
     assert_eq!(laid.len(), 6, "six œufs");
     assert!(units_of(&w, U_GNAWER).is_empty(), "rien n'est né avant l'éclosion");
     assert!(laid.iter().all(|&s| w.units.kind[s] == U_EGG_S && ponte::content(&w, s) == Some(U_GNAWER)));
     assert_eq!(w.players[0].unit_count, count + 6, "les œufs comptent dans la limite d'unités");
-    // la graine-mère produit un peu de sève entre-temps
-    assert_eq!(w.players[0].consumed[SEVE as usize], 6 * 25);
-    assert_eq!(w.players[0].consumed[SELS as usize], 6 * 4);
-    assert!(w.nets[net].seve <= seve - 150 + 30 && w.nets[net].sels == sels - 24, "payé par le réseau");
+    assert!(w.players[0].consumed[SEVE as usize] <= 6, "la couveuse n'a rien payé");
     // devant la couveuse, sans se chevaucher, hors de son emprise
     let (cx, cy) = w.buildings[b].center();
     let r = udef(U_EGG_S).radius;
@@ -126,30 +126,88 @@ fn a_brood_lays_a_whole_litter_that_hatches() {
             assert!(dist2(x, y, w.units.x[o], w.units.y[o]) >= ((2 * r) as i64).pow(2), "œufs qui se chevauchent");
         }
     }
-    // immobiles jusqu'à l'éclosion
+    // à mi-chemin, la moitié du prix est puisée
     let pos: Vec<(i32, i32)> = laid.iter().map(|&s| (w.units.x[s], w.units.y[s])).collect();
-    steps(&mut w, INCUBATION - 2);
+    let inc = ponte::incubation(U_GNAWER);
+    steps(&mut w, inc / 2);
+    let half = w.players[0].consumed[SEVE as usize];
+    assert!((70..=84).contains(&half), "sève puisée à mi-chemin : {half}");
+    assert!((inc / 2 - 3..=inc / 2 + 3).contains(&ponte::hatch_left(&w, laid[0])));
+    steps(&mut w, inc / 2 - 3);
     assert_eq!(eggs(&w).len(), 6);
     assert_eq!(laid.iter().map(|&s| (w.units.x[s], w.units.y[s])).collect::<Vec<_>>(), pos);
-    // éclosion : les six ensemble, là où étaient les œufs, avec l'ordre de ralliement
+    // éclosion : les six ensemble, là où étaient les œufs, avec l'ordre de ralliement ; tout le prix a été puisé
     let mut hatched = 0;
-    for _ in 0..4 {
+    for _ in 0..6 {
         w.step(&[]);
         hatched += w.events.chunks(5).filter(|e| e[0] == EV_HATCH && e[3] == (U_EGG_S as i32 | (U_GNAWER as i32) << 8) && e[4] & 0xff == 0).count();
     }
     assert_eq!(hatched, 6, "six éclosions");
     assert!(eggs(&w).is_empty());
+    assert_eq!(w.players[0].consumed[SEVE as usize], 6 * 25);
+    assert_eq!(w.players[0].consumed[SELS as usize], 6 * 4);
+    assert!(w.nets[net].sels == crate::souche::START_SELS - 24, "puisé dans le réseau");
     let born = units_of(&w, U_GNAWER);
     assert_eq!(born.len(), 6);
     assert_eq!(w.players[0].unit_count, count + 6);
     for &s in &born {
-        assert!(pos.iter().any(|&(x, y)| dist2(x, y, w.units.x[s], w.units.y[s]) < (TILE as i64).pow(2)), "né là où était son œuf");
+        assert!(pos.iter().any(|&(x, y)| dist2(x, y, w.units.x[s], w.units.y[s]) < (3 * TILE as i64).pow(2)), "né là où était son œuf");
         assert!(w.units.hp[s] >= udef(U_GNAWER).hp, "né en pleine santé");
     }
     // la file est vide : rien d'autre ne vient
     steps(&mut w, 600);
     assert_eq!(units_of(&w, U_GNAWER).len(), 6);
     assert!(eggs(&w).is_empty());
+}
+
+/// Sans sève, les œufs attendent ; ils reprennent où ils en étaient.
+#[test]
+fn eggs_wait_when_the_network_is_dry() {
+    let mut w = game();
+    let b = brood(&mut w);
+    let net = w.buildings[b].net as usize;
+    queue(&mut w, b, U_GNAWER, 1);
+    until_laid(&mut w, 400);
+    steps(&mut w, 100);
+    w.nets[net].sels = 0;
+    w.nets[net].seve = 0;
+    steps(&mut w, 60);
+    let s = eggs(&w)[0];
+    let left = ponte::hatch_left(&w, s);
+    steps(&mut w, 400);
+    assert_eq!(eggs(&w).len(), 6, "aucun n'éclot sans sels");
+    let now = ponte::hatch_left(&w, s);
+    assert!(left - now < 60, "ils n'avancent plus : {left} puis {now}");
+    assert!(crate::render::info_unit(&w, w.unit_id(s)).contains("\"wait\":true"));
+    w.nets[net].seve = 300;
+    w.nets[net].sels = 100;
+    steps(&mut w, ponte::incubation(U_GNAWER));
+    assert!(eggs(&w).is_empty());
+    assert_eq!(units_of(&w, U_GNAWER).len(), 6);
+    // isolée de tout réseau, une couveuse ne pond pas
+    w.buildings[b].net = 0;
+    let r = w.building_ref(b) as i32;
+    let o = [4, O_FACTORY_QUEUE, 0, r, U_GNAWER as i32, 1];
+    crate::orders::apply_orders(&mut w, &[5, o[1], o[2], o[3], o[4], o[5]]);
+    assert_eq!(w.buildings[b].queue.len(), 1);
+}
+
+/// Une couveuse n'a pas plus de trois portées en train de couver.
+#[test]
+fn a_brood_tends_three_litters_at_most() {
+    let mut w = game();
+    let b = brood(&mut w);
+    let net = w.buildings[b].net as usize;
+    queue(&mut w, b, U_GNAWER, 8);
+    steps(&mut w, 300);
+    assert_eq!(eggs(&w).len(), 3 * 6);
+    for _ in 0..40 {
+        w.nets[net].seve = 900;
+        w.nets[net].sels = 900;
+        steps(&mut w, 40);
+        assert!(eggs(&w).len() <= 18);
+    }
+    assert_eq!(units_of(&w, U_GNAWER).len() + eggs(&w).len(), 48, "huit portées en tout");
 }
 
 #[test]
@@ -176,7 +234,7 @@ fn eggs_die_before_hatching_and_enemies_shoot_them() {
     let ts = w.unit(tank).expect("char encore là");
     crate::combat::damage_unit(&mut w, ts, 100_000, 0);
     let left = eggs(&w).len();
-    steps(&mut w, INCUBATION);
+    steps(&mut w, ponte::incubation(U_GNAWER));
     assert_eq!(units_of(&w, U_GNAWER).len(), left, "seuls les œufs épargnés éclosent");
 }
 
@@ -188,13 +246,13 @@ fn a_wounded_egg_gives_a_wounded_organism() {
     until_laid(&mut w, 400);
     let laid = eggs(&w);
     assert_eq!(laid.len(), 3);
-    // loin du terreau, pour que rien ne guérisse
+    // loin du terreau, pour que rien ne guérisse (ils puisent alors par leur couveuse)
     for (i, &s) in laid.iter().enumerate() {
         w.units.x[s] += if w.units.x[s] > 256 * TILE { -60 * TILE } else { 60 * TILE };
         w.units.hp[s] = [100, 50, 1][i];
     }
     let before = units_of(&w, U_SOWER).len();
-    steps(&mut w, INCUBATION + 2);
+    steps(&mut w, ponte::incubation(U_SOWER) + 5);
     let mut hp: Vec<i32> = units_of(&w, U_SOWER).iter().map(|&s| w.units.hp[s]).collect();
     hp.sort_unstable();
     assert_eq!(hp.len(), before + 3);
@@ -220,7 +278,7 @@ fn eggs_take_no_orders() {
     assert_eq!(w.units.cold[s].orders.len(), 1, "un œuf ne reçoit pas d'ordre");
     // à l'éclosion, l'organisme part au point de ralliement
     let (rx, ry) = w.buildings[b].rally;
-    steps(&mut w, INCUBATION + 200);
+    steps(&mut w, ponte::incubation(U_SOWER) + 200);
     assert!(eggs(&w).is_empty());
     assert!(units_of(&w, U_SOWER).iter().any(|&s| dist2(w.units.x[s], w.units.y[s], rx, ry) < ((3 * TILE) as i64).pow(2)), "les semeurs nés rejoignent le ralliement");
 }
@@ -235,46 +293,53 @@ fn a_litter_waits_for_room_under_the_unit_cap() {
     steps(&mut w, 400);
     assert!(eggs(&w).is_empty() && !w.buildings[b].working, "pas de place pour six : la couveuse attend");
     assert_eq!(w.players[0].consumed[SEVE as usize], 0, "rien n'est consommé en attendant");
+    let net = w.buildings[b].net as usize;
+    assert!(w.nets[net].seve >= crate::souche::START_SEVE);
     w.players[0].unit_count = real;
     until_laid(&mut w, 400);
     assert_eq!(eggs(&w).len(), 6);
 }
 
+/// Retirer une portée de la file ne coûte ni ne rend rien ; le stock qu'une couveuse d'une ancienne sauvegarde
+/// avait pris pour payer retourne au réseau.
 #[test]
-fn an_abandoned_litter_is_refunded() {
+fn a_litter_in_the_queue_costs_nothing() {
     let mut w = game();
     let b = brood(&mut w);
     queue(&mut w, b, U_SHELL, 1);
     // la carapace demande sa recherche : refusée sans elle
     assert!(w.buildings[b].queue.is_empty());
     w.players[0].set_tech(T_S_SHELLS);
-    queue(&mut w, b, U_SHELL, 1);
-    steps(&mut w, 40);
-    assert!(w.buildings[b].working, "gestation en cours");
-    assert_eq!(w.players[0].consumed[SEVE as usize], 3 * 120);
+    queue(&mut w, b, U_SHELL, 2);
+    steps(&mut w, 8);
+    assert!(w.buildings[b].working, "ponte en cours");
     let net = w.buildings[b].net as usize;
     let seve = w.nets[net].seve;
-    queue(&mut w, b, U_SHELL, -1);
+    queue(&mut w, b, U_SHELL, -2);
     assert!(w.buildings[b].queue.is_empty() && !w.buildings[b].working);
     assert_eq!(w.players[0].consumed[SEVE as usize], 0);
-    assert!(w.nets[net].seve >= seve + 3 * 120, "la portée abandonnée retourne au réseau : {} -> {}", seve, w.nets[net].seve);
-    steps(&mut w, 600);
+    assert!((w.nets[net].seve - seve).abs() <= 2, "rien à rendre");
+    steps(&mut w, 200);
     assert!(eggs(&w).is_empty());
+    crate::buildings::factory_put(&mut w.buildings[b], SEVE, 200);
+    let seve = w.nets[net].seve;
+    queue(&mut w, b, U_SHELL, 1);
+    steps(&mut w, 2);
+    assert!(w.nets[net].seve >= seve + 200, "l'avance d'une ancienne sauvegarde est rendue");
 }
 
 #[test]
-fn fertility_shortens_gestation_and_incubation() {
+fn fertility_and_a_rooted_queen_shorten_the_incubation() {
     let mut w = game();
-    assert_eq!(ponte::incubation(&w, 0), INCUBATION);
     w.players[0].set_tech(T_S_FERTILITY);
-    assert_eq!(ponte::incubation(&w, 0), INCUBATION * 2 / 3);
     let b = brood(&mut w);
     queue(&mut w, b, U_GNAWER, 1);
-    let t = until_laid(&mut w, 400);
-    assert!(t < factory_ticks(U_GNAWER) * 2 / 3 + 30, "gestation avec Fécondité : {t}");
+    until_laid(&mut w, 400);
     let s = eggs(&w)[0];
-    // l'œuf a déjà vécu le tick de sa ponte
-    assert!((INCUBATION * 2 / 3 - 2..=INCUBATION * 2 / 3).contains(&ponte::hatch_left(&w, s)));
+    let full = ponte::incubation(U_GNAWER);
+    assert!((full * 2 / 3 - 4..=full * 2 / 3 + 1).contains(&ponte::hatch_left(&w, s)), "{}", ponte::hatch_left(&w, s));
+    steps(&mut w, full * 2 / 3 + 3);
+    assert!(eggs(&w).is_empty(), "éclos un tiers plus tôt");
 }
 
 #[test]
@@ -286,7 +351,7 @@ fn successive_litters_do_not_pile_up() {
     w.nets[net].seve = 900;
     w.nets[net].sels = 900;
     w.players[0].set_tech(T_S_FERTILITY);
-    // trois portées de semeurs : la gestation (120 ticks avec Fécondité) est plus courte que l'incubation (200)
+    // trois portées de semeurs, pondues presque à la suite
     queue(&mut w, b, U_SOWER, 3);
     let mut most = 0;
     for _ in 0..400 {
@@ -310,11 +375,13 @@ fn a_flyer_hatches_from_an_egg_on_the_ground() {
     let mut w = game();
     let h = heart(&w);
     let (cx, cy) = w.buildings[h].center();
-    let id = ponte::lay_egg(&mut w, 0, U_MEMBRANE, cx + 5 * TILE, cy + 5 * TILE, Some((cx, cy)));
+    let b = brood(&mut w);
+    let parent = w.building_ref(b);
+    let id = ponte::lay_egg(&mut w, 0, U_MEMBRANE, cx + 5 * TILE, cy + 5 * TILE, Some((cx, cy)), parent);
     let s = w.unit(id).unwrap();
     assert_eq!(w.units.kind[s], U_EGG_M);
     assert_eq!(udef(U_EGG_M).layer, Layer::Land);
-    steps(&mut w, INCUBATION + 1);
+    steps(&mut w, ponte::incubation(U_MEMBRANE) + 3);
     assert!(w.unit(id).is_none(), "l'œuf n'existe plus");
     assert_eq!(units_of(&w, U_MEMBRANE).len(), 1);
 }
@@ -351,7 +418,7 @@ fn eggs_survive_save_and_restore() {
     let snap = crate::save::snapshot(&w);
     let mut r = crate::save::restore(&snap).expect("restauration");
     assert_eq!(r.hash(), w.hash());
-    for _ in 0..INCUBATION + 100 {
+    for _ in 0..ponte::incubation(U_GNAWER) + 100 {
         assert_eq!(r.step(&[]), w.step(&[]));
     }
     assert_eq!(units_of(&r, U_GNAWER).len(), 6);

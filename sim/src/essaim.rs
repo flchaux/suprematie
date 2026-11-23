@@ -317,6 +317,22 @@ pub fn queen_net(w: &World, p: u8) -> u16 {
     }
 }
 
+/// Réseaux des Reines enracinées, une fois par tick.
+pub fn refresh_royal(w: &mut World) {
+    if !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
+        w.royal.clear();
+        return;
+    }
+    let nets: Vec<u16> = (0..w.players.len()).map(|p| queen_net(w, p as u8)).collect();
+    w.royal = nets;
+}
+
+/// Réseau que nourrit la Reine enracinée du joueur, au début de ce tick.
+#[inline]
+pub fn royal_net(w: &World, p: u8) -> u16 {
+    w.royal.get(p as usize).copied().unwrap_or(0)
+}
+
 // ---------- Vitesse sur le terreau ----------
 
 /// Vitesse d'une unité au sol selon le terreau sous elle : collant pour les ennemis (Terreau collant),

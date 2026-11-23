@@ -477,6 +477,7 @@ pub fn complete_building(w: &mut World, b: usize) {
     if def.race == RACE_SOUCHE && def.supply > 0 {
         crate::soil::pole_added(w, b);
     }
+    crate::soil::eater_added(w, b);
     if def.class == BClass::Belt {
         belts::rebuild_around(w, &[(x, y)]);
     }
@@ -528,6 +529,7 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     if def.race == RACE_SOUCHE && def.supply > 0 {
         crate::soil::pole_removed(w, b);
     }
+    crate::soil::eater_removed(w, b);
     // un organe de la Souche ne laisse pas d'épave (il est digéré, voir souche::digest)
     if with_wreck && def.race != RACE_SOUCHE && !matches!(def.class, BClass::Belt | BClass::Inserter | BClass::Pylon | BClass::Wall) && w.buildings[b].build > BUILD_FULL / 2 {
         let (cx, cy) = w.buildings[b].center();
@@ -1373,7 +1375,8 @@ pub fn factory_has(bb: &Building, item: u8) -> u16 {
 /// Plafond de la réserve de l'usine pour `item` : deux fois le plus gros besoin d'une entrée de la file
 /// (une unité, ou une portée de la Souche).
 fn factory_limit(bb: &Building, item: u8) -> u16 {
-    bb.queue.iter().map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1 * batch(q.0))).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
+    // (une portée d'œufs ne coûte rien à la couveuse)
+    bb.queue.iter().filter(|q| udef(q.0).litter == 0).map(|q| udef(q.0).cost.iter().find(|c| c.0 == item).map_or(0, |c| c.1 * batch(q.0))).max().unwrap_or(0).saturating_mul(FACTORY_AHEAD)
 }
 
 /// Place encore libre dans la réserve de l'usine pour `item`.
@@ -2716,16 +2719,26 @@ fn tick_factory(w: &mut World, b: usize) {
         w.buildings[b].wake = w.tick + SLEEP;
         return;
     };
+    let def = udef(kind);
+    let litter = def.litter > 0;
     if w.buildings[b].def().race == RACE_SOUCHE {
-        // couveuse : le coût de l'unité vient du réseau de racines
-        crate::souche::feed_factory(w, b);
+        // frayère : le coût de l'unité vient du réseau de racines ; couveuse : rien à payer, ses œufs paient
+        if litter {
+            crate::ponte::give_back(w, b);
+        } else {
+            crate::souche::feed_factory(w, b);
+        }
     }
     share_with_twins(w, b);
-    let def = udef(kind);
     // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche (voir ponte.rs)
     let n = batch(kind);
     if !w.buildings[b].working {
-        let missing = def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1 * n).map(|c| c.0);
+        // couveuse : reliée à un réseau, et pas plus de BROOD_LITTERS portées en train de couver
+        if litter && (w.buildings[b].net == 0 || !crate::ponte::has_room(w, b, kind)) {
+            w.buildings[b].wake = w.tick + crate::souche::ORGAN_PERIOD;
+            return;
+        }
+        let missing = if litter { None } else { def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1 * n).map(|c| c.0) };
         if missing.is_some() || w.players[owner].unit_count + n as u32 > UNIT_CAP {
             // en panne de composants depuis FACTORY_ALERT_DELAY : une alerte pour son joueur (une seule par attente)
             let bb = &mut w.buildings[b];
@@ -2743,9 +2756,11 @@ fn tick_factory(w: &mut World, b: usize) {
             w.buildings[b].wake = w.tick + SLEEP;
             return;
         }
-        for c in def.cost {
-            w.buildings[b].stash[c.0 as usize] -= c.1 * n;
-            w.players[owner].consumed[c.0 as usize] += (c.1 * n) as u32;
+        if !litter {
+            for c in def.cost {
+                w.buildings[b].stash[c.0 as usize] -= c.1 * n;
+                w.players[owner].consumed[c.0 as usize] += (c.1 * n) as u32;
+            }
         }
         w.buildings[b].target = NONE;
         w.buildings[b].working = true;
@@ -2758,7 +2773,7 @@ fn tick_factory(w: &mut World, b: usize) {
     if w.buildings[b].def().race == RACE_SOUCHE {
         mult = mult * crate::souche::brood_speed(w, owner as u8) / 100;
         // Reine enracinée : les couveuses de son réseau pondent plus vite
-        if w.buildings[b].net != 0 && crate::essaim::queen_net(w, owner as u8) == w.buildings[b].net {
+        if w.buildings[b].net != 0 && crate::essaim::royal_net(w, owner as u8) == w.buildings[b].net {
             mult = mult * crate::essaim::Q_BROOD / 100;
         }
     }

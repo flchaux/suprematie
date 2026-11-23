@@ -52,12 +52,13 @@ fn put(w: &mut World, owner: u8, kind: u16, x: i32, y: i32) -> usize {
     b
 }
 
-/// Le terreau tenu à jour case par case est celui qu'on calculerait de zéro.
+/// Le terreau et les périmètres tenus à jour case par case sont ceux qu'on calculerait de zéro.
 fn check_terreau(w: &mut World) {
-    let kept = w.terreau.clone();
+    let (kept, eaters) = (w.terreau.clone(), w.eaters.clone());
     w.terreau.clear();
     soil::ensure(w);
     assert!(kept == w.terreau, "terreau tenu à jour différent du terreau recalculé");
+    assert!(eaters == w.eaters, "périmètres tenus à jour différents des périmètres recalculés");
 }
 
 fn eaten(w: &World) -> usize {
@@ -70,27 +71,62 @@ fn leaves_eat_the_grass_around_and_turn_it_into_terreau() {
     let (_, hx, hy) = base(&mut w, 0, 30);
     let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
     soil::ensure(&mut w);
-    let before = soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2);
-    assert!((80..=177).contains(&before), "herbe du périmètre : {before}");
-    // une case toutes les 20 s, comptée dans le sol mangé et dans le terreau du joueur
-    steps(&mut w, soil::LEAVES_BITE + 40);
+    let m = soil::meal(&w, B_LEAVES, hx + 4, hy, 2, 2, 0);
+    assert!((80..=177).contains(&m.left), "herbe du périmètre : {}", m.left);
+    assert_eq!(m.share, 1000, "seule à la convoiter");
+    // la première case, la plus proche, prend de 8 à 20 s selon sa distance
+    assert!((200..=400).contains(&m.ticks), "{} ticks", m.ticks);
+    steps(&mut w, m.ticks + 60);
     assert_eq!(eaten(&w), 1);
     assert_eq!(w.soil_n, 1);
-    steps(&mut w, 10 * soil::LEAVES_BITE);
-    assert_eq!(eaten(&w), 11);
-    assert_eq!(soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2), before - 11);
+    let early = souche::organ_rate(&w, l).0;
+    let made = w.players[0].produced[SEVE as usize];
+    let before = eaten(&w);
+    steps(&mut w, 6000);
+    let n = eaten(&w) - before;
+    assert!((15..=30).contains(&n), "une vingtaine de cases en 5 min : {n}");
+    assert_eq!(soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2), m.left as i32 - eaten(&w) as i32);
+    // c'est l'herbe mangée qui donne la sève : 20 par case (et une par seconde de la graine-mère)
+    let got = (w.players[0].produced[SEVE as usize] - made) as i32 - 300;
+    assert!((got - 20 * n as i32).abs() <= 30, "{got} sève pour {n} cases");
     for (i, &o) in w.soil.iter().enumerate() {
         if o != 0 {
             assert_eq!(o, 1);
             assert_eq!(w.terreau[i] & 1, 1, "la case mangée est du terreau");
-            // dans le périmètre, au plus près d'abord (un tirage rend le bord irrégulier)
+            // au plus près d'abord (un tirage rend le bord irrégulier)
             let (tx, ty) = (i as i32 % w.map.w, i as i32 / w.map.w);
-            assert!((tx - hx - 5).abs() <= 5 && (ty - hy - 1).abs() <= 5, "case ({}, {})", tx - hx, ty - hy);
+            assert!((tx - hx - 5).abs() <= 6 && (ty - hy - 1).abs() <= 6, "case ({}, {})", tx - hx, ty - hy);
         }
     }
+    // plus l'herbe est loin, plus elle met de temps
+    assert!(souche::organ_rate(&w, l).0 < early, "{} puis {}", early, souche::organ_rate(&w, l).0);
+    assert!(soil::bite_ticks(15 * 15) == 610 && soil::bite_ticks(4 * 4) == 280);
     assert!(!w.buildings[l].stalled);
-    assert_eq!(souche::organ_rate(&w, l), (100, 0), "pleine production tant qu'il reste de l'herbe");
     check_terreau(&mut w);
+}
+
+/// Deux frondaisons qui convoitent la même herbe se gênent : elles ne produisent pas plus qu'une seule.
+#[test]
+fn two_leaves_on_the_same_grass_do_not_double_the_sap() {
+    let seve = |spots: &[(i32, i32)]| {
+        let mut w = game(0);
+        let (_, hx, hy) = base(&mut w, 0, 40);
+        let organs: Vec<usize> = spots.iter().map(|&(x, y)| put(&mut w, 0, B_LEAVES, hx + x, hy + y)).collect();
+        let before = w.players[0].produced[SEVE as usize];
+        steps(&mut w, 4000);
+        check_terreau(&mut w);
+        let rates: Vec<i32> = organs.iter().map(|&b| soil::meal(&w, B_LEAVES, w.buildings[b].x, w.buildings[b].y, 2, 2, 0).share as i32).collect();
+        ((w.players[0].produced[SEVE as usize] - before) as i32 - 200, eaten(&w) as i32, rates)
+    };
+    let (one, n1, _) = seve(&[(4, 0)]);
+    let (two, n2, shares) = seve(&[(4, 0), (4, 2)]);
+    let (apart, _, free) = seve(&[(4, 0), (-3, 0)]);
+    println!("seule {one} ({n1} cases), collées {two} ({n2} cases) {shares:?}, écartées {apart} {free:?}");
+    // (la seconde, deux cases plus loin, a un peu d'herbe à elle)
+    assert!(two * 100 < one * 135, "collées : {two} contre {one} pour une seule");
+    assert!(n2 * 100 < n1 * 130, "elles ne mangent pas deux fois plus vite : {n2} contre {n1}");
+    assert!(shares.iter().all(|&s| s < 700), "chacune n'a qu'une part : {shares:?}");
+    assert!(apart > two, "de part et d'autre de la graine-mère, elles se gênent moins : {apart}");
 }
 
 #[test]
@@ -110,7 +146,7 @@ fn without_grass_an_organ_is_spent_and_barely_produces() {
     }
     assert_eq!(soil::grass_left(&w, B_LEAVES, hx + 4, hy, 2, 2), 1);
     let mut events = 0;
-    for _ in 0..3 * soil::LEAVES_BITE {
+    for _ in 0..1000 {
         w.step(&[]);
         events += w.events.chunks(5).filter(|e| e[0] == soil::EV_SPENT).count();
     }
@@ -231,9 +267,11 @@ fn taproots_graze_too_and_dry_up() {
     w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: hx + 4, y: hy, purity: 0 });
     w.wear.resize(w.map.spots.len(), 0);
     let t = put(&mut w, 0, B_TAPROOT, hx + 4, hy);
-    steps(&mut w, 3 * soil::TAPROOT_BITE + 40);
-    assert_eq!(eaten(&w), 3);
-    assert_eq!(souche::organ_rate(&w, t), (300, 0));
+    soil::ensure(&mut w);
+    let near = souche::organ_rate(&w, t).0;
+    assert!(near > 300, "herbe toute proche : {near}");
+    steps(&mut w, 2000);
+    assert!((4..=9).contains(&eaten(&w)), "{} cases", eaten(&w));
     for i in 0..w.terreau.len() {
         if w.terreau[i] == 0 {
             soil::eat(&mut w, 0, i);
@@ -250,26 +288,16 @@ fn preview_layer_and_save_tell_the_same_ground() {
     let l = put(&mut w, 0, B_LEAVES, hx + 4, hy);
     soil::ensure(&mut w);
     // aperçu de pose : l'herbe qu'aura la frondaison une fois posée (son emprise n'est pas mangée)
-    let p = soil::preview(&w, B_LEAVES, hx + 4, hy + 6);
-    let next = put(&mut w, 0, B_ROOT, hx + 1, hy + 3);
-    remove_building(&mut w, next, false);
-    let (gx, gy) = (hx + 4, hy + 6);
-    for y in gy..gy + 2 {
-        let i = w.map.idx(gx, y);
-        w.map.occ[i] = 1;
-        let i = w.map.idx(gx + 1, y);
-        w.map.occ[i] = 1;
-    }
-    assert_eq!(p[0], soil::grass_left(&w, B_LEAVES, gx, gy, 2, 2));
-    for y in gy..gy + 2 {
-        for x in gx..gx + 2 {
-            let i = w.map.idx(x, y);
-            w.map.occ[i] = 0;
-        }
-    }
-    assert_eq!((p[2], p[3]), (20, soil::LEAVES_R));
+    let (gx, gy) = (hx + 4, hy + 3);
+    let p = soil::preview(&w, B_LEAVES, gx, gy);
+    let twin = put(&mut w, 0, B_LEAVES, gx, gy);
+    let m = soil::meal(&w, B_LEAVES, gx, gy, 2, 2, 0);
+    assert_eq!((p[0], p[4]), (m.left as i32, m.share as i32), "comme une fois posée");
+    assert_eq!(p[3], soil::LEAVES_R);
+    assert!(p[4] < 800, "la voisine convoite la même herbe : {}", p[4]);
+    remove_building(&mut w, twin, false);
     assert!(soil::preview(&w, B_BULB, gx, gy).is_empty());
-    steps(&mut w, 5 * soil::LEAVES_BITE);
+    steps(&mut w, 2200);
     let n = eaten(&w);
     assert!(n >= 4);
     // affichage : le joueur voit son sol ; l'adversaire, qui n'est jamais venu, non ; un spectateur, oui

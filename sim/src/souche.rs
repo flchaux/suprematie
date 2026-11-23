@@ -7,7 +7,8 @@
 //!   entre les morceaux au prorata de leurs bâtiments (`split_pools`).
 //! - Terreau : la zone d'un poteau. Les organes ne se posent que sur le terreau de leur joueur (sauf la
 //!   graine-mère), et les organismes s'y régénèrent.
-//! - Croissance : un organe posé par un semeur pousse seul en tirant la sève et les sels de son réseau
+//! - Graine-mère : elle ne pousse que des organismes qui s'y sacrifient (`sacrifice`, 10 000 sève).
+//! - Croissance : les autres organes posés par un semeur poussent seuls en tirant la sève et les sels de son réseau
 //!   (`grow`), une fois et demie plus lentement qu'un chantier d'ingénieur de puissance 10.
 //! - Production : graine-mère, frondaisons (qui se font de l'ombre) et racines-puits sur les gisements
 //!   remplissent leur réseau (`tick_organ`). Les couveuses prennent le coût des unités dans leur réseau.
@@ -315,6 +316,33 @@ fn take_pool(w: &mut World, net: u16, item: u8, n: i32) -> bool {
     true
 }
 
+/// Prend plusieurs objets d'un coup dans un réseau, comptés dans la consommation du joueur ; faux (et rien de pris)
+/// s'il en manque un. Réseau illimité (démos) : toujours vrai.
+pub fn take_all(w: &mut World, owner: u8, net: u16, dues: &[(u8, i32)]) -> bool {
+    let free = w.nets.get(net as usize).is_some_and(|n| n.unlimited);
+    if !free && !dues.iter().all(|&(it, n)| n <= 0 || pool_of(w, net, it) >= n) {
+        return false;
+    }
+    for &(it, n) in dues {
+        if n > 0 {
+            take_pool(w, net, it, n);
+            w.players[owner as usize].consumed[it as usize] += n as u32;
+        }
+    }
+    true
+}
+
+/// Graine-mère en croissance du joueur sous le point (x, y) (sous-unités), comme cible de sacrifice.
+pub fn heart_under(w: &World, owner: u8, x: i32, y: i32) -> Option<u32> {
+    let (tx, ty) = (x / TILE, y / TILE);
+    if !w.map.inside(tx, ty) {
+        return None;
+    }
+    let o = w.map.occ[w.map.idx(tx, ty)];
+    let b = (o as usize).checked_sub(1)?;
+    hungry_heart(w, b, owner).then(|| w.building_ref(b))
+}
+
 fn pool_of(w: &World, net: u16, item: u8) -> i32 {
     match (w.nets.get(net as usize), item) {
         (Some(n), SEVE) if net != 0 => n.seve,
@@ -407,13 +435,17 @@ pub fn line_cost(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> V
 pub fn grow(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + GROW_PERIOD;
     let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner);
+    // une graine-mère ne pousse que des organismes qui s'y sacrifient
+    if kind == B_SEED_HEART {
+        return;
+    }
     let def = bdef(kind);
     let mut speed = 2; // tiers : croissance 1,5 fois plus lente qu'un chantier de puissance 10
     if has(w, owner, T_S_FERTILITY) {
         speed = 3;
     }
     // Reine enracinée : les organes de son réseau poussent plus vite
-    let royal = if w.buildings[b].net != 0 && crate::essaim::queen_net(w, owner) == w.buildings[b].net { crate::essaim::Q_GROW as u64 } else { 100 };
+    let royal = if w.buildings[b].net != 0 && crate::essaim::royal_net(w, owner) == w.buildings[b].net { crate::essaim::Q_GROW as u64 } else { 100 };
     let work = def.build.max(1) as u64 * 20 * 3;
     let delta = ((GROW_PERIOD as u64 * speed * BUILD_FULL as u64 * w.players[owner as usize].build_mult.max(1) as u64 / 100 * royal / 100) / work).max(1) as u32;
     let bb = &w.buildings[b];
@@ -443,49 +475,26 @@ pub fn grow(w: &mut World, b: usize) {
     }
 }
 
-/// Nombre de frondaisons du même joueur à moins de 4 cases (ombre).
-fn shade(w: &World, b: usize) -> i32 {
-    let bb = &w.buildings[b];
-    let (cx, cy) = bb.center();
-    let owner = bb.owner;
-    let mut n = 0;
-    w.grid.query_buildings(cx, cy, 6 * TILE, |o| {
-        if o == b {
-            return;
-        }
-        let ob = &w.buildings[o];
-        if ob.alive && ob.owner == owner && ob.kind == B_LEAVES && ob.complete() {
-            let (ox, oy) = ob.center();
-            if crate::fixed::dist2(cx, cy, ox, oy) <= (4 * TILE + TILE) as i64 * (4 * TILE + TILE) as i64 {
-                n += 1;
-            }
-        }
-    });
-    n
-}
-
-/// Production par seconde d'un organe (sève, sels), en centièmes ; épuisé (plus d'herbe autour), il n'en
-/// donne presque plus (voir soil.rs).
+/// Production par seconde d'un organe (sève, sels), en centièmes. Celle d'une frondaison ou d'une racine-puits
+/// vient de l'herbe qu'elle mange (distance, concurrence, épuisement ; voir soil.rs).
 pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
     let (s, l) = full_rate(w, b);
     let bb = &w.buildings[b];
-    if bb.stalled && bb.complete() && crate::soil::feed_r(bb.kind) > 0 {
-        (s * crate::soil::SPENT_PCT / 100, l * crate::soil::SPENT_PCT / 100)
-    } else {
-        (s, l)
+    if crate::soil::feed_r(bb.kind) == 0 {
+        return (s, l);
     }
+    let (bw, bh) = bb.size();
+    let k = crate::soil::yield_of(bb.kind, &crate::soil::meal(w, bb.kind, bb.x, bb.y, bw, bh, !bb.complete() as u32));
+    (s * k / 1000, l * k / 1000)
 }
 
-/// Production d'un organe qui a de l'herbe à manger.
+/// Production nominale d'un organe.
 fn full_rate(w: &World, b: usize) -> (i32, i32) {
     let bb = &w.buildings[b];
     let big = if has(w, bb.owner, T_S_BIG_LEAVES) { 150 } else { 100 };
     match bb.kind {
         B_SEED_HEART => (100, 0),
-        B_LEAVES => {
-            let f = (100 - 25 * shade(w, b)).max(25);
-            (f * big / 100, 0)
-        }
+        B_LEAVES => (big, 0),
         B_TAPROOT => {
             let pur = crate::buildings::purity_of(bb) as i32;
             let (s, l) = match bb.recipe {
@@ -605,6 +614,58 @@ fn strangle(w: &mut World, b: usize) {
 
 /// Morsure du rongeur : arme comptée pour une racine qui étrangle.
 const W_GNAW: u8 = 63;
+
+// ---------- Graine-mère : sacrifices ----------
+
+/// Sève à sacrifier pour qu'une graine-mère ait poussé.
+pub const HEART_SEVE: u32 = 10_000;
+/// Événement : un organisme se sacrifie dans une graine-mère [x, y, type, joueur].
+pub const EV_SACRIFICE: i32 = 60;
+
+/// Graine-mère du joueur, encore en croissance.
+pub fn hungry_heart(w: &World, b: usize, p: u8) -> bool {
+    let bb = &w.buildings[b];
+    bb.alive && bb.owner == p && bb.kind == B_SEED_HEART && !bb.complete()
+}
+
+/// Sève que rapporte un organisme sacrifié : son prix en sève (0 : il ne se sacrifie pas).
+pub fn sacrifice_value(kind: u16) -> u32 {
+    let d = udef(kind);
+    if d.race != RACE_SOUCHE || !d.bio || d.commander || crate::ponte::is_egg(kind) {
+        return 0;
+    }
+    d.cost.iter().find(|c| c.0 == SEVE).map_or(0, |c| c.1 as u32)
+}
+
+/// Sève déjà reçue par une graine-mère en croissance.
+pub fn heart_fed(bb: &Building) -> u32 {
+    // une graine-mère plantée avant cette règle garde son avancement
+    bb.charge.max((bb.build as u64 * HEART_SEVE as u64 / BUILD_FULL as u64) as u32)
+}
+
+/// L'organisme `s` se dissout dans la graine-mère `b`, qui pousse de son prix en sève.
+pub fn sacrifice(w: &mut World, s: usize, b: usize) {
+    let kind = w.units.kind[s];
+    let owner = w.units.owner[s];
+    let value = sacrifice_value(kind);
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    crate::units::clear_orders(w, s);
+    w.units.alive[s] = false;
+    w.units.free.push(s as u32);
+    let pl = &mut w.players[owner as usize];
+    pl.unit_count = pl.unit_count.saturating_sub(1);
+    w.ev(EV_SACRIFICE, x, y, kind as i32, owner as i32);
+    let bb = &mut w.buildings[b];
+    let fed = (heart_fed(bb) + value).min(HEART_SEVE);
+    bb.charge = fed;
+    let p2 = (fed as u64 * BUILD_FULL as u64 / HEART_SEVE as u64) as u32;
+    bb.hp = (bb.hp + crate::buildings::site_hp_gain(bb.def().hp, bb.build, p2)).min(bb.def().hp);
+    bb.build = p2;
+    if fed >= HEART_SEVE {
+        bb.charge = 0;
+        buildings::complete_building(w, b);
+    }
+}
 
 // ---------- Panse ----------
 
@@ -878,6 +939,15 @@ pub fn is_beast(kind: u16) -> bool {
     matches!(kind, U_BEAST_S | U_BEAST_M | U_BEAST_L)
 }
 
+/// Graine-mère en croissance : sève reçue et à recevoir (JSON).
+fn heart_info(bb: &Building) -> String {
+    if bb.kind == B_SEED_HEART && !bb.complete() {
+        format!(",\"heart\":{{\"fed\":{},\"need\":{}}}", heart_fed(bb), HEART_SEVE)
+    } else {
+        String::new()
+    }
+}
+
 /// Fiche d'un bâtiment de la Souche : réserve de son réseau (JSON, champs ajoutés à la fiche).
 pub fn info(w: &World, b: usize) -> String {
     let bb = &w.buildings[b];
@@ -887,5 +957,5 @@ pub fn info(w: &World, b: usize) -> String {
     let adapt = if bb.kind == B_MATRIX { crate::essaim::adapt_info(w, bb.owner) } else { String::new() };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
     let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
-    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), adapt)
+    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), heart_info(bb), adapt)
 }

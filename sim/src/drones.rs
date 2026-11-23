@@ -1111,7 +1111,8 @@ pub fn site_missing(w: &World, b: usize) -> Vec<(u8, u32, u32)> {
             }
         }
     } else if bb.def().class == BClass::Factory {
-        if let Some(&(k, _)) = bb.queue.first() {
+        // (couveuse : ses œufs paient, il ne lui manque rien)
+        if let Some(&(k, _)) = bb.queue.first().filter(|q| udef(q.0).litter == 0) {
             for &(it, n) in udef(k).cost {
                 let miss = (n as u32 * batch(k) as u32).saturating_sub(crate::buildings::factory_has(bb, it) as u32);
                 if miss > 0 {

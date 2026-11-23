@@ -678,6 +678,10 @@ pub fn update_units(w: &mut World) {
         let t_ord = prof_now();
         let forced = run_order(w, s);
         prof_add(1, t_ord);
+        // organisme de la Souche qui vient de se sacrifier
+        if !w.units.alive[s] {
+            continue;
+        }
         let t_w = prof_now();
         crate::combat::unit_weapons(w, s, forced);
         prof_add(2, t_w);
@@ -1057,6 +1061,20 @@ fn run_order(w: &mut World, s: usize) -> u32 {
         }
         Order::Haul { site, feed } => {
             crate::transhumants::haul_step(w, s, site, feed);
+            NONE
+        }
+        Order::Sacrifice { target } => {
+            let Some(b) = w.building(target).filter(|&b| crate::souche::hungry_heart(w, b, owner)) else {
+                pop_order(w, s);
+                return NONE;
+            };
+            let (near, tx, ty, reach) = near_building(w, s, b, TILE + def.radius);
+            if near {
+                crate::souche::sacrifice(w, s, b);
+            } else {
+                steer(w, s, tx, ty, tx, ty, reach - TILE / 2);
+                w.units.cold[s].stuck = 0;
+            }
             NONE
         }
         Order::Tame { target } => {

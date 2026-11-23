@@ -665,7 +665,7 @@ pub fn essaim_demo() -> World {
     put(&mut w, 0, B_COCOON, hx + 8, hy - 5);
     put(&mut w, 0, B_MATRIX, hx - 4, hy - 2);
     let leaves = put(&mut w, 0, B_LEAVES, hx - 8, hy - 2);
-    put(&mut w, 0, B_BROOD, hx + 4, hy + 3);
+    let brood = put(&mut w, 0, B_BROOD, hx + 4, hy + 3);
     let maw = put(&mut w, 0, B_MAW, hx - 6, hy + 3);
     let a = put(&mut w, 0, B_BURROW, hx + 3, hy - 3);
     let b = put(&mut w, 0, B_BURROW, hx + 20, hy + 5);
@@ -697,6 +697,19 @@ pub fn essaim_demo() -> World {
     }
     if let (Some(a), Some(b)) = (a, b) {
         crate::souche::link_burrow(&mut w, a, b);
+    }
+    // la couveuse pond en boucle ; quatre carapaces vont se sacrifier dans une seconde graine-mère
+    if let Some(b) = brood {
+        w.buildings[b].queue.push((U_GNAWER, 1));
+        w.buildings[b].repeat = true;
+        w.buildings[b].wake = 0;
+    }
+    if let Some(h) = place_building(&mut w, 0, B_SEED_HEART, hx + 12, hy + 6, 0) {
+        let target = w.building_ref(h);
+        for k in 0..4 {
+            let id = w.spawn_unit(U_SHELL, 0, (hx + 10 + k) * TILE, (hy + 10) * TILE);
+            w.units.cold[slot_of(id)].orders.push(Order::Sacrifice { target });
+        }
     }
     // la frondaison a déjà mangé une partie de son herbe
     if let Some(l) = leaves {

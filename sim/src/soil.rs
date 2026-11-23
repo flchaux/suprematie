@@ -2,8 +2,11 @@
 //!
 //! - Herbe : tout sol à terre, sans falaise ni bâtiment, qui n'est le terreau de personne. Les frondaisons et
 //!   les racines-puits la mangent case par case dans un périmètre rond autour d'elles, tout doucement, et en
-//!   font du terreau. Quand il n'en reste plus, elles sont épuisées et ne produisent presque plus rien
-//!   (`SPENT_PCT`) : il faut aller planter plus loin.
+//!   font du terreau. C'est l'herbe mangée qui donne la sève (ou les sels) : une case rapporte toujours la
+//!   même chose, mais prend d'autant plus de temps qu'elle est loin (`bite_ticks`).
+//! - Concurrence : une case convoitée par k organes (`World::eaters`) ne compte que pour 1/k dans l'appétit de
+//!   chacun (`Meal::share`) : deux frondaisons au même endroit ne produisent pas plus qu'une seule.
+//! - Épuisement : sans herbe, un organe ne donne presque plus rien (`SPENT_PCT`) : il faut aller plus loin.
 //! - Sol mangé (`World::soil`) : un octet par case, 0 ou joueur + 1. C'est du terreau pour toujours, même si
 //!   le réseau meurt : l'herbe ne repousse pas. À portée d'un poteau (REACH cases), on y pose des organes, les
 //!   organismes y guérissent et les cadavres y sont digérés, pour le réseau du poteau le plus proche.
@@ -19,9 +22,13 @@ use crate::world::*;
 /// Périmètre (rayon en cases, depuis le centre) où une frondaison, une racine-puits mangent l'herbe.
 pub const LEAVES_R: i32 = 7;
 pub const TAPROOT_R: i32 = 9;
-/// Temps pour manger une case (ticks).
-pub const LEAVES_BITE: u32 = 400;
-pub const TAPROOT_BITE: u32 = 500;
+/// Temps pour manger une case (ticks) : BITE_BASE, plus BITE_FAR par demi-case de distance au centre (8 s plus
+/// 3 s par case : 14 s à 2 cases, 20 s à 4, 30 s à 7,5).
+pub const BITE_BASE: u32 = 160;
+pub const BITE_FAR: u32 = 30;
+/// Temps d'une case pour lequel un organe seul donne sa production nominale (ticks).
+pub const LEAVES_NOMINAL: u32 = 400;
+pub const TAPROOT_NOMINAL: u32 = 450;
 /// Production d'un organe épuisé (% de sa production normale).
 pub const SPENT_PCT: i32 = 10;
 /// Portée (cases) du poteau le plus proche pour que le sol mangé serve de terreau (pose, réseau, guérison).
@@ -40,12 +47,19 @@ pub fn feed_r(kind: u16) -> i32 {
     }
 }
 
+/// Temps (ticks) pour manger seul une case à la distance² `d2` (demi-cases) du centre de l'organe.
 #[inline]
-pub fn bite_ticks(kind: u16) -> u32 {
+pub fn bite_ticks(d2: i32) -> u32 {
+    BITE_BASE + BITE_FAR * crate::fixed::isqrt(d2.max(0) as u64) as u32
+}
+
+/// Temps d'une case pour la production nominale.
+#[inline]
+pub fn nominal(kind: u16) -> u32 {
     if kind == B_TAPROOT {
-        TAPROOT_BITE
+        TAPROOT_NOMINAL
     } else {
-        LEAVES_BITE
+        LEAVES_NOMINAL
     }
 }
 
@@ -55,14 +69,17 @@ pub fn bite_ticks(kind: u16) -> u32 {
 pub fn ensure(w: &mut World) {
     if !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
         w.terreau.clear();
+        w.eaters.clear();
         return;
     }
     let size = (w.map.w * w.map.h) as usize;
-    if w.terreau.len() == size {
+    if w.terreau.len() == size && w.eaters.len() == size {
         return;
     }
     w.terreau.clear();
     w.terreau.resize(size, 0);
+    w.eaters.clear();
+    w.eaters.resize(size, 0);
     for (i, &o) in w.soil.iter().enumerate() {
         if o != 0 && o <= 8 {
             w.terreau[i] |= 1 << (o - 1);
@@ -72,6 +89,43 @@ pub fn ensure(w: &mut World) {
         if is_pole(&w.buildings[b]) {
             stamp(w, b, (0, 0, i32::MAX, i32::MAX));
         }
+        if is_eater(&w.buildings[b]) {
+            count_eater(w, b, true);
+        }
+    }
+}
+
+/// Organe poussé qui mange l'herbe.
+#[inline]
+fn is_eater(bb: &Building) -> bool {
+    bb.alive && bb.complete() && feed_r(bb.kind) > 0
+}
+
+/// Compte (ou décompte) l'organe `b` dans les cases de son périmètre.
+fn count_eater(w: &mut World, b: usize, add: bool) {
+    let bb = &w.buildings[b];
+    let (bw, bh) = bb.size();
+    let (area, r) = ((bb.x, bb.y, bw, bh), feed_r(bb.kind));
+    let mut cells: Vec<usize> = Vec::new();
+    around(w, area, r, |i, _, _, _| {
+        cells.push(i);
+        true
+    });
+    for i in cells {
+        let v = &mut w.eaters[i];
+        *v = if add { v.saturating_add(1) } else { v.saturating_sub(1) };
+    }
+}
+
+/// Un organe qui mange l'herbe vient de pousser, ou de disparaître.
+pub fn eater_added(w: &mut World, b: usize) {
+    if !w.eaters.is_empty() && is_eater(&w.buildings[b]) {
+        count_eater(w, b, true);
+    }
+}
+pub fn eater_removed(w: &mut World, b: usize) {
+    if !w.eaters.is_empty() && w.buildings[b].complete() && feed_r(w.buildings[b].kind) > 0 {
+        count_eater(w, b, false);
     }
 }
 
@@ -195,44 +249,78 @@ fn ground_total(w: &World, kind: u16, x: i32, y: i32, bw: i32, bh: i32) -> i32 {
     n
 }
 
-/// Organe de la Souche, une fois par passage (souche::tick_organ) : il mange l'herbe de son périmètre, de la
-/// plus proche à la plus lointaine (bord irrégulier). Sans herbe, il est épuisé (`Building::stalled`).
+/// Ce qu'un organe a à manger : cases d'herbe, part qui lui en revient (‰ : 1000 s'il est seul à les convoiter),
+/// temps de la case qu'il mange (ticks, seul), temps de tout manger seul (ticks), et cette case.
+#[derive(Clone, Copy, Default)]
+pub struct Meal {
+    pub left: u32,
+    pub share: u32,
+    pub ticks: u32,
+    pub all: u32,
+    cell: Option<(usize, i32, i32)>,
+}
+
+/// Repas d'un organe de type `kind` sur l'emprise donnée ; `extra` : 1 pour un organe pas encore compté dans les
+/// cases (aperçu de pose). La case mangée est la plus proche, à un tirage près (bord irrégulier).
+pub fn meal(w: &World, kind: u16, x: i32, y: i32, bw: i32, bh: i32, extra: u32) -> Meal {
+    let r = feed_r(kind);
+    let mut m = Meal::default();
+    let (mut best, mut shares) = (i32::MAX, 0u32);
+    if r == 0 {
+        return m;
+    }
+    around(w, (x, y, bw, bh), r, |i, tx, ty, d2| {
+        if grass(w, i) && !(extra > 0 && tx >= x && tx < x + bw && ty >= y && ty < y + bh) {
+            m.left += 1;
+            m.all += bite_ticks(d2);
+            shares += 1000 / (w.eaters.get(i).copied().unwrap_or(0) as u32 + extra).max(1);
+            let k = d2 + (crate::rng::hash3(tx, ty, 0x6A_55) % 40) as i32;
+            if k < best {
+                best = k;
+                m.ticks = bite_ticks(d2);
+                m.cell = Some((i, tx, ty));
+            }
+        }
+        true
+    });
+    m.share = shares.checked_div(m.left).unwrap_or(0);
+    m
+}
+
+/// Production (‰ de la nominale) d'un organe qui a ce repas.
+pub fn yield_of(kind: u16, m: &Meal) -> i32 {
+    if m.left == 0 {
+        SPENT_PCT * 10
+    } else {
+        (nominal(kind) * m.share / m.ticks.max(1)) as i32
+    }
+}
+
+/// Organe de la Souche, une fois par passage (souche::tick_organ) : il mange l'herbe de son périmètre. Sans
+/// herbe, il est épuisé (`Building::stalled`). L'avancement de la case (millièmes de tick) est dans `charge`.
 pub fn graze(w: &mut World, b: usize) {
     let kind = w.buildings[b].kind;
-    let r = feed_r(kind);
-    if r == 0 || w.buildings[b].net == 0 {
+    if feed_r(kind) == 0 || w.buildings[b].net == 0 {
         return;
     }
     ensure(w);
     let bb = &w.buildings[b];
     let (bw, bh) = bb.size();
-    let area = (bb.x, bb.y, bw, bh);
     let owner = bb.owner;
-    let ready = bb.charge + crate::souche::ORGAN_PERIOD >= bite_ticks(kind);
-    // la case à manger (la plus proche, à un tirage près), ou seulement s'il en reste
-    let mut best: Option<(i32, usize, i32, i32)> = None;
-    around(w, area, r, |i, tx, ty, d2| {
-        if grass(w, i) {
-            let k = d2 + (crate::rng::hash3(tx, ty, 0x6A_55) % 40) as i32;
-            if best.is_none_or(|(bk, ..)| k < bk) {
-                best = Some((k, i, tx, ty));
-            }
-            return ready;
-        }
-        true
-    });
-    let spent = best.is_none();
+    let m = meal(w, kind, bb.x, bb.y, bw, bh, 0);
+    let spent = m.left == 0;
     let was = std::mem::replace(&mut w.buildings[b].stalled, spent);
     if spent && !was {
         let (cx, cy) = w.buildings[b].center();
         w.ev(EV_SPENT, cx, cy, kind as i32, owner as i32);
     }
-    let Some((_, i, tx, ty)) = best else { return };
-    if !ready {
-        w.buildings[b].charge += crate::souche::ORGAN_PERIOD;
+    let Some((i, tx, ty)) = m.cell else { return };
+    let bb = &mut w.buildings[b];
+    bb.charge += crate::souche::ORGAN_PERIOD * m.share;
+    if bb.charge < m.ticks * 1000 {
         return;
     }
-    w.buildings[b].charge = 0;
+    bb.charge -= m.ticks * 1000;
     eat(w, owner, i);
     w.ev(EV_GRAZE, tx * TILE + TILE / 2, ty * TILE + TILE / 2, kind as i32, owner as i32);
 }
@@ -240,8 +328,9 @@ pub fn graze(w: &mut World, b: usize) {
 /// Un organe mange `n` cases d'un coup (démonstrations).
 pub fn graze_now(w: &mut World, b: usize, n: u32) {
     for _ in 0..n {
-        w.buildings[b].charge = bite_ticks(w.buildings[b].kind);
+        w.buildings[b].charge = 10_000_000;
         graze(w, b);
+        w.buildings[b].charge = 0;
     }
 }
 
@@ -370,25 +459,34 @@ pub fn layer(w: &World, player: i32) -> Vec<i32> {
     out
 }
 
-/// Fiche d'un organe qui mange l'herbe (JSON) : cases qui restent, cases du périmètre, secondes par case,
-/// épuisé.
+/// Fiche d'un organe qui mange l'herbe (JSON) : cases qui restent, cases du périmètre, secondes pour tout
+/// manger, part qui lui revient (‰), production (‰ de la nominale), épuisé.
 pub fn info(w: &World, b: usize) -> String {
     let bb = &w.buildings[b];
     if feed_r(bb.kind) == 0 {
         return String::new();
     }
     let (bw, bh) = bb.size();
+    let m = meal(w, bb.kind, bb.x, bb.y, bw, bh, !bb.complete() as u32);
     format!(
-        ",\"soil\":{{\"left\":{},\"total\":{},\"secs\":{},\"spent\":{},\"pct\":{}}}",
-        grass_left(w, bb.kind, bb.x, bb.y, bw, bh),
+        ",\"soil\":{{\"left\":{},\"total\":{},\"secs\":{},\"share\":{},\"rate\":{},\"spent\":{},\"pct\":{}}}",
+        m.left,
         ground_total(w, bb.kind, bb.x, bb.y, bw, bh),
-        bite_ticks(bb.kind) / 20,
+        secs(&m),
+        m.share,
+        yield_of(bb.kind, &m),
         bb.complete() && bb.stalled,
         SPENT_PCT
     )
 }
 
-/// Aperçu de pose d'un organe : [cases d'herbe à manger, cases du périmètre, secondes par case, rayon].
+/// Secondes pour tout manger, à la part qui revient à l'organe.
+fn secs(m: &Meal) -> u32 {
+    (m.all as u64 * 50 / m.share.max(1) as u64) as u32
+}
+
+/// Aperçu de pose d'un organe : [cases d'herbe à manger, cases du périmètre, secondes pour tout manger, rayon,
+/// part qui lui reviendrait (‰), production (‰ de la nominale)].
 pub fn preview(w: &World, kind: u16, x: i32, y: i32) -> Vec<i32> {
     if kind as usize >= BUILDINGS.len() || feed_r(kind) == 0 {
         return Vec::new();
@@ -398,12 +496,6 @@ pub fn preview(w: &World, kind: u16, x: i32, y: i32) -> Vec<i32> {
     if !inside(x, w.map.w) || !inside(y, w.map.h) {
         return Vec::new();
     }
-    // l'herbe sous l'emprise ne sera pas mangée : le bâtiment la recouvre
-    let mut under = 0;
-    for ty in y..(y + bh).min(w.map.h) {
-        for tx in x..(x + bw).min(w.map.w) {
-            under += grass(w, w.map.idx(tx, ty)) as i32;
-        }
-    }
-    vec![grass_left(w, kind, x, y, bw, bh) - under, ground_total(w, kind, x, y, bw, bh), bite_ticks(kind) as i32 / 20, feed_r(kind)]
+    let m = meal(w, kind, x, y, bw, bh, 1);
+    vec![m.left as i32, ground_total(w, kind, x, y, bw, bh), secs(&m) as i32, feed_r(kind), m.share as i32, yield_of(kind, &m)]
 }

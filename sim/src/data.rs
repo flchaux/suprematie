@@ -529,7 +529,7 @@ pub const TECHS: [TechDef; 92] = [
     t!("s_scales", "Écailles", 2, 15, 8, [], "Mutation : +30 % de points de vie pour tous les organismes. Exclut Sève vive.", race: RACE_SOUCHE, excl: 53),
     t!("s_quick_sap", "Sève vive", 2, 15, 8, [], "Mutation : régénération doublée sur le terreau, et 1 % par seconde hors du terreau. Exclut Écailles.", race: RACE_SOUCHE, excl: 52),
     t!("s_acid", "Acide", 3, 20, 10, [52, 53], "Mutation : +25 % de dégâts pour tous les organismes ; les cracheurs laissent une flaque d'acide. Exclut Fécondité.", race: RACE_SOUCHE, excl: 55),
-    t!("s_fertility", "Fécondité", 3, 20, 10, [52, 53], "Mutation : couveuses et croissance des organes 50 % plus rapides. Exclut Acide.", race: RACE_SOUCHE, excl: 54),
+    t!("s_fertility", "Fécondité", 3, 20, 10, [52, 53], "Mutation : éclosion des œufs et croissance des organes 50 % plus rapides. Exclut Acide.", race: RACE_SOUCHE, excl: 54),
     t!("s_deep_roots", "Racines profondes", 4, 25, 12, [54, 55], "Mutation : racines et organes subissent 40 % de dégâts en moins. Exclut Grandes frondaisons.", race: RACE_SOUCHE, excl: 57),
     t!("s_big_leaves", "Grandes frondaisons", 4, 25, 12, [54, 55], "Mutation : frondaisons et racines-puits +50 %. Exclut Racines profondes.", race: RACE_SOUCHE, excl: 56),
     // ----- Transhumants : chaque unité de recherche coûte 3 × palier relevés (voir transhumants.rs) -----
@@ -1253,13 +1253,16 @@ pub fn batch(kind: u16) -> u16 {
     UNITS[kind as usize].litter.max(1) as u16
 }
 
+/// Temps de ponte d'une portée (ticks) : presque rien, ce sont les œufs qui paient et prennent leur temps.
+pub const LAY_TICKS: u32 = 20;
+
 /// Durée d'une entrée de file d'usine, en ticks à puissance nominale : le temps de fabrication de
-/// l'unité, ou la gestation d'une portée (la moitié du temps cumulé de ses organismes).
+/// l'unité, ou la ponte d'une portée.
 #[inline]
 pub fn factory_ticks(kind: u16) -> u32 {
     let d = &UNITS[kind as usize];
     if d.litter > 0 {
-        d.build as u32 * 10 * d.litter as u32
+        LAY_TICKS
     } else {
         d.build as u32 * 20
     }

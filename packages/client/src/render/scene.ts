@@ -557,6 +557,8 @@ export class GameScene {
     this.armArrows.count = 0;
     this.armPads.count = 0;
     this.twinEdges.count = 0;
+    // le cercle de portée (arme, périmètre d'herbe) part avec le fantôme
+    this.rangeRing.visible = false;
   }
 
   addMarker(x: number, z: number, color: number): void {

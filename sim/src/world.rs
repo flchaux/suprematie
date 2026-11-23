@@ -140,6 +140,8 @@ pub enum Order {
     Deliver { item: u8 },
     /// Reine de la Souche : apprivoiser un nid de mordeurs sauvage (référence du nid ; voir souche::tame)
     Tame { target: u32 },
+    /// organisme de la Souche : se sacrifier dans une graine-mère en croissance (voir souche::sacrifice)
+    Sacrifice { target: u32 },
     /// chariot de convoi des Transhumants : navette entre sa soute et le module `site` ; `feed` : de la soute
     /// vers le fabricant (ingrédients de sa recette), sinon du module vers la soute (ce qui sort)
     Haul { site: u32, feed: bool },
@@ -174,6 +176,7 @@ impl Order {
             Order::Tame { .. } => 21,
             Order::Haul { .. } => 22,
             Order::Ferry { .. } => 23,
+            Order::Sacrifice { .. } => 24,
         }
     }
 }
@@ -201,7 +204,7 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } => target.ser(w),
             Order::Deliver { item } => item.ser(w),
             Order::Haul { site, feed } => {
                 site.ser(w);
@@ -254,6 +257,7 @@ impl Ser for Order {
             21 => Order::Tame { target: u(r) },
             22 => Order::Haul { site: u(r), feed: u8::de(r) != 0 },
             23 => Order::Ferry { ax: i(r), ay: i(r), bx: i(r), by: i(r) },
+            24 => Order::Sacrifice { target: u(r) },
             _ => Order::Enter { target: u(r) },
         }
     }
@@ -641,6 +645,10 @@ pub struct World {
     pub soil_n: u32,
     /// Souche : terreau par case, un bit par joueur : zones des poteaux et sol mangé (dérivé, voir soil::ensure)
     pub terreau: Vec<u8>,
+    /// Souche : organes qui mangent l'herbe dont le périmètre couvre chaque case (dérivé, voir soil::ensure)
+    pub eaters: Vec<u8>,
+    /// Souche : réseau que nourrit la Reine enracinée de chaque joueur (dérivé, refait à chaque tick)
+    pub royal: Vec<u16>,
     /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
     pub arks: Vec<crate::ameliorations::Ark>,
 }
@@ -748,6 +756,8 @@ impl World {
             soil: Vec::new(),
             soil_n: 0,
             terreau: Vec::new(),
+            eaters: Vec::new(),
+            royal: Vec::new(),
             arks: Vec::new(),
         };
         w.wear = vec![0; w.map.spots.len()];
@@ -1016,6 +1026,7 @@ impl World {
         self.grid.rebuild_units(&self.units, &teams);
         crate::combat::collect_shields(self);
         crate::soil::ensure(self);
+        crate::essaim::refresh_royal(self);
         crate::buildings::update_buildings(self);
         crate::drones::plan(self);
         crate::belts::update_belts(self);

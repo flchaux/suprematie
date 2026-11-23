@@ -394,7 +394,7 @@ fn the_queen_tames_a_wild_nest_and_its_horde() {
     assert!(eggs.iter().all(|&s| crate::ponte::content(&w, s).is_some_and(crate::souche::is_beast)), "des œufs de mordeurs");
     assert!(eggs.iter().all(|&s| w.units.cold[s].orders.is_empty()), "pas de ralliement : les bêtes resteront au nid");
     let den = w.nature.dens[0].brood.len();
-    steps(&mut w, crate::ponte::INCUBATION + 5);
+    steps(&mut w, crate::ponte::incubation(U_BEAST_S) + 5);
     let after = (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && crate::souche::is_beast(w.units.kind[s])).count();
     assert_eq!(after, beasts + crate::nature::DEN_LITTER, "éclosion au nid greffé : {beasts} → {after}");
     assert_eq!(w.nature.dens[0].brood.len(), den, "les bêtes nées restent comptées dans la portée du nid");
@@ -982,4 +982,80 @@ fn a_folding_hold_takes_its_carts_and_their_load_and_brings_them_back() {
     steps(&mut w, crate::transhumants::DEPLOY_TICKS as u32 + 5);
     let hb2 = find_building(&w, 0, B_T_HOLD).expect("soute redéployée");
     assert_eq!(crate::transhumants::carts_of(&w, hb2).len(), 3, "ses chariots ressortent");
+}
+
+// ---------- Graine-mère : sacrifices ----------
+
+/// Une graine-mère ne pousse que des organismes qui s'y sacrifient : chacun rapporte son prix en sève, il en faut
+/// 10 000.
+#[test]
+fn a_seed_heart_grows_from_sacrificed_organisms() {
+    let mut w = game(RACE_SOUCHE, RACE_INDUS);
+    let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    flatten(&mut w, hx - 6, hy - 10, hx + 40, hy + 12);
+    let h2 = place_building(&mut w, 0, B_SEED_HEART, hx + 22, hy, 0).expect("seconde graine-mère");
+    steps(&mut w, 400);
+    assert_eq!(w.buildings[h2].build, 0, "elle ne pousse pas seule");
+    let r = w.building_ref(h2) as i32;
+    // dix carapaces et un rongeur : 1 225 sève ; la Reine, un char et un mordeur apprivoisé ne comptent pas
+    let mut ids: Vec<i32> = Vec::new();
+    for k in 0..10 {
+        ids.push(w.spawn_unit(U_SHELL, 0, (hx + 14 + k % 5) * TILE, (hy + 4 + k / 5) * TILE) as i32);
+    }
+    ids.push(w.spawn_unit(U_GNAWER, 0, (hx + 14) * TILE, (hy - 3) * TILE) as i32);
+    let beast = w.spawn_unit(U_BEAST_M, 0, (hx + 14) * TILE, (hy - 5) * TILE);
+    ids.push(beast as i32);
+    ids.push(w.players[0].commander as i32);
+    let count = w.players[0].unit_count;
+    let mut args = vec![0, r, ids.len() as i32];
+    args.extend(&ids);
+    order(&mut w, 0, crate::orders::O_SACRIFICE, &args);
+    let mut events = 0;
+    for _ in 0..500 {
+        w.step(&[]);
+        events += w.events.chunks(5).filter(|e| e[0] == crate::souche::EV_SACRIFICE).count();
+    }
+    assert_eq!(events, 11);
+    assert_eq!(w.players[0].unit_count, count - 11);
+    assert_eq!(w.players[0].losses, 0, "un sacrifice n'est pas une perte");
+    assert!(w.unit(w.players[0].commander).is_some() && w.unit(beast).is_some());
+    assert_eq!(crate::souche::heart_fed(&w.buildings[h2]), 10 * 120 + 25);
+    let part = w.buildings[h2].build;
+    assert!((8000..=8100).contains(&part), "avancement : {part}");
+    assert!(w.buildings[h2].hp > bdef(B_SEED_HEART).hp / 10 + 400, "points de vie : {}", w.buildings[h2].hp);
+    // une sauvegarde garde l'avancement
+    let back = crate::save::restore(&crate::save::snapshot(&w)).expect("relue");
+    assert_eq!(crate::souche::heart_fed(&back.buildings[h2]), 1225);
+    // un Béhémoth vaut 2 400, un léviathan 900 ; le dernier la termine
+    for kind in [U_BEHEMOTH, U_BEHEMOTH, U_BEHEMOTH, U_LEVIATHAN, U_LEVIATHAN] {
+        let s = slot_of(w.spawn_unit(kind, 0, (hx + 18) * TILE, (hy + 1) * TILE));
+        crate::souche::sacrifice(&mut w, s, h2);
+    }
+    assert!(w.buildings[h2].complete(), "10 225 sève : elle a poussé");
+    assert_eq!(w.buildings[h2].hp, bdef(B_SEED_HEART).hp);
+    // poussée, elle ne prend plus personne
+    let g = w.spawn_unit(U_GNAWER, 0, (hx + 18) * TILE, (hy + 5) * TILE);
+    order(&mut w, 0, crate::orders::O_SACRIFICE, &[0, r, 1, g as i32]);
+    steps(&mut w, 60);
+    assert!(w.unit(g).is_some());
+}
+
+/// Une couveuse dont le ralliement est sur une graine-mère en croissance y envoie ses organismes se sacrifier.
+#[test]
+fn a_brood_rallied_on_a_growing_heart_feeds_it() {
+    let mut w = game(RACE_SOUCHE, RACE_INDUS);
+    let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
+    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
+    flatten(&mut w, hx - 6, hy - 10, hx + 40, hy + 12);
+    let h2 = place_building(&mut w, 0, B_SEED_HEART, hx + 16, hy, 0).expect("seconde graine-mère");
+    let b = place_building(&mut w, 0, B_BROOD, hx + 4, hy, 0).expect("couveuse");
+    complete_building(&mut w, b);
+    steps(&mut w, 6);
+    w.buildings[b].rally = w.buildings[h2].center();
+    let br = w.building_ref(b) as i32;
+    order(&mut w, 0, O_FACTORY_QUEUE, &[br, U_GNAWER as i32, 1]);
+    steps(&mut w, 900);
+    assert_eq!(crate::souche::heart_fed(&w.buildings[h2]), 6 * 25);
+    assert!(find_unit(&w, 0, U_GNAWER).is_none());
 }

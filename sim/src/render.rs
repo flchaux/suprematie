@@ -134,7 +134,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     let (bw, bh) = crate::buildings::dims(kind, dir);
                     (x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2)
                 }
-                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Haul { site: target, .. } | Order::Jump { beacon: target } => {
+                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } | Order::Jump { beacon: target } => {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
@@ -204,7 +204,8 @@ fn building_words(w: &World, b: usize, out: &mut Vec<i32>) {
             }
             BClass::Extractor if bb.out >= 5 => flags |= 64,
             BClass::Lab if !bb.working && w.players.get(bb.owner as usize).is_some_and(|p| p.research != 0) => flags |= 32,
-            BClass::Factory if !bb.working && !bb.queue.is_empty() => flags |= 32,
+            // (couveuse dont trois portées couvent : elle attend, il ne lui manque rien)
+            BClass::Factory if !bb.working && bb.queue.first().is_some_and(|q| udef(q.0).litter == 0 || bb.net == 0) => flags |= 32,
             // Souche : frondaison ou racine-puits épuisée (plus d'herbe autour)
             BClass::Organ if bb.stalled => flags |= 32,
             BClass::Power if bb.fuel <= 0 && !crate::buildings::fuelless(bb.kind) => flags |= 32,
@@ -727,7 +728,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
         deliver_info(w, s),
         crate::ameliorations::info(w, crate::ameliorations::Host::U(s)),
         // œuf de la Souche : {kind (espèce portée), left (ticks avant l'éclosion), total (incubation)} ou null
-        crate::ponte::content(w, s).map_or("null".into(), |k| format!("{{\"kind\":{},\"left\":{},\"total\":{}}}", k, crate::ponte::hatch_left(w, s), c.timer)),
+        crate::ponte::info(w, s),
         // Reine de la Souche : elle se tient sur son terreau (elle peut s'y enraciner)
         w.units.kind[s] == U_QUEEN && crate::essaim::soil(w, s) != 0
     )
@@ -806,7 +807,7 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
             let (bw, bh) = crate::buildings::dims(kind, dir);
             Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2))
         }
-        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Haul { site: target, .. } => w.ref_pos(target),
+        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
         Order::Ferry { ax, ay, .. } => Some((ax, ay)),

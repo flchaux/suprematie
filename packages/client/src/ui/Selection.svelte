@@ -5,7 +5,7 @@
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
-  import { BClass, RECIPE_NONE, ADN, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, ADN, SEVE, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
   import Upgrades from "./Upgrades.svelte";
@@ -120,9 +120,10 @@
       const u = d.units[info.queue[0][0]];
       // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche
       const k = Math.max(1, u.litter ?? 0);
+      // couveuse : elle ne paie rien (ses œufs paient), elle attend de la place ou un réseau
+      if (u.litter) return { text: info.net ? "En attente : trois portées couvent déjà" : "Hors de tout réseau : elle ne pond pas", kind: "warn" };
       const lack = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n * k);
       const miss = lack.map(([it, n]) => `${n * k - (info.stash[it] ?? 0)} ${d.items[it].name}`);
-      if (u.litter && miss.length) return { text: `En attente de : ${miss.join(", ")} (la réserve du réseau paie la portée entière d'un coup)`, kind: "warn" };
       // ce que les dépôts à portée des drones de l'usine ont encore (voir drones::site_missing)
       const near = new Map(((info.missing ?? []) as number[][]).map(([it, , n]) => [it, n]));
       const empty = lack.some(([it]) => (near.get(it) ?? 0) <= 0);
@@ -306,12 +307,18 @@
           <span class="kicker">Réseau</span>
           {#if sv.net}
             <Item id={27} size={16} /> <span class="num">{sv.seve}</span> <Item id={28} size={16} /> <span class="num">{sv.sels}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
-          {:else}<b class="bad">hors du terreau : rien ne pousse</b>{/if}
+          {:else if !sv.heart}<b class="bad">hors du terreau : rien ne pousse</b>{:else}<span class="dim">le sien, une fois poussée</span>{/if}
         </div>
+        {#if sv.heart}
+          <div class="row small" title="Une graine-mère ne pousse que des organismes qui s'y sacrifient. Chacun rapporte son prix en sève."><span class="kicker">Sacrifices</span> <Item id={SEVE} size={16} /> <b class="num">{sv.heart.fed.toLocaleString("fr-FR")}</b><span class="dim"> / <span class="num">{sv.heart.need.toLocaleString("fr-FR")}</span> sève</span></div>
+          <div class="upbar"><span style="width: {(sv.heart.fed / sv.heart.need) * 100}%"></span></div>
+          <span class="dim small">Sélectionnez des organismes et clic droit ici : ils s'y dissolvent (une carapace vaut 120 sève, un rongeur 25). Une couveuse ralliée sur elle lui envoie ce qui naît.</span>
+        {/if}
         {#if sv.far}<div class="row small" title="Racines et rhizomes coûtent 2 % de plus par case qui les sépare de la graine-mère la plus proche (fixé à la plantation)"><span class="kicker">Distance</span> <span class="num">{sv.far / 2}</span> cases de la graine-mère <span class="dim">· coût +{sv.far} %</span></div>{/if}
         {#if sv.soil}
           {@const so = sv.soil}
-          <div class="row small" title="Frondaisons et racines-puits mangent l'herbe (tout sol qui n'est pas du terreau) autour d'elles et en font du terreau. Sans herbe, elles ne donnent plus que {so.pct} % de leur production."><span class="kicker">Herbe autour</span> <b class="num" class:bad={so.left < 15}>{so.left}</b><span class="dim"> / <span class="num">{so.total}</span> cases{so.left ? ` · ≈ ${Math.max(1, Math.round((so.left * so.secs) / 60))} min` : ""}</span></div>
+          <div class="row small" title="C'est l'herbe mangée (tout sol qui n'est pas du terreau) qui donne la sève : chaque case rapporte autant, mais prend plus de temps quand elle est loin. Les organes qui convoitent la même herbe se la partagent. Sans herbe, il ne reste que {so.pct} % de la production."><span class="kicker">Herbe autour</span> <b class="num" class:bad={so.left < 15}>{so.left}</b><span class="dim"> / <span class="num">{so.total}</span> cases{so.left ? ` · ≈ ${Math.max(1, Math.round(so.secs / 60))} min` : ""}</span></div>
+          <div class="row small"><span class="kicker">Débit</span> <b class="num">{Math.round(so.rate / 10)} %</b>{#if so.left && so.share < 950}<span class="dim">· part de l'herbe <span class="num">{Math.round(so.share / 10)} %</span> : d'autres organes convoitent la même</span>{/if}</div>
           <div class="upbar"><span style="width: {(so.left / Math.max(1, so.total)) * 100}%"></span></div>
         {/if}
         {#if sv.hatch >= 0}
@@ -508,8 +515,8 @@
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
-                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `${(u.build * u.litter) / 2} s de gestation` : `${u.build} s`}</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}
-                {#if u.litter}<span class="good">Portée de {u.litter} œufs, qui éclosent 15 s après la ponte</span><br /><span class="dim">La portée :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
+                <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `éclosion en ${10 + 2 * u.build} s` : `${u.build} s`}</span><br />{#if UNIT_TRAITS[u.key]}<span class="good">{UNIT_TRAITS[u.key]}</span><br />{/if}
+                {#if u.litter}<span class="good">Portée de {u.litter} œufs, pondus aussitôt et sans coût : chaque œuf puise ensuite son prix dans le réseau</span><br /><span class="dim">La portée, en tout :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
             </div>
           {/each}
         </div>
@@ -519,14 +526,14 @@
         </div>
         {#if info.queue.length}
           {@const cur = d.units[info.queue[0][0]]}
-          <div class="row"><span class="kicker">En cours · {cur.name}{cur.litter ? ` (portée de ${cur.litter})` : ""}</span>{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n * Math.max(1, cur.litter ?? 0)} size={16} />{/each}</div>
+          <div class="row"><span class="kicker">En cours · {cur.name}{cur.litter ? ` (portée de ${cur.litter})` : ""}</span>{#if !cur.litter}{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}{/if}</div>
         {/if}
         {#if (info.missing ?? []).length}
           <div class="row wrap"><span class="kicker">Manque</span>{#each info.missing as [it, n, near]}<span class="miss"><Item id={it} n={n} size={16} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span></span>{/each}</div>
         {/if}
         {#if (bdef.race ?? 0) === 1}
           <span class="dim small"><Icon name="logistics" size={12} />
-            Elle prend le coût de la portée entière dans la réserve de son réseau, la porte, puis pond tous ses œufs devant elle. Ils éclosent 15 s plus tard ; l'ennemi peut les détruire avant.</span>
+            {#if bdef.key === "brood"}Elle pond ses œufs aussitôt, sans rien payer (trois portées à couver au plus). Chaque œuf puise son prix dans le réseau de son terreau, petit à petit, jusqu'à éclore ; sans sève ou sans sels, il attend. L'ennemi peut le détruire avant.{:else}Elle prend le coût de chaque unité dans la réserve de son réseau.{/if}</span>
         {:else}
           <span class="dim small"><Icon name="logistics" size={12} />
             Ses {d.depot?.factoryDrones ?? 4} drones ({info.drones ?? 0} en vol) vont chercher les composants dans vos dépôts à moins de {d.depot?.factorySupply ?? 30} cases. Elle garde d'avance les composants de 2 unités.</span>
@@ -803,6 +810,8 @@
         <!-- œuf de la Souche : l'organisme qu'il porte, et le temps avant l'éclosion -->
         {@const eg = ui.unitInfo.egg}
         <div class="row small"><span class="kicker">Éclosion</span> <b>{d.units[eg.kind]?.name}</b> <span class="num">dans {Math.ceil(eg.left / 20)} s</span></div>
+        {#if eg.paid?.length}<div class="row small"><span class="kicker">Puisé</span> {#each eg.paid as [it, got, n]}<Item id={it} n={got} need={n} size={16} />{/each}</div>{/if}
+        {#if eg.wait}<div class="status warn"><span class="led"></span>En attente : pas de sève ou de sels à puiser dans le réseau</div>{/if}
         <div class="upbar"><span style="width: {100 - (eg.left / Math.max(1, eg.total)) * 100}%"></span></div>
       {/if}
       {#if ui.unitInfo.harvest}

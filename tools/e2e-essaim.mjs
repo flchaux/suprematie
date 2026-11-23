@@ -138,6 +138,22 @@ await page.evaluate(() => window.__game.client.cancelMode());
 await page.mouse.move(640, 300);
 await select(null);
 
+// ---------- œuf qui puise son prix, graine-mère nourrie de sacrifices ----------
+await look(heart.x + 8, heart.z + 4, 40);
+const [egg] = await find("egg_s", true);
+check(!!egg, "œufs pondus par la couveuse");
+await select(egg?.ref ?? null);
+await page.waitForFunction(() => window.__game.ui.unitInfo?.egg?.paid?.length === 2, null, { timeout: 60000 }).catch(() => {});
+check(await page.evaluate(() => [...document.querySelectorAll(".sel .kicker")].some((e) => e.textContent === "Puisé")), "fiche de l'œuf : prix puisé", JSON.stringify(await page.evaluate(() => window.__game.ui.unitInfo?.egg)));
+await shot("oeuf");
+const hearts = await find("seed_heart");
+await select(hearts.find((h) => h.x > heart.x + 5)?.ref ?? null);
+await page.waitForFunction(() => window.__game.ui.buildingInfo?.souche?.heart, null, { timeout: 60000 }).catch(() => {});
+const fed = await page.evaluate(() => window.__game.ui.buildingInfo?.souche?.heart);
+check(fed?.fed === 480 && [...(await page.evaluate(() => [...document.querySelectorAll(".sel .kicker")].map((e) => e.textContent)))].includes("Sacrifices"), "graine-mère : quatre carapaces sacrifiées", JSON.stringify(fed));
+await shot("graine");
+await select(null);
+
 // ---------- Matrice : caractère acquis ----------
 await look(heart.x + 4, heart.z + 2, 90);
 await select(at.matrix.ref);

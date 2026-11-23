@@ -102,6 +102,10 @@ pub const O_ARK_BOOST: i32 = 64;
 /// File de l'atelier embarqué de l'Arche : [Arche, type d'unité, +n ou -n].
 pub const O_ARK_QUEUE: i32 = 65;
 
+/// Organismes de la Souche : se sacrifier dans une graine-mère en croissance : [drapeaux (bit 0 en file), réf. de
+/// la graine-mère, n, unités…] (voir souche::sacrifice).
+pub const O_SACRIFICE: i32 = 66;
+
 struct Cur<'a> {
     a: &'a [i32],
     i: usize,
@@ -363,7 +367,8 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 bb.working = false;
                 bb.progress = 0;
                 // unité (ou portée) en cours abandonnée : ses composants reviennent dans la réserve de l'usine
-                if let Some(k) = front_before {
+                // (une portée d'œufs ne coûte rien à la couveuse : ses œufs paient leur éclosion)
+                if let Some(k) = front_before.filter(|&k| udef(k).litter == 0) {
                     for &(it, n) in udef(k).cost {
                         let n = n * batch(k);
                         crate::buildings::factory_put(&mut w.buildings[b], it, n);
@@ -649,6 +654,18 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                         // un déploiement en cours s'arrête : le chenillard repart vers le point
                         w.units.cold[s].pack = 0;
                         give(w, s, q, Order::DeployAt { x, y, dir });
+                    }
+                }
+            }
+        }
+        O_SACRIFICE => {
+            let q = c.next() & 1 != 0;
+            let target = c.next() as u32;
+            let ok = w.building(target).is_some_and(|b| crate::souche::hungry_heart(w, b, p));
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    if ok && crate::souche::sacrifice_value(w.units.kind[s]) > 0 {
+                        give(w, s, q, Order::Sacrifice { target });
                     }
                 }
             }

@@ -37,6 +37,8 @@ export const EV = {
   GRAZE: 58,
   /** Souche : organe épuisé, plus d'herbe autour (x, y, type, joueur) */
   SPENT: 59,
+  /** Souche : organisme qui se sacrifie dans une graine-mère (x, y, type, joueur) */
+  SACRIFICE: 60,
   /** Transhumants : amélioration installée : (joueur, amélioration, x, y) ; tourelle d'Arche détruite : (joueur, x, y, type d'unité) ; surcharge de l'Arche : (x, y, joueur) */
   MOD_DONE: 70, TURRET_LOST: 71, ARK_BOOST: 72,
 } as const;

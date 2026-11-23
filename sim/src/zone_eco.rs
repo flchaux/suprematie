@@ -179,7 +179,7 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
             let mut mult = pl.build_mult.max(0) as u64 * crate::ameliorations::module_speed(bb) as u64 / 100;
             if bb.def().race == RACE_SOUCHE {
                 mult = mult * crate::souche::brood_speed(w, owner as u8) as u64 / 100;
-                if bb.net != 0 && crate::essaim::queen_net(w, owner as u8) == bb.net {
+                if bb.net != 0 && crate::essaim::royal_net(w, owner as u8) == bb.net {
                     mult = mult * crate::essaim::Q_BROOD as u64 / 100;
                 }
             }
@@ -187,6 +187,10 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
                 return;
             }
             let d = udef(kind);
+            // couveuse : elle ne paie rien, ses œufs puisent leur prix (comptés à part)
+            if d.litter > 0 {
+                return;
+            }
             let ticks = (factory_ticks(kind) as u64 * RECIPE_SCALE as u64).div_ceil(1024 * mult);
             for &(it, n) in d.cost {
                 cons[it as usize] += per_cycle(n as u64 * batch(kind) as u64, ticks);
@@ -308,6 +312,19 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         if in_zone(w, b, z) {
             machines += 1;
             machine_rates(w, b, &mut prod, &mut cons);
+        }
+    }
+    // œufs de la Souche qui puisent dans ce réseau
+    if let Zone::Roots(net) = z {
+        for s in 0..w.units.alive.len() {
+            if !w.units.alive[s] || w.units.owner[s] != p || !crate::ponte::is_egg(w.units.kind[s]) {
+                continue;
+            }
+            if let Some((_, k, ticks)) = crate::ponte::egg_load(w, s).filter(|e| e.0 == net) {
+                for &(it, c) in udef(k).cost {
+                    cons[it as usize] += c as u64 * 100 * MIN / ticks.max(1) as u64;
+                }
+            }
         }
     }
     // énergie de la zone : production, demande, puissance installée (kW), satisfaction (0..1024), autonomie (s, -1 :

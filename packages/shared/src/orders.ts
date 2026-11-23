@@ -57,6 +57,7 @@ export const O = {
   /** mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf…] */
   SET_PAUSE: 56,
   ADAPT: 57,
+  SACRIFICE: 66,
   /** transports volants : navette sans fin de A (embarquement) à B (débarquement) : [drapeaux, ax, ay, bx, by (sous-unités), n, unités…] */
   FERRY: 58,
   /** Transhumants : installer une amélioration : [amélioration, n, réf. d'unité ou de module…] */

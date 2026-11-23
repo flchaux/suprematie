@@ -4,7 +4,7 @@ import * as THREE from "three/webgpu";
 import * as Ord from "@supreme/shared/orders.ts";
 import { cursorCss, type CursorKind } from "../ui/cursors.ts";
 import { FLOOR_H } from "../render/entities.ts";
-import { parseFrame, EV, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BF, BClass, pausableClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
+import { parseFrame, EV, SEVE, UNIT_WORDS, BUILDING_WORDS, WRECK_WORDS, UF, BF, BClass, pausableClass, Layer, Factory, ORDER_DELAY, GAME_SPEEDS, hasTech, realPlayers, fogFromParams, smeltRecipe, NATURE_TEAM } from "@supreme/shared";
 import type { Frame, GameData, ModInfo, ServerMsg, GameStart, PowerZones, ZoneEconomy } from "@supreme/shared";
 import { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -985,6 +985,14 @@ export class GameClient {
           }
           pushMessage((e & 0xff) === ui.me ? "Le cocon s'est ouvert : un Béhémoth est né" : "Un Béhémoth vient de naître", (e & 0xff) === ui.me ? "good" : "alert");
           this.alertPos = { x, z };
+          break;
+        }
+        case EV.SACRIFICE: {
+          const x = a / TILE, z = c / TILE;
+          if (seen(x, z)) {
+            fx?.hatch(x, groundHeight(this.map!, x, z), z, Math.max(1, (this.data!.units[d]?.radius ?? 90) / 70), true);
+            sfx.hatch(near(x, z), pan(x, z));
+          }
           break;
         }
         case EV.GRAZE:
@@ -2323,6 +2331,7 @@ export class GameClient {
     if (tb && enemy(tb.owner)) return "attack";
     const engs = units.some((u) => this.data!.units[u.kind].buildPower > 0);
     if (unit && mine(unit.owner) && !ids.includes(unit.id)) return this.data.units[unit.kind].carry > 0 ? "load" : "assist";
+    if (tb && this.hungryHeart(tb) && units.some((u) => this.sacrificeValue(u.kind) > 0)) return "load";
     if (tb && mine(tb.owner)) {
       const def = this.data.buildings[tb.kind];
       if (def.cls === BClass.Gate) return "move";
@@ -2361,6 +2370,10 @@ export class GameClient {
         const def = this.data.buildings[ui.selBuilding.kind];
         if (def.cls === BClass.Factory || def.key === "nest") {
           this.cmd(Ord.rally(ui.selBuilding.ref, gx, gy));
+          {
+            const h = this.buildingAtTile(Math.floor(g.x), Math.floor(g.z));
+            if (h && this.hungryHeart(h)) pushMessage("Ralliement sur la graine-mère : les organismes nés ici iront s'y sacrifier", "info");
+          }
           this.scene?.addMarker(g.x, g.z, 0x7dff9a);
           sfx.confirm();
         }
@@ -2380,6 +2393,18 @@ export class GameClient {
     const others = units.filter((u) => this.data!.units[u.kind].buildPower === 0);
     // Reine sur un nid de mordeurs sauvage : elle l'apprivoise (les autres unités restent à l'écart)
     if (tb && this.wildNest(tb) && this.tameNest(units, tb.ref, queue)) return;
+    // organismes sur une graine-mère en croissance : ils s'y sacrifient
+    if (tb && this.hungryHeart(tb)) {
+      const fodder = units.filter((u) => this.sacrificeValue(u.kind) > 0);
+      if (fodder.length) {
+        this.cmd(Ord.target(O.SACRIFICE, fodder.map((u) => u.id), tb.ref, queue));
+        const seve = fodder.reduce((n, u) => n + this.sacrificeValue(u.kind), 0);
+        this.scene?.addMarker(g.x, g.z, 0x8cff30);
+        pushMessage(`${fodder.length} organisme${fodder.length > 1 ? "s vont" : " va"} se sacrifier dans la graine-mère : +${seve} sève`, "info");
+        sfx.confirm();
+        return;
+      }
+    }
     if (tb && this.teamOf(tb.owner) !== this.teamOf(ui.me)) {
       this.cmd(Ord.target(O.ATTACK, ids, tb.ref, queue));
       this.scene?.addMarker(g.x, g.z, 0xff5050);
@@ -2513,6 +2538,16 @@ export class GameClient {
     return this.data?.buildings[tb.kind]?.key === "nest" && this.frame?.players[tb.owner]?.team === NATURE_TEAM;
   }
 
+  /** Notre graine-mère (Souche) encore en croissance : elle se nourrit de sacrifices. */
+  private hungryHeart(tb: { kind: number; owner: number; build: number }): boolean {
+    return tb.owner === ui.me && tb.build < 65536 && this.data?.buildings[tb.kind]?.key === "seed_heart";
+  }
+  /** Sève que rapporte un organisme sacrifié (souche::sacrifice_value). */
+  private sacrificeValue(kind: number): number {
+    const u = this.data?.units[kind];
+    if (!u || u.race !== 1 || u.commander || u.egg) return 0;
+    return u.cost.find(([it]) => it === SEVE)?.[1] ?? 0;
+  }
   /** Nid de mordeurs sauvage visé au sol : celui de la case, sinon le plus proche à moins de 4 cases du point. */
   private wildNestAt(x: number, z: number): number {
     const tb = this.buildingAtTile(Math.floor(x), Math.floor(z));
@@ -3097,8 +3132,8 @@ export class GameClient {
     let grassR = 0;
     if (def.key === "leaves" || def.key === "taproot") {
       const v = (await this.query<number[]>("soilPreview", [ui.buildKind, cells[0].x, cells[0].y])) ?? [];
-      if (v.length === 4) {
-        grass = { left: v[0], total: v[1], secs: v[2] };
+      if (v.length === 6) {
+        grass = { left: v[0], total: v[1], secs: v[2], share: v[4], rate: v[5] };
         grassR = v[3] + 0.5;
       }
     }
