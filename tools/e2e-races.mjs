@@ -364,7 +364,7 @@ if (deployed) {
     check((await countPoles()) === 0, "le générateur replié rembarque ses poteaux");
   }
 }
-// chenilles : l'Arche roule, la distance parcourue fait glisser ses crampons (render/entities.ts)
+// chenilles : l'Arche roule, la distance parcourue fait glisser ses crampons (render/entities/units.ts)
 const ark = await b.page.evaluate(() => {
   const { client, ui } = window.__game;
   const id = client.frame.players[ui.me].commander;
