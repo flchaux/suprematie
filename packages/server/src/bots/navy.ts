@@ -10,6 +10,7 @@ import { TILE, dist2 } from "./util.ts";
 import { T, kindPowers } from "./intel.ts";
 import { watersOf, seaField, usefulSea, MIN_SEA, MAX_COAST } from "./water.ts";
 import { arsenalDepot, arsenalWanted } from "./arsenal.ts";
+import { newProject } from "./engineers.ts";
 import type { Placement } from "./layout.ts";
 import type { SkirmishAI, EngBuilder } from "./ai.ts";
 
@@ -241,7 +242,7 @@ function makeYard(ai: SkirmishAI) {
       for (const p of power) ai.arsenal.plan.mod.prod += ai.ctx.data.buildings[p.kind].powerProd;
     }
     ai.log("usine navale en", c.x, c.y, "à", Math.hypot(c.x - ax, c.y - ay).toFixed(0), "cases de l'arsenal");
-    return ai.newProject("yard", [...power, ...places], {});
+    return newProject(ai, "yard", [...power, ...places], {});
   }
   N.yardNext = ai.tick + 1800;
   ai.log("pas de place pour une usine navale", cands.length, "cases examinées");
