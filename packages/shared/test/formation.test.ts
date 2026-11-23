@@ -1,52 +1,41 @@
-// Formation orientée (clic droit glissé) : la disposition actuelle du groupe, tournée, et l'encodage de l'ordre.
+// Formations : encodage des ordres et aperçu (les places sont calculées par la simulation, sim/src/formation.rs).
 import { describe, it, expect } from "vitest";
-import { formationSlots, groupHeading, moveFormation, simAngle, O, TILE, type FormationUnit } from "../src/orders.ts";
+import { readFileSync } from "node:fs";
+import { moveFormation, moveQueuedFormation, simAngle, pack, O, TILE } from "../src/orders.ts";
+import { parseBotDump } from "../src/render.ts";
+import { Sim } from "../src/sim.ts";
 
-const unit = (id: number, x: number, y: number, facing = 0): FormationUnit => ({ id, x: x * TILE, y: y * TILE, facing });
+const wasm = readFileSync(new URL("../../client/public/sim.wasm", import.meta.url));
 
-describe("formation orientée", () => {
-  it("garde la disposition du groupe, centrée sur le point visé", () => {
-    // L asymétrique, tourné vers l'est (+x) ; même direction demandée : simple translation
-    const units = [unit(1, 10, 10), unit(2, 12, 10), unit(3, 14, 10), unit(4, 10, 12)];
-    const slots = new Map(formationSlots(units, 100 * TILE, 50 * TILE, 0).map((s) => [s.id, s]));
-    const dx = 100 * TILE - 11.5 * TILE;
-    const dy = 50 * TILE - 10.5 * TILE;
-    for (const u of units) {
-      expect(Math.abs(slots.get(u.id)!.x - (u.x + dx))).toBeLessThanOrEqual(1);
-      expect(Math.abs(slots.get(u.id)!.y - (u.y + dy))).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it("tourne la disposition pour que l'avant du groupe regarde dans la direction choisie", () => {
-    // groupe tourné vers l'est ; le char 2 est devant (+x), le char 3 à droite (+y)
-    const units = [unit(1, 10, 10), unit(2, 13, 10), unit(3, 10, 12)];
-    // vers le sud (+y) : quart de tour horaire ; ce qui était devant (+x) passe au sud, la droite (+y) à l'ouest (-x)
-    const slots = new Map(formationSlots(units, 50 * TILE, 50 * TILE, Math.PI / 2).map((s) => [s.id, s]));
-    const a = slots.get(1)!;
-    const b = slots.get(2)!;
-    const c = slots.get(3)!;
-    expect(Math.abs(b.x - a.x)).toBeLessThanOrEqual(1);
-    expect(b.y - a.y).toBeCloseTo(3 * TILE, -1);
-    expect(c.x - a.x).toBeCloseTo(-2 * TILE, -1);
-    expect(Math.abs(c.y - a.y)).toBeLessThanOrEqual(1);
-  });
-
-  it("prend la direction du but comme avant quand les unités regardent dans tous les sens", () => {
-    const units = [unit(1, 0, 0, 0), unit(2, 2, 0, 16384), unit(3, 0, 2, 32768), unit(4, 2, 2, 49152)];
-    expect(groupHeading(units, 100 * TILE, 1 * TILE)).toBeCloseTo(0, 1);
-    expect(groupHeading([unit(1, 0, 0, 16384), unit(2, 2, 0, 16384)], 100 * TILE, 0)).toBeCloseTo(Math.PI / 2, 3);
-  });
-
-  it("resserre un groupe très étalé", () => {
-    const units = [unit(1, 0, 0), unit(2, 200, 0)];
-    const slots = formationSlots(units, 100 * TILE, 100 * TILE, 0);
-    expect(Math.abs(slots[0].x - slots[1].x)).toBeLessThan(20 * TILE);
-  });
-
-  it("encode l'orientation dans l'ordre de déplacement (drapeau 4)", () => {
-    const cmd = moveFormation([unit(7, 0, 0), unit(8, 1, 0)], 1000, 2000, Math.PI / 2, true);
-    expect(cmd.slice(0, 6)).toEqual([O.MOVE, 1 | 4, 1000, 2000, 16384, 2]);
-    expect(cmd.length).toBe(6 + 2 * 3);
+describe("formation orientée (clic droit glissé)", () => {
+  it("encode l'angle et les drapeaux 4 et 8 ; chaque unité porte le but du groupe", () => {
+    const cmd = moveFormation([7, 8], 1000, 2000, Math.PI / 2, true);
+    expect(cmd).toEqual([O.MOVE, 1 | 4 | 8, 1000, 2000, 16384, 2, 7, 1000, 2000, 8, 1000, 2000]);
     expect(simAngle(-Math.PI / 2)).toBe(49152);
+  });
+
+  it("encode la formation en file (drapeaux 1 et 8)", () => {
+    expect(moveQueuedFormation([7], 10, 20)).toEqual([O.MOVE, 1 | 8, 10, 20, 1, 7, 10, 20]);
+  });
+});
+
+describe("aperçu de formation", () => {
+  it("donne une place par unité, celles que l'ordre donne ensuite", async () => {
+    const sim = await Sim.load(wasm);
+    sim.formationDemo();
+    const ids = parseBotDump(sim.botDump()).units.filter((u) => u.owner === 0).map((u) => u.id);
+    expect(ids.length).toBeGreaterThan(20);
+    const gx = 200 * TILE;
+    const gy = 200 * TILE;
+    const shown = sim.formationPreview([0, gx, gy, 16384, 0, ...ids]);
+    expect(shown.length).toBe(3 * ids.length);
+    const out: number[] = [];
+    pack(0, moveFormation(ids, gx, gy, Math.PI / 2), out);
+    sim.step(out);
+    // file d'ordres d'une unité : id, x, y, n, puis n fois (code, x, y) ; le premier est le déplacement
+    const orders = sim.unitOrders(ids);
+    const end = new Map<number, [number, number]>();
+    for (let i = 0; i < orders.length; i += 4 + 3 * orders[i + 3]) end.set(orders[i] >>> 0, [orders[i + 5], orders[i + 6]]);
+    for (let i = 0; i < shown.length; i += 3) expect(end.get(shown[i] >>> 0)).toEqual([shown[i + 1], shown[i + 2]]);
   });
 });

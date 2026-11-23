@@ -1324,23 +1324,24 @@ export class GameClient {
   private formStart: { x: number; z: number } | null = null;
   private formAngle: number | null = null;
 
-  /** Unités sélectionnées prêtes pour une formation : position, orientation et taille. */
-  private formationUnits(): (Ord.FormationUnit & { radius: number })[] {
-    const data = this.data!;
+  /** Unités sélectionnées à mettre en formation : rayon (cases) par identifiant. */
+  private formationUnits(): Map<number, number> {
+    const out = new Map<number, number>();
     const f = this.frame;
-    if (!f) return [];
-    const out: (Ord.FormationUnit & { radius: number })[] = [];
+    if (!f) return out;
     for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += UNIT_WORDS) {
       const id = f.buf[o] >>> 0;
       if (!this.selected.has(id) || ((f.buf[o + 1] >> 8) & 0xff) !== ui.me) continue;
-      const d = data.units[f.buf[o + 1] & 0xff];
-      out.push({ id, x: f.buf[o + 2], y: f.buf[o + 3], facing: f.buf[o + 6] & 0xffff, radius: d.radius });
+      out.set(id, this.data!.units[f.buf[o + 1] & 0xff].radius / TILE);
     }
     return out;
   }
 
-  /** Aperçu de la formation pendant le glisser. */
-  private updateFormationPreview(x: number, y: number): void {
+  /** Aperçu de la formation pendant le glisser : geste en cours (but, angle, longueur), une requête à la fois. */
+  private formPreview: { x: number; z: number; angle: number; len: number; queue: boolean } | null = null;
+  private formAsked = false;
+
+  private updateFormationPreview(x: number, y: number, queue: boolean): void {
     const sc = this.scene;
     const start = this.formStart;
     if (!sc || !start) return;
@@ -1349,20 +1350,35 @@ export class GameClient {
     const len = Math.hypot(g.x - start.x, g.z - start.z);
     if (len < 0.6) {
       this.formAngle = null;
+      this.formPreview = null;
       sc.setFormation(null);
       return;
     }
     const angle = Math.atan2(g.z - start.z, g.x - start.x);
     this.formAngle = angle;
-    const units = this.formationUnits();
-    const slots = Ord.formationSlots(units, start.x * TILE, start.z * TILE, angle);
-    const size = new Map(units.map((u) => [u.id, u.radius / TILE]));
-    sc.setFormation(
-      slots.map((p) => ({ x: p.x / TILE, z: p.y / TILE, size: (size.get(p.id) ?? 0.5) * 0.8 })),
-      angle,
-      start,
-      Math.min(len, 12),
-    );
+    this.formPreview = { x: start.x, z: start.z, angle, len, queue };
+    void this.drawFormationPreview();
+  }
+
+  /** Demande les places à la simulation (les mêmes que l'ordre) et les affiche, jusqu'au dernier geste. */
+  private async drawFormationPreview(): Promise<void> {
+    if (this.formAsked) return;
+    this.formAsked = true;
+    try {
+      for (let p = this.formPreview; p; ) {
+        const sizes = this.formationUnits();
+        const a = [ui.me, Math.round(p.x * TILE), Math.round(p.z * TILE), Ord.simAngle(p.angle), p.queue ? 1 : 0, ...sizes.keys()];
+        const s = (await this.query<number[] | null>("formation", a)) ?? [];
+        if (!this.formPreview) return;
+        const slots: { x: number; z: number; size: number }[] = [];
+        for (let i = 0; i + 2 < s.length; i += 3) slots.push({ x: s[i + 1] / TILE, z: s[i + 2] / TILE, size: (sizes.get(s[i] >>> 0) ?? 0.5) * 0.8 });
+        this.scene?.setFormation(slots, p.angle, p, Math.min(p.len, 12));
+        const next: typeof this.formPreview = this.formPreview;
+        p = next === p ? null : next;
+      }
+    } finally {
+      this.formAsked = false;
+    }
   }
 
   private onMove(e: PointerEvent): void {
@@ -1396,7 +1412,7 @@ export class GameClient {
     }
     // clic droit glissé : orientation de la formation (unités sélectionnées) ou déplacement de la caméra
     if (this.mouse.down && this.mouse.button === 2 && this.mouse.dragging && this.formStart) {
-      this.updateFormationPreview(x, y);
+      this.updateFormationPreview(x, y, e.shiftKey);
     } else if (this.mouse.down && this.mouse.button === 2 && this.mouse.dragging) {
       const k = sc.distance / (this.canvasEl.clientHeight * 0.6);
       sc.target.x -= e.movementX * k * Math.cos(sc.yaw) + e.movementY * k * Math.sin(sc.yaw);
@@ -1442,13 +1458,14 @@ export class GameClient {
       const angle = this.formAngle;
       this.formStart = null;
       this.formAngle = null;
+      this.formPreview = null;
       this.scene?.setFormation(null);
       if (this.mouse.dragging && start && angle !== null && this.data && ui.me >= 0) {
-        // formation orientée : le groupe garde sa disposition, tournée vers la direction du glisser,
-        // avance à la vitesse du plus lent et chacun se tourne vers cette direction à l'arrivée
-        const units = this.formationUnits();
-        if (units.length) {
-          this.cmd(Ord.moveFormation(units, Math.round(start.x * TILE), Math.round(start.z * TILE), angle, e.shiftKey));
+        // formation orientée : rectangle par rôles tourné vers la direction du glisser (places calculées
+        // par la simulation), à la vitesse du plus lent ; chacun se tourne vers cette direction à l'arrivée
+        const ids = [...this.formationUnits().keys()];
+        if (ids.length) {
+          this.cmd(Ord.moveFormation(ids, Math.round(start.x * TILE), Math.round(start.z * TILE), angle, e.shiftKey));
           this.scene?.addMarker(start.x, start.z, 0x7dff9a);
           sfx.confirm();
         }

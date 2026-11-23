@@ -131,75 +131,27 @@ export function move(units: { id: number; x: number; y: number }[], gx: number, 
   }
   return out;
 }
-/** Unité à placer en formation : position (sous-unités) et orientation (angle 16 bits de la simulation). */
-export interface FormationUnit {
-  id: number;
-  x: number;
-  y: number;
-  facing: number;
-}
-
-/**
- * Cap actuel d'un groupe (radians, atan2(dy, dx)) : moyenne des orientations des unités si elles
- * regardent à peu près du même côté, sinon direction du centre du groupe vers le but.
- */
-export function groupHeading(units: FormationUnit[], gx: number, gy: number): number {
-  let sx = 0;
-  let sy = 0;
-  for (const u of units) {
-    const a = ((u.facing & 0xffff) / 65536) * 2 * Math.PI;
-    sx += Math.cos(a);
-    sy += Math.sin(a);
-  }
-  if (Math.hypot(sx, sy) >= units.length * 0.5) return Math.atan2(sy, sx);
-  const { cx, cy } = centroid(units);
-  return Math.atan2(gy - cy, gx - cx);
-}
-
-/**
- * Places d'une formation orientée (comme le clic droit glissé de Supreme Commander) : le groupe garde
- * sa disposition actuelle (écarts au centre, resserrés s'il est très étalé), tournée pour que son avant
- * (son cap actuel, voir `groupHeading`) regarde vers `angle` (radians, atan2(dy, dx) dans le repère de
- * la simulation), et centrée sur (gx, gy).
- */
-export function formationSlots(units: FormationUnit[], gx: number, gy: number, angle: number): { id: number; x: number; y: number }[] {
-  const n = units.length;
-  if (n === 0) return [];
-  if (n === 1) return [{ id: units[0].id, x: Math.round(gx), y: Math.round(gy) }];
-  const { cx, cy } = centroid(units);
-  const k = squeeze(units, cx, cy);
-  const rot = angle - groupHeading(units, gx, gy);
-  const c = Math.cos(rot);
-  const s = Math.sin(rot);
-  return units.map((u) => {
-    const ox = (u.x - cx) * k;
-    const oy = (u.y - cy) * k;
-    return { id: u.id, x: Math.round(gx + ox * c - oy * s), y: Math.round(gy + ox * s + oy * c) };
-  });
-}
-
 /** Angle de la simulation (16 bits, un tour = 65536) d'un angle en radians. */
 export function simAngle(rad: number): number {
   return Math.round((rad / (2 * Math.PI)) * 65536) & 0xffff;
 }
 
 /**
- * Déplacement en formation orientée : chaque unité rejoint sa place puis se tourne vers `angle`
- * (radians, atan2(dy, dx)). Drapeau 4 de l'ordre MOVE : l'orientation suit le but du groupe ; la
- * simulation fait avancer le groupe à la vitesse de la plus lente pour qu'il arrive ensemble.
+ * Déplacement en formation orientée (clic droit glissé, drapeaux 4 et 8 de l'ordre MOVE) : la simulation
+ * range le groupe en rectangle tourné vers `angle` (radians, atan2(dy, dx)), le corps à corps et les plus
+ * résistants devant, les tireurs derrière (voir `sim/src/formation.rs`) ; chacun rejoint sa place à
+ * l'allure du plus lent puis se tourne vers l'angle. Chaque unité porte ici le but du groupe.
  */
-export function moveFormation(units: FormationUnit[], gx: number, gy: number, angle: number, queue = false, attack = false): Cmd {
-  const slots = formationSlots(units, gx, gy, angle);
-  const out: Cmd = [O.MOVE, (queue ? 1 : 0) | (attack ? 2 : 0) | 4, gx | 0, gy | 0, simAngle(angle), slots.length];
-  for (const p of slots) out.push(p.id | 0, p.x | 0, p.y | 0);
+export function moveFormation(ids: number[], gx: number, gy: number, angle: number, queue = false, attack = false): Cmd {
+  const out: Cmd = [O.MOVE, (queue ? 1 : 0) | (attack ? 2 : 0) | 4 | 8, gx | 0, gy | 0, simAngle(angle), ids.length];
+  for (const id of ids) out.push(id | 0, gx | 0, gy | 0);
   return out;
 }
 
 /**
- * Formation en file (Maj + clic droit, drapeau 8 de l'ordre MOVE) : la simulation range le groupe en
- * rangées face au trajet au premier point de la file, puis garde sa disposition aux points suivants ;
- * le groupe avance à la vitesse de sa plus lente (voir `sim/src/formation.rs`). Les places sont
- * calculées par la simulation : chaque unité porte ici le but du groupe.
+ * Formation en file (Maj + clic droit, drapeaux 1 et 8 de l'ordre MOVE) : la simulation range le groupe en
+ * rectangle face au trajet au premier point de la file, puis garde sa disposition aux points suivants ;
+ * le groupe avance à la vitesse de sa plus lente (voir `sim/src/formation.rs`).
  */
 export function moveQueuedFormation(ids: number[], gx: number, gy: number, attack = false): Cmd {
   const out: Cmd = [O.MOVE, 1 | (attack ? 2 : 0) | 8, gx | 0, gy | 0, ids.length];

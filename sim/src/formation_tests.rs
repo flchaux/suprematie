@@ -40,8 +40,7 @@ fn flatten(w: &mut World, x0: i32, y0: i32, x1: i32, y1: i32) {
     }
 }
 
-/// Ordre de formation orientée tel que le client l'envoie (packages/shared/src/orders.ts,
-/// `formationSlots`) : écarts au centre du groupe tournés de `rot` quarts de tour (sens horaire à
+/// Ordre de formation orientée aux places données par l'ordre (drapeau 4 sans le 8) : écarts au centre du groupe tournés de `rot` quarts de tour (sens horaire à
 /// l'écran : +x vers +y), centrés sur le but ; chaque unité se tourne vers `face` à l'arrivée.
 fn formation_order(w: &mut World, ids: &[u32], gx: i32, gy: i32, face: i32, rot: i32) -> Vec<(i32, i32)> {
     let n = ids.len() as i32;
@@ -214,7 +213,7 @@ fn big_mixed_formation_stays_in_shape() {
 
 /// Maj + clic droit vers (gx, gy) tel que le client l'envoie (`moveQueuedFormation`).
 fn queued_order(w: &mut World, ids: &[u32], gx: i32, gy: i32) {
-    let mut cmd = vec![O_MOVE, 0, 1 | crate::formation::FLAG_QUEUED_FORMATION, gx, gy, ids.len() as i32];
+    let mut cmd = vec![O_MOVE, 0, 1 | crate::formation::FLAG_PLANNED, gx, gy, ids.len() as i32];
     for &id in ids {
         cmd.extend_from_slice(&[id as i32, gx, gy]);
     }
@@ -403,5 +402,147 @@ fn queued_formation_goes_around_a_wall() {
         let s = w.unit(id).unwrap();
         let d = dist(w.units.x[s], w.units.y[s], slots[k].0, slots[k].1);
         assert!(d <= TILE / 2, "unité {k} à {:.2} cases de sa place", d as f64 / TILE as f64);
+    }
+}
+
+// ---------- Rectangle par rôles (clic droit glissé, drapeaux 4 et 8) ----------
+
+/// Clic droit glissé vers (gx, gy), angle `face`, tel que le client l'envoie (`moveFormation`).
+fn drag_order(w: &mut World, ids: &[u32], gx: i32, gy: i32, face: i32, queue: bool) {
+    let mut cmd = vec![O_MOVE, 0, i32::from(queue) | 4 | crate::formation::FLAG_PLANNED, gx, gy, face, ids.len() as i32];
+    for &id in ids {
+        cmd.extend_from_slice(&[id as i32, gx, gy]);
+    }
+    let mut msg = vec![cmd.len() as i32];
+    msg.extend_from_slice(&cmd);
+    apply_orders(w, &msg);
+}
+
+/// Aucune place n'en recouvre une autre.
+fn assert_no_overlap(w: &World, ids: &[u32], slots: &[(i32, i32)]) {
+    let r = |k: usize| udef(w.units.kind[w.unit(ids[k]).unwrap()]).radius;
+    for i in 0..ids.len() {
+        for j in 0..i {
+            let d = dist(slots[i].0, slots[i].1, slots[j].0, slots[j].1);
+            assert!(d >= r(i) + r(j), "places {i} et {j} trop proches ({d} < {})", r(i) + r(j));
+        }
+    }
+}
+
+/// Rôles : corps à corps devant, puis les sacs à points de vie et la ligne du plus résistant au plus
+/// fragile, les boucliers, les tireurs et antiaériens, les unités sans arme, le commandant.
+#[test]
+fn formation_ranks_by_role() {
+    let front_to_back = ["ram", "shell", "gnawer", "colossus", "hover_tank", "assault_walker", "light_tank", "line_robot", "moto", "mobile_shield", "mobile_aa", "artillery", "missile_launcher", "heavy_artillery", "sonde", "commander"];
+    for p in front_to_back.windows(2) {
+        assert!(crate::formation::rank(kind(p[0])) < crate::formation::rank(kind(p[1])), "{} devant {}", p[0], p[1]);
+    }
+    for p in [("destroyer", "missile_cruiser"), ("frigate", "carrier"), ("spider", "artillery"), ("roll_droid", "light_tank")] {
+        assert!(crate::formation::rank(kind(p.0)) < crate::formation::rank(kind(p.1)), "{} devant {}", p.0, p.1);
+    }
+}
+
+/// Armée en tas, envoyée par un clic droit glissé vers le nord : rectangle plein (rangées droites, toutes
+/// de la même largeur), centré sur le point visé, deux fois plus large que profond, les rôles de l'avant
+/// vers l'arrière, aux places montrées par l'aperçu ; chacun y arrive et regarde le nord.
+#[test]
+fn dragged_formation_is_a_rectangle_ordered_by_role() {
+    let mut w = world();
+    let keys = ["artillery", "gnawer", "line_robot", "hover_tank", "mobile_aa", "light_tank"];
+    let ids: Vec<u32> = (0..24).map(|k| w.spawn_unit(kind(keys[k as usize % 6]), 0, (80 + (k * 7) % 13) * TILE, (120 + (k * 5) % 11) * TILE)).collect();
+    let goal = (120 * TILE, 100 * TILE);
+    let list: Vec<i32> = ids.iter().map(|&i| i as i32).collect();
+    let before = w.hash();
+    let shown = crate::orders::formation_preview(&w, 0, goal.0, goal.1, 49152, false, &list);
+    assert_eq!(before, w.hash(), "l'aperçu ne change rien");
+    drag_order(&mut w, &ids, goal.0, goal.1, 49152, false);
+    let slots = queued_slots(&w, &ids);
+    for c in shown.chunks_exact(3) {
+        let k = ids.iter().position(|&i| i as i32 == c[0]).unwrap();
+        assert_eq!((c[1], c[2]), slots[k], "l'aperçu montre les places de l'ordre");
+    }
+    assert_eq!(shown.len(), 24 * 3);
+    assert_no_overlap(&w, &ids, &slots);
+    // face au nord : l'avant est vers les y décroissants
+    let mut ys: Vec<i32> = slots.iter().map(|p| p.1).collect();
+    ys.sort();
+    ys.dedup_by(|a, b| (*a - *b).abs() <= 3);
+    assert_eq!(ys.len(), 4, "quatre rangées : {ys:?}");
+    let edges = |y: i32| {
+        let row: Vec<usize> = (0..24).filter(|&k| (slots[k].1 - y).abs() <= 3).collect();
+        let r = |k: usize| udef(w.units.kind[w.unit(ids[k]).unwrap()]).radius;
+        (row.iter().map(|&k| slots[k].0 - r(k)).min().unwrap(), row.iter().map(|&k| slots[k].0 + r(k)).max().unwrap())
+    };
+    let (l0, r0) = edges(ys[0]);
+    for &y in &ys {
+        let (l, r) = edges(y);
+        assert!((l - l0).abs() <= 8 && (r - r0).abs() <= 8, "rangée de la même largeur : {l}..{r}, {l0}..{r0}");
+    }
+    assert!((l0 + r0 - 2 * goal.0).abs() <= 8 && (ys[0] + ys[3] - 2 * goal.1).abs() <= 8, "centré sur le point visé");
+    let (width, depth) = (r0 - l0, ys[3] - ys[0] + 260);
+    assert!(width > depth && width < 4 * depth, "plus large que profond : {width} × {depth}");
+    // aucun rôle n'est devant un rôle qui doit l'être avant lui
+    for i in 0..24 {
+        for j in 0..24 {
+            let (a, b) = (kind(keys[i % 6]), kind(keys[j % 6]));
+            if crate::formation::rank(a) < crate::formation::rank(b) {
+                assert!(slots[i].1 <= slots[j].1 + 3, "{} devant {}", keys[i % 6], keys[j % 6]);
+            }
+        }
+    }
+    run_until_done(&mut w, &ids, 4000);
+    for (k, &id) in ids.iter().enumerate() {
+        let s = w.unit(id).unwrap();
+        let d = dist(w.units.x[s], w.units.y[s], slots[k].0, slots[k].1);
+        assert!(d <= TILE / 2, "unité {k} à {:.2} case de sa place", d as f64 / TILE as f64);
+        assert_eq!(w.units.facing[s], 49152, "face au nord");
+    }
+}
+
+/// Tailles très différentes (colosses, chars, artilleries), angle oblique : les places ne se recouvrent
+/// pas, les colosses sont devant.
+#[test]
+fn dragged_formation_spaces_units_by_size() {
+    for (n, face) in [(5, 0), (14, 9000), (31, 50000)] {
+        let mut w = world();
+        let keys = ["light_tank", "artillery", "colossus", "moto"];
+        let ids: Vec<u32> = (0..n).map(|k| w.spawn_unit(kind(keys[k as usize % 4]), 0, (70 + (k % 6) * 6) * TILE, (70 + (k / 6) * 6) * TILE)).collect();
+        let goal = (130 * TILE, 130 * TILE);
+        drag_order(&mut w, &ids, goal.0, goal.1, face, false);
+        let slots = queued_slots(&w, &ids);
+        assert_no_overlap(&w, &ids, &slots);
+        let (c, s) = (w.trig.cos(face as u16) as i64, w.trig.sin(face as u16) as i64);
+        let front = |k: usize| (slots[k].0 - goal.0) as i64 * c + (slots[k].1 - goal.1) as i64 * s;
+        for k in (0..n as usize).filter(|k| k % 4 == 2) {
+            assert!((0..n as usize).filter(|j| j % 4 == 1).all(|j| front(k) > front(j)), "colosse devant l'artillerie");
+        }
+    }
+}
+
+/// Maj + clic droit puis Maj + clic droit glissé : le groupe passe le premier point sans s'arrêter pour se
+/// tourner et finit en rectangle face à l'angle choisi ; le Maj + clic droit suivant garde ce rectangle.
+#[test]
+fn dragged_formation_extends_a_queued_one() {
+    let mut w = world();
+    let keys = ["light_tank", "artillery", "moto", "light_tank", "artillery", "moto"];
+    let ids: Vec<u32> = keys.iter().enumerate().map(|(k, key)| w.spawn_unit(kind(key), 0, (80 + k as i32 % 3 * 3) * TILE, (80 + k as i32) * TILE)).collect();
+    queued_order(&mut w, &ids, 110 * TILE, 83 * TILE);
+    drag_order(&mut w, &ids, 140 * TILE, 83 * TILE, 16384, true);
+    let faces = |w: &World| -> Vec<i32> {
+        ids.iter().flat_map(|&id| w.units.cold[w.unit(id).unwrap()].orders.iter().filter_map(|o| if let Order::Face { a } = *o { Some(a) } else { None }).collect::<Vec<_>>()).collect()
+    };
+    assert_eq!(faces(&w), vec![16384; 6], "une seule orientation, celle du glisser");
+    let second = queued_slots(&w, &ids);
+    // face au sud : deux rangées, l'artillerie au nord
+    assert!((0..6).filter(|k| k % 3 == 1).all(|a| (0..6).filter(|k| k % 3 == 0).all(|t| second[t].1 >= second[a].1)), "artillerie derrière : {second:?}");
+    queued_order(&mut w, &ids, 140 * TILE, 130 * TILE);
+    let third = queued_slots(&w, &ids);
+    for k in 0..6 {
+        assert!((third[k].0 - second[k].0).abs() <= 8 && (third[k].1 - second[k].1 - 47 * TILE).abs() <= 8, "disposition gardée");
+    }
+    run_until_done(&mut w, &ids, 4000);
+    for (k, &id) in ids.iter().enumerate() {
+        let s = w.unit(id).unwrap();
+        assert!(dist(w.units.x[s], w.units.y[s], third[k].0, third[k].1) <= TILE / 2, "unité {k} à sa place");
     }
 }
