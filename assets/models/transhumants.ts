@@ -18,30 +18,32 @@ import { atelierNomade } from "./nomades/atelier.ts";
 import { bastionNomade } from "./nomades/bastion.ts";
 import { poteauNomade } from "./nomades/poteau.ts";
 import { chariotConvoi } from "./nomades/convoi.ts";
-import { ameliorationsArche, amenagements, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
+import { annexesAssembleur, annexesFonderie, annexesForeuse, annexesRaffinerie } from "./nomades/annexes-production.ts";
+import { annexesAtelier, annexesBastion, annexesGenerateur, annexesLaboratoire, annexesSoute } from "./nomades/annexes-service.ts";
+import { ameliorationsArche, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
 
 // ——— Bâtiments ———
 
 export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
   // t_drill : foreuse nomade déployée ; même gréement que le chenillard foreuse (voir foreuseNomade), dans sa
   // pose finale : stabilisateurs posés, mât relevé à l'arrière, tige de forage plantée (pivot « foret »)
-  t_drill: { parts: [...foreuseNomade(false), ...amenagements("drill_fast", "drill_clean")] },
+  t_drill: { parts: [...foreuseNomade(false), ...annexesForeuse(false)] },
   // t_furnace : voir nomades/fonderie.ts (même gréement que le chenillard, pose déployée)
-  t_furnace: { parts: [...fonderieNomade(false), ...amenagements("furnace_fast", "furnace_yield")] },
+  t_furnace: { parts: [...fonderieNomade(false), ...annexesFonderie(false)] },
   // t_assembler : voir nomades/assembleur.ts (même gréement que le chenillard, pose déployée)
-  t_assembler: { parts: [...assembleurNomade(false), ...amenagements("asm_fast", "asm_thrift")] },
+  t_assembler: { parts: [...assembleurNomade(false), ...annexesAssembleur(false)] },
   // t_refinery : voir nomades/raffinerie.ts (même gréement que le chenillard, pose déployée)
-  t_refinery: { parts: [...raffinerieNomade(false), ...amenagements("ref_fast", "ref_crack")] },
+  t_refinery: { parts: [...raffinerieNomade(false), ...annexesRaffinerie(false)] },
   // t_generator : voir nomades/generateur.ts (même gréement que le chenillard, pose déployée)
-  t_generator: { parts: [...generateurNomade(false), ...amenagements("gen_big", "gen_lean")] },
+  t_generator: { parts: [...generateurNomade(false), ...annexesGenerateur(false)] },
   // t_hold : voir nomades/soute.ts (même gréement que le chenillard, pose déployée)
-  t_hold: { parts: [...souteNomade(false), ...amenagements("hold_big", "hold_armor")] },
+  t_hold: { parts: [...souteNomade(false), ...annexesSoute(false)] },
   // t_lab : voir nomades/laboratoire.ts (même gréement que le chenillard, pose déployée)
-  t_lab: { parts: [...laboratoireNomade(false), ...amenagements("lab_fast", "lab_field")] },
+  t_lab: { parts: [...laboratoireNomade(false), ...annexesLaboratoire(false)] },
   // t_workshop : voir nomades/atelier.ts (même gréement que le chenillard, pose déployée)
-  t_workshop: { parts: [...atelierNomade(false), ...amenagements("shop_fast", "shop_vets")] },
+  t_workshop: { parts: [...atelierNomade(false), ...annexesAtelier(false)] },
   // t_bastion : voir nomades/bastion.ts (même gréement que le chenillard, pose déployée)
-  t_bastion: { parts: [...bastionNomade(false), ...amenagements("bastion_long", "bastion_shield")] },
+  t_bastion: { parts: [...bastionNomade(false), ...annexesBastion(false)] },
   // t_pole : poteau relais planté par le générateur nomade (voir nomades/poteau.ts)
   t_pole: { parts: poteauNomade() },
   // ark_dock : groupe électrogène posé par l'Arche à l'arrêt (voir nomades/arche.ts)
@@ -106,15 +108,15 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
     ],
   },
   // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade)
-  ch_drill: { parts: [...foreuseNomade(true), ...amenagements("drill_fast", "drill_clean")] },
-  ch_furnace: { parts: [...fonderieNomade(true), ...amenagements("furnace_fast", "furnace_yield")] },
-  ch_assembler: { parts: [...assembleurNomade(true), ...amenagements("asm_fast", "asm_thrift")] },
-  ch_refinery: { parts: [...raffinerieNomade(true), ...amenagements("ref_fast", "ref_crack")] },
-  ch_generator: { parts: [...generateurNomade(true), ...amenagements("gen_big", "gen_lean")] },
-  ch_hold: { parts: [...souteNomade(true), ...amenagements("hold_big", "hold_armor")] },
-  ch_lab: { parts: [...laboratoireNomade(true), ...amenagements("lab_fast", "lab_field")] },
-  ch_workshop: { parts: [...atelierNomade(true), ...amenagements("shop_fast", "shop_vets")] },
-  ch_bastion: { parts: [...bastionNomade(true), ...amenagements("bastion_long", "bastion_shield")] },
+  ch_drill: { parts: [...foreuseNomade(true), ...annexesForeuse(true)] },
+  ch_furnace: { parts: [...fonderieNomade(true), ...annexesFonderie(true)] },
+  ch_assembler: { parts: [...assembleurNomade(true), ...annexesAssembleur(true)] },
+  ch_refinery: { parts: [...raffinerieNomade(true), ...annexesRaffinerie(true)] },
+  ch_generator: { parts: [...generateurNomade(true), ...annexesGenerateur(true)] },
+  ch_hold: { parts: [...souteNomade(true), ...annexesSoute(true)] },
+  ch_lab: { parts: [...laboratoireNomade(true), ...annexesLaboratoire(true)] },
+  ch_workshop: { parts: [...atelierNomade(true), ...annexesAtelier(true)] },
+  ch_bastion: { parts: [...bastionNomade(true), ...annexesBastion(true)] },
   // t_cart : chariot de convoi attelé à une soute (voir nomades/convoi.ts)
   t_cart: { parts: chariotConvoi() },
   // tourelles déployables de l'Arche (voir nomades/arche.ts)

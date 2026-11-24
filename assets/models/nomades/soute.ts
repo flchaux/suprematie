@@ -2,24 +2,8 @@
 // l'exemple complet). Les pièces sont décrites dans la pose déployée ; avec `chariot`, celles de l'unité, qui
 // portent leurs animations de déploiement (pivots « dep|… »).
 import type { Part, Vec3 } from "../types.ts";
-import { q, coffre, chariotNomade } from "./commun.ts";
-
-type Axe = "x" | "y" | "z";
-function tourne(a: Axe, deg: number, v: Vec3): Vec3 {
-  const r = (deg * Math.PI) / 180;
-  const c = Math.cos(r);
-  const s = Math.sin(r);
-  const [x, y, z] = v;
-  if (a === "x") return [x, y * c - z * s, y * s + z * c];
-  if (a === "y") return [x * c + z * s, y, -x * s + z * c];
-  return [x * c - y * s, x * s + y * c, z];
-}
-/** Décalage (repère déployé) qui, après les rotations du pivot (dans l'ordre du nom), donne le décalage `d`. */
-function decal(rs: [Axe, number][], d: Vec3): string {
-  let v = d;
-  for (const [a, g] of rs) v = tourne(a, -g, v);
-  return v.map(q).join(",");
-}
+import { q, coffre, chariotNomade, decal } from "./commun.ts";
+import type { Axe } from "./commun.ts";
 
 /** Pied de la grue (arrière droit), hauteur du talon de la flèche, longueur de la flèche. */
 const GX = 0.42;

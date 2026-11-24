@@ -6,6 +6,31 @@ import { stade } from "../kit.ts";
 export type C = Part["color"];
 export const q = (v: number) => +v.toFixed(3);
 
+export type Axe = "x" | "y" | "z";
+/** Le vecteur `v` tourné de `deg` degrés autour de l'axe `a`. */
+function tourne(a: Axe, deg: number, v: Vec3): Vec3 {
+  const r = (deg * Math.PI) / 180;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  const [x, y, z] = v;
+  if (a === "x") return [x, y * c - z * s, y * s + z * c];
+  if (a === "y") return [x * c + z * s, y, -x * s + z * c];
+  return [x * c - y * s, x * s + y * c, z];
+}
+/** Décalage (repère déployé) qui, après les rotations du pivot (dans l'ordre du nom), donne le décalage `d`. */
+export function decal(rs: [Axe, number][], d: Vec3): string {
+  let v = d;
+  for (const [a, g] of rs) v = tourne(a, -g, v);
+  return v.map(q).join(",");
+}
+/**
+ * Décalage (repère déployé) qui, joint à la dernière rotation d'un pivot, la fait tourner autour d'un coude et non de
+ * l'origine du pivot ; `coude` : sa place par rapport à cette origine.
+ */
+export function decalCoude(a: Axe, deg: number, coude: Vec3): string {
+  return tourne(a, -deg, coude).map((v, i) => q(v - coude[i])).join(",");
+}
+
 /** Contour en demi-ellipse (largeur 2 x rx, hauteur ry) posé sur y = 0, à extruder le long de z (bâche, voûte). */
 export function voute(rx: number, ry: number, n = 8): [number, number][] {
   const out: [number, number][] = [];
