@@ -159,6 +159,9 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     dA = Math.max(-6 * dt, Math.min(6 * dt, dA));
     st.torso += dA;
     for (const p of km.pivots) {
+      // pièce d'une amélioration qui n'est pas installée : pas dessinée
+      if (!condShown(p.cond, has)) continue;
+      const at = p.cond ? p.n++ : km.n;
       // la tourelle tourne vers sa cible ; les rotors tournent en continu ; les jambes se balancent
       tmpM2.makeTranslation(p.origin.x * og, p.origin.y * og, p.origin.z * og);
       if (p.wave !== 0) {
@@ -185,13 +188,13 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
       } else if (!p.fixed) tmpM2.multiply(new THREE.Matrix4().makeRotationY(p.spin ? performance.now() / (p.cond ? 400 : 80) : st.torso));
       // droïde : la boule rentre quand il se déploie, les pièces déployées sortent
       const dep = st.dep ?? 0;
-      const vis = !condShown(p.cond, has) ? 0.0001 : p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
+      const vis = p.mode === 1 ? Math.max(0.001, 1 - dep) : p.mode === 2 || p.mode === 3 ? Math.max(0.001, dep) : 1;
       tmpM2.scale(tmpS.set(sc * vis, sc * vis, sc * vis));
       const base = tmpM.clone();
       base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
       base.multiply(tmpM2);
-      p.tm.mesh.setMatrixAt(km.n, base);
-      setTeamColor(p.tm, km.n, col);
+      p.tm.mesh.setMatrixAt(at, base);
+      setTeamColor(p.tm, at, col);
     }
     km.n++;
     const r = Math.max(0.5, e.unitRadius(kind, id) / TILE + 0.15);
@@ -281,13 +284,14 @@ export function drawGhosts(e: Entities, ctx: FrameCtx): void {
     const c = tmpC.copy(g.col).lerp(new THREE.Color(0xa8e8ff), t);
     setTeamColor(km.body!, km.n, c);
     for (const p of km.pivots) {
-      const k = p.cond?.on ? 0.0001 : sc;
-      tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z).scale(tmpS.set(k, k, k));
+      if (p.cond?.on) continue;
+      const at = p.cond ? p.n++ : km.n;
+      tmpM2.makeTranslation(p.origin.x, p.origin.y, p.origin.z).scale(tmpS.set(sc, sc, sc));
       const base = tmpM.clone();
       base.scale(tmpS.set(1 / sc, 1 / sc, 1 / sc));
       base.multiply(tmpM2);
-      p.tm.mesh.setMatrixAt(km.n, base);
-      setTeamColor(p.tm, km.n, c);
+      p.tm.mesh.setMatrixAt(at, base);
+      setTeamColor(p.tm, at, c);
     }
     km.n++;
   }

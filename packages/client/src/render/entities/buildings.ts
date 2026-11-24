@@ -300,6 +300,9 @@ export function drawBuildings(e: Entities, ctx: FrameCtx): void {
     const has = modOf(buf[o] >>> 0);
     if (ore) setAccentColor(km.body!, km.n, ore);
     for (const p of km.pivots) {
+      // pièce d'une amélioration qui n'est pas installée : pas dessinée
+      if (!condShown(p.cond, has)) continue;
+      const at = p.cond ? p.n++ : km.n;
       let rot = 0;
       if (p.fixed) rot = 0;
       else if (def.cls === BClass.Turret) rot = Math.PI / 2 - (buf[o + 5] & 0xffff) * ANG - (Math.PI / 2 - (dir * Math.PI) / 2);
@@ -313,16 +316,16 @@ export function drawBuildings(e: Entities, ctx: FrameCtx): void {
         rot = phase === 1 ? (-sweep * timer) / 6 : phase === 2 ? 0 : phase === 3 ? -sweep * (1 - timer / 6) : -sweep;
       } else if (bflags & BF.WORKING && upg === 0) rot = performance.now() / 300;
       // EPPZ d'une ruine : il flotte en tournant tant qu'il n'est pas pris, puis disparaît
-      const gone = !condShown(p.cond, has) ? 0.0001 : p.mode === 4 && !(bflags & BF.WORKING) ? 0.001 : 1;
+      const gone = p.mode === 4 && !(bflags & BF.WORKING) ? 0.001 : 1;
       const bobY = p.mode === 4 ? Math.sin(performance.now() / 500) * 0.06 : 0;
       tmpM2.makeTranslation(p.origin.x, p.origin.y * (sy / sc) + bobY, p.origin.z);
       tmpM2.multiply(new THREE.Matrix4().makeRotationY(rot));
       tmpM2.scale(tmpS.set(sc * gone, sy * gone, sc * gone));
       const base = new THREE.Matrix4().compose(tmpV.set(cx, def.water ? e.map.waterLevel * HSCALE : y, cz), tmpQ, tmpS.set(1, 1, 1));
       base.multiply(tmpM2);
-      p.tm.mesh.setMatrixAt(km.n, base);
-      setTeamColor(p.tm, km.n, c);
-      if (ore) setAccentColor(p.tm, km.n, ore);
+      p.tm.mesh.setMatrixAt(at, base);
+      setTeamColor(p.tm, at, c);
+      if (ore) setAccentColor(p.tm, at, ore);
     }
     km.n++;
     const ref = buf[o] >>> 0;

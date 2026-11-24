@@ -13,7 +13,7 @@ export type Built = ReturnType<typeof buildModel>;
  */
 export class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null; cond: PivotCond | null; fixed: boolean }[] = [];
+  pivots: { tm: TeamMesh; /** instances de cette image, pour une pièce d'amélioration (les autres : `n` du modèle) */ n: number; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null; cond: PivotCond | null; fixed: boolean }[] = [];
   cap = 0;
   n = 0;
   private builtV: Built | null;
@@ -88,12 +88,13 @@ export class KindMesh {
       // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
       // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
       const slide = Number(/^chenille_p([\d.]+)/.exec(name)?.[1] ?? 0);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(name), cond, fixed: !!cond && /^fixe/.test(name) };
+      return { tm, n: 0, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(name), cond, fixed: !!cond && /^fixe/.test(name) };
     });
     this.cap = cap;
   }
   begin(): void {
     this.n = 0;
+    for (const p of this.pivots) p.n = 0;
   }
   end(): void {
     if (!this.body) return;
@@ -101,7 +102,10 @@ export class KindMesh {
     this.body.mesh.instanceMatrix.needsUpdate = true;
     this.body.team.needsUpdate = true;
     for (const p of this.pivots) {
-      p.tm.mesh.count = this.n;
+      // pièce d'une amélioration : seulement les porteurs qui l'ont (aucun : le maillage n'est pas dessiné)
+      const n = p.cond ? p.n : this.n;
+      if (p.cond) p.tm.mesh.visible = n > 0;
+      p.tm.mesh.count = n;
       p.tm.mesh.instanceMatrix.needsUpdate = true;
       p.tm.team.needsUpdate = true;
     }
