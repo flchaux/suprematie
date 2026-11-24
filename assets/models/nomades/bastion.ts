@@ -2,29 +2,12 @@
 // l'exemple complet). Les pièces sont décrites dans la pose déployée ; avec `chariot`, celles de l'unité, qui
 // portent leurs animations de déploiement (pivots « dep|… »).
 import type { Part, Vec3 } from "../types.ts";
-import { q, coffre, chariotNomade } from "./commun.ts";
-
-type Axe = "x" | "y" | "z";
-function tourne(a: Axe, deg: number, v: Vec3): Vec3 {
-  const r = (deg * Math.PI) / 180;
-  const c = Math.cos(r);
-  const s = Math.sin(r);
-  const [x, y, z] = v;
-  if (a === "x") return [x, y * c - z * s, y * s + z * c];
-  if (a === "y") return [x * c + z * s, y, -x * s + z * c];
-  return [x * c - y * s, x * s + y * c, z];
-}
-/** Décalage (repère déployé) qui, après les rotations du pivot (dans l'ordre du nom), donne le décalage `d`. */
-function decal(rs: [Axe, number][], d: Vec3): string {
-  let v = d;
-  for (const [a, g] of rs) v = tourne(a, -g, v);
-  return v.map(q).join(",");
-}
+import { q, coffre, chariotNomade, decal } from "./commun.ts";
 
 /** Hauteur de la couronne de la tourelle (pose déployée), de l'axe des tourillons, et course de la colonne. */
-const TY = 1.07;
+export const TY = 1.07;
 const AY = 1.3;
-const LEVE = 0.3;
+export const LEVE = 0.3;
 /** Pointage du fût en position de route (sous l'horizontale, vers l'arrière). */
 const ROUTE = 10;
 
@@ -84,12 +67,12 @@ export function bastionNomade(chariot: boolean): Part[] {
   );
   // ——— canon cinétique : tourillons sur l'axe de la tourelle (en route, le fût pointe sous l'horizontale) ———
   // m = Ry(180) · Rx(ROUTE) · décalage : le décalage, dans le repère déployé, redonne la levée verticale
-  const canon = chariot
-    ? dep(`r:y,180:0.74:1|r:x,${ROUTE}:0.62:0.74|t:${decal([["y", 180], ["x", ROUTE]], [0, -LEVE, 0])}:0.5:0.62`, "canon")
-    : { pivot: "tourelle" };
+  // (le canon long le remplace : voir annexes-service.ts)
+  const pose = `dep|r:y,180:0.74:1|r:x,${ROUTE}:0.62:0.74|t:${decal([["y", 180], ["x", ROUTE]], [0, -LEVE, 0])}:0.5:0.62#canon`;
+  const canon: Partial<Part> = { pivot: `sauf:bastion_long#${chariot ? pose : "tourelle"}` };
   const A: Vec3 = [0, AY, 0];
   const z = (d: number): Vec3 => [0, AY, d];
-  if (chariot) p.push({ shape: "box", size: [0.03, 0.03, 0.03], pos: A, color: "dark", ...canon });
+  p.push({ shape: "box", size: [0.03, 0.03, 0.03], pos: A, color: "dark", ...canon });
   p.push(
     { shape: "box", size: [0.36, 0.28, 0.16], pos: z(0.48), color: "steel", ...canon },
     { shape: "cylinder", sides: 10, radius: 0.11, height: 0.35, pos: z(0.72), rot: [90, 0, 0], color: "dark", ...canon },

@@ -101,27 +101,3 @@ export function groupeArche(): Part[] {
     { shape: "box", size: [0.1, 0.1, 0.02], pos: [-0.1, 0.3, 0.32], color: "glow" },
   ];
 }
-
-/**
- * Aménagement d'un module ou d'un chenillard (deux choix) : coffret sur le garde-boue arrière droit, à bobine de
- * cuivre et voyant ambre pour le premier (plus vite, plus fort), à caisson d'acier et lanterne verte pour le second.
- * `pos` : pied du coffret.
- */
-export function amenagements(a: string, b: string, pos: Vec3 = [0.66, 0.48, -1.1]): Part[] {
-  const [x, y, z] = pos;
-  return [
-    ...groupe(`si:${a}#fixe_a`, [
-      { shape: "box", size: [0.28, 0.2, 0.24], pos: [x, q(y + 0.1), z], color: "dark" },
-      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.26, pos: [x, q(y + 0.32), z], color: "copper" },
-      { shape: "torus", radius: 0.12, tube: 0.025, sides: 10, pos: [x, q(y + 0.28), z], color: "steel" },
-      { shape: "torus", radius: 0.12, tube: 0.025, sides: 10, pos: [x, q(y + 0.38), z], color: "steel" },
-      { shape: "sphere", radius: 0.07, pos: [x, q(y + 0.52), z], color: "amber" },
-    ]),
-    ...groupe(`si:${b}#fixe_b`, [
-      { shape: "bevel", size: [0.3, 0.36, 0.26], pos: [x, q(y + 0.18), z], bevel: 0.04, color: "steel" },
-      { shape: "box", size: [0.31, 0.06, 0.27], pos: [x, q(y + 0.24), z], color: "faction" },
-      { shape: "cylinder", sides: 5, radius: 0.02, height: 0.4, pos: [x, q(y + 0.54), z], color: "dark" },
-      { shape: "sphere", radius: 0.07, pos: [x, q(y + 0.76), z], color: "acid" },
-    ]),
-  ];
-}
