@@ -100,11 +100,12 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     }
     // (tourelle d'une Arche : 2 s et 1,5 s)
     const queen = def.key === "queen";
-    const packLen = queen ? 60 : def.turret ? (packing === 1 ? 40 : 30) : packing === 1 ? 300 : 200;
+    // (vérins rapides : deux fois moins long)
+    const has = modOf(id);
+    const packLen = queen ? 60 : def.turret ? (packing === 1 ? 40 : 30) : (packing === 1 ? 300 : 200) / (packing && e.quickKeys.some(has) ? 2 : 1);
     const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / packLen) : 0;
     // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
     let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : def.turret && flags & UF.DEPLOYED ? 1 : 0;
-    const has = modOf(id);
     if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
     tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
     // œuf de la Souche : il respire, s'agite avant d'éclore, puis ouvre ses lèvres (le temps restant tient
@@ -193,7 +194,7 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
       setTeamColor(p.tm, km.n, col);
     }
     km.n++;
-    const r = Math.max(0.5, def.radius / TILE + 0.15);
+    const r = Math.max(0.5, e.unitRadius(kind, id) / TILE + 0.15);
     if (selected.has(id) && rings < 4000) {
       tmpM.compose(tmpV.set(x, y + 0.05, z), tmpQ.identity(), tmpS.set(r, 1, r));
       e.rings.setMatrixAt(rings, tmpM);

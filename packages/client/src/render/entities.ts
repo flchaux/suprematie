@@ -174,6 +174,8 @@ export class Entities {
   animFrame = 0;
   /** améliorations des Transhumants : clé → indice */
   private modIds: Map<string, number>;
+  /** améliorations qui déploient et replient deux fois plus vite */
+  quickKeys: string[];
   private modFor: Frame | null = null;
   modViews = new Map<number, ModView>();
   /** nids qu'une Reine apprivoise : avancement affiché (lissé) */
@@ -205,6 +207,7 @@ export class Entities {
   ) {
     map.spots.forEach((sp, i) => this.spotAt.set(sp.y * map.w + sp.x, i));
     this.modIds = new Map((data.mods ?? []).map((m, i) => [m.key, i]));
+    this.quickKeys = (data.mods ?? []).filter((m) => m.quick).map((m) => m.key);
     // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
       // un œuf garde la taille de son rayon (les autres unités : 0,7 case au moins)
@@ -438,6 +441,14 @@ export class Entities {
     this.hatches.push({ x, z, t0: tick / 20 });
   }
 
+  /** Rayon de l'unité `ref` (1/256 de case) : celui de son type, sauf l'Arche, qui s'allonge d'un tronçon par
+   * emplacement équipé d'armement, de coque ou de mobilité (ameliorations::ark_radius). */
+  unitRadius(kind: number, ref: number): number {
+    const def = this.data.units[kind];
+    if (def.key !== "ark") return def.radius;
+    const m = this.modViews.get(ref)?.mods;
+    return m ? (this.data.arkRadii?.[+(m[0] > 0) + +(m[1] > 0) + +(m[3] > 0)] ?? def.radius) : def.radius;
+  }
   unitHeight(kind: number, x: number, z: number): number {
     const u = this.data.units[kind];
     const g = groundHeight(this.map, x, z);

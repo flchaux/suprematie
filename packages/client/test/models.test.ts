@@ -31,17 +31,25 @@ describe("modèles", () => {
     for (const [key, model] of [...Object.entries(UNIT_MODELS), ...Object.entries(BUILDING_MODELS)]) {
       for (const p of buildModel(model).pivots) {
         const c = parseCond(p.name);
-        for (const k of c?.keys ?? []) {
-          expect(keys.has(k), `${key} : ${k}`).toBe(true);
-          if (c!.on) shown.add(k);
+        for (const t of c?.all ?? []) {
+          for (const k of t.keys) {
+            expect(keys.has(k), `${key} : ${k}`).toBe(true);
+            if (c!.on && t.on) shown.add(k);
+          }
         }
       }
     }
-    // l'Arche et les modules montrent chacune de leurs améliorations
-    for (const m of data.mods.slice(1)) if (data.units[m.host].key === "ark" || data.units[m.host].deploys >= 0) expect(shown.has(m.key), m.key).toBe(true);
+    // l'Arche (avec ses remorques), les modules et les unités de combat montrent chacune de leurs améliorations
+    const hidden = data.mods.slice(1).filter((m) => data.units[m.host].key !== "t_cart" && !shown.has(m.key)).map((m) => m.key);
+    expect(hidden).toEqual([]);
     const c = parseCond("sauf:a+b#tourelle");
     expect([condShown(c, () => false), condShown(c, (k) => k === "b"), condShown(null, () => false)]).toEqual([true, false, true]);
-    expect(parseCond("si:a#fixe_x")).toEqual({ on: true, keys: ["a"], base: "fixe_x" });
+    expect(parseCond("si:a#fixe_x")).toEqual({ on: true, all: [{ on: true, keys: ["a"] }], base: "fixe_x" });
+    // plusieurs conditions à la fois, et un déploiement derrière la condition
+    const both = parseCond("si:a+b&c&!d+e#dep|t:0,1,0:0:1#x")!;
+    const seen = (...keys: string[]) => condShown(both, (k) => keys.includes(k));
+    expect([seen("a"), seen("a", "c"), seen("b", "c"), seen("c"), seen("a", "c", "e")]).toEqual([false, true, true, false, false]);
+    expect([both.on, both.base]).toEqual([true, "dep|t:0,1,0:0:1#x"]);
   });
 
   it("portent une occlusion ambiante entre 0,3 et 1, plus sombre dans les creux", () => {

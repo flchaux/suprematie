@@ -131,8 +131,8 @@ if (set !== "decor") list.forEach((d, i) => {
     pm.mesh.count = 1;
     // ?dep=0.5 : pivots de déploiement (« dep|… ») à cet avancement (0 replié, 1 déployé ; par défaut : replié ;
     // œufs de la Souche : 1 fermé, 0,4 ouvert, 0 fané ; par défaut : fermé)
-    const steps = parseDep(p.name);
-    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" && !d.key.startsWith("egg_") ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p/.test(p.name) || /^fixe/.test(cond?.base ?? "") ? 0 : 0.5);
+    const steps = parseDep(cond?.base ?? p.name);
+    const pose = steps ? depMatrix(steps, Number(params.get("dep") ?? (set === "units" && !d.key.startsWith("egg_") ? 0 : 1)), 1) : new THREE.Matrix4().makeRotationY(/^chenille_p/.test(cond?.base ?? p.name) || /^fixe/.test(cond?.base ?? "") ? 0 : 0.5);
     const m = root.clone().multiply(new THREE.Matrix4().makeTranslation(p.origin.x, p.origin.y, p.origin.z)).multiply(pose);
     pm.mesh.setMatrixAt(0, m);
     setTeamColor(pm, 0, color);

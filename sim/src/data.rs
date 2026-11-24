@@ -1277,7 +1277,7 @@ pub const UNITS: [UnitDef; 93] = [
     UnitDef { key: "turret_mortar", name: "Tourelle mortier", hp: 500, speed: 42, radius: 130, weapons: &[92], vision: 24, cost: &[(STEEL, 3), (GEAR, 4), (IRON_PLATE, 6)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Transhumants : remorque attelée à l'Arche ; elle porte une amélioration de pont ou de soutien. Le coût est
     // celui de sa reconstruction (voir convoi.rs) -----
-    UnitDef { key: "ark_car", name: "Remorque d'Arche", hp: 2600, speed: 16, radius: 170, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ark_car", name: "Remorque d'Arche", hp: 2600, speed: 16, radius: 194, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

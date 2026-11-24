@@ -90,7 +90,7 @@ export function ownedUnitAt(c: GameClient, x: number, y: number, anyOwner = fals
     if (!anyOwner && u.owner !== ui.me) continue;
     const km = sc.entities.unitMeshes[u.kind];
     const h = Math.max(0.4, km?.height ?? 0.8);
-    const half = Math.max(0.35, (c.data!.units[u.kind].radius * 2.3) / TILE / 2);
+    const half = Math.max(0.35, (sc.entities.unitRadius(u.kind, u.id) * 2.3) / TILE / 2);
     if (!sc.project(u.x, u.y, u.z, foot) || !sc.project(u.x, u.y + h, u.z, top)) continue;
     sc.project(u.x + right.x * half, u.y + h / 2, u.z + right.z * half, side);
     const mid = { x: (foot.x + top.x) / 2, y: (foot.y + top.y) / 2 };
@@ -249,8 +249,9 @@ export function boxSelect(c: GameClient, x0: number, y0: number, x1: number, y1:
     if (!sc.project(u.x, u.y + 0.3, u.z, p)) continue;
     if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) hits.push([u.id, u.kind]);
   }
-  // les œufs de la Souche et les tourelles d'Arche ne reçoivent pas d'ordres : le cadre ne les prend que s'il n'y a qu'eux
-  const inert = (kind: number) => c.data!.units[kind].egg || c.data!.units[kind].turret;
+  // les œufs de la Souche, les tourelles et les remorques d'Arche ne reçoivent pas d'ordres : le cadre ne les prend que
+  // s'il n'y a qu'eux
+  const inert = (kind: number) => c.data!.units[kind].egg || c.data!.units[kind].turret || c.data!.units[kind].car;
   const eggsOnly = hits.every(([, kind]) => inert(kind));
   for (const [id, kind] of hits) {
     if (!eggsOnly && inert(kind)) continue;

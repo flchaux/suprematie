@@ -33,34 +33,52 @@ export interface UnitDef {
   litter: number;
   /** œuf de la Souche : unité immobile qui éclot en un organisme (voir sim/src/ponte.rs) */
   egg: boolean;
-  /** tourelle déployée par une Arche des Transhumants : elle ne reçoit pas d'ordres (voir sim/src/ameliorations.rs) */
-  turret: boolean;
+  /** tourelle déployée par une Arche des Transhumants : elle ne reçoit pas d'ordres (voir sim/src/ameliorations.rs) ;
+   * remorque attelée à l'Arche (sim/src/convoi.rs) */
+  turret: boolean; car: boolean;
 }
 /** Amélioration des Transhumants (voir sim/src/ameliorations.rs) : `host` : unité qui la porte (pour un module, son
  * chenillard) ; `slot` : emplacement ; `rank`, `base` : palier et palier précédent exigé (0 : aucun) ; le coût compte
  * les relevés ; `time` en secondes. */
+/** Emplacement d'amélioration. */
+export interface ModSlot { key: string; name: string; icon: string }
 export interface ModDef {
   key: string; name: string; desc: string; icon: string; host: number; slot: number; rank: number; base: number; tech: number;
   cost: [number, number][]; time: number;
   /** arme donnée : [rang de l'arme remplacée, arme (-1 : aucune)] ; radar donné (cases, 0 : aucun) */
-  weapon: [number, number]; radar: number;
+  weapon: [number, number]; radar: number; vision: number;
+  /** déploiement, repli ou mise en batterie deux fois plus rapides */
+  quick: boolean;
 }
 /** Fiche des améliorations d'une unité ou d'un module : installées (par emplacement), en cours (ticks restants, total),
  * disponible à portée pour payer (relevés compris), état de l'Arche. */
-export interface ModInfo { host: number; mods: number[]; job: number; left: number; total: number; reach: number[]; ark: ArkInfo | null }
+export interface ModInfo {
+  host: number; mods: number[]; job: number; left: number; total: number; reach: number[]; ark: ArkInfo | null;
+  /** gabarits du joueur : [type d'unité, gabarit de production (1 à 3, 0 : aucun), gabarits (un octet par emplacement)] ;
+   * équipement voulu de l'unité ; équipement payé de l'unité en fabrication (atelier) */
+  kits: [number, number, number, number, number][]; want: number; kit: number;
+}
 /** État d'une Arche : tourelles [type, type voulu, état, ticks, PV ‰, déployée, unité], file de l'atelier embarqué… */
 export interface ArkInfo {
   turrets: [number, number, number, number, number, number, number][];
   out: boolean; hold: boolean; queue: [number, number][]; prog: number; paid: boolean; boost: number; boostReady: number;
   shieldR: number; shieldMax: number; dock: boolean; cap: number;
+  /** remorques : [amélioration, état (CAR), ticks, PV ‰, unité (-1)] ; équipement payé de l'unité de l'atelier embarqué */
+  cars: [number, number, number, number, number][]; kit: number;
 }
 /** États d'une tourelle d'Arche (comme TU_* dans ameliorations.rs). */
 export const TU = { ABOARD: 0, OUT: 1, RETURN: 2, LOST: 3, CONVERT: 4 } as const;
+/** États d'une remorque d'Arche (sim/src/convoi.rs) : à bord, attelée, détruite. */
+export const CAR = { STOWED: 0, OUT: 1, LOST: 2 } as const;
+/** Gabarits d'équipement par type d'unité (sim/src/gabarits.rs). */
+export const KITS = 3;
 export interface GameData {
   races: RaceDef[];
   items: ItemDef[]; recipes: RecipeDef[]; weapons: WeaponDef[]; techs: TechDef[]; buildings: BuildingDef[]; units: UnitDef[];
   /** améliorations des Transhumants (indice 0 : rien), emplacements de l'Arche et des autres, types de tourelles (indices d'unités) */
-  mods: ModDef[]; arkSlots: { key: string; name: string; icon: string }[]; oneSlot: { key: string; name: string; icon: string }; turretKinds: number[];
+  mods: ModDef[]; arkSlots: ModSlot[]; unitSlots: ModSlot[]; moduleSlots: ModSlot[]; oneSlot: ModSlot; turretKinds: number[];
+  /** rayon de l'Arche selon ses tronçons (0 à 3) */
+  arkRadii: number[];
   missileCost: [number, number][]; interceptorCost: [number, number][];
   /** niveaux d'un extracteur : vitesse et consommation en % du niveau 0, coût et recherche du passage à ce niveau */
   /** combustible des générateurs : énergie par unité (kW × ticks) et taille du réservoir (unités) */

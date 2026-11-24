@@ -696,17 +696,21 @@ export function buildModel(model: Model): BuiltModel {
 
 /**
  * Condition d'un pivot (améliorations des Transhumants) : « si:clé+clé#nom » n'est dessiné que si l'une de ces
- * améliorations est installée, « sauf:clé+clé#nom » que si aucune ne l'est. `base` : le nom qui suit (« fixe… » : la
- * pièce ne tourne pas).
+ * améliorations est installée, « sauf:clé+clé#nom » que si aucune ne l'est. Plusieurs conditions à la fois :
+ * « si:a+b&c#nom » (a ou b, et c), « si:a&!c+d#nom » (a, et ni c ni d). `base` : le nom qui suit (« fixe… » : la pièce
+ * ne tourne pas ; « dep|… » : elle suit un déploiement, voir parseDep ; « chenille_p… » : elle glisse).
  */
-export interface PivotCond { on: boolean; keys: string[]; base: string }
+export interface PivotCond { on: boolean; all: { on: boolean; keys: string[] }[]; base: string }
 export function parseCond(name: string): PivotCond | null {
   const m = /^(si|sauf):([^#]+)#(.*)$/.exec(name);
-  return m ? { on: m[1] === "si", keys: m[2].split("+"), base: m[3] } : null;
+  if (!m) return null;
+  const on = m[1] === "si";
+  const all = m[2].split("&").map((t) => (t.startsWith("!") ? { on: !on, keys: t.slice(1).split("+") } : { on, keys: t.split("+") }));
+  return { on, all, base: m[3] };
 }
 /** Le pivot est-il dessiné, avec ces améliorations (clés) installées ? */
 export function condShown(c: PivotCond | null, has: (key: string) => boolean): boolean {
-  return !c || c.keys.some(has) === c.on;
+  return !c || c.all.every((t) => t.keys.some(has) === t.on);
 }
 
 /**

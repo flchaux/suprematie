@@ -87,8 +87,8 @@ export class KindMesh {
       const mode = /^boule/.test(p.name) ? 1 : /^deplie_tourelle/.test(p.name) ? 3 : /^deplie/.test(p.name) ? 2 : /^eppz/.test(p.name) ? 4 : 0;
       // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
       // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
-      const slide = Number(/^chenille_p([\d.]+)/.exec(p.name)?.[1] ?? 0);
-      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(p.name), cond, fixed: !!cond && /^fixe/.test(name) };
+      const slide = Number(/^chenille_p([\d.]+)/.exec(name)?.[1] ?? 0);
+      return { tm, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(name), cond, fixed: !!cond && /^fixe/.test(name) };
     });
     this.cap = cap;
   }

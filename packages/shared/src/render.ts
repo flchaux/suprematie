@@ -40,7 +40,7 @@ export const EV = {
   /** Souche : organisme qui se sacrifie dans une graine-mère (x, y, type, joueur) */
   SACRIFICE: 60,
   /** Transhumants : amélioration installée : (joueur, amélioration, x, y) ; tourelle d'Arche détruite : (joueur, x, y, type d'unité) ; surcharge de l'Arche : (x, y, joueur) */
-  MOD_DONE: 70, TURRET_LOST: 71, ARK_BOOST: 72,
+  MOD_DONE: 70, TURRET_LOST: 71, ARK_BOOST: 72, CAR_LOST: 73,
 } as const;
 
 export const UF = { FIRING: 1, WORKING: 2, CHARGING: 4, STUNNED: 8, DEPLOYED: 16, SHIELD: 32, IDLE: 64, CARGO: 128 } as const;

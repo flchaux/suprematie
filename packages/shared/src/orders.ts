@@ -72,6 +72,9 @@ export const O = {
   ARK_BOOST: 64,
   /** file de l'atelier embarqué : [Arche, type d'unité, +n ou -n] */
   ARK_QUEUE: 65,
+  KIT_SET: 67,
+  KIT_ACTIVE: 68,
+  KIT_APPLY: 69,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -258,6 +261,18 @@ export function arkBoost(arks: number[]): Cmd {
 /** File de l'atelier embarqué : `delta` unités de plus (ou de moins). */
 export function arkQueue(ark: number, kind: number, delta: number): Cmd {
   return [O.ARK_QUEUE, ark | 0, kind | 0, delta | 0];
+}
+/** Transhumants : enregistrer le gabarit `k` (0 à 2) d'un type d'unité ; `set` : arme, châssis, équipement (0 : rien). */
+export function kitSet(kind: number, k: number, set: number[]): Cmd {
+  return [O.KIT_SET, kind | 0, k | 0, set[0] | 0, set[1] | 0, set[2] | 0];
+}
+/** Gabarit de production d'un type d'unité (1 à 3 ; 0 : aucun). */
+export function kitActive(kind: number, k: number): Cmd {
+  return [O.KIT_ACTIVE, kind | 0, k | 0];
+}
+/** Équiper des unités (0 : emplacement laissé comme il est). */
+export function kitApply(set: number[], units: number[]): Cmd {
+  return [O.KIT_APPLY, set[0] | 0, set[1] | 0, set[2] | 0, units.length, ...units.map((x) => x | 0)];
 }
 export function load(carrier: number, ids: number[]): Cmd {
   return [O.LOAD, carrier | 0, ids.length, ...ids.map((x) => x | 0)];
