@@ -20,6 +20,10 @@ import { poteauNomade } from "./nomades/poteau.ts";
 import { chariotConvoi } from "./nomades/convoi.ts";
 import { ameliorationsArche, amenagements, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
 import { remorqueArche } from "./nomades/remorque.ts";
+import {
+  ARME_CANON, ARME_CAVALIER, ARME_HERSE, ARME_PISTEUR, BOUCLIER_CANON, COFFRE_HERSE, DENTS_BELIER, PLAGE_CAVALIER, POUPE_BELIER,
+  equipementBelier, equipementCanon, equipementCavalier, equipementHerse, equipementPisteur, groupe, noyau,
+} from "./nomades/equipement.ts";
 
 // ——— Bâtiments ———
 
@@ -150,8 +154,11 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 6, radius: 0.025, height: 0.5, pos: [0, 1.7, -0.3], color: "steel", parent: "tourelle" },
       { shape: "bevel", size: [0.22, 0.12, 0.14], pos: [0, 1.98, -0.3], bevel: 0.02, color: "dark", parent: "tourelle" },
       { shape: "cylinder", sides: 8, radius: 0.04, height: 0.04, pos: [0.06, 1.98, -0.22], rot: [90, 0, 0], color: "amber", mirror: true, parent: "tourelle" },
-      { shape: "box", size: [0.1, 0.1, 0.24], pos: [0, 0.78, -0.25], color: "dark", parent: "tourelle" },
-      { shape: "cylinder", sides: 6, radius: 0.025, height: 0.5, pos: [0, 0.8, 0.1], rot: [90, 0, 0], color: "steel", parent: "tourelle" },
+      // mitrailleuse d'origine (cachée par une autre arme)
+      noyau(ARME_PISTEUR, [0, 0.78, -0.3]),
+      { shape: "box", size: [0.1, 0.1, 0.24], pos: [0, 0.78, -0.25], color: "dark", parent: ARME_PISTEUR },
+      { shape: "cylinder", sides: 6, radius: 0.025, height: 0.5, pos: [0, 0.8, 0.1], rot: [90, 0, 0], color: "steel", parent: ARME_PISTEUR },
+      ...equipementPisteur(),
     ],
   },
   // rider : cavalier, char rapide à chenilles larges ; caisse basse à glacis, jupes d'équipe, tourelle plate à pans
@@ -165,17 +172,21 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "bevel", size: [1.2, 0.05, 0.6], pos: [0, 0.58, 0.55], bevel: 0.015, color: "metal" },
       { shape: "box", size: [0.1, 0.06, 0.03], pos: [0.35, 0.45, 1.06], color: "amber", mirror: true },
       // plage arrière : rouleaux de bâche, bidons
-      { shape: "cylinder", sides: 8, radius: 0.09, height: 1.0, pos: [0, 0.68, -0.92], rot: [0, 0, 90], color: "dry" },
-      { shape: "box", size: [0.06, 0.2, 0.2], pos: [0.25, 0.68, -0.92], color: "faction" },
-      ...[0.35, -0.35].map((x): Part => ({ shape: "bevel", size: [0.14, 0.18, 0.12], pos: [x, 0.66, -0.7], bevel: 0.02, color: "rust" })),
-      { shape: "tube", radius: 0.035, path: [[0.4, 0.5, -1.05], [0.4, 0.75, -1.12]], color: "rust" },
+      ...groupe(PLAGE_CAVALIER, [
+        { shape: "cylinder", sides: 8, radius: 0.09, height: 1.0, pos: [0, 0.68, -0.92], rot: [0, 0, 90], color: "dry" },
+        { shape: "box", size: [0.06, 0.2, 0.2], pos: [0.25, 0.68, -0.92], color: "faction" },
+        ...[0.35, -0.35].map((x): Part => ({ shape: "bevel", size: [0.14, 0.18, 0.12], pos: [x, 0.66, -0.7], bevel: 0.02, color: "rust" })),
+        { shape: "tube", radius: 0.035, path: [[0.4, 0.5, -1.05], [0.4, 0.75, -1.12]], color: "rust" },
+      ]),
       // tourelle (pivot)
       { shape: "extrude", profile: [[-0.4, -0.45], [0.4, -0.45], [0.46, 0.05], [0.28, 0.4], [-0.28, 0.4], [-0.46, 0.05]], depth: 0.24, bevel: 0.04, pos: [0, 0.72, -0.05], rot: [90, 0, 0], color: "metal", pivot: "tourelle" },
       { shape: "extrude", profile: [[-0.4, -0.45], [0.4, -0.45], [0.46, 0.05], [0.28, 0.4], [-0.28, 0.4], [-0.46, 0.05]], depth: 0.04, pos: [0, 0.85, -0.07], rot: [90, 0, 0], scale: [0.76, 0.76, 1], color: "faction", parent: "tourelle" },
-      { shape: "lathe", sides: 8, pos: [0, 0.72, 0.3], rot: [90, 0, 0], color: "dry", parent: "tourelle", profile: [[0, 0], [0.15, 0], [0.11, 0.12], [0, 0.14]] },
-      { shape: "lathe", sides: 10, pos: [0, 0.72, 0.34], rot: [90, 0, 0], color: "steel", parent: "tourelle", profile: fut(0.05, 0.95) },
+      noyau(ARME_CAVALIER, [0, 0.72, -0.05]),
+      { shape: "lathe", sides: 8, pos: [0, 0.72, 0.3], rot: [90, 0, 0], color: "dry", parent: ARME_CAVALIER, profile: [[0, 0], [0.15, 0], [0.11, 0.12], [0, 0.14]] },
+      { shape: "lathe", sides: 10, pos: [0, 0.72, 0.34], rot: [90, 0, 0], color: "steel", parent: ARME_CAVALIER, profile: fut(0.05, 0.95) },
       { shape: "cylinder", sides: 8, radius: 0.09, height: 0.06, pos: [-0.15, 0.89, -0.2], color: "dark", parent: "tourelle" },
       { shape: "tube", radius: 0.01, sides: 4, path: [[0.22, 0.85, -0.35], [0.22, 1.35, -0.42]], color: "steel", parent: "tourelle", fine: true },
+      ...equipementCavalier(),
     ],
   },
   // harrow : herse, défense antiaérienne mobile ; chenillard léger, tourelle (pivot « tourelle ») portant quatre
@@ -188,7 +199,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "extrude", profile: [[-1.0, 0.16], [0.75, 0.16], [1.05, 0.36], [0.85, 0.56], [-0.9, 0.58], [-1.02, 0.42]], depth: 0.82, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
       { shape: "bevel", size: [0.9, 0.24, 0.42], pos: [0, 0.66, 0.6], bevel: 0.03, color: "metal" },
       { shape: "box", size: [0.6, 0.06, 0.03], pos: [0, 0.72, 0.815], color: "glass" },
-      ...coffre([0, 0.68, -0.82], [0.7, 0.2, 0.3], "rust"),
+      ...groupe(COFFRE_HERSE, coffre([0, 0.68, -0.82], [0.7, 0.2, 0.3], "rust")),
       // tourelle (pivot) : couronne, caisse, jupe de toile
       { shape: "cylinder", sides: 12, radius: 0.4, height: 0.12, pos: [0, 0.64, -0.15], color: "steel", pivot: "tourelle" },
       { shape: "bevel", size: [0.56, 0.3, 0.6], pos: [0, 0.85, -0.18], bevel: 0.05, color: "metal", parent: "tourelle" },
@@ -196,14 +207,16 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "box", size: [0.3, 0.03, 0.3], pos: [0, 1.01, -0.25], color: "faction", parent: "tourelle" },
       { shape: "box", size: [0.12, 0.08, 0.1], pos: [-0.12, 1.06, 0.02], color: "dark", parent: "tourelle" },
       { shape: "box", size: [0.08, 0.04, 0.02], pos: [-0.12, 1.06, 0.075], color: "amber", parent: "tourelle" },
-      // deux nacelles relevées, deux fûts chacune
-      incl([0.4, 0.9, -0.3], 52, 0.05, 0, { shape: "bevel", size: [0.18, 0.24, 0.5], bevel: 0.03, color: "rust", mirror: true, parent: "tourelle" }),
-      incl([0.4, 0.9, -0.3], 52, 0.05, 0.125, { shape: "box", size: [0.14, 0.02, 0.36], color: "faction", mirror: true, parent: "tourelle" }),
-      incl([0.35, 0.92, -0.3], 52, 0.75, 0, { shape: "cylinder", sides: 6, radius: 0.03, height: 1.2, rot: [90, 0, 0], color: "steel", mirror: true, parent: "tourelle" }),
-      incl([0.45, 0.92, -0.3], 52, 0.75, 0, { shape: "cylinder", sides: 6, radius: 0.03, height: 1.2, rot: [90, 0, 0], color: "steel", mirror: true, parent: "tourelle" }),
-      incl([0.35, 0.92, -0.3], 52, 1.33, 0, { shape: "cylinder", sides: 6, radius: 0.045, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: "tourelle", fine: true }),
-      incl([0.45, 0.92, -0.3], 52, 1.33, 0, { shape: "cylinder", sides: 6, radius: 0.045, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: "tourelle", fine: true }),
-      incl([0.4, 0.92, -0.3], 52, 0.62, 0, { shape: "box", size: [0.18, 0.06, 0.06], color: "dark", mirror: true, parent: "tourelle", fine: true }),
+      // deux nacelles relevées, deux fûts chacune (cachées par une autre arme)
+      noyau(ARME_HERSE, [0, 0.85, -0.15]),
+      incl([0.4, 0.9, -0.3], 52, 0.05, 0, { shape: "bevel", size: [0.18, 0.24, 0.5], bevel: 0.03, color: "rust", mirror: true, parent: ARME_HERSE }),
+      incl([0.4, 0.9, -0.3], 52, 0.05, 0.125, { shape: "box", size: [0.14, 0.02, 0.36], color: "faction", mirror: true, parent: ARME_HERSE }),
+      incl([0.35, 0.92, -0.3], 52, 0.75, 0, { shape: "cylinder", sides: 6, radius: 0.03, height: 1.2, rot: [90, 0, 0], color: "steel", mirror: true, parent: ARME_HERSE }),
+      incl([0.45, 0.92, -0.3], 52, 0.75, 0, { shape: "cylinder", sides: 6, radius: 0.03, height: 1.2, rot: [90, 0, 0], color: "steel", mirror: true, parent: ARME_HERSE }),
+      incl([0.35, 0.92, -0.3], 52, 1.33, 0, { shape: "cylinder", sides: 6, radius: 0.045, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: ARME_HERSE, fine: true }),
+      incl([0.45, 0.92, -0.3], 52, 1.33, 0, { shape: "cylinder", sides: 6, radius: 0.045, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: ARME_HERSE, fine: true }),
+      incl([0.4, 0.92, -0.3], 52, 0.62, 0, { shape: "box", size: [0.18, 0.06, 0.06], color: "dark", mirror: true, parent: ARME_HERSE, fine: true }),
+      ...equipementHerse(),
     ],
   },
   // towed_gun : canon tracté ; petit tracteur à chenilles et cabine bâchée à l'avant, affût à deux roues et flèches
@@ -229,16 +242,19 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       // pièce (pivot) : berceau, bouclier de toile, long fût relevé
       { shape: "cylinder", sides: 10, radius: 0.2, height: 0.1, pos: [0, 0.4, -0.35], color: "steel", pivot: "tourelle" },
       { shape: "bevel", size: [0.3, 0.2, 0.5], pos: [0, 0.55, -0.4], bevel: 0.03, color: "metal", parent: "tourelle" },
-      { shape: "box", size: [0.7, 0.36, 0.04], pos: [0, 0.68, -0.18], rot: [-10, 0, 0], color: "dry", parent: "tourelle" },
-      { shape: "box", size: [0.7, 0.06, 0.045], pos: [0, 0.82, -0.2], rot: [-10, 0, 0], color: "faction", parent: "tourelle" },
-      incl([0, 0.62, -0.45], 14, 0, 0, { shape: "lathe", sides: 10, rot: [90, 0, 0], color: "steel", parent: "tourelle", profile: fut(0.055, 2.0) }),
-      incl([0, 0.62, -0.45], 14, 0.4, -0.09, { shape: "cylinder", sides: 6, radius: 0.03, height: 0.6, rot: [90, 0, 0], color: "dark", parent: "tourelle", fine: true }),
+      noyau(BOUCLIER_CANON, [0, 0.55, -0.35]),
+      { shape: "box", size: [0.7, 0.36, 0.04], pos: [0, 0.68, -0.18], rot: [-10, 0, 0], color: "dry", parent: BOUCLIER_CANON },
+      { shape: "box", size: [0.7, 0.06, 0.045], pos: [0, 0.82, -0.2], rot: [-10, 0, 0], color: "faction", parent: BOUCLIER_CANON },
+      noyau(ARME_CANON, [0, 0.55, -0.35]),
+      incl([0, 0.62, -0.45], 14, 0, 0, { shape: "lathe", sides: 10, rot: [90, 0, 0], color: "steel", parent: ARME_CANON, profile: fut(0.055, 2.0) }),
+      incl([0, 0.62, -0.45], 14, 0.4, -0.09, { shape: "cylinder", sides: 6, radius: 0.03, height: 0.6, rot: [90, 0, 0], color: "dark", parent: ARME_CANON, fine: true }),
       // béquilles écartées, vérins et bêches (déployé)
       { shape: "cylinder", sides: 6, radius: 0.05, height: 0.08, pos: [0, 0.3, -0.5], color: "dark", pivot: "deplie" },
       { shape: "tube", radius: 0.035, sides: 4, path: [[0.15, 0.3, -0.5], [0.75, 0.12, -1.0]], color: "rust", mirror: true, parent: "deplie" },
       { shape: "box", size: [0.22, 0.16, 0.05], pos: [0.78, 0.06, -1.03], rot: [0, -40, 0], color: "dark", mirror: true, parent: "deplie" },
       { shape: "cylinder", sides: 8, radius: 0.1, height: 0.04, pos: [0.5, 0.02, -0.25], color: "dark", mirror: true, parent: "deplie" },
       { shape: "cylinder", sides: 6, radius: 0.03, height: 0.26, pos: [0.5, 0.15, -0.25], color: "steel", mirror: true, parent: "deplie" },
+      ...equipementCanon(),
     ],
   },
   // ram : bélier, chenillard d'assaut blindé ; chenilles larges sous garde-chenilles épais, caisse à plaques
@@ -261,12 +277,15 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "extrude", profile: [[-0.98, 0.9], [0.98, 0.9], [0.98, 1.05], [0.2, 1.62], [-0.2, 1.62], [-0.98, 1.05]], depth: 0.52, bevel: 0.03, pos: [0, 0.42, 0], rot: [90, 0, 0], color: "steel" },
       { shape: "wedge", size: [1.4, 0.36, 0.5], pos: [0, 0.86, 0.8], color: "dark" },
       { shape: "box", size: [0.06, 0.03, 0.62], pos: [0, 0.88, 0.8], rot: [36, 0, 0], color: "faction" },
-      ...[[0, 1.62], [0.42, 1.34], [0.8, 1.1]].map(([x, z]): Part => ({ shape: "cone", sides: 5, radius: 0.1, height: 0.42, pos: [x, 0.42, q(z + 0.14)], rot: [90, 0, 0], color: "dark", mirror: x !== 0 })),
+      ...groupe(DENTS_BELIER, [[0, 1.62], [0.42, 1.34], [0.8, 1.1]].map(([x, z]): Part => ({ shape: "cone", sides: 5, radius: 0.1, height: 0.42, pos: [x, 0.42, q(z + 0.14)], rot: [90, 0, 0], color: "dark", mirror: x !== 0 }))),
       { shape: "box", size: [0.1, 0.14, 0.5], pos: [0.45, 0.68, 0.75], color: "dark", mirror: true },
       { shape: "box", size: [1.6, 0.04, 0.05], pos: [0, 0.6, 1.0], color: "hazard", fine: true },
       // échappements, coffres
-      { shape: "tube", radius: 0.045, path: [[0.38, 0.8, -1.05], [0.38, 1.1, -1.1], [0.38, 1.16, -1.2]], bend: 0.06, color: "rust", mirror: true },
-      ...coffre([0, 0.95, -1.08], [0.4, 0.16, 0.2], "wood"),
+      ...groupe(POUPE_BELIER, [
+        { shape: "tube", radius: 0.045, path: [[0.38, 0.8, -1.05], [0.38, 1.1, -1.1], [0.38, 1.16, -1.2]], bend: 0.06, color: "rust", mirror: true },
+        ...coffre([0, 0.95, -1.08], [0.4, 0.16, 0.2], "wood"),
+      ]),
+      ...equipementBelier(),
     ],
   },
 };
