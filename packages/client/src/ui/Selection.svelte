@@ -853,8 +853,9 @@
         <span class="dim small">{ui.unitInfo.soil ? "Sur votre terreau : elle peut s'y enraciner" : "Hors du terreau : elle ne peut pas s'enraciner ici"}</span>
       {/if}
       {#if ui.unitInfo.pack && !queen}
-        <!-- chenillard des Transhumants : déploiement (15 s) ou repli (10 s) en cours -->
-        {@const total = d.units[ui.selUnits[0].kind].turret ? (ui.unitInfo.pack === 1 ? 40 : 30) : ui.unitInfo.pack === 1 ? 300 : 200}
+        <!-- chenillard des Transhumants : déploiement (15 s) ou repli (10 s) en cours, deux fois moins avec des vérins rapides -->
+        {@const quick = (ui.unitInfo.mods?.mods ?? []).some((m) => d.mods[m]?.quick)}
+        {@const total = d.units[ui.selUnits[0].kind].turret ? (ui.unitInfo.pack === 1 ? 40 : 30) : (ui.unitInfo.pack === 1 ? 300 : 200) / (quick ? 2 : 1)}
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / total) * 100}%"></span></div>
       {/if}
