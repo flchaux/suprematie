@@ -1,30 +1,37 @@
 <script lang="ts">
+  // Panneau de recherche, par onglets. Industriels et Transhumants : un onglet par palier. Souche : un onglet
+  // « Mutations » (l'arbre, MutationTree.svelte) et un onglet « Recherche ». Une bande au-dessus des onglets
+  // montre la recherche en cours et la file, qui portent sur tous les onglets. Chaque recherche montre ce
+  // qu'elle débloque (ResearchCard.svelte). Onglets et états : game/research.ts.
+  import { untrack } from "svelte";
   import { ui, hasTechUI } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
+  import ResearchCard from "./ResearchCard.svelte";
+  import MutationTree from "./MutationTree.svelte";
   import { PACK1, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import { keyOf } from "../game/keys.svelte.ts";
+  import { researchTabs, defaultTab, techStatus, raceTechs, type ResearchState, type ResearchTab } from "../game/research.ts";
+
   const d = $derived(ui.data);
-  // recherches de la race du joueur seulement ; paliers présents dans son arbre
-  const mine = $derived(d ? d.techs.map((t, i) => ({ t, i })).filter(({ t, i }) => i > 0 && (t.race ?? 0) === ui.race) : []);
-  const tiers = $derived([...new Set(mine.map(({ t }) => t.tier))].sort((a, b) => a - b));
-  const doneCount = $derived(mine.filter(({ i }) => hasTechUI(i)).length);
-  /** recherche interdite par un choix exclusif déjà fait ou prévu (Souche) */
-  const barred = (i: number): boolean => {
-    const x = d?.techs[i].excl ?? 0;
-    return x > 0 && (hasTechUI(x) || ui.research === x || ui.researchQueue.includes(x));
+  const st = $derived<ResearchState>({ has: hasTechUI, current: ui.research, queue: ui.researchQueue });
+  const mine = $derived(d ? raceTechs(d, ui.race) : []);
+  const doneCount = $derived(mine.filter((i) => hasTechUI(i)).length);
+  const tabs = $derived(d ? researchTabs(d, ui.race) : []);
+  // onglet d'ouverture : celui de la recherche en cours, sinon le premier où l'on peut chercher ; ensuite, le choix du joueur
+  let picked = $state(untrack(() => (ui.data ? defaultTab(ui.data, { has: hasTechUI, current: ui.research, queue: ui.researchQueue }, researchTabs(ui.data, ui.race)) : "")));
+  const tab = $derived(tabs.find((t) => t.id === picked) ?? tabs[0]);
+  /** paliers présents dans un onglet qui en réunit plusieurs (Souche, « Recherche ») */
+  const tiersOf = (t: ResearchTab) => [...new Set(t.techs.map((i) => d!.techs[i].tier))].sort((a, b) => a - b);
+  const doneIn = (t: ResearchTab) => t.techs.filter((i) => hasTechUI(i)).length;
+  const busyIn = (t: ResearchTab) => (ui.research > 0 && t.techs.includes(ui.research) ? 1 : 0) + t.techs.filter((i) => ui.researchQueue.includes(i)).length;
+  const openIn = (t: ResearchTab) => t.techs.some((i) => techStatus(d!, st, i) === "available");
+  /** montre l'onglet d'une recherche (clic dans la bande de la file) */
+  const show = (tech: number) => {
+    const t = tabs.find((x) => x.techs.includes(tech));
+    if (t) picked = t.id;
   };
-  /** prérequis acquis : d'une paire de mutations exclusives, l'une des deux suffit */
-  const met = (p: number): boolean => hasTechUI(p) || ((d?.techs[p].excl ?? 0) > 0 && hasTechUI(d!.techs[p].excl));
-  /** prérequis en clair : « Écailles ou Sève vive » pour une paire de mutations exclusives */
-  const prereqText = (ps: number[]): string =>
-    ps
-      .filter((p) => !(d!.techs[p].excl && ps.includes(d!.techs[p].excl) && d!.techs[p].excl < p))
-      .map((p) => (d!.techs[p].excl ? `${d!.techs[p].name} ou ${d!.techs[d!.techs[p].excl].name}` : d!.techs[p].name))
-      .join(", ");
-  /** coût d'une unité de recherche selon la race */
-  const unitCost = (tier: number): string => (ui.race === RACE_SOUCHE ? `${tier} ADN` : ui.race === RACE_TRANSH ? `${3 * tier} relevés` : "");
 </script>
 
 <div class="modal panel">
@@ -38,61 +45,99 @@
     <div class="grow"></div>
     {#if d}<span class="dim num">{doneCount}/{mine.length} terminées</span>{/if}
   </div>
+  {#if d}
+    <div class="queue">
+      {#if ui.research > 0}
+        {@const t = d.techs[ui.research]}
+        <button class="chip cur" onclick={() => show(ui.research)} title="Recherche en cours : voir son onglet">
+          <span class="lab">En cours</span><b>{t.name}</b>
+          <span class="bar amber"><span style:width={(ui.researchProgress / t.count) * 100 + "%"}></span></span>
+          <span class="num pr">{ui.researchProgress}/{t.count}</span>
+        </button>
+      {:else}
+        <span class="idle dim">Aucune recherche en cours</span>
+      {/if}
+      {#each ui.researchQueue as q, n}
+        <span class="chip">
+          <button class="go" onclick={() => show(q)} title="Voir son onglet"><span class="qn num">{n + 1}</span>{d.techs[q].name}</button>
+          <button class="rm" onclick={() => client.queueResearch(q)} title="Retirer de la file"><Icon name="close" size={11} /></button>
+        </span>
+      {/each}
+      {#if ui.researchQueue.length > 1}<button class="ghost small clear" onclick={() => client.clearResearchQueue()}>Vider la file</button>{/if}
+    </div>
+    <div class="tabs" role="tablist">
+      {#each tabs as t}
+        {@const busy = busyIn(t)}
+        <button class="rtab" class:on={tab?.id === t.id} class:open={openIn(t)} class:mutations={t.kind === "mutations"} role="tab" aria-selected={tab?.id === t.id} onclick={() => (picked = t.id)}>
+          {#if t.kind === "mutations"}<Icon name="dna" size={18} />
+          {:else if t.kind === "research"}<Item id={ADN} size={20} />
+          {:else}<Item id={ui.race === RACE_TRANSH ? RELEVES : PACK1 + t.tier - 1} size={20} />{/if}
+          <span class="tl">{t.label}</span>
+          <span class="tc num">{doneIn(t)}/{t.techs.length}</span>
+          {#if busy}<span class="tb num" title="Recherches de cet onglet en cours ou en file">{busy}</span>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
   <div class="modal-body">
-    <p class="dim intro">
-      {#if ui.race === RACE_SOUCHE}Les matrices évoluent avec l'ADN : chaque unité de recherche coûte autant d'ADN que son palier. L'ADN vient des ennemis et des bêtes digérés sur votre terreau ; à défaut, une matrice en tire de la sève (20 pour 1). Les mutations s'excluent deux à deux : le choix vaut pour toute la partie.
-      {:else if ui.race === RACE_TRANSH}Les laboratoires nomades étudient vos relevés : chaque unité de recherche coûte 3 relevés par palier. Les relevés viennent de l'exploration (cases découvertes) et des ennemis détruits ; à défaut, un laboratoire en tire un des environs toutes les 2 s. La plupart des recherches débloquent des <b>améliorations</b> : elles s'installent ensuite une à une, depuis la fiche de l'Arche, d'un module ou d'une unité, et coûtent aussi des relevés.
-      {:else}Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.{/if}
-      <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite. {#if ui.researchQueue.length}<button class="ghost small linkish" onclick={() => client.clearResearchQueue()}>Vider la file ({ui.researchQueue.length})</button>{/if}</p>
-    {#if d}
-      <div class="cols">
-        {#each tiers as tier}
-          <div class="col">
-            <h3><Item id={ui.race === RACE_SOUCHE ? ADN : ui.race === RACE_TRANSH ? RELEVES : PACK1 + tier - 1} size={26} /> <span>Palier {tier}</span></h3>
-            {#each mine.filter(({ t }) => t.tier === tier) as { t, i }}
-              {@const done = hasTechUI(i)}
-              {@const excluded = !done && barred(i)}
-              {@const avail = !done && !excluded && t.prereq.every(met)}
-              {@const cur = ui.research === i}
-              {@const qn = ui.researchQueue.indexOf(i) + 1}
-              <button class="tech" class:done class:cur class:avail class:queued={qn > 0} class:excluded disabled={done || excluded || ui.me < 0} onclick={(e) => (e.shiftKey && avail ? client.research(i) : client.queueResearch(i))}>
-                <span class="tt-head">
-                  <b>{t.name}</b>
-                  {#if done}<span class="st good"><Icon name="check" size={13} /></span>{:else if qn}<span class="qn num" title="Position dans la file">{qn}</span>{:else if !avail}<span class="st faint"><Icon name="lock" size={12} /></span>{/if}
-                </span>
-                <span class="desc">{t.desc}</span>
-                <span class="meta num">{t.count} × {t.time} s{#if unitCost(t.tier)} · {t.count} × {unitCost(t.tier)}{/if}{#if excluded}<span class="faint"> · exclue par {d.techs[t.excl].name}</span>{/if}{#if t.prereq.length}<span class="faint"> · après {prereqText(t.prereq)}</span>{/if}</span>
-                {#if cur}<span class="bar amber"><span style:width={(ui.researchProgress / t.count) * 100 + "%"}></span></span>{/if}
-              </button>
-            {/each}
-          </div>
+    {#if d && tab}
+      {#if tab.kind !== "mutations"}
+        <p class="dim intro">
+          {#if ui.race === RACE_SOUCHE}Les matrices évoluent avec l'ADN : chaque unité de recherche coûte autant d'ADN que son palier. L'ADN vient des ennemis et des bêtes digérés sur votre terreau ; à défaut, une matrice en tire de la sève (20 pour 1).
+          {:else if ui.race === RACE_TRANSH}Les laboratoires nomades étudient vos relevés : chaque unité de recherche coûte 3 relevés par palier. Les relevés viennent de l'exploration (cases découvertes) et des ennemis détruits ; à défaut, un laboratoire en tire un des environs toutes les 2 s. La plupart des recherches débloquent des <b>améliorations</b> : elles s'installent ensuite une à une, depuis la fiche de l'Arche, d'un module ou d'une unité, et coûtent aussi des relevés.
+          {:else}Les laboratoires consomment les lots de données apportés par des bras. Une recherche d'un palier demande aussi les lots des paliers inférieurs.{/if}
+          <br />Clic : ajouter à la file (avec les recherches préalables) ou retirer de la file · Maj+clic : lancer tout de suite · survol d'une vignette : la fiche de ce qui est débloqué.
+        </p>
+      {/if}
+      {#if tab.kind === "mutations"}
+        <MutationTree />
+      {:else if tab.kind === "tier"}
+        <div class="grid">{#each tab.techs as i (i)}<ResearchCard tech={i} tiers />{/each}</div>
+      {:else}
+        {#each tiersOf(tab) as tier}
+          <h3><span>Palier {tier}</span></h3>
+          <div class="grid">{#each tab.techs.filter((i) => d.techs[i].tier === tier) as i (i)}<ResearchCard tech={i} />{/each}</div>
         {/each}
-      </div>
+      {/if}
     {/if}
   </div>
 </div>
 
 <style>
+  .modal-head { margin-bottom: 10px; }
   .modal-head :global(.ic) { color: var(--accent); }
-  .intro { margin: 0 0 14px; }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .tech.excluded { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.25); }
-  .col { display: flex; flex-direction: column; gap: 6px; }
-  h3 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-  .tech { display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 3px; padding: 8px 9px; font-weight: 400; letter-spacing: 0; }
-  .tt-head { display: flex; justify-content: space-between; gap: 6px; align-items: flex-start; }
-  .tt-head b { font-weight: 600; letter-spacing: 0.03em; font-size: 12.5px; }
-  .desc { font-size: 11px; color: var(--dim); line-height: 1.3; }
-  .meta { font-size: 10px; color: var(--dim); }
-  .tech.avail { --b-line: rgba(62, 240, 255, 0.45); }
-  .tech.done { --b-line: rgba(77, 255, 176, 0.35); --b-bg: rgba(20, 50, 40, 0.5); opacity: 1; }
-  .tech.done:disabled { opacity: 0.75; }
-  .tech.cur { --b-line: var(--amber); --b-bg: rgba(60, 44, 16, 0.75); filter: drop-shadow(0 0 8px rgba(255, 181, 71, 0.35)); opacity: 1; }
-  .tech:disabled:not(.done):not(.cur) { opacity: 0.62; }
-  .tech:disabled:not(.done):not(.cur) .meta .faint { color: var(--dim); }
-  .tech.queued { --b-line: rgba(255, 181, 71, 0.55); }
-  .qn { min-width: 18px; height: 18px; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--accent-ink, #04121a); background: var(--amber); }
-  .linkish { margin-left: 6px; padding: 1px 6px; font-size: 11px; }
-  .bar { width: 100%; margin-top: 3px; }
-  .bar > span { display: block; height: 100%; background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .intro { margin: 0 0 10px; font-size: 12px; line-height: 1.45; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; align-items: stretch; }
+  h3 { margin: 14px 0 8px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 10px; }
+  h3::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  h3:first-of-type { margin-top: 0; }
+
+  /* recherche en cours et file : elles portent sur tous les onglets */
+  .queue { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 30px; margin-bottom: 10px; flex-shrink: 0; }
+  .idle { font-size: 12px; }
+  .chip { display: inline-flex; align-items: stretch; font-size: 12px; }
+  .chip.cur { --b-bg: rgba(60, 44, 16, 0.8); --b-line: var(--amber); align-items: center; gap: 8px; padding: 4px 10px; }
+  .chip.cur .lab { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+  .chip.cur .bar { width: 90px; }
+  .chip.cur .bar > span { display: block; height: 100%; background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .pr { font-size: 10.5px; color: var(--dim); }
+  .chip .go { --b-line: rgba(255, 181, 71, 0.5); display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 5px; clip-path: none; }
+  .chip .rm { --b-line: rgba(255, 181, 71, 0.5); padding: 4px 6px; margin-left: -1px; display: inline-grid; place-items: center; color: var(--dim); }
+  .chip .rm:hover { color: var(--bad); }
+  .qn { min-width: 17px; height: 17px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: var(--accent-ink, #04121a); background: var(--amber); }
+  .clear { font-size: 11px; padding: 3px 8px; }
+
+  /* onglets */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .rtab { --b-bg: rgba(14, 24, 36, 0.7); display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px 8px; font-size: 12.5px; clip-path: none; margin-bottom: -1px; opacity: 0.72; }
+  .rtab.open { opacity: 1; }
+  .rtab.on { opacity: 1; }
+  .rtab.on .tc { color: rgba(255, 255, 255, 0.8); }
+  /* l'onglet des mutations porte le vert acide de la Souche */
+  .rtab.mutations :global(.ic) { color: #b9f24a; }
+  .rtab.mutations.on { background: linear-gradient(180deg, rgba(185, 242, 74, 0.34), rgba(120, 170, 40, 0.2)) padding-box, linear-gradient(#b9f24a, #b9f24a) border-box; box-shadow: none; }
+  .rtab.mutations.on :global(.ic) { color: #fff; }
+  .tl { font-weight: 600; letter-spacing: 0.05em; }
+  .tc { font-size: 10.5px; color: var(--dim); }
+  .tb { min-width: 16px; height: 16px; padding: 0 3px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--accent-ink, #04121a); background: var(--amber); }
 </style>

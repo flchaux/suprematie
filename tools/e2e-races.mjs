@@ -389,10 +389,18 @@ if (ark) {
   check(dist > 2, "chenilles de l'Arche : distance parcourue suivie pour l'animation", dist.toFixed(1) + " cases");
   await b.page.screenshot({ path: `${outDir}/races-chenilles.png`, timeout: 120000 });
 }
-// recherche : arbre de la race
+// recherche : les recherches de la race, tous onglets confondus (un onglet par palier)
 await b.page.evaluate(() => (window.__game.ui.showResearch = true));
 await b.page.waitForTimeout(800);
-const techs = await b.page.evaluate(() => [...document.querySelectorAll(".modal .tech b")].map((e) => e.textContent));
+const techs = await b.page.evaluate(async () => {
+  const names = [];
+  for (const tab of document.querySelectorAll(".modal .rtab")) {
+    tab.click();
+    await new Promise((r) => setTimeout(r, 200));
+    names.push(...[...document.querySelectorAll(".modal .rcard .head b")].map((e) => e.textContent));
+  }
+  return names;
+});
 check(techs.includes("Atelier lourd") && !techs.includes("Automatisation"), "panneau de recherche des Transhumants", techs.join(", "));
 await b.page.screenshot({ path: `${outDir}/races-recherche.png`, timeout: 120000 });
 }
