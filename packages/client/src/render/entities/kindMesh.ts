@@ -102,9 +102,9 @@ export class KindMesh {
     this.body.mesh.instanceMatrix.needsUpdate = true;
     this.body.team.needsUpdate = true;
     for (const p of this.pivots) {
-      // pièce d'une amélioration : seulement les porteurs qui l'ont (aucun : le maillage n'est pas dessiné)
+      // pièce d'une amélioration : seulement les porteurs qui l'ont. Aucun : rien à dessiner (ne pas passer par
+      // `visible` : un maillage invisible à sa première image n'apparaissait plus ensuite)
       const n = p.cond ? p.n : this.n;
-      if (p.cond) p.tm.mesh.visible = n > 0;
       p.tm.mesh.count = n;
       p.tm.mesh.instanceMatrix.needsUpdate = true;
       p.tm.team.needsUpdate = true;

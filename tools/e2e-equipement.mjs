@@ -44,6 +44,8 @@ const ticks = async (n) => {
 };
 const frames = (n) => page.evaluate((n) => new Promise((res) => { let k = n; const f = () => (--k <= 0 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 const click = (sel, text = "") => page.evaluate(([sel, text]) => { const b = [...document.querySelectorAll(sel)].find((x) => x.textContent.includes(text)); b?.click(); return !!b; }, [sel, text]);
+/** attend un élément (le rendu logiciel est trop lent pour waitForSelector, qui attend des images) */
+const present = (sel) => page.waitForFunction((sel) => !!document.querySelector(sel), sel, { timeout: 120000, polling: 500 }).catch(() => {});
 const shot = async (name) => { await frames(3); await page.screenshot({ path: `${outDir}/equipement-${name}.png`, timeout: 240000 }); };
 
 // convoi : quatre remorques derrière l'Arche à couronne de tourelles, deux derrière celle en patrouille
@@ -57,10 +59,17 @@ check((await page.$$eval(".car", (els) => els.length)) === 4, "fiche de l'Arche 
 await shot("1-arche-convoi");
 // l'Arche en patrouille, dans un virage : ses remorques la suivent
 await page.evaluate(() => window.__game.client.selectIds([]));
-await ticks(120);
+await ticks(60);
+// le rendu logiciel est lent : la partie est figée le temps d'une capture
+const freeze = () => page.evaluate(() => window.__game.client.stopReplayAt(window.__game.client.frame.tick + 2));
+const resume = () => page.evaluate(() => window.__game.client.stopReplayAt(1 << 30));
+await freeze();
+await frames(6);
 const run = (await units("ark"))[2];
 await look([], run[1] - 2, run[2], 24);
+await frames(6);
 await shot("2-convoi-en-route");
+await resume();
 
 // fiche d'une unité nue : trois emplacements, gabarits
 const riders = await units("rider");
@@ -71,7 +80,7 @@ await page.waitForFunction(() => window.__game.ui.unitInfo?.mods?.mods?.length =
 const slots = await page.$$eval(".mods .slot .st b", (els) => els.map((e) => e.textContent));
 check(slots.join(",") === "Arme,Châssis,Équipement", "trois emplacements dans la fiche", slots.join(","));
 check(await click(".mods .kits", "Gabarits"), "bouton des gabarits");
-await page.waitForSelector(".kit .kb", { timeout: 30000 });
+await present(".kit .kb");
 const rows = await page.$$eval(".kit .kl", (els) => els.map((e) => e.textContent.trim()));
 check(rows.join(",") === "Arme,Châssis,Équipement", "gabarit : un choix par emplacement", rows.join(","));
 check((await page.$$eval(".kit .kb.on", (els) => els.map((e) => e.dataset.kit))).join(",") === "rider_long,rider_plate,rider_loot", "gabarit de production de la démo montré", (await page.$$eval(".kit .kb.on", (els) => els.map((e) => e.dataset.kit))).join(","));
@@ -110,19 +119,22 @@ if (ref) {
   await page.waitForFunction(() => [...document.querySelectorAll(".units .ub .lit")].some((e) => e.textContent === "I"), null, { timeout: 60000 }).catch(() => {});
   check((await page.$$eval(".units .ub .lit", (els) => els.map((e) => e.textContent))).includes("I"), "atelier : le cavalier sort équipé (pastille I)");
   await click("button.icon-btn", "Bélier");
-  await page.waitForSelector(".kit .kb[data-kit='ram_saw']", { timeout: 30000 }).catch(() => {});
+  await present(".kit .kb[data-kit='ram_saw']");
   check(!!(await page.$(".kit .kb[data-kit='ram_saw']")), "atelier : gabarits du bélier");
   await shot("4-atelier");
 }
 // vues d'ensemble : unités sous leurs équipements, modules
 const all = [];
 for (const k of ["tracker", "rider", "harrow", "towed_gun", "ram"]) all.push(...(await units(k)));
+await freeze();
 const cx = all.reduce((n, u) => n + u[1], 0) / all.length;
 const cy = all.reduce((n, u) => n + u[2], 0) / all.length;
-await look([], cx, cy, 20);
+await look([], cx, cy, 18);
+await frames(6);
 await shot("5-unites");
 const mid = await page.evaluate(() => { const m = window.__game.client.map; return [m.w / 2, m.h / 2]; });
-await look([], mid[0] - 20, mid[1] - 11, 24);
+await look([], mid[0] - 20, mid[1] - 11, 22);
+await frames(6);
 await shot("6-modules");
 check(errors.length === 0, "aucune erreur dans la page", errors.slice(0, 4).join(" | "));
 await browser.close();
