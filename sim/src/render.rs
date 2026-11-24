@@ -242,7 +242,7 @@ fn building_words(w: &World, b: usize, broods: &[(u32, u32)], out: &mut Vec<i32>
             };
             let pr = if let Some(&(k, _)) = bb.queue.first() {
                 if bb.working {
-                    (bb.progress as u64 * 1000 / (factory_ticks(k) as u64 * crate::buildings::RECIPE_SCALE as u64).max(1)) as i32
+                    (bb.progress as u64 * 1000 / ((factory_ticks(k) + crate::gabarits::ticks(bb.kit)) as u64 * crate::buildings::RECIPE_SCALE as u64).max(1)) as i32
                 } else {
                     0
                 }
@@ -616,7 +616,7 @@ pub fn info_building(w: &World, r: u32) -> String {
     };
     format!(
         "{{\"belt\":{},\"nest\":{},\"kind\":{},\"owner\":{},\"hp\":{},\"build\":{},\"recipe\":{},\"inv\":{},\"out\":{},\"queue\":{},\"repeat\":{},\"net\":{},\"sat\":{},\"working\":{},\"link\":{},\"ammo\":{},\"charge\":{},\"enabled\":{},\"shield\":{},\"cooldown\":{},\"tech\":{},\"progress\":{},\"stalled\":{},\"paid\":{},\"stash\":{},\"carriers\":{},\"share\":{},\"shareEff\":{},\"takers\":{},\"extractNow\":{},\"extractMax\":{},\"level\":{},\"upgrade\":{},\"filters\":{},\"depots\":{},\"flow\":{},\"flowMax\":{},\"turn\":{},\"lot\":{},\"fuel\":{},\"fuelTank\":{},\"genOut\":{},\"twins\":{},\"split\":{},\"clock\":{},\"shards\":{},\"clockable\":{},\"clockPower\":{},\"purity\":{},\"ruin\":{},\"missing\":{},\"storeCap\":{},\"drones\":{},\"reach\":{},\"relayNet\":{},\"kwMax\":{}{}}}",
-        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::fuel_tank(bb.kind), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b), missing, store_cap, drones, reach, relay, crate::buildings::power_need(bb), race_info(w, b)
+        belt, nest, bb.kind, bb.owner, bb.hp, bb.build, bb.recipe, js_list(bb.inv.iter()), bb.out, q, bb.repeat, bb.net, sat, bb.working, bb.link as i32, bb.ammo, bb.charge, bb.enabled, bb.shield, bb.cooldown, bb.tech, bb.progress, bb.stalled, js_list(bb.paid.iter()), stash, carriers, bb.share, share_eff, takers, extract_now, extract_max, bb.level, upgrade_permille(bb), js_list(bb.filters.iter()), depots, crate::buildings::flow_per_min(bb, w.tick), crate::buildings::flow_max(w, b), crate::buildings::arm_turn(bb), bb.lot, bb.fuel, crate::buildings::tank_of(bb), crate::buildings::gen_output(w, b), twins, bb.split, crate::buildings::clock_of(bb), bb.shards, crate::buildings::clockable(bb), crate::buildings::clock_power(bb), if bb.def().deposit != 0 { crate::buildings::purity_of(bb) } else { 0 }, crate::nature::ruin_info(w, b), missing, store_cap, drones, reach, relay, crate::buildings::power_need(bb), race_info(w, b)
     )
 }
 
@@ -657,7 +657,7 @@ pub fn power_zones(w: &World, player: i32) -> String {
         }
         let (bw, bh) = bb.size();
         let gen = def.class == BClass::Power;
-        let fuel = if crate::buildings::fuelless(bb.kind) { 1000 } else if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::fuel_tank(bb.kind).max(1) as i64) as i32 } else { -1 };
+        let fuel = if crate::buildings::fuelless(bb.kind) { 1000 } else if gen { (bb.fuel.max(0) as i64 * 1000 / crate::buildings::tank_of(bb).max(1) as i64) as i32 } else { -1 };
         // un générateur à sec ne forme pas de zone (son réseau éventuel est celui d'un relais voisin)
         let net = if gen && bb.fuel <= 0 && !crate::buildings::fuelless(bb.kind) { 0 } else { bb.net };
         let net = if w.nets.get(net as usize).is_some_and(|n| n.unlimited) { 0 } else { net };

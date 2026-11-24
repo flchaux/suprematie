@@ -62,8 +62,10 @@ pub struct Player {
     /// devenue résistante (un bit par famille ; voir essaim.rs, « Caractères acquis »)
     pub scars: [u32; crate::essaim::FAMILIES],
     pub adapt: u8,
+    /// Transhumants : gabarits d'équipement, par type d'unité croissant (voir gabarits.rs)
+    pub kits: Vec<crate::gabarits::Kit>,
 }
-crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, purse, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz; since 3: race, researched2; since 7: scars, adapt });
+crate::ser_struct!(Player { team, alive, is_bot, res_mult, build_mult, purse, researched, research, research_queue, tech_progress, commander, produced, consumed, unit_count, power_prod, power_use, kills, losses, old_stock_cap; since 2: shards, eppz; since 3: race, researched2; since 7: scars, adapt; since 11: kits });
 
 impl Player {
     /// Lance la première recherche de la file dont les prérequis sont acquis (les entrées déjà
@@ -344,8 +346,10 @@ pub struct UnitCold {
     pub mods: u64,
     pub mod_job: u8,
     pub mod_left: u16,
+    /// équipement voulu, un octet par emplacement (0 : rien ; voir gabarits.rs)
+    pub want: u32,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 8: mods, mod_job, mod_left });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 8: mods, mod_job, mod_left; since 11: want });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -444,11 +448,13 @@ pub struct Building {
     pub mod_job: u8,
     pub mod_left: u16,
     pub mod_n: u8,
+    /// atelier des Transhumants : équipement déjà payé de l'unité en cours (voir gabarits.rs)
+    pub kit: u32,
 }
 crate::ser_struct!(Building {
     alive, gen, kind, owner, dir, x, y, hp, build, paid, net, wake, recipe, inv, out, progress, working, hand, phase, timer, line, line_idx,
     queue, repeat, rally, cooldown, target, turret, shield, shield_down, link, charge, ammo, stun, enabled, watchers, stalled, tech, stash,
-    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity; since 8: mods, mod_job, mod_left, mod_n
+    share, pass, vpass, level, floor, upgrade, filters, flow, flow_at, turn, lot, fuel, fuel_alert, split; since 2: clock, shards, purity; since 8: mods, mod_job, mod_left, mod_n; since 11: kit
 });
 
 impl Building {
@@ -708,6 +714,7 @@ impl World {
                 researched2: 0,
                 scars: [0; crate::essaim::FAMILIES],
                 adapt: 0,
+                kits: Vec::new(),
             });
         }
         // faune : un joueur caché de plus, après les vrais joueurs
@@ -1090,6 +1097,9 @@ impl World {
                     h.add(u.cold[s].mods);
                     h.add(u.cold[s].mod_job as u64 | (u.cold[s].mod_left as u64) << 8);
                 }
+                if u.cold[s].want != 0 {
+                    h.add(u.cold[s].want as u64);
+                }
             }
         }
         for (i, b) in self.buildings.iter().enumerate() {
@@ -1109,6 +1119,9 @@ impl World {
                 if b.mods != 0 || b.mod_job != 0 {
                     h.add(b.mods);
                     h.add(b.mod_job as u64 | (b.mod_left as u64) << 8 | (b.mod_n as u64) << 24);
+                }
+                if b.kit != 0 {
+                    h.add(b.kit as u64);
                 }
             }
         }

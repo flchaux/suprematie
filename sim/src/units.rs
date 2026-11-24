@@ -547,18 +547,19 @@ pub fn update_units(w: &mut World) {
         let k = w.units.kind[s];
         // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe ni les œufs
         // (immobiles : ce sont les autres qui s'en écartent)
-        // (ni une tourelle d'Arche déployée, ni un fouisseur enterré : on lui marche dessus)
-        let fixed = crate::ponte::is_egg(k) || crate::essaim::buried(w, s) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k));
+        // (ni une tourelle d'Arche déployée, ni une remorque d'Arche, ni un fouisseur enterré : on lui marche dessus)
+        let fixed = crate::ponte::is_egg(k) || crate::convoi::is_car(k) || crate::essaim::buried(w, s) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k));
         if fixed_wing(k) || fixed || (w.tick + s as u32) & 1 == 1 {
             continue;
         }
         let def = udef(k);
         let air = def.layer == Layer::Air;
-        let (x, y, r) = (w.units.x[s], w.units.y[s], def.radius);
+        let (x, y, r) = (w.units.x[s], w.units.y[s], crate::ameliorations::radius(&w.units, s));
         let moving = !w.units.cold[s].orders.is_empty();
         let march = marching(&w.units, s);
         let team = w.team_of(w.units.owner[s]);
         let big = r > 500;
+        let id = w.unit_id(s);
         let mut px = 0i64;
         let mut py = 0i64;
         let units = &w.units;
@@ -566,11 +567,15 @@ pub fn update_units(w: &mut World) {
             if o == s || (units.kind[o] == U_BURROWER && units.cold[o].deployed) {
                 return;
             }
+            // l'Arche et ses remorques : c'est elle qui les place (voir convoi.rs)
+            if k == U_ARK && units.kind[o] == U_ARK_CAR && units.cold[o].parent == id {
+                return;
+            }
             let od = udef(units.kind[o]);
             if (od.layer == Layer::Air) != air {
                 return;
             }
-            let rr = r + od.radius;
+            let rr = r + crate::ameliorations::radius(units, o);
             let dx = (x - units.x[o]) as i64;
             let dy = (y - units.y[o]) as i64;
             let d2 = dx * dx + dy * dy;
@@ -663,6 +668,14 @@ pub fn update_units(w: &mut World) {
         if w.units.cold[s].mod_job != 0 {
             crate::ameliorations::tick_job(w, crate::ameliorations::Host::U(s));
         }
+        // équipement voulu (gabarit) : une fois par seconde
+        if w.units.cold[s].want != 0 && (w.tick + s as u32).is_multiple_of(20) {
+            crate::gabarits::tick(w, s);
+        }
+        // remorque d'Arche : c'est l'Arche qui la mène
+        if crate::convoi::is_car(kind) {
+            continue;
+        }
         // boucliers
         {
             let shield_max = crate::ameliorations::unit_shield(w, s).1;
@@ -695,6 +708,9 @@ pub fn update_units(w: &mut World) {
         crate::combat::unit_weapons(w, s, forced);
         prof_add(2, t_w);
         special(w, s);
+        if w.units.cold[s].mods != 0 {
+            crate::ameliorations::tick_unit(w, s);
+        }
         // séparation
         let (dx, dy) = push[s];
         if (dx != 0 || dy != 0) && !crate::essaim::rooted(w, s) {
@@ -1043,7 +1059,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                         let (bw, bh) = w.buildings[b].size();
                         bw.max(bh) * TILE / 2
                     }
-                    crate::drones::Store::U(u) => udef(w.units.kind[u]).radius,
+                    crate::drones::Store::U(u) => crate::ameliorations::radius(&w.units, u),
                 };
             if dist(w.units.x[s], w.units.y[s], tx, ty) > reach {
                 steer(w, s, tx, ty, tx, ty, reach - TILE);
@@ -1163,7 +1179,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             };
             let (tx, ty) = (w.units.x[t], w.units.y[t]);
-            if dist(w.units.x[s], w.units.y[s], tx, ty) > 2 * TILE + udef(w.units.kind[t]).radius {
+            if dist(w.units.x[s], w.units.y[s], tx, ty) > 2 * TILE + crate::ameliorations::radius(&w.units, t) {
                 steer(w, s, tx, ty, tx, ty, TILE);
                 w.units.cold[s].stuck = 0;
                 return NONE;
@@ -1508,7 +1524,13 @@ fn special(w: &mut World, s: usize) {
         }
         U_HEAVY_ARTY | U_DEPLOY_TURRET | U_ROLL_DROID | U_TOWED_GUN => {
             // droïde roulant : il se déplie en moins d'une seconde
-            let delay = if kind == U_ROLL_DROID { 16 } else { 60 };
+            let delay = if kind == U_ROLL_DROID {
+                16
+            } else if crate::ameliorations::quick(w.units.cold[s].mods) {
+                30
+            } else {
+                60
+            };
             let c = &mut w.units.cold[s];
             let wants = c.wtarget[0] != NONE || matches!(c.orders.first(), Some(Order::AttackGround { .. }) | Some(Order::Attack { .. }));
             if wants && !c.deployed && w.units.px[s] == w.units.x[s] && w.units.py[s] == w.units.y[s] {

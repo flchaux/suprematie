@@ -95,7 +95,7 @@ pub(super) fn share_fuel(w: &mut World, b: usize, twins: &[usize]) {
             continue;
         };
         let fed = if to == b { *b_feed.get_or_insert_with(|| own_feed(w, b)) } else { own_feed(w, c) };
-        if (fed && have >= 2 * unit) || have + unit > fuel_tank(w.buildings[to].kind) {
+        if (fed && have >= 2 * unit) || have + unit > tank_of(&w.buildings[to]) {
             continue;
         }
         w.buildings[from].fuel -= unit;

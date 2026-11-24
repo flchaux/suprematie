@@ -121,7 +121,7 @@ pub fn start_deploy(w: &mut World, s: usize) {
 /// choisi + 1 (0 : sens automatique). Plan : `work` = (x + 1) | y << 16 de l'emplacement (0 : aucun, le
 /// chenillard reste sur place), `timer` = sens + 1, plus PLAN_CHOSEN si le joueur l'a choisi.
 fn begin_deploy(w: &mut World, s: usize, at: Option<(i32, i32)>, dir: u8) {
-    let end = w.tick + DEPLOY_TICKS as u32;
+    let end = w.tick + (if crate::ameliorations::quick(w.units.cold[s].mods & 0xffff) { DEPLOY_TICKS / 2 } else { DEPLOY_TICKS }) as u32;
     let (kind, owner) = (w.units.kind[s], w.units.owner[s]);
     let bkind = udef(kind).deploys;
     let (bw, bh) = buildings::dims(bkind, 0);
@@ -260,8 +260,8 @@ fn deploy(w: &mut World, s: usize) {
     buildings::complete_building(w, b);
     let def = bdef(bkind);
     let bb = &mut w.buildings[b];
-    // (au-delà du premier octet : équipements des chariots rentrés, voir stow_carts)
-    bb.mods = mods & 0xff;
+    // (au-delà du deuxième octet : équipements des chariots rentrés, voir stow_carts)
+    bb.mods = mods & 0xffff;
     bb.mod_job = mod_job;
     bb.mod_left = mod_left;
     bb.hp = ((def.hp as i64 * hp as i64 / max as i64) as i32).clamp(1, def.hp);
@@ -275,14 +275,14 @@ fn deploy(w: &mut World, s: usize) {
     if def.class == BClass::Depot {
         bb.stash = stock;
     }
-    if mods & 0xff != 0 {
+    if mods & 0xffff != 0 {
         crate::ameliorations::applied(w, crate::ameliorations::Host::B(b));
     }
     // soute : ses chariots de convoi ressortent (déjà payés)
     if bkind == B_T_HOLD {
         for k in 0..fuel.clamp(0, CARTS_PER_HOLD as i32) as u8 {
             if let Some(s) = spawn_cart(w, b) {
-                w.units.cold[s].mods = crate::ameliorations::at(mods, 1 + k) as u64;
+                w.units.cold[s].mods = crate::ameliorations::at(mods, 2 + k) as u64;
             }
         }
     }
@@ -510,6 +510,11 @@ pub fn fold(w: &mut World, b: usize) {
             refund.push((it as u8, *n as i32));
         }
     }
+    // atelier : l'équipement payé de l'unité en cours est rendu
+    let kit = std::mem::take(&mut w.buildings[b].kit);
+    if kit != 0 {
+        crate::gabarits::refund(w, owner as u8, cx, cy, kit);
+    }
     let around = glued(w, b);
     let (mods, mod_job, mod_left) = (w.buildings[b].mods, w.buildings[b].mod_job, w.buildings[b].mod_left);
     buildings::remove_building(w, b, false);
@@ -528,7 +533,7 @@ pub fn fold(w: &mut World, b: usize) {
         let max = w.max_hp(s);
         let c = &mut w.units.cold[s];
         c.pack = PACK_FOLDING;
-        c.ready_tick = w.tick + FOLD_TICKS as u32;
+        c.ready_tick = w.tick + (if crate::ameliorations::quick(mods & 0xffff) { FOLD_TICKS / 2 } else { FOLD_TICKS }) as u32;
         c.pack_recipe = recipe;
         c.pack_fuel = if ukind == U_CH_HOLD { carts } else { fuel };
         c.hold = aboard;
@@ -564,7 +569,7 @@ pub fn plant_pole(w: &mut World, g: usize, x: i32, y: i32) -> bool {
         return false;
     }
     let owner = gb.owner;
-    if poles_of(w, g).len() >= POLES_PER_GEN || !pole_in_reach(w, g, x, y) {
+    if poles_of(w, g).len() >= crate::ameliorations::poles_max(&w.buildings[g]) || !pole_in_reach(w, g, x, y) {
         return false;
     }
     let Some(b) = buildings::place_building(w, owner, B_T_POLE, x, y, 0) else { return false };
@@ -783,14 +788,14 @@ fn unload(w: &mut World, s: usize, h: usize) {
 }
 
 /// Repli de la soute `h` : ses chariots rentrent (leur chargement va dans son stock) ; renvoie leur nombre,
-/// gardé à bord du chenillard, et leurs équipements (octets 1 à 6 de `UnitCold::mods` du chenillard ; une
+/// gardé à bord du chenillard, et leurs équipements (octets 2 à 7 de `UnitCold::mods` du chenillard ; une
 /// installation en cours est remboursée).
 fn stow_carts(w: &mut World, h: usize) -> (i32, u64) {
     let carts = carts_of(w, h);
     let mut mods = 0;
     for (k, &s) in carts.iter().enumerate() {
         crate::ameliorations::cancel(w, crate::ameliorations::Host::U(s));
-        mods |= (w.units.cold[s].mods & 0xff) << (8 * (1 + k.min(6)));
+        mods |= (w.units.cold[s].mods & 0xff) << (8 * (2 + k.min(5)));
         let cargo = std::mem::take(&mut w.units.cold[s].hold);
         for (it, &n) in cargo.iter().enumerate() {
             if n > 0 {
@@ -806,7 +811,7 @@ fn stow_carts(w: &mut World, h: usize) -> (i32, u64) {
 pub fn drill_speed(w: &World, b: usize) -> u32 {
     let spot = w.buildings[b].link;
     let wear = if spot == NONE { 0 } else { w.wear.get(spot as usize).copied().unwrap_or(0) as u32 };
-    2 * (1000 - wear.min(1000)) * crate::ameliorations::module_speed(&w.buildings[b]) / 100
+    2 * (1000 - crate::ameliorations::wear_felt(&w.buildings[b], wear)) * crate::ameliorations::module_speed(&w.buildings[b]) / 100
 }
 
 /// Usure des gisements (toutes les WEAR_PERIOD ticks).
@@ -973,7 +978,9 @@ pub fn feed_crafters(w: &mut World, b: usize) {
         }
     });
     near.sort_unstable();
-    for o in near {
+    // palan : deux objets au lieu d'un
+    let rounds = if crate::ameliorations::spec(&w.buildings[b]) == crate::ameliorations::M_HOLD_CRANE { 2 } else { 1 };
+    for o in (0..rounds).flat_map(|_| near.iter().copied()) {
         let r = &RECIPES[w.buildings[o].recipe as usize];
         for &(it, _) in r.inputs {
             if crate::drones::has(&w.buildings[b].stash, it) > 0 && buildings::accepts(w, o, it) {
@@ -987,7 +994,7 @@ pub fn feed_crafters(w: &mut World, b: usize) {
 /// Points de vie (‰) : blindage des chenillards et de l'Arche.
 pub fn hp_mult(w: &World, owner: u8, kind: u16) -> i32 {
     let d = udef(kind);
-    if d.race == RACE_TRANSH && (d.deploys != NO_KIND || d.commander) && w.players.get(owner as usize).is_some_and(|p| p.has_tech(T_T_ARMOR)) {
+    if d.race == RACE_TRANSH && (d.deploys != NO_KIND || d.commander || kind == U_ARK_CAR) && w.players.get(owner as usize).is_some_and(|p| p.has_tech(T_T_ARMOR)) {
         1500
     } else {
         1000
@@ -1001,7 +1008,7 @@ pub fn info(w: &World, b: usize) -> String {
     // générateur : ses poteaux (nombre, plafond, cases) pour le bouton « Planter un poteau » et la portée affichée
     let poles = if bb.kind == B_T_GENERATOR {
         let at: Vec<String> = poles_of(w, b).iter().map(|&p| format!("[{},{}]", w.buildings[p].x, w.buildings[p].y)).collect();
-        format!(",\"poles\":[{}],\"polesMax\":{},\"poleReach\":{},\"at\":[{},{}]", at.join(","), POLES_PER_GEN, bdef(B_T_POLE).connect, bb.x, bb.y)
+        format!(",\"poles\":[{}],\"polesMax\":{},\"poleReach\":{},\"at\":[{},{}]", at.join(","), crate::ameliorations::poles_max(bb), bdef(B_T_POLE).connect, bb.x, bb.y)
     } else if bb.kind == B_T_HOLD {
         let cost: Vec<String> = udef(U_T_CART).cost.iter().map(|&(it, n)| format!("[{},{}]", it, n)).collect();
         format!(",\"carts\":{},\"cartsMax\":{},\"cartCost\":[{}]", carts_of(w, b).len(), CARTS_PER_HOLD, cost.join(","))

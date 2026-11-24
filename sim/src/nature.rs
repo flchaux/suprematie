@@ -245,6 +245,7 @@ pub fn nature_player() -> Player {
         researched2: 0,
         scars: [0; crate::essaim::FAMILIES],
         adapt: 0,
+        kits: Vec::new(),
     }
 }
 

@@ -90,7 +90,7 @@ fn the_table_of_upgrades_is_sound() {
     for (i, d) in MODS.iter().enumerate().skip(1) {
         let i = i as u8;
         assert_eq!(udef(d.host).race, RACE_TRANSH, "{}", d.key);
-        assert!((d.slot as usize) < ARK_SLOTS.len() && (d.host == U_ARK || d.slot == 0), "{}", d.key);
+        assert!((d.slot as usize) < slots(d.host).len(), "{}", d.key);
         assert!(d.time > 0 && !d.cost.is_empty() && !d.desc.is_empty(), "{}", d.key);
         assert!(d.tech == 0 || TECHS[d.tech as usize].race == RACE_TRANSH, "{}", d.key);
         if d.base != 0 {
@@ -100,13 +100,23 @@ fn the_table_of_upgrades_is_sound() {
             assert_eq!(d.rank, 1, "{}", d.key);
         }
     }
-    // chaque module et chaque unité de combat : deux choix exclusifs ; l'Arche : au moins trois branches par emplacement
+    // chaque emplacement d'un module ou d'un chariot : deux choix exclusifs ; d'une unité de combat : deux ou trois
     for (k, u) in UNITS.iter().enumerate() {
-        let n = MODS.iter().filter(|d| d.host == k as u16).count();
-        if u.deploys != NO_KIND || [U_T_CART, U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM].contains(&(k as u16)) {
-            assert_eq!(n, 2, "{}", u.key);
+        let k = k as u16;
+        let per: Vec<usize> = (0..slots(k).len() as u8).map(|sl| MODS.iter().filter(|d| d.host == k && d.slot == sl).count()).collect();
+        if u.deploys != NO_KIND {
+            assert_eq!(per, [2, 2], "{}", u.key);
+        } else if k == U_T_CART {
+            assert_eq!(per, [2], "{}", u.key);
+        } else if [U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM].contains(&k) {
+            assert!(per.len() == 3 && per.iter().all(|n| (2..=3).contains(n)), "{} : {per:?}", u.key);
         }
     }
+    // clés uniques
+    let mut keys: Vec<&str> = MODS.iter().map(|d| d.key).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    assert_eq!(keys.len(), MODS.len());
     for slot in 0..ARK_SLOTS.len() as u8 {
         assert!(MODS.iter().filter(|d| d.host == U_ARK && d.slot == slot && d.rank == 1).count() >= 3);
         // un choix possible dès le départ, sans recherche

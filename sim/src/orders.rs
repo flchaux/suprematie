@@ -105,6 +105,18 @@ pub const O_ARK_QUEUE: i32 = 65;
 /// Organismes de la Souche : se sacrifier dans une graine-mère en croissance : [drapeaux (bit 0 en file), réf. de
 /// la graine-mère, n, unités…] (voir souche::sacrifice).
 pub const O_SACRIFICE: i32 = 66;
+/// Transhumants : enregistrer un gabarit d'équipement : [type d'unité, gabarit (0 à 2), arme, châssis, équipement]
+/// (améliorations, 0 : rien ; voir gabarits.rs).
+pub const O_KIT_SET: i32 = 67;
+/// Gabarit de production d'un type d'unité : [type d'unité, gabarit (1 à 3 ; 0 : aucun)].
+pub const O_KIT_ACTIVE: i32 = 68;
+/// Équiper des unités : [arme, châssis, équipement, n, unités…] (0 : emplacement laissé comme il est).
+pub const O_KIT_APPLY: i32 = 69;
+
+/// Gabarit lu dans un ordre : trois améliorations, une par emplacement.
+fn kit_set(c: &mut Cur) -> u32 {
+    (0..3).fold(0, |v, k| v | (c.next().clamp(0, 255) as u32) << (8 * k))
+}
 
 struct Cur<'a> {
     a: &'a [i32],
@@ -122,7 +134,7 @@ impl Cur<'_> {
 /// d'Arche : l'Arche la dirige).
 fn own_unit(w: &World, p: u8, id: i32) -> Option<usize> {
     let s = w.unit(id as u32)?;
-    if w.units.owner[s] == p && !crate::ponte::is_egg(w.units.kind[s]) && !crate::ameliorations::is_turret(w.units.kind[s]) {
+    if w.units.owner[s] == p && !crate::ponte::is_egg(w.units.kind[s]) && !crate::ameliorations::is_ark_part(w.units.kind[s]) {
         Some(s)
     } else {
         None
@@ -350,6 +362,12 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             if front_before != front_after && bb.working {
                 bb.working = false;
                 bb.progress = 0;
+                // unité des Transhumants : son équipement déjà payé est rendu
+                let kit = std::mem::take(&mut w.buildings[b].kit);
+                if kit != 0 {
+                    let (cx, cy) = w.buildings[b].center();
+                    crate::gabarits::refund(w, p, cx, cy, kit);
+                }
                 // unité (ou portée) en cours abandonnée : ses composants reviennent dans la réserve de l'usine
                 // (une portée d'œufs ne coûte rien à la couveuse : ses œufs paient leur éclosion)
                 if let Some(k) = front_before.filter(|&k| udef(k).litter == 0) {
@@ -710,6 +728,10 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             for id in units_list(&mut c) {
                 if let (Some(h), 1..=255) = (crate::ameliorations::Host::resolve(w, p, id as u32), m) {
                     crate::ameliorations::install(w, h, m as u8);
+                    // choisie à la main : le gabarit ne décide plus de cet emplacement
+                    if let (crate::ameliorations::Host::U(s), Some(d)) = (h, crate::ameliorations::MODS.get(m as usize)) {
+                        crate::gabarits::forget(w, s, d.slot);
+                    }
                 }
             }
         }
@@ -717,6 +739,26 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             for id in units_list(&mut c) {
                 if let Some(h) = crate::ameliorations::Host::resolve(w, p, id as u32) {
                     crate::ameliorations::cancel(w, h);
+                    if let crate::ameliorations::Host::U(s) = h {
+                        w.units.cold[s].want = 0;
+                    }
+                }
+            }
+        }
+        O_KIT_SET => {
+            let (kind, k) = (c.next(), c.next());
+            let set = kit_set(&mut c);
+            crate::gabarits::record(w, p, kind, k, set);
+        }
+        O_KIT_ACTIVE => {
+            let (kind, k) = (c.next(), c.next());
+            crate::gabarits::activate(w, p, kind, k);
+        }
+        O_KIT_APPLY => {
+            let set = kit_set(&mut c);
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id) {
+                    crate::gabarits::apply(w, s, set);
                 }
             }
         }

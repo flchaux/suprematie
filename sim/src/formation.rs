@@ -254,7 +254,7 @@ pub fn hold(w: &mut World, s: usize) -> bool {
 fn rectangle(w: &World, members: &[usize], starts: &[(i32, i32)], c: (i32, i32), a: u16) -> Vec<(i32, i32)> {
     let n = members.len();
     let local: Vec<(i32, i32)> = starts.iter().map(|p| to_local(w, p.0 - c.0, p.1 - c.1, a)).collect();
-    let diam: Vec<i32> = members.iter().map(|&s| 2 * udef(w.units.kind[s]).radius).collect();
+    let diam: Vec<i32> = members.iter().map(|&s| 2 * crate::ameliorations::radius(&w.units, s)).collect();
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by_cached_key(|&k| {
         let kind = w.units.kind[members[k]];

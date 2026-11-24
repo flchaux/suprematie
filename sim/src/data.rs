@@ -329,7 +329,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 99] = [
+pub const WEAPONS: [WeaponDef; 109] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -437,6 +437,16 @@ pub const WEAPONS: [WeaponDef; 99] = [
     w!(18, 24, 10, Bullet, 50, 128, M_SURF | M_AIR),                    // 96 herse à affût mixte
     w!(90, 54, 90, Shell, 16, 384, M_SURF, min_range: 10),              // 97 canon tracté à tube allongé
     w!(45, 40, 90, Shell, 14, 384, M_SURF, salvo: 3, spread: 500, min_range: 8), // 98 canon tracté à obus à grappe
+    w!(18, 14, 10, Bullet, 40, 0, M_SURF),                              // 99 pisteur à mitrailleuse lourde
+    w!(22, 22, 70, Missile, 18, 160, M_SURF, salvo: 4, spread: 300),    // 100 pisteur à paniers de roquettes
+    w!(70, 28, 38, Bullet, 48, 0, M_SURF),                              // 101 cavalier à canon long
+    w!(6, 8, 50, Fire, 0, 320, M_SURF, sustain: 34),                    // 102 cavalier à lance-flammes
+    w!(40, 34, 60, Missile, 30, 200, M_AIR, salvo: 4),                  // 103 herse à missiles
+    w!(80, 40, 56, Shell, 14, 320, M_SURF, min_range: 8),               // 104 canon tracté à chargeur
+    w!(420, 2, 40, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 105 bélier à scies
+    w!(6, 7, 50, Fire, 0, 320, M_SURF, sustain: 34),                    // 106 bélier : lance-flammes de proue
+    w!(160, 30, 36, Bullet, 40, 128, M_SURF | M_AIR),                   // 107 bastion à affût antiaérien
+    w!(170, 44, 36, Bullet, 48, 128, M_SURF | M_AIR),                   // 108 bastion à canon long et affût antiaérien
 ];
 /// Armes des améliorations des Transhumants (indices dans WEAPONS).
 pub const W_SIEGE: u8 = 85;
@@ -450,6 +460,16 @@ pub const W_HARROW_LONG: u8 = 95;
 pub const W_HARROW_MIXED: u8 = 96;
 pub const W_GUN_LONG: u8 = 97;
 pub const W_GUN_CLUSTER: u8 = 98;
+pub const W_TRACKER_GUN: u8 = 99;
+pub const W_TRACKER_ROCKET: u8 = 100;
+pub const W_RIDER_LONG: u8 = 101;
+pub const W_RIDER_FLAME: u8 = 102;
+pub const W_HARROW_MISSILE: u8 = 103;
+pub const W_GUN_FAST: u8 = 104;
+pub const W_RAM_SAW: u8 = 105;
+pub const W_RAM_FLAME: u8 = 106;
+pub const W_BASTION_DUAL: u8 = 107;
+pub const W_BASTION_LONG_DUAL: u8 = 108;
 pub const W_CMD_UP: u8 = 1;
 /// Souche : arme de la vessie (dégâts et rayon de son éclatement) et griffes du béhémoth.
 pub const W_BURST: u8 = 75;
@@ -1140,12 +1160,14 @@ pub const U_BEHEMOTH: u16 = 88;
 pub const U_TUR_GUN: u16 = 89;
 pub const U_TUR_AA: u16 = 90;
 pub const U_TUR_MORTAR: u16 = 91;
+/// remorque attelée à l'Arche (voir convoi.rs)
+pub const U_ARK_CAR: u16 = 92;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 92] = [
+pub const UNITS: [UnitDef; 93] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1253,6 +1275,9 @@ pub const UNITS: [UnitDef; 92] = [
     UnitDef { key: "turret_gun", name: "Tourelle mitrailleuse", hp: 700, speed: 42, radius: 130, weapons: &[90], vision: 20, cost: &[(IRON_PLATE, 12), (GEAR, 4)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
     UnitDef { key: "turret_aa", name: "Tourelle antiaérienne", hp: 600, speed: 42, radius: 130, weapons: &[91], vision: 28, cost: &[(IRON_PLATE, 10), (GEAR, 4), (CIRCUIT, 2)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
     UnitDef { key: "turret_mortar", name: "Tourelle mortier", hp: 500, speed: 42, radius: 130, weapons: &[92], vision: 24, cost: &[(STEEL, 3), (GEAR, 4), (IRON_PLATE, 6)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    // ----- Transhumants : remorque attelée à l'Arche ; elle porte une amélioration de pont ou de soutien. Le coût est
+    // celui de sa reconstruction (voir convoi.rs) -----
+    UnitDef { key: "ark_car", name: "Remorque d'Arche", hp: 2600, speed: 16, radius: 170, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.
@@ -1389,9 +1414,9 @@ pub fn data_json() -> String {
         }
         let ws: Vec<String> = u.weapons.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{},\"litter\":{},\"egg\":{},\"turret\":{}}}",
+            "{{\"key\":{},\"name\":{},\"layer\":{},\"hp\":{},\"speed\":{},\"radius\":{},\"weapons\":[{}],\"vision\":{},\"radar\":{},\"cost\":{},\"build\":{},\"tech\":{},\"factory\":{},\"buildPower\":{},\"carry\":{},\"drones\":{},\"supply\":{},\"hold\":{},\"shieldR\":{},\"tier\":{},\"altitude\":{},\"race\":{},\"commander\":{},\"bio\":{},\"deploys\":{},\"litter\":{},\"egg\":{},\"turret\":{},\"car\":{}}}",
             js(u.key), js(u.name), u.layer as u8, u.hp, u.speed, u.radius, ws.join(","), u.vision, u.radar, cost_js(u.cost), u.build, u.tech,
-            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }, u.litter, matches!(i as u16, U_EGG_S | U_EGG_M | U_EGG_L), crate::ameliorations::is_turret(i as u16)
+            u.factory as u8, u.build_power, u.carry, u.drones, u.supply, u.hold, u.shield_r, u.tier, u.altitude, u.race, u.commander, u.bio, if u.deploys == NO_KIND { -1 } else { u.deploys as i32 }, u.litter, matches!(i as u16, U_EGG_S | U_EGG_M | U_EGG_L), crate::ameliorations::is_turret(i as u16), crate::convoi::is_car(i as u16)
         ));
     }
     let carriers: Vec<String> = CARRIERS.iter().map(|c| format!("{{\"capacity\":{},\"speed\":{},\"buffer\":{},\"cost\":{}}}", c.capacity, c.speed, c.buffer, cost_js(c.cost))).collect();

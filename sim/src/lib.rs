@@ -6,12 +6,14 @@ pub mod ameliorations;
 pub mod belts;
 pub mod buildings;
 pub mod combat;
+pub mod convoi;
 pub mod data;
 pub mod drones;
 pub mod essaim;
 pub mod fixed;
 pub mod flow;
 pub mod formation;
+pub mod gabarits;
 pub mod grid;
 pub mod logistics;
 pub mod map;
@@ -589,3 +591,5 @@ mod sorties_tests;
 pub mod stress;
 #[cfg(test)]
 mod ameliorations_tests;
+#[cfg(test)]
+mod equipement_tests;

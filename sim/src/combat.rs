@@ -115,10 +115,11 @@ fn vis_at(w: &World, team: usize, x: i32, y: i32) -> u8 {
     w.vis.get(team).map(|v| v[(cy * vw + cx) as usize]).unwrap_or(0)
 }
 
-/// Commando furtif camouflé (il n'a pas tiré depuis quelques secondes), ou fouisseur de la Souche enterré.
+/// Commando furtif camouflé (il n'a pas tiré depuis quelques secondes), fouisseur de la Souche enterré, ou unité des
+/// Transhumants à l'arrêt sous son filet.
 #[inline]
 pub fn cloaked(w: &World, s: usize) -> bool {
-    (w.units.kind[s] == U_COMMANDO && w.units.cold[s].reveal == 0) || crate::essaim::buried(w, s)
+    (w.units.kind[s] == U_COMMANDO && w.units.cold[s].reveal == 0) || crate::essaim::buried(w, s) || crate::ameliorations::hidden(w, s)
 }
 
 /// Unité absente des radars ennemis : bombardier furtif, ou unité dans une bulle de brouillage alliée.
@@ -169,7 +170,7 @@ fn unit_target_ok(w: &World, team: u8, wi: usize, t: usize, x: i32, y: i32) -> b
         return false;
     }
     let (tx, ty) = (w.units.x[t], w.units.y[t]);
-    let r = wd.range * TILE + udef(w.units.kind[t]).radius;
+    let r = wd.range * TILE + crate::ameliorations::radius(&w.units, t);
     let d2 = dist2(x, y, tx, ty);
     if d2 > (r as i64) * (r as i64) {
         return false;
@@ -556,6 +557,8 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
             if kind == U_COMMANDO {
                 // le tir trahit le commando pendant 5 s
                 w.units.cold[s].reveal = 100;
+            } else if crate::ameliorations::has_net(w, s) {
+                w.units.cold[s].reveal = crate::ameliorations::NET_FIRED;
             }
             fire(w, owner, wi, x, y, t, mult, me);
         }
@@ -608,7 +611,7 @@ pub fn collect_shields(w: &mut World) {
         let d = udef(w.units.kind[s]);
         // droïde roulant : bouclier seulement une fois déployé
         let up = w.units.kind[s] != U_ROLL_DROID || w.units.cold[s].deployed;
-        if (d.shield_r > 0 || w.units.kind[s] == U_ARK) && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
+        if (d.shield_r > 0 || w.units.cold[s].mods != 0) && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
             let id = w.unit_id(s);
             let r = crate::ameliorations::unit_shield(w, s).0;
             if r > 0 {
@@ -820,7 +823,7 @@ pub fn area_damage(w: &mut World, x: i32, y: i32, r: i32, dmg: i32, owner: u8, m
             if !air && mask & (M_SURF | M_SUB) == 0 {
                 return;
             }
-            let rr = r + udef(units.kind[o]).radius;
+            let rr = r + crate::ameliorations::radius(units, o);
             let d2 = dist2(x, y, units.x[o], units.y[o]);
             if d2 <= (rr as i64) * (rr as i64) {
                 let falloff = if all { (dmg as i64 * (2 * r2 - d2.min(r2)) / (2 * r2)) as i32 } else { dmg };
@@ -1023,7 +1026,7 @@ fn impact(w: &mut World, p: &Projectile) {
     }
     // coup direct : la cible doit encore être là
     if let Some(u) = w.unit(p.target) {
-        let r = udef(w.units.kind[u]).radius + 96;
+        let r = crate::ameliorations::radius(&w.units, u) + 96;
         if dist2(w.units.x[u], w.units.y[u], p.tx, p.ty) <= (r as i64) * (r as i64) {
             damage_unit(w, u, p.dmg, p.owner);
             if wd.stun > 0 {
@@ -1317,7 +1320,8 @@ pub fn update_visibility(w: &mut World) {
             continue;
         }
         let def = bb.def();
-        if def.vision == 0 && def.radar == 0 {
+        let mod_radar = if bb.mods != 0 && bb.complete() { crate::ameliorations::building_radar(bb) } else { 0 };
+        if def.vision == 0 && def.radar == 0 && mod_radar == 0 {
             continue;
         }
         let team = w.players[bb.owner as usize].team as usize;
@@ -1332,6 +1336,9 @@ pub fn update_visibility(w: &mut World) {
         }
         if def.radar > 0 && bb.complete() && bb.working {
             stamp(vis, x, y, def.radar, 2);
+        }
+        if mod_radar > 0 {
+            stamp(vis, x, y, mod_radar, 2);
         }
     }
     if w.tick > 0 {

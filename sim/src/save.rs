@@ -28,7 +28,8 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 /// - 8 : améliorations des Transhumants (unités, modules, état des Arches).
 /// - 9 : Souche, sol mangé.
 /// - 10 : formations à la vitesse du plus lent (`Order::Move::pace` et `wait` au lieu d'un tick d'arrivée).
-pub const VERSION: u32 = 10;
+/// - 11 : Transhumants : emplacements des améliorations (unités, modules), gabarits d'équipement, remorques de l'Arche.
+pub const VERSION: u32 = 11;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])
@@ -111,6 +112,9 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
             let mut w = rebuild(w);
             if r.version < 4 {
                 convert_reserve(&mut w, &team_stock);
+            }
+            if r.version < 11 {
+                crate::ameliorations::convert_slots(&mut w);
             }
             Some(w)
         }

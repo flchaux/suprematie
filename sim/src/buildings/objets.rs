@@ -31,7 +31,7 @@ pub fn accepts(w: &World, b: usize, item: u8) -> bool {
         BClass::Warehouse | BClass::Station | BClass::CargoPad => crate::logistics::accepts(w, b, item),
         BClass::Power => {
             let e = fuel_energy(bb.kind, item);
-            e > 0 && bb.fuel + e <= fuel_tank(bb.kind)
+            e > 0 && bb.fuel + e <= tank_of(bb)
         }
         BClass::Router => bb.stash.len() < 4,
         BClass::Crafter => {

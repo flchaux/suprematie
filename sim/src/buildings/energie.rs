@@ -32,12 +32,17 @@ pub(super) fn refueled(bb: &mut Building) {
     if bb.fuel_alert == 2 {
         bb.fuel_alert = 1;
     }
-    if bb.fuel >= fuel_tank(bb.kind) / 2 {
+    if bb.fuel >= tank_of(bb) / 2 {
         bb.fuel_alert = 0;
     }
 }
 
-/// Réservoir d'un générateur (kW × ticks).
+/// Réservoir d'un générateur (kW × ticks), spécialité d'un générateur nomade comprise.
+pub fn tank_of(bb: &Building) -> i32 {
+    fuel_tank(bb.kind) * crate::ameliorations::tank_mult(bb)
+}
+
+/// Réservoir d'un type de générateur (kW × ticks).
 pub fn fuel_tank(kind: u16) -> i32 {
     FUEL_TANK_UNITS * if kind == B_CRYSTAL_REACTOR { FUEL_CELL / 4 } else { FUEL_HYDROCARBON }
 }
@@ -69,7 +74,7 @@ pub(super) fn feed_generator_from_depot(w: &mut World, b: usize) {
     }
     for it in [HYDROCARBON, FUEL, ENERGY_CELL] {
         let e = fuel_energy(kind, it);
-        if e <= 0 || w.buildings[b].fuel + e > fuel_tank(kind) {
+        if e <= 0 || w.buildings[b].fuel + e > tank_of(&w.buildings[b]) {
             continue;
         }
         // le premier dépôt collé (plus petit indice) qui en a

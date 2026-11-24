@@ -745,7 +745,7 @@ pub fn plan(w: &mut World) {
         }
         match bb.def().class {
             BClass::Factory if !bb.queue.is_empty() && !crate::buildings::paused(bb) => plan_factory(w, b, &fl, &mut rb),
-            BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::fuel_tank(bb.kind) => plan_generator(w, b, &fl, &mut rb),
+            BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::tank_of(bb) => plan_generator(w, b, &fl, &mut rb),
             _ => {}
         }
     }
@@ -763,7 +763,7 @@ fn plan_generator(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     }
     let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner);
     let (x, y) = w.buildings[b].center();
-    let mut room = crate::buildings::fuel_tank(kind) - w.buildings[b].fuel;
+    let mut room = crate::buildings::tank_of(&w.buildings[b]) - w.buildings[b].fuel;
     for (it, &n) in incoming.iter().enumerate() {
         room -= n as i32 * crate::buildings::fuel_energy(kind, it as u8);
     }

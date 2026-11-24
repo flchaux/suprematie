@@ -1,9 +1,10 @@
 //! Améliorations des Transhumants (voir docs/spec/races.md, « Améliorations »).
 //!
 //! - Une amélioration (`MODS`) s'installe sur une unité ou un module précis, depuis sa fiche (ordre
-//!   `O_MOD_INSTALL`) : l'Arche a cinq emplacements (`ARK_SLOTS`), un chenillard (et son module déployé) ou une
-//!   unité de combat en a un. Un emplacement ne garde qu'une amélioration : les branches s'excluent. Un palier
-//!   demande le palier précédent et le remplace.
+//!   `O_MOD_INSTALL`) : l'Arche a cinq emplacements (`ARK_SLOTS`), une unité de combat trois (arme, châssis,
+//!   équipement), un chenillard (et son module déployé) deux (rendement, spécialité), un chariot de convoi un. Un
+//!   emplacement ne garde qu'une amélioration : les branches s'excluent. Un palier demande le palier précédent et le
+//!   remplace. La table est dans ameliorations/table.rs.
 //! - Coût payé tout de suite : composants pris dans les réserves à portée (soute de l'Arche, dépôts et soutes,
 //!   chenillards soutes repliés), relevés dans la bourse du joueur. L'ordre `O_MOD_CANCEL` annule et rembourse
 //!   tout. Une amélioration remplacée par une autre branche rend la moitié de ses composants.
@@ -11,199 +12,17 @@
 //!   `mod_job` (amélioration en cours d'installation) et `mod_left` (ticks restants). Ils suivent le module à
 //!   son repli et à son déploiement.
 //! - Arche : tourelles déployables, atelier embarqué, surcharge, groupe électrogène (`Ark`, un par Arche, dans
-//!   `World::arks`).
+//!   `World::arks`). Ses améliorations de pont et de soutien sont portées par des remorques (convoi.rs).
+//! - Gabarits d'équipement des unités (gabarits.rs).
+
+mod table;
+pub use table::*;
 
 use crate::buildings;
 use crate::data::*;
 use crate::drones::Store;
 use crate::fixed::{dist, dist2, TILE};
 use crate::world::*;
-
-// ---------- emplacements ----------
-pub const SLOT_ARM: u8 = 0;
-pub const SLOT_HULL: u8 = 1;
-pub const SLOT_DECK: u8 = 2;
-pub const SLOT_DRIVE: u8 = 3;
-pub const SLOT_SUPPORT: u8 = 4;
-/// Emplacements de l'Arche : (clé, nom, icône de l'interface).
-pub const ARK_SLOTS: [(&str, &str, &str); 5] = [
-    ("arm", "Armement", "mod_gun"),
-    ("hull", "Coque", "mod_plate"),
-    ("deck", "Pont", "mod_turret"),
-    ("drive", "Mobilité", "mod_engine"),
-    ("support", "Soutien", "mod_repair"),
-];
-/// Emplacement unique des autres unités et des modules.
-pub const ONE_SLOT: (&str, &str, &str) = ("fit", "Aménagement", "mod_fit");
-
-pub struct ModDef {
-    pub key: &'static str,
-    pub name: &'static str,
-    /// effet chiffré, montré dans l'infobulle
-    pub desc: &'static str,
-    /// icône de l'interface (Icon.svelte)
-    pub icon: &'static str,
-    /// unité qui la porte (pour un module : son chenillard)
-    pub host: u16,
-    pub slot: u8,
-    /// palier dans sa branche (1 : le premier)
-    pub rank: u8,
-    /// palier précédent, exigé et remplacé (0 : aucun)
-    pub base: u8,
-    pub tech: u8,
-    pub cost: &'static [(u8, u16)],
-    pub releves: u16,
-    /// durée de l'installation (s)
-    pub time: u16,
-}
-
-// ---------- améliorations (indices dans MODS) ----------
-// Arche : armement
-pub const M_W_SIEGE: u8 = 1;
-pub const M_W_FLAME: u8 = 2;
-pub const M_W_ROCKETS: u8 = 3;
-pub const M_W_RAIL: u8 = 4;
-pub const M_W_FLAK: u8 = 5;
-// Arche : coque
-pub const M_PLATE1: u8 = 6;
-pub const M_PLATE2: u8 = 7;
-pub const M_REACTIVE: u8 = 8;
-pub const M_SHIELD1: u8 = 9;
-pub const M_SHIELD2: u8 = 10;
-pub const M_SHIELD3: u8 = 11;
-// Arche : pont
-pub const M_TURRETS1: u8 = 12;
-pub const M_TURRETS2: u8 = 13;
-pub const M_TURRETS3: u8 = 14;
-pub const M_WORKSHOP: u8 = 15;
-pub const M_HOLDS: u8 = 16;
-// Arche : mobilité
-pub const M_ENGINE1: u8 = 17;
-pub const M_ENGINE2: u8 = 18;
-pub const M_SPUR: u8 = 19;
-pub const M_BOOST: u8 = 20;
-// Arche : soutien
-pub const M_REPAIR: u8 = 21;
-pub const M_RADAR: u8 = 22;
-pub const M_JAMMER: u8 = 23;
-pub const M_DYNAMO: u8 = 24;
-pub const M_LOOT: u8 = 25;
-// modules
-pub const M_DRILL_FAST: u8 = 26;
-pub const M_DRILL_CLEAN: u8 = 27;
-pub const M_FURNACE_FAST: u8 = 28;
-pub const M_FURNACE_YIELD: u8 = 29;
-pub const M_ASM_FAST: u8 = 30;
-pub const M_ASM_THRIFT: u8 = 31;
-pub const M_REF_FAST: u8 = 32;
-pub const M_REF_CRACK: u8 = 33;
-pub const M_GEN_BIG: u8 = 34;
-pub const M_GEN_LEAN: u8 = 35;
-pub const M_HOLD_BIG: u8 = 36;
-pub const M_HOLD_ARMOR: u8 = 37;
-pub const M_LAB_FAST: u8 = 38;
-pub const M_LAB_FIELD: u8 = 39;
-pub const M_SHOP_FAST: u8 = 40;
-pub const M_SHOP_VETS: u8 = 41;
-/// Radar (cases) de l'Arche et du pisteur aménagés.
-pub const ARK_RADAR: i32 = 70;
-pub const TRACKER_RADAR: i32 = 45;
-pub const M_BASTION_LONG: u8 = 42;
-pub const M_BASTION_SHIELD: u8 = 43;
-// unités
-pub const M_CART_BIG: u8 = 44;
-pub const M_CART_FAST: u8 = 45;
-pub const M_TRACKER_RADAR: u8 = 46;
-pub const M_TRACKER_TURBO: u8 = 47;
-pub const M_RIDER_TWIN: u8 = 48;
-pub const M_RIDER_PLATE: u8 = 49;
-pub const M_HARROW_LONG: u8 = 50;
-pub const M_HARROW_MIXED: u8 = 51;
-pub const M_GUN_LONG: u8 = 52;
-pub const M_GUN_CLUSTER: u8 = 53;
-pub const M_RAM_PLATE: u8 = 54;
-pub const M_RAM_HOOK: u8 = 55;
-
-/// Valeurs communes à toutes les améliorations (premier palier, sans recherche).
-const MD: ModDef = ModDef { key: "none", name: "Rien", desc: "", icon: "", host: NO_KIND, slot: 0, rank: 1, base: 0, tech: 0, cost: &[], releves: 0, time: 0 };
-
-/// `md!(porteur, emplacement, clé, nom, icône, recherche, durée, relevés, [coût], effet)`
-macro_rules! md {
-    ($host:expr, $slot:expr, $key:expr, $name:expr, $icon:expr, $tech:expr, $time:expr, $rel:expr, [$($c:expr),*], $desc:expr) => {
-        ModDef { key: $key, name: $name, desc: $desc, icon: $icon, host: $host, slot: $slot, tech: $tech, cost: &[$($c),*], releves: $rel, time: $time, ..MD }
-    };
-    ($host:expr, $slot:expr, $key:expr, $name:expr, $icon:expr, $tech:expr, $time:expr, $rel:expr, [$($c:expr),*], $desc:expr, $rank:expr, $base:expr) => {
-        ModDef { rank: $rank, base: $base, ..md!($host, $slot, $key, $name, $icon, $tech, $time, $rel, [$($c),*], $desc) }
-    };
-}
-
-/// Les améliorations ; l'indice est sauvegardé : toute nouvelle amélioration va à la fin.
-#[rustfmt::skip]
-pub const MODS: [ModDef; 56] = [
-    MD,
-    // ----- Arche : armement (remplace le canon d'origine : 120 dégâts par seconde à 24 cases) -----
-    md!(U_ARK, SLOT_ARM, "ark_w_siege", "Canon lourd", "mod_gun", T_T_ARMORY, 40, 20, [(STEEL, 24), (GEAR, 12), (AMMO, 6)], "Remplace le canon : 164 dégâts/s en zone, portée 42 cases, pas à moins de 5."),
-    md!(U_ARK, SLOT_ARM, "ark_w_flame", "Lance-flammes", "mod_flame", 0, 25, 10, [(IRON_PLATE, 40), (COPPER_PLATE, 20), (GEAR, 8)], "Remplace le canon : 187 dégâts/s en zone, portée 13 cases, +50 % contre le vivant."),
-    md!(U_ARK, SLOT_ARM, "ark_w_rockets", "Batterie de roquettes", "mod_rockets", T_T_ARMORY, 40, 20, [(STEEL, 20), (GEAR, 10), (CIRCUIT, 8)], "Remplace le canon : 12 roquettes dispersées toutes les 6 s, portée 36 cases, pas à moins de 6."),
-    md!(U_ARK, SLOT_ARM, "ark_w_rail", "Canon à rail", "mod_rail", T_T_RAIL, 70, 80, [(STEEL, 40), (PROCESSOR, 12), (ENERGY_CELL, 4)], "Remplace le canon : 180 dégâts/s sur une cible, portée 52 cases."),
-    md!(U_ARK, SLOT_ARM, "ark_w_flak", "Batterie antiaérienne", "mod_flak", T_T_ARMORY, 40, 20, [(STEEL, 16), (GEAR, 12), (CIRCUIT, 10)], "S'ajoute au canon : 120 dégâts/s en zone contre l'air, portée 40 cases."),
-    // ----- Arche : coque -----
-    md!(U_ARK, SLOT_HULL, "ark_plate1", "Blindage", "mod_plate", 0, 30, 10, [(IRON_PLATE, 60), (STEEL, 10)], "Dégâts subis −15 %, vitesse −5 %."),
-    md!(U_ARK, SLOT_HULL, "ark_plate2", "Blindage lourd", "mod_plate", T_T_BUBBLE, 50, 40, [(STEEL, 50), (GEAR, 10)], "Dégâts subis −30 %, vitesse −10 %.", 2, M_PLATE1),
-    md!(U_ARK, SLOT_HULL, "ark_reactive", "Blindage réactif", "mod_reactive", T_T_BUBBLE, 45, 30, [(STEEL, 30), (AMMO, 16), (CIRCUIT, 6)], "Dégâts des obus, missiles, bombes et flammes −50 %."),
-    md!(U_ARK, SLOT_HULL, "ark_shield1", "Bouclier de convoi", "mod_shield", T_T_BUBBLE, 45, 30, [(STEEL, 20), (CIRCUIT, 20), (COPPER_PLATE, 30)], "Bulle de 6 cases, 2 500 points. Brisée, elle revient après 10 s."),
-    md!(U_ARK, SLOT_HULL, "ark_shield2", "Bouclier renforcé", "mod_shield", T_T_BUBBLE2, 60, 60, [(STEEL, 30), (PROCESSOR, 10), (WAFER, 10)], "Bulle de 8 cases, 5 000 points.", 2, M_SHIELD1),
-    md!(U_ARK, SLOT_HULL, "ark_shield3", "Grande bulle", "mod_shield", T_T_CROWN, 90, 120, [(STEEL, 40), (PROCESSOR, 20), (ENERGY_CELL, 4)], "Bulle de 11 cases, 9 000 points.", 3, M_SHIELD2),
-    // ----- Arche : pont -----
-    md!(U_ARK, SLOT_DECK, "ark_turrets1", "Tourelle déployable", "mod_turret", 0, 25, 10, [(IRON_PLATE, 40), (GEAR, 12)], "1 tourelle à poser : mitrailleuse, antiaérienne ou mortier. Se reconstruit en 30 s."),
-    md!(U_ARK, SLOT_DECK, "ark_turrets2", "Trio de tourelles", "mod_turret", T_T_MOUNTS, 45, 40, [(STEEL, 20), (GEAR, 20), (CIRCUIT, 8)], "3 tourelles déployables, en triangle autour de l'Arche.", 2, M_TURRETS1),
-    md!(U_ARK, SLOT_DECK, "ark_turrets3", "Couronne de tourelles", "mod_turret", T_T_CROWN, 90, 120, [(STEEL, 60), (ENGINE, 9), (CIRCUIT, 30)], "9 tourelles déployables, en couronne autour de l'Arche.", 3, M_TURRETS2),
-    md!(U_ARK, SLOT_DECK, "ark_workshop", "Atelier embarqué", "mod_workshop", T_T_ONBOARD, 50, 30, [(STEEL, 20), (GEAR, 20), (CIRCUIT, 10)], "L'Arche produit en roulant, sans énergie, à 60 % de la vitesse d'un atelier."),
-    md!(U_ARK, SLOT_DECK, "ark_holds", "Soutes de pont", "mod_hold", T_T_ONBOARD, 30, 15, [(IRON_PLATE, 60), (STEEL, 10)], "Soute de l'Arche : 2 000 de chaque objet au lieu de 600."),
-    // ----- Arche : mobilité -----
-    md!(U_ARK, SLOT_DRIVE, "ark_engine1", "Moteurs", "mod_engine", 0, 25, 10, [(IRON_PLATE, 30), (GEAR, 14)], "Vitesse +25 %."),
-    md!(U_ARK, SLOT_DRIVE, "ark_engine2", "Moteurs jumelés", "mod_engine", T_T_DRIVE, 45, 40, [(STEEL, 20), (ENGINE, 6)], "Vitesse +60 %.", 2, M_ENGINE1),
-    md!(U_ARK, SLOT_DRIVE, "ark_spur", "Éperon", "mod_spur", T_T_DRIVE, 40, 25, [(STEEL, 36), (GEAR, 8)], "En roulant, écrase ce qu'elle touche au sol : 600 dégâts/s."),
-    md!(U_ARK, SLOT_DRIVE, "ark_boost", "Surcharge", "mod_boost", T_T_DRIVE, 40, 30, [(STEEL, 16), (ENGINE, 4), (CIRCUIT, 10)], "Capacité : pendant 12 s, vitesse +60 % et cadence de tir +50 % ; recharge 90 s."),
-    // ----- Arche : soutien -----
-    md!(U_ARK, SLOT_SUPPORT, "ark_repair", "Bras réparateurs", "mod_repair", 0, 30, 10, [(IRON_PLATE, 30), (GEAR, 10), (CIRCUIT, 6)], "+1 % de points de vie par seconde à l'Arche, aux unités et modules à 10 cases."),
-    md!(U_ARK, SLOT_SUPPORT, "ark_radar", "Radar de crête", "mod_radar", T_T_RECON, 35, 30, [(COPPER_PLATE, 40), (CIRCUIT, 16)], "Radar de 70 cases, vision 40 cases au lieu de 30."),
-    md!(U_ARK, SLOT_SUPPORT, "ark_jammer", "Brouilleur", "mod_jammer", T_T_RECON, 40, 30, [(STEEL, 16), (CIRCUIT, 20), (WAFER, 6)], "Cache du radar ennemi l'Arche et les alliés à 16 cases."),
-    md!(U_ARK, SLOT_SUPPORT, "ark_dynamo", "Groupe électrogène", "mod_dynamo", T_T_ONBOARD, 35, 20, [(STEEL, 16), (GEAR, 12), (COPPER_PLATE, 40)], "À l'arrêt, pose un groupe de 500 kW sans combustible (zone de 8 cases)."),
-    md!(U_ARK, SLOT_SUPPORT, "ark_loot", "Grues de pillage", "mod_loot", T_T_RECON, 35, 30, [(STEEL, 16), (GEAR, 16)], "Butin de 40 % au lieu de 25 %."),
-    // ----- modules (gardées au repli et au déploiement) -----
-    md!(U_CH_DRILL, 0, "drill_fast", "Foret à percussion", "mod_fast", T_T_FITTINGS, 20, 6, [(STEEL, 6), (GEAR, 6)], "Extraction +60 %, énergie +50 %, mais use le gisement deux fois plus vite."),
-    md!(U_CH_DRILL, 0, "drill_clean", "Forage propre", "mod_lean", T_T_FITTINGS, 20, 6, [(IRON_PLATE, 16), (CIRCUIT, 3)], "N'use pas le gisement ; extraction −10 %."),
-    md!(U_CH_FURNACE, 0, "furnace_fast", "Soufflerie", "mod_fast", T_T_FITTINGS, 20, 6, [(STEEL, 5), (GEAR, 5)], "Vitesse +60 %, énergie +60 %."),
-    md!(U_CH_FURNACE, 0, "furnace_yield", "Four à récupération", "mod_yield", T_T_FITTINGS, 20, 6, [(IRON_PLATE, 16), (CIRCUIT, 4)], "Un produit de plus toutes les 4 fontes (rendement +25 %)."),
-    md!(U_CH_ASSEMBLER, 0, "asm_fast", "Chaîne rapide", "mod_fast", T_T_FITTINGS, 20, 8, [(STEEL, 6), (GEAR, 8)], "Vitesse +50 %, énergie +50 %."),
-    md!(U_CH_ASSEMBLER, 0, "asm_thrift", "Gabarits économes", "mod_yield", T_T_FITTINGS, 20, 8, [(IRON_PLATE, 20), (CIRCUIT, 4)], "Un cycle sur 5 ne consomme pas d'ingrédients."),
-    md!(U_CH_REFINERY, 0, "ref_fast", "Colonne sous pression", "mod_fast", T_T_FITTINGS2, 25, 10, [(STEEL, 10), (CIRCUIT, 4)], "Vitesse +60 %, énergie +60 %."),
-    md!(U_CH_REFINERY, 0, "ref_crack", "Craquage", "mod_yield", T_T_FITTINGS2, 25, 10, [(STEEL, 8), (GEAR, 8)], "Un produit de plus tous les 4 cycles (rendement +25 %)."),
-    md!(U_CH_GENERATOR, 0, "gen_big", "Grosse turbine", "mod_fast", T_T_FITTINGS, 25, 8, [(STEEL, 8), (GEAR, 8)], "Production 1 000 kW au lieu de 600."),
-    md!(U_CH_GENERATOR, 0, "gen_lean", "Turbine sobre", "mod_lean", T_T_FITTINGS, 25, 8, [(IRON_PLATE, 20), (CIRCUIT, 5)], "Brûle moitié moins de combustible ; zone électrique +3 cases."),
-    md!(U_CH_HOLD, 0, "hold_big", "Soute profonde", "mod_hold", T_T_FITTINGS2, 25, 10, [(IRON_PLATE, 40), (STEEL, 8)], "1 500 de chaque objet au lieu de 600."),
-    md!(U_CH_HOLD, 0, "hold_armor", "Soute blindée", "mod_plate", T_T_FITTINGS2, 25, 10, [(STEEL, 24)], "Dégâts subis −50 %, déployée ou repliée."),
-    md!(U_CH_LAB, 0, "lab_fast", "Calculateur", "mod_fast", T_T_FITTINGS2, 25, 10, [(CIRCUIT, 12), (COPPER_PLATE, 20)], "Recherche +50 %, énergie +50 %."),
-    md!(U_CH_LAB, 0, "lab_field", "Carnets de terrain", "mod_radar", T_T_FITTINGS2, 25, 10, [(CIRCUIT, 6), (GEAR, 8)], "2 relevés par palier au lieu de 3 ; sans relevés, en tire un par seconde."),
-    md!(U_CH_WORKSHOP, 0, "shop_fast", "Double portique", "mod_fast", T_T_FITTINGS2, 35, 15, [(STEEL, 20), (GEAR, 20)], "Fabrication des unités +50 %, énergie +50 %."),
-    md!(U_CH_WORKSHOP, 0, "shop_vets", "Cour de rodage", "mod_vet", T_T_FITTINGS2, 35, 15, [(STEEL, 16), (AMMO, 10)], "Ses unités sortent vétéranes (+10 % de points de vie, +5 % de dégâts)."),
-    md!(U_CH_BASTION, 0, "bastion_long", "Canon long", "mod_gun", T_T_FITTINGS2, 30, 15, [(STEEL, 20), (CIRCUIT, 6)], "Portée 44 cases au lieu de 30, dégâts 170 au lieu de 160."),
-    md!(U_CH_BASTION, 0, "bastion_shield", "Bastion à bouclier", "mod_shield", T_T_FITTINGS2, 30, 15, [(STEEL, 12), (CIRCUIT, 16)], "Bulle de 6 cases, 1 500 points, une fois déployé."),
-    // ----- unités -----
-    md!(U_T_CART, 0, "cart_big", "Remorque", "mod_hold", T_T_FITTINGS, 8, 2, [(IRON_PLATE, 10), (GEAR, 2)], "Cale de 40 objets au lieu de 20."),
-    md!(U_T_CART, 0, "cart_fast", "Attelage léger", "mod_engine", T_T_FITTINGS, 8, 2, [(IRON_PLATE, 6), (GEAR, 4)], "Vitesse +60 %."),
-    md!(U_TRACKER, 0, "tracker_radar", "Mât radar", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 8), (CIRCUIT, 3)], "Radar de 45 cases."),
-    md!(U_TRACKER, 0, "tracker_turbo", "Turbo", "mod_engine", T_T_GEAR, 10, 4, [(GEAR, 4), (IRON_PLATE, 6)], "Vitesse +40 %."),
-    md!(U_RIDER, 0, "rider_twin", "Canons jumelés", "mod_gun", T_T_GEAR, 12, 4, [(STEEL, 3), (GEAR, 2)], "Cadence de tir +55 %."),
-    md!(U_RIDER, 0, "rider_plate", "Blindage d'appoint", "mod_plate", T_T_GEAR, 12, 4, [(STEEL, 4)], "Dégâts subis −30 %."),
-    md!(U_HARROW, 0, "harrow_long", "Viseur longue portée", "mod_flak", T_T_GEAR, 12, 4, [(CIRCUIT, 4), (GEAR, 2)], "Portée 38 cases au lieu de 28."),
-    md!(U_HARROW, 0, "harrow_mixed", "Affût mixte", "mod_gun", T_T_GEAR, 12, 4, [(STEEL, 3), (AMMO, 2)], "Tire aussi au sol ; portée 24 cases au lieu de 28, dégâts −20 %."),
-    md!(U_TOWED_GUN, 0, "gun_long", "Tube allongé", "mod_gun", T_T_GEAR, 15, 6, [(STEEL, 5), (GEAR, 2)], "Portée 54 cases au lieu de 40."),
-    md!(U_TOWED_GUN, 0, "gun_cluster", "Obus à grappe", "mod_rockets", T_T_GEAR, 15, 6, [(STEEL, 3), (AMMO, 4)], "Trois obus dispersés de 45 dégâts en zone au lieu d'un de 90."),
-    md!(U_RAM, 0, "ram_plate", "Proue blindée", "mod_plate", T_T_GEAR, 15, 6, [(STEEL, 8)], "Dégâts subis −35 %."),
-    md!(U_RAM, 0, "ram_hook", "Grappins", "mod_loot", T_T_GEAR, 15, 6, [(STEEL, 4), (GEAR, 4)], "Butin doublé sur ce qu'il détruit, vitesse +20 %."),
-];
 
 // ---------- lecture ----------
 
@@ -237,6 +56,30 @@ pub fn has_rank(mods: u64, id: u8) -> bool {
     false
 }
 
+/// Améliorations installées d'une unité ordinaire (au plus trois emplacements).
+#[inline]
+fn fitted(mods: u64) -> impl Iterator<Item = &'static ModDef> {
+    (0..3u8).map(move |k| at(mods, k)).filter(|&m| m != 0).map(|m| &MODS[m as usize])
+}
+
+/// Rayon de l'Arche (1/256 de case) : sa coque s'allonge d'un tronçon par emplacement équipé d'armement, de coque ou
+/// de mobilité.
+pub const ARK_RADII: [i32; 4] = [360, 395, 430, 465];
+pub fn ark_radius(mods: u64) -> i32 {
+    ARK_RADII[[SLOT_ARM, SLOT_HULL, SLOT_DRIVE].iter().filter(|&&k| at(mods, k) != 0).count()]
+}
+
+/// Rayon de l'unité `s` : celui de son type, sauf l'Arche, qui grandit avec ses améliorations.
+#[inline]
+pub fn radius(units: &Units, s: usize) -> i32 {
+    let k = units.kind[s];
+    if k == U_ARK {
+        ark_radius(units.cold[s].mods)
+    } else {
+        udef(k).radius
+    }
+}
+
 /// Ce type d'unité (ou de chenillard) a-t-il des améliorations ?
 pub fn host_has_mods(host: u16) -> bool {
     host != NO_KIND && MODS.iter().any(|d| d.host == host)
@@ -258,19 +101,27 @@ pub fn is_turret(kind: u16) -> bool {
     matches!(kind, U_TUR_GUN | U_TUR_AA | U_TUR_MORTAR)
 }
 
+/// Remorque ou tourelle d'une Arche : elle n'obéit qu'à l'Arche.
+#[inline]
+pub fn is_ark_part(kind: u16) -> bool {
+    matches!(kind, U_TUR_GUN | U_TUR_AA | U_TUR_MORTAR | U_ARK_CAR)
+}
+
 // ---------- effets sur les unités ----------
 
 /// Armes de l'unité `s`, améliorations comprises (au plus deux), et leur nombre.
 #[inline]
 pub fn weapons_of(w: &World, s: usize) -> ([u8; 2], usize) {
     let def = udef(w.units.kind[s]);
-    let n = def.weapons.len().min(2);
+    let mut n = def.weapons.len().min(2);
     let mut v = [0u8; 2];
     v[..n].copy_from_slice(&def.weapons[..n]);
     let mods = w.units.cold[s].mods;
     if mods != 0 {
         if let Some((k, wi)) = mod_weapon(w.units.kind[s], at(mods, 0)) {
+            // (une arme de plus : lance-flammes de proue du bélier)
             v[k] = wi;
+            n = n.max(k + 1);
         }
     }
     (v, n)
@@ -289,6 +140,14 @@ pub fn mod_weapon(kind: u16, m: u8) -> Option<(usize, u8)> {
         (U_HARROW, M_HARROW_MIXED) => (0, W_HARROW_MIXED),
         (U_TOWED_GUN, M_GUN_LONG) => (0, W_GUN_LONG),
         (U_TOWED_GUN, M_GUN_CLUSTER) => (0, W_GUN_CLUSTER),
+        (U_TOWED_GUN, M_GUN_FAST) => (0, W_GUN_FAST),
+        (U_TRACKER, M_TRACKER_GUN) => (0, W_TRACKER_GUN),
+        (U_TRACKER, M_TRACKER_ROCKET) => (0, W_TRACKER_ROCKET),
+        (U_RIDER, M_RIDER_LONG) => (0, W_RIDER_LONG),
+        (U_RIDER, M_RIDER_FLAME) => (0, W_RIDER_FLAME),
+        (U_HARROW, M_HARROW_MISSILE) => (0, W_HARROW_MISSILE),
+        (U_RAM, M_RAM_SAW) => (0, W_RAM_SAW),
+        (U_RAM, M_RAM_FLAME) => (1, W_RAM_FLAME),
         _ => return None,
     })
 }
@@ -330,12 +189,11 @@ pub fn speed(w: &World, s: usize) -> i32 {
             };
             drive - weight
         }
-        U_T_CART if has(mods, M_CART_FAST) => 160,
-        U_TRACKER if has(mods, M_TRACKER_TURBO) => 140,
-        U_RAM if has(mods, M_RAM_HOOK) => 120,
-        _ => 100,
+        // (chenillard soute : au-delà du deuxième octet, les équipements de ses chariots)
+        U_CH_HOLD => 100,
+        _ => 100 + fitted(mods).map(|d| d.speed as i32).sum::<i32>(),
     };
-    base * pct / 100
+    base * pct.max(10) / 100
 }
 
 /// Dégâts subis par l'unité `s`, améliorations comprises (`World::hit_weapon` : arme du coup).
@@ -352,9 +210,8 @@ pub fn unit_armor(w: &World, s: usize, dmg: i32) -> i32 {
             _ => 100,
         },
         U_CH_HOLD if has(mods, M_HOLD_ARMOR) => 50,
-        U_RIDER if has(mods, M_RIDER_PLATE) => 70,
-        U_RAM if has(mods, M_RAM_PLATE) => 65,
-        _ => 100,
+        U_CH_HOLD => 100,
+        _ => (100 - fitted(mods).map(|d| d.armor as i64).sum::<i64>()).max(10),
     };
     if pct == 100 {
         dmg
@@ -374,6 +231,12 @@ pub fn unit_shield(w: &World, s: usize) -> (i32, i32) {
             _ => (0, 0),
         };
     }
+    let mods = w.units.cold[s].mods;
+    if mods != 0 && w.units.kind[s] != U_CH_HOLD {
+        if let Some(d) = fitted(mods).find(|d| d.shield.1 > 0) {
+            return d.shield;
+        }
+    }
     let d = udef(w.units.kind[s]);
     (d.shield_r, d.shield_hp)
 }
@@ -381,27 +244,69 @@ pub fn unit_shield(w: &World, s: usize) -> (i32, i32) {
 /// Rayon du radar de l'unité `s` (cases).
 #[inline]
 pub fn unit_radar(w: &World, s: usize) -> i32 {
+    let base = udef(w.units.kind[s]).radar;
     let mods = w.units.cold[s].mods;
-    if mods != 0 {
-        if w.units.kind[s] == U_ARK && has(mods, M_RADAR) {
-            return ARK_RADAR;
-        }
-        if w.units.kind[s] == U_TRACKER && has(mods, M_TRACKER_RADAR) {
-            return TRACKER_RADAR;
-        }
+    match w.units.kind[s] {
+        _ if mods == 0 => base,
+        U_ARK if has(mods, M_RADAR) && crate::convoi::in_service(w, s, SLOT_SUPPORT) => ARK_RADAR,
+        U_ARK | U_CH_HOLD => base,
+        _ => fitted(mods).map(|d| d.radar as i32).fold(base, i32::max),
     }
-    udef(w.units.kind[s]).radar
 }
 
 /// Rayon de vision de l'unité `s` (cases).
 #[inline]
 pub fn unit_vision(w: &World, s: usize) -> i32 {
     let v = udef(w.units.kind[s]).vision;
-    if w.units.kind[s] == U_ARK && has(w.units.cold[s].mods, M_RADAR) {
-        v.max(40)
-    } else {
-        v
+    let mods = w.units.cold[s].mods;
+    match w.units.kind[s] {
+        _ if mods == 0 => v,
+        U_ARK if has(mods, M_RADAR) && crate::convoi::in_service(w, s, SLOT_SUPPORT) => v.max(40),
+        U_ARK | U_CH_HOLD => v,
+        _ => fitted(mods).map(|d| d.vision as i32).fold(v, i32::max),
     }
+}
+
+/// L'unité `s` porte un filet de camouflage.
+#[inline]
+pub fn has_net(w: &World, s: usize) -> bool {
+    let mods = w.units.cold[s].mods;
+    mods != 0 && w.units.kind[s] != U_CH_HOLD && w.units.kind[s] != U_ARK && fitted(mods).any(|d| d.cloak)
+}
+
+/// Unité cachée sous son filet : à l'arrêt depuis NET_REST ticks, et elle n'a pas tiré (`UnitCold::reveal`).
+#[inline]
+pub fn hidden(w: &World, s: usize) -> bool {
+    w.units.cold[s].mods != 0 && w.units.cold[s].reveal == 0 && has_net(w, s)
+}
+
+/// Ticks à l'arrêt avant de se fondre sous un filet de camouflage ; après un tir.
+pub const NET_REST: u16 = 60;
+pub const NET_FIRED: u16 = 100;
+
+/// Chaque tick, après son déplacement, unité qui porte des améliorations : filet de camouflage, points de vie regagnés.
+pub fn tick_unit(w: &mut World, s: usize) {
+    if matches!(w.units.kind[s], U_ARK | U_CH_HOLD | U_T_CART) {
+        return;
+    }
+    if has_net(w, s) {
+        let moving = w.units.x[s] != w.units.px[s] || w.units.y[s] != w.units.py[s];
+        let c = &mut w.units.cold[s];
+        c.reveal = if moving { c.reveal.max(NET_REST) } else { c.reveal.saturating_sub(1) };
+    }
+    if w.tick.is_multiple_of(20) {
+        let k: i64 = fitted(w.units.cold[s].mods).map(|d| d.regen as i64).sum();
+        let max = w.max_hp(s);
+        if k > 0 && w.units.hp[s] < max {
+            w.units.hp[s] = (w.units.hp[s] + ((max as i64 * k / 1000) as i32).max(1)).min(max);
+        }
+    }
+}
+
+/// Déploiement, repli ou mise en batterie deux fois plus rapides.
+#[inline]
+pub fn quick(mods: u64) -> bool {
+    mods != 0 && (0..2u8).any(|k| at(mods, k) != 0 && MODS[at(mods, k) as usize].quick)
 }
 
 /// Rayon (cases) de la bulle de brouillage de l'unité `s` (0 : aucune).
@@ -409,14 +314,14 @@ pub fn unit_vision(w: &World, s: usize) -> i32 {
 pub fn unit_jam(w: &World, s: usize) -> i32 {
     match w.units.kind[s] {
         U_JAMMER => JAM_RADIUS,
-        U_ARK if has(w.units.cold[s].mods, M_JAMMER) => 16,
+        U_ARK if has(w.units.cold[s].mods, M_JAMMER) && crate::convoi::in_service(w, s, SLOT_SUPPORT) => 16,
         _ => 0,
     }
 }
 
 /// Plafond par objet de la soute d'un commandant (elle compte comme un dépôt).
 pub fn store_cap(w: &World, s: usize) -> u16 {
-    if w.units.kind[s] == U_ARK && has(w.units.cold[s].mods, M_HOLDS) {
+    if w.units.kind[s] == U_ARK && has(w.units.cold[s].mods, M_HOLDS) && crate::convoi::in_service(w, s, SLOT_DECK) {
         2000
     } else {
         crate::drones::COMMANDER_CAP
@@ -432,16 +337,16 @@ pub fn cart_cap(w: &World, s: usize) -> u32 {
     }
 }
 
-/// Butin (% du coût) du joueur `p` : LOOT_PCT, 40 % avec les grues de pillage de son Arche ; doublé pour un
-/// bélier à grappins (`killer` : unité qui pille).
+/// Butin (% du coût) du joueur `p` : LOOT_PCT, 40 % avec les grues de pillage de son Arche ; plus pour une unité
+/// équipée (grappins du bélier, filets du cavalier ; `killer` : unité qui pille).
 pub fn loot_pct(w: &World, p: u8, killer: usize) -> u32 {
-    let ark = w.arks.iter().any(|a| w.unit(a.unit).is_some_and(|s| w.units.owner[s] == p && has(w.units.cold[s].mods, M_LOOT)));
+    let ark = w.arks.iter().any(|a| w.unit(a.unit).is_some_and(|s| w.units.owner[s] == p && has(w.units.cold[s].mods, M_LOOT) && crate::convoi::in_service(w, s, SLOT_SUPPORT)));
     let base = if ark { 40 } else { crate::transhumants::LOOT_PCT };
-    if w.units.kind[killer] == U_RAM && has(w.units.cold[killer].mods, M_RAM_HOOK) {
-        base * 2
-    } else {
-        base
-    }
+    let more: u32 = match w.units.kind[killer] {
+        U_ARK | U_CH_HOLD => 0,
+        _ => fitted(w.units.cold[killer].mods).map(|d| d.loot as u32).sum(),
+    };
+    base * (100 + more) / 100
 }
 
 /// Surcharge de l'Arche `s` en cours ?
@@ -452,10 +357,16 @@ pub fn boosted(w: &World, s: usize) -> bool {
 
 // ---------- effets sur les modules ----------
 
-/// Amélioration du module (0 : aucune).
+/// Amélioration de rendement du module (0 : aucune).
 #[inline]
 pub fn fit(bb: &Building) -> u8 {
     bb.mods as u8
+}
+
+/// Spécialité du module (0 : aucune).
+#[inline]
+pub fn spec(bb: &Building) -> u8 {
+    at(bb.mods, SLOT_SPEC)
 }
 
 /// Vitesse du module (%) : extraction, fabrication, recherche, production d'unités.
@@ -472,10 +383,15 @@ pub fn module_speed(bb: &Building) -> u32 {
 /// Consommation du module (%).
 #[inline]
 pub fn module_power(bb: &Building) -> i32 {
-    match fit(bb) {
+    let pct = match fit(bb) {
         M_FURNACE_FAST | M_REF_FAST => 160,
         M_DRILL_FAST | M_ASM_FAST | M_LAB_FAST | M_SHOP_FAST => 150,
         _ => 100,
+    };
+    if matches!(spec(bb), M_FURNACE_LEAN | M_ASM_LEAN | M_REF_LEAN) {
+        pct / 2
+    } else {
+        pct
     }
 }
 
@@ -505,13 +421,53 @@ pub fn free_cycle(bb: &mut Building) -> bool {
     false
 }
 
-/// Dégâts subis par un module (soute blindée).
+/// Dégâts subis par un module (soute blindée, spécialités blindées).
 #[inline]
 pub fn building_armor(bb: &Building, dmg: i32) -> i32 {
+    if bb.mods == 0 {
+        return dmg;
+    }
     if fit(bb) == M_HOLD_ARMOR {
-        dmg / 2
+        return dmg / 2;
+    }
+    (dmg as i64 * (100 - MODS[spec(bb) as usize].armor as i64) / 100) as i32
+}
+
+/// Radar d'un module (cases ; 0 : celui de son type).
+#[inline]
+pub fn building_radar(bb: &Building) -> i32 {
+    if spec(bb) == M_LAB_ANTENNA {
+        LAB_RADAR
     } else {
-        dmg
+        0
+    }
+}
+
+/// Réservoir d'un générateur : multiple de celui de son type.
+#[inline]
+pub fn tank_mult(bb: &Building) -> i32 {
+    if spec(bb) == M_GEN_TANK {
+        3
+    } else {
+        1
+    }
+}
+
+/// Poteaux relais d'un générateur nomade, au plus.
+pub fn poles_max(bb: &Building) -> usize {
+    if spec(bb) == M_GEN_POLES {
+        16
+    } else {
+        crate::transhumants::POLES_PER_GEN
+    }
+}
+
+/// Usure (‰) qui compte pour le débit d'une foreuse nomade.
+pub fn wear_felt(bb: &Building, wear: u32) -> u32 {
+    if spec(bb) == M_DRILL_DEEP {
+        wear.min(300)
+    } else {
+        wear.min(1000)
     }
 }
 
@@ -525,13 +481,17 @@ pub fn building_shield(bb: &Building) -> (i32, i32) {
     }
 }
 
-/// Arme d'un bâtiment (canon long du bastion).
+/// Arme d'un bâtiment (canon long du bastion, affût antiaérien).
 #[inline]
 pub fn building_weapon(bb: &Building) -> i8 {
-    if fit(bb) == M_BASTION_LONG {
-        W_BASTION_LONG as i8
-    } else {
-        bb.def().weapon
+    if bb.mods == 0 {
+        return bb.def().weapon;
+    }
+    match (fit(bb) == M_BASTION_LONG, spec(bb) == M_BASTION_FLAK) {
+        (true, true) => W_BASTION_LONG_DUAL as i8,
+        (true, false) => W_BASTION_LONG as i8,
+        (false, true) => W_BASTION_DUAL as i8,
+        _ => bb.def().weapon,
     }
 }
 
@@ -618,7 +578,7 @@ fn sources(w: &World, p: u8, x: i32, y: i32) -> Vec<(i64, Store)> {
 }
 
 /// Paie `cost` au point (x, y) ; faux, sans rien prendre, si les réserves à portée ne couvrent pas tout.
-fn pay(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> bool {
+pub(crate) fn pay(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> bool {
     let src = sources(w, p, x, y);
     if !cost.iter().all(|&(it, n)| src.iter().map(|&(_, st)| st.has(w, it) as u32).sum::<u32>() >= n as u32) {
         return false;
@@ -739,13 +699,11 @@ pub fn tick_job(w: &mut World, h: Host) {
 pub fn applied(w: &mut World, h: Host) {
     match h {
         Host::U(s) => {
-            if w.units.kind[s] == U_ARK {
-                // le bouclier démarre au quart de ses points, ou s'éteint avec son émetteur
-                let max = unit_shield(w, s).1;
-                let c = &mut w.units.cold[s];
-                c.shield = if max == 0 { 0 } else { c.shield.clamp(max / 4, max) };
-                c.shield_down = 0;
-            }
+            // le bouclier démarre au quart de ses points, ou s'éteint avec son émetteur
+            let max = unit_shield(w, s).1;
+            let c = &mut w.units.cold[s];
+            c.shield = if max == 0 { 0 } else { c.shield.clamp(max / 4, max) };
+            c.shield_down = 0;
             // nouvelle arme : elle cherche une cible à sa portée
             w.units.cold[s].wtarget = [NONE; 2];
         }
@@ -813,8 +771,9 @@ pub const BOOST_READY: u32 = 1800;
 /// Atelier embarqué : vitesse (% d'un atelier), unités d'un type en file au plus.
 pub const WORKSHOP_PCT: u32 = 60;
 const QUEUE_MAX: u16 = 100;
-/// Bras réparateurs : rayon (cases).
+/// Bras réparateurs, cour de réparation d'un atelier : rayon (cases).
 const REPAIR_RANGE: i32 = 10;
+const SHOP_REPAIR_RANGE: i32 = 8;
 /// Éperon : dégâts par tick au contact.
 const SPUR_DMG: i32 = 30;
 
@@ -852,8 +811,13 @@ pub struct Ark {
     pub boost_ready: u32,
     /// groupe électrogène posé (référence de bâtiment, NONE : aucun)
     pub dock: u32,
+    /// équipement déjà payé de l'unité en cours de l'atelier embarqué (voir gabarits.rs)
+    pub kit: u32,
+    /// remorques attelées et trace de l'Arche (voir convoi.rs)
+    pub cars: Vec<crate::convoi::ArkCar>,
+    pub trail: Vec<(i32, i32)>,
 }
-crate::ser_struct!(Ark { unit, out, hold, ax, ay, rest, turrets, queue, prog, paid, boost_until, boost_ready, dock });
+crate::ser_struct!(Ark { unit, out, hold, ax, ay, rest, turrets, queue, prog, paid, boost_until, boost_ready, dock; since 11: kit, cars, trail });
 
 /// Indice de l'état de l'Arche `s` dans World::arks.
 pub fn ark_of(w: &World, s: usize) -> Option<usize> {
@@ -879,6 +843,22 @@ pub fn rebuild_arks(w: &mut World) {
     }
 }
 
+/// Sauvegardes d'avant la version 11 : unités et modules n'avaient qu'un emplacement (le premier octet) ; chaque
+/// amélioration rejoint le sien. Chenillard soute : les équipements de ses chariots, dans les octets suivants, se
+/// décalent d'un cran.
+pub fn convert_slots(w: &mut World) {
+    for s in 0..w.units.alive.len() {
+        let (kind, mods) = (w.units.kind[s], w.units.cold[s].mods);
+        if mods == 0 || kind == U_ARK {
+            continue;
+        }
+        let m = at(mods, 0);
+        let own = if m == 0 { 0 } else { (m as u64) << (8 * MODS[m as usize].slot as u32) };
+        let carts = if kind == U_CH_HOLD { (mods & !0xff) << 8 } else { 0 };
+        w.units.cold[s].mods = own | carts;
+    }
+}
+
 /// Chaque tick, après les unités : tourelles, atelier embarqué, groupe, réparations, éperon.
 pub fn update(w: &mut World) {
     let mut i = 0;
@@ -890,6 +870,17 @@ pub fn update(w: &mut World) {
         };
         update_ark(w, i, s);
         i += 1;
+    }
+    // ateliers à cour de réparation
+    if w.tick.is_multiple_of(20) && w.players.iter().any(|p| p.race == RACE_TRANSH) {
+        for k in 0..w.active.len() {
+            let b = w.active[k] as usize;
+            let bb = &w.buildings[b];
+            if bb.alive && bb.kind == B_T_WORKSHOP && bb.complete() && spec(bb) == M_SHOP_REPAIR {
+                let ((x, y), owner) = (bb.center(), bb.owner);
+                repair(w, x, y, owner, SHOP_REPAIR_RANGE, false);
+            }
+        }
     }
 }
 
@@ -905,16 +896,17 @@ fn update_ark(w: &mut World, i: usize, s: usize) {
         a.ay = y;
     }
     a.rest = if left || moving { 0 } else { a.rest.saturating_add(1) };
+    crate::convoi::update(w, i, s);
     update_turrets(w, i, s, left);
     update_dock(w, i, s, left);
     if mods == 0 || carried {
         return;
     }
-    if at(mods, SLOT_DECK) == M_WORKSHOP && w.units.cold[s].stun == 0 {
+    if at(mods, SLOT_DECK) == M_WORKSHOP && w.units.cold[s].stun == 0 && crate::convoi::in_service(w, s, SLOT_DECK) {
         update_workshop(w, i, s);
     }
-    if has(mods, M_REPAIR) && w.tick.is_multiple_of(20) {
-        repair(w, s);
+    if has(mods, M_REPAIR) && w.tick.is_multiple_of(20) && crate::convoi::in_service(w, s, SLOT_SUPPORT) {
+        repair(w, x, y, w.units.owner[s], REPAIR_RANGE, true);
     }
     if has(mods, M_SPUR) && moving {
         spur(w, s);
@@ -923,12 +915,14 @@ fn update_ark(w: &mut World, i: usize, s: usize) {
 
 /// Poste de la tourelle `k` sur `n` autour de l'Arche `s` : en couronne, la première vers l'avant.
 fn post(w: &World, s: usize, k: usize, n: usize) -> (i32, i32) {
-    let r = TILE
-        * match n {
-            1 => 4,
-            3 => 5,
-            _ => 6,
-        };
+    // demi-case : la coque de l'Arche s'allonge avec ses améliorations
+    let r = TILE / 2
+        + TILE
+            * match n {
+                1 => 4,
+                3 => 5,
+                _ => 6,
+            };
     let a = w.units.facing[s].wrapping_add((k as u32 * 65536 / n.max(1) as u32) as u16);
     let x = w.units.x[s] + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
     let y = w.units.y[s] + (w.trig.sin(a) as i64 * r as i64 / 16384) as i32;
@@ -963,7 +957,7 @@ fn update_turrets(w: &mut World, i: usize, s: usize, left: bool) {
     let owner = w.units.owner[s];
     let id = w.arks[i].unit;
     let carried = w.units.cold[s].carried_by != NONE;
-    let (ax, ay, ar) = (w.units.x[s], w.units.y[s], udef(U_ARK).radius);
+    let (ax, ay) = (w.units.x[s], w.units.y[s]);
     // rappel, ou consigne « suivre » : l'Arche part, ses tourelles se replient et la rejoignent
     if !w.arks[i].out || (left && !w.arks[i].hold) {
         for t in w.arks[i].turrets.iter_mut().filter(|t| t.state == TU_OUT) {
@@ -976,21 +970,32 @@ fn update_turrets(w: &mut World, i: usize, s: usize, left: bool) {
     let mut launched = !w.tick.is_multiple_of(TURRET_EVERY);
     for k in 0..n {
         let mut t = w.arks[i].turrets[k];
+        // la remorque qui la porte : sans elle, ni sortie, ni retour à bord, ni reconstruction
+        let car = crate::convoi::turret_car(k, n);
+        let lost = w.arks[i].cars.get(car).is_some_and(|c| c.state == crate::convoi::CAR_LOST);
+        // elle sort, et rentre, par le plus proche de son poste (ou d'elle) : sa remorque, ou l'Arche
+        let (px, py) = match w.unit(t.unit) {
+            Some(u) => (w.units.x[u], w.units.y[u]),
+            None if t.state == TU_ABOARD && w.arks[i].out => post(w, s, k, n),
+            None => (ax, ay),
+        };
+        let (cx, cy) = crate::convoi::car_pos(w, i, s, car);
+        let from_car = dist(px, py, cx, cy) < dist(px, py, ax, ay);
+        let ((bx, by), br) = if from_car { ((cx, cy), udef(U_ARK_CAR).radius) } else { ((ax, ay), radius(&w.units, s)) };
         match t.state {
             TU_ABOARD => {
                 if t.hp < 1000 && w.tick.is_multiple_of(20) {
                     t.hp = (t.hp + TURRET_HEAL).min(1000);
                 }
                 let a = &w.arks[i];
-                let ready = a.out && a.rest >= REST_TURRETS && !carried && t.hp >= TURRET_FIT;
+                let ready = a.out && a.rest >= REST_TURRETS && !carried && !lost && t.hp >= TURRET_FIT;
                 if t.want != t.kind {
                     t.state = TU_CONVERT;
                     t.timer = TURRET_CONVERT;
                 } else if ready && !launched && w.players[owner as usize].unit_count < UNIT_CAP {
                     launched = true;
-                    let (px, py) = post(w, s, k, n);
-                    let d = dist(ax, ay, px, py).max(1);
-                    let (ox, oy) = (ax + (px - ax) * ar.min(d) / d, ay + (py - ay) * ar.min(d) / d);
+                    let d = dist(bx, by, px, py).max(1);
+                    let (ox, oy) = (bx + (px - bx) * br.min(d) / d, by + (py - by) * br.min(d) / d);
                     let uid = w.spawn_unit(TURRET_KINDS[t.kind as usize % 3], owner, ox, oy);
                     let u = slot_of(uid);
                     w.units.hp[u] = ((w.max_hp(u) as i64 * t.hp as i64 / 1000) as i32).max(1);
@@ -1028,15 +1033,15 @@ fn update_turrets(w: &mut World, i: usize, s: usize, left: bool) {
                     }
                     if c.pack == 0 && !carried {
                         let idle = c.orders.is_empty();
-                        let near = dist(w.units.x[u], w.units.y[u], ax, ay) <= ar + TILE * 3 / 2;
-                        if near || t.timer >= RETURN_MAX {
+                        let near = dist(w.units.x[u], w.units.y[u], bx, by) <= br + TILE * 3 / 2;
+                        if !lost && (near || t.timer >= RETURN_MAX) {
                             t.hp = embark(w, u);
                             t.unit = NONE;
                             t.state = TU_ABOARD;
                             t.timer = 0;
                         } else if idle || w.tick.is_multiple_of(10) {
                             crate::units::clear_orders(w, u);
-                            w.units.cold[u].orders.push(Order::Move { x: ax, y: ay, gx: ax, gy: ay, attack: false, pace: 0, wait: 0 });
+                            w.units.cold[u].orders.push(Order::Move { x: bx, y: by, gx: bx, gy: by, attack: false, pace: 0, wait: 0 });
                         }
                     }
                 }
@@ -1049,7 +1054,7 @@ fn update_turrets(w: &mut World, i: usize, s: usize, left: bool) {
                         t.state = TU_ABOARD;
                         t.hp = 1000;
                     }
-                } else if !rebuilding && !carried && w.tick.is_multiple_of(10) && pay(w, owner, ax, ay, udef(TURRET_KINDS[t.kind as usize % 3]).cost) {
+                } else if !rebuilding && !carried && !lost && w.tick.is_multiple_of(10) && pay(w, owner, ax, ay, udef(TURRET_KINDS[t.kind as usize % 3]).cost) {
                     rebuilding = true;
                     t.timer = TURRET_REBUILD;
                 }
@@ -1175,6 +1180,11 @@ pub fn workshop_queue(w: &mut World, s: usize, kind: i32, delta: i32) {
 /// L'unité en cours de l'atelier embarqué est abandonnée : remboursée.
 fn drop_work(w: &mut World, i: usize, s: usize, kind: u16) {
     w.arks[i].prog = 0;
+    let kit = std::mem::take(&mut w.arks[i].kit);
+    if kit != 0 {
+        let (p, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
+        crate::gabarits::refund(w, p, x, y, kit);
+    }
     if std::mem::take(&mut w.arks[i].paid) {
         let (p, x, y) = (w.units.owner[s], w.units.x[s], w.units.y[s]);
         for &(it, n) in udef(kind).cost {
@@ -1194,23 +1204,28 @@ fn update_workshop(w: &mut World, i: usize, s: usize) {
         }
         w.arks[i].paid = true;
         w.arks[i].prog = 0;
+        w.arks[i].kit = crate::gabarits::begin(w, p, x, y, kind);
     }
-    let need = factory_ticks(kind) * 100;
+    let need = (factory_ticks(kind) + crate::gabarits::ticks(w.arks[i].kit)) * 100;
     w.arks[i].prog = (w.arks[i].prog + w.players[p as usize].build_mult.max(0) as u32 * WORKSHOP_PCT / 100).min(need);
     if w.arks[i].prog < need || full {
         return;
     }
     w.arks[i].prog = 0;
     w.arks[i].paid = false;
-    // l'unité sort à l'arrière de l'Arche
-    let a = w.units.facing[s].wrapping_add(32768);
-    let r = udef(U_ARK).radius + udef(kind).radius + TILE / 2;
-    let x = w.units.x[s] + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
-    let y = w.units.y[s] + (w.trig.sin(a) as i64 * r as i64 / 16384) as i32;
+    // l'unité sort sur le flanc de la remorque atelier (de l'Arche, tant qu'elle n'est pas attelée)
+    let (cx, cy) = crate::convoi::car_pos(w, i, s, 0);
+    let from = crate::convoi::car_unit(w, i, 0).unwrap_or(s);
+    let a = w.units.facing[from].wrapping_add(16384);
+    let r = radius(&w.units, from) + udef(kind).radius + TILE / 2;
+    let x = cx + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
+    let y = cy + (w.trig.sin(a) as i64 * r as i64 / 16384) as i32;
     let (mx, my) = (w.map.w * TILE - 1, w.map.h * TILE - 1);
     let (fx, fy) = buildings::free_spot_near(w, x.clamp(0, mx), y.clamp(0, my), crate::units::pass_mask(udef(kind).layer));
     let id = w.spawn_unit(kind, p, fx, fy);
     w.units.facing[slot_of(id)] = w.units.facing[s];
+    let kit = std::mem::take(&mut w.arks[i].kit);
+    crate::gabarits::deliver(w, slot_of(id), kit);
     let q = &mut w.arks[i].queue;
     q[0].1 = q[0].1.saturating_sub(1);
     if q[0].1 == 0 {
@@ -1220,7 +1235,7 @@ fn update_workshop(w: &mut World, i: usize, s: usize) {
 
 /// Groupe électrogène : posé à côté de l'Arche au repos, rembarqué quand elle part (ou change de soutien).
 fn update_dock(w: &mut World, i: usize, s: usize, left: bool) {
-    let on = has(w.units.cold[s].mods, M_DYNAMO);
+    let on = has(w.units.cold[s].mods, M_DYNAMO) && crate::convoi::in_service(w, s, SLOT_SUPPORT);
     let dock = w.arks[i].dock;
     if let Some(b) = w.building(dock) {
         if !on || left {
@@ -1255,10 +1270,10 @@ fn update_dock(w: &mut World, i: usize, s: usize, left: bool) {
     }
 }
 
-/// Bras réparateurs : unités et modules du joueur à moins de REPAIR_RANGE cases, 1 % par seconde.
-fn repair(w: &mut World, s: usize) {
-    let (x, y, owner) = (w.units.x[s], w.units.y[s], w.units.owner[s]);
-    let r = REPAIR_RANGE * TILE;
+/// Bras réparateurs, cour de réparation : unités (et modules, si `modules`) du joueur `owner` à moins de `range` cases
+/// du point, 1 % de points de vie par seconde (appelé une fois par seconde).
+fn repair(w: &mut World, x: i32, y: i32, owner: u8, range: i32, modules: bool) {
+    let r = range * TILE;
     let r2 = r as i64 * r as i64;
     let mut near: Vec<usize> = Vec::new();
     let units = &w.units;
@@ -1274,6 +1289,9 @@ fn repair(w: &mut World, s: usize) {
         if w.units.hp[o] < max {
             w.units.hp[o] = (w.units.hp[o] + (max / 100).max(1)).min(max);
         }
+    }
+    if !modules {
+        return;
     }
     let mut blds: Vec<usize> = Vec::new();
     w.grid.query_buildings(x, y, r, |b| blds.push(b));
@@ -1293,7 +1311,7 @@ fn repair(w: &mut World, s: usize) {
 fn spur(w: &mut World, s: usize) {
     let (x, y, owner) = (w.units.x[s], w.units.y[s], w.units.owner[s]);
     let team = w.team_of(owner);
-    let r = udef(U_ARK).radius;
+    let r = radius(&w.units, s);
     let mut hits: Vec<usize> = Vec::new();
     let units = &w.units;
     w.grid.fine.query(x, y, r + 320, |o| {
@@ -1347,6 +1365,10 @@ pub fn hash_into(w: &World, h: &mut crate::ser::Hasher) {
         }
         h.add(a.prog as u64 | (a.paid as u64) << 32);
         h.add(a.boost_until as u64 | (a.dock as u64) << 32);
+        if a.kit != 0 {
+            h.add(a.kit as u64);
+        }
+        crate::convoi::hash_into(a, h);
     }
 }
 
@@ -1362,11 +1384,15 @@ pub fn mods_json() -> String {
         .map(|(i, d)| {
             let m = i as u8;
             // arme donnée (rang de l'arme remplacée, arme ; -1 : aucune) et radar, pour les cercles de portée
-            let (slot, wi) = if m == M_BASTION_LONG { (0, W_BASTION_LONG as i32) } else { mod_weapon(d.host, m).map_or((0, -1), |(k, wi)| (k, wi as i32)) };
+            let (slot, wi) = match m {
+                M_BASTION_LONG => (0, W_BASTION_LONG as i32),
+                M_BASTION_FLAK => (0, W_BASTION_DUAL as i32),
+                _ => mod_weapon(d.host, m).map_or((0, -1), |(k, wi)| (k, wi as i32)),
+            };
             let radar = match m {
                 M_RADAR => ARK_RADAR,
-                M_TRACKER_RADAR => TRACKER_RADAR,
-                _ => 0,
+                M_LAB_ANTENNA => LAB_RADAR,
+                _ => d.radar as i32,
             };
             let mut cost: Vec<String> = d.cost.iter().map(|&(it, n)| format!("[{},{}]", it, n)).collect();
             if d.releves > 0 {
@@ -1374,15 +1400,25 @@ pub fn mods_json() -> String {
             }
             let host = if d.host == NO_KIND { -1 } else { d.host as i32 };
             format!(
-                "{{\"key\":{},\"name\":{},\"desc\":{},\"icon\":{},\"host\":{},\"slot\":{},\"rank\":{},\"base\":{},\"tech\":{},\"cost\":[{}],\"time\":{},\"weapon\":[{},{}],\"radar\":{}}}",
-                js(d.key), js(d.name), js(d.desc), js(d.icon), host, d.slot, d.rank, d.base, d.tech, cost.join(","), d.time, slot, wi, radar
+                "{{\"key\":{},\"name\":{},\"desc\":{},\"icon\":{},\"host\":{},\"slot\":{},\"rank\":{},\"base\":{},\"tech\":{},\"cost\":[{}],\"time\":{},\"weapon\":[{},{}],\"radar\":{},\"vision\":{},\"quick\":{}}}",
+                js(d.key), js(d.name), js(d.desc), js(d.icon), host, d.slot, d.rank, d.base, d.tech, cost.join(","), d.time, slot, wi, radar, d.vision, d.quick
             )
         })
         .collect();
     let slot = |s: &(&str, &str, &str)| format!("{{\"key\":{},\"name\":{},\"icon\":{}}}", js(s.0), js(s.1), js(s.2));
-    let slots: Vec<String> = ARK_SLOTS.iter().map(slot).collect();
+    let all = |v: &[(&str, &str, &str)]| v.iter().map(slot).collect::<Vec<String>>().join(",");
+    let rs: Vec<String> = ARK_RADII.iter().map(|r| r.to_string()).collect();
     let tk: Vec<String> = TURRET_KINDS.iter().map(|k| k.to_string()).collect();
-    format!("\"mods\":[{}],\"arkSlots\":[{}],\"oneSlot\":{},\"turretKinds\":[{}]", list.join(","), slots.join(","), slot(&ONE_SLOT), tk.join(","))
+    format!(
+        "\"mods\":[{}],\"arkSlots\":[{}],\"unitSlots\":[{}],\"moduleSlots\":[{}],\"oneSlot\":{},\"turretKinds\":[{}],\"arkRadii\":[{}]",
+        list.join(","),
+        all(&ARK_SLOTS),
+        all(&UNIT_SLOTS),
+        all(&MODULE_SLOTS),
+        slot(&ONE_SLOT),
+        tk.join(","),
+        rs.join(",")
+    )
 }
 
 /// Fiche des améliorations d'un porteur (JSON) : {host, mods : une par emplacement, job, left, total, reach :
@@ -1394,7 +1430,7 @@ pub fn info(w: &World, h: Host) -> String {
     }
     let p = h.owner(w);
     let mods = h.mods(w);
-    let n = if kind == U_ARK { ARK_SLOTS.len() } else { 1 };
+    let n = slots(kind).len();
     let list: Vec<String> = (0..n as u8).map(|k| at(mods, k).to_string()).collect();
     let (job, left) = h.job(w);
     let (x, y) = h.pos(w);
@@ -1413,7 +1449,24 @@ pub fn info(w: &World, h: Host) -> String {
         _ => "null".into(),
     };
     let total = if job != 0 { install_ticks(w, p, job) } else { 0 };
-    format!("{{\"host\":{},\"mods\":[{}],\"job\":{},\"left\":{},\"total\":{},\"reach\":[{}],\"ark\":{}}}", kind, list.join(","), job, left, total, reach.join(","), ark)
+    // gabarits du joueur, équipement voulu de l'unité, équipement payé de l'unité en fabrication
+    let (want, kit) = match h {
+        Host::U(s) => (w.units.cold[s].want, 0),
+        Host::B(b) => (0, w.buildings[b].kit),
+    };
+    format!(
+        "{{\"host\":{},\"mods\":[{}],\"job\":{},\"left\":{},\"total\":{},\"reach\":[{}],\"ark\":{},\"kits\":{},\"want\":{},\"kit\":{}}}",
+        kind,
+        list.join(","),
+        job,
+        left,
+        total,
+        reach.join(","),
+        ark,
+        crate::gabarits::json(w, p),
+        want,
+        kit
+    )
 }
 
 /// État de l'Arche `s` : tourelles [type, type voulu, état, ticks, PV ‰, déployée, unité], consignes, file de
@@ -1432,10 +1485,10 @@ fn ark_info(w: &World, s: usize) -> String {
         })
         .collect();
     let q: Vec<String> = a.queue.iter().map(|e| format!("[{},{}]", e.0, e.1)).collect();
-    let need = a.queue.first().map_or(1, |e| factory_ticks(e.0) * 100).max(1);
+    let need = a.queue.first().map_or(1, |e| (factory_ticks(e.0) + crate::gabarits::ticks(a.kit)) * 100).max(1);
     let (sr, sh) = unit_shield(w, s);
     format!(
-        "{{\"turrets\":[{}],\"out\":{},\"hold\":{},\"queue\":[{}],\"prog\":{},\"paid\":{},\"boost\":{},\"boostReady\":{},\"shieldR\":{},\"shieldMax\":{},\"dock\":{},\"cap\":{}}}",
+        "{{\"turrets\":[{}],\"out\":{},\"hold\":{},\"queue\":[{}],\"prog\":{},\"paid\":{},\"boost\":{},\"boostReady\":{},\"shieldR\":{},\"shieldMax\":{},\"dock\":{},\"cap\":{},\"cars\":{},\"kit\":{}}}",
         tur.join(","),
         a.out,
         a.hold,
@@ -1447,6 +1500,8 @@ fn ark_info(w: &World, s: usize) -> String {
         sr,
         sh,
         w.building(a.dock).is_some(),
-        store_cap(w, s)
+        store_cap(w, s),
+        crate::convoi::info(w, i),
+        a.kit
     )
 }

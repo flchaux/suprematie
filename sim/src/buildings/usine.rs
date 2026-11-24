@@ -111,6 +111,11 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
         w.buildings[b].target = NONE;
         w.buildings[b].working = true;
         w.buildings[b].progress = 0;
+        // Transhumants : l'unité sortira équipée selon son gabarit, s'il peut être payé
+        if def.race == RACE_TRANSH {
+            let (cx, cy) = w.buildings[b].center();
+            w.buildings[b].kit = crate::gabarits::begin(w, owner as u8, cx, cy, kind);
+        }
         wake_watchers(w, b);
     }
     let use_ = power_need(&w.buildings[b]);
@@ -124,7 +129,7 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
         }
     }
     w.buildings[b].progress += s as u32 * mult;
-    if w.buildings[b].progress >= factory_ticks(kind) * RECIPE_SCALE {
+    if w.buildings[b].progress >= (factory_ticks(kind) + crate::gabarits::ticks(w.buildings[b].kit)) * RECIPE_SCALE {
         w.buildings[b].working = false;
         let tick = w.tick;
         flow_add(&mut w.buildings[b], tick, n);
@@ -153,6 +158,10 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
                 w.units.hp[s] = w.max_hp(s);
             }
             w.units.cold[s].orders.push(Order::Move { x: rally.0, y: rally.1, gx: rally.0, gy: rally.1, attack: false, pace: 0, wait: 0 });
+            if def.race == RACE_TRANSH {
+                let kit = std::mem::take(&mut w.buildings[b].kit);
+                crate::gabarits::deliver(w, s, kit);
+            }
         }
         let bb = &mut w.buildings[b];
         if let Some(q) = bb.queue.first_mut() {
