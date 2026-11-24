@@ -1,5 +1,5 @@
 // Générateur d'ordres aléatoires (mais reproductibles) pour les tests.
-import { O, pack, move, moveFormation, build, target, factoryQueue, research, point, harvest, installMod, cancelMod, arkTurrets, arkTurretType, arkBoost, arkQueue } from "../packages/shared/src/orders.ts";
+import { O, pack, move, moveFormation, build, target, factoryQueue, research, point, harvest, installMod, cancelMod, arkTurrets, arkTurretType, arkBoost, arkQueue, kitSet, kitActive, kitApply } from "../packages/shared/src/orders.ts";
 import { parseBotDump } from "../packages/shared/src/render.ts";
 
 export function randomOrders(seed, sim) {
@@ -41,6 +41,20 @@ export function randomOrders(seed, sim) {
         else if (q < 10) pack(p, arkTurretType(ark.id, rnd(10) - 1, rnd(3)), out);
         else if (q === 10) pack(p, arkBoost([ark.id]), out);
         else pack(p, arkQueue(ark.id, 63 + rnd(14), rnd(3) - 1), out);
+      }
+      // Transhumants : équipement des unités (améliorations 44 à 80), gabarits (types d'unité 72 à 76), modules
+      if (ark && rnd(3) === 0) {
+        const q = rnd(6);
+        const kind = 72 + rnd(5);
+        const set = [44 + rnd(37), 44 + rnd(37), 44 + rnd(37)];
+        if (q === 0) pack(p, kitSet(kind, rnd(3), set), out);
+        else if (q === 1) pack(p, kitActive(kind, rnd(4)), out);
+        else if (q === 2) pack(p, kitApply(set, mine.slice(0, 8).map((v) => v.id)), out);
+        else if (q === 3) pack(p, installMod(44 + rnd(37), [mine[rnd(mine.length)].id]), out);
+        else {
+          const b = view.buildings.find((x) => x.owner === p);
+          if (b) pack(p, installMod(rnd(99), [b.ref]), out);
+        }
       }
       const r = rnd(10);
       const u = mine[rnd(mine.length)];

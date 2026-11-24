@@ -1027,7 +1027,9 @@ pub fn chantiers_demo() -> World {
 }
 
 /// Démonstration des améliorations des Transhumants (`?demo=arche`, joueur 0) : une Arche à grande bulle, canon lourd
-/// et couronne de neuf tourelles déployées, une Arche nue à équiper, les modules aménagés, et un siège de chars.
+/// et couronne de neuf tourelles déployées (convoi de quatre remorques), une Arche nue à équiper, une Arche et son convoi
+/// en patrouille, les modules équipés (rendement et spécialité), les unités sous plusieurs équipements, un atelier et un
+/// gabarit de production, et un siège de chars.
 pub fn arche_demo() -> World {
     use crate::ameliorations as am;
     let mut w = World::new(&[29, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 0, RACE_TRANSH as i32, RACE_INDUS as i32]);
@@ -1068,14 +1070,40 @@ pub fn arche_demo() -> World {
             let Some(b) = place_building(&mut w, 0, kind, cx - 28 + 3 * k as i32, y, 0) else { continue };
             complete_building(&mut w, b);
             let host = crate::transhumants::chenillard_of(kind);
-            let ids: Vec<u8> = (1..am::MODS.len() as u8).filter(|&m| am::MODS[m as usize].host == host).collect();
-            w.buildings[b].mods = ids.get(j).copied().unwrap_or(0) as u64;
+            let of = |slot: u8| (1..am::MODS.len() as u8).filter(|&m| am::MODS[m as usize].host == host && am::MODS[m as usize].slot == slot).nth(j).unwrap_or(0) as u64;
+            w.buildings[b].mods = of(0) | of(am::SLOT_SPEC) << 8;
             w.buildings[b].fuel = START_FUEL_UNITS * FUEL_HYDROCARBON;
         }
     }
-    for (k, kind) in [U_RIDER, U_RAM, U_HARROW, U_TOWED_GUN].into_iter().enumerate() {
-        w.spawn_unit(kind, 0, (cx - 26) * TILE, (cy - 2 + 3 * k as i32) * TILE);
+    // chaque unité de combat : nue, puis deux ou trois équipements
+    for (k, kind) in [U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM].into_iter().enumerate() {
+        for j in 0..4usize {
+            let id = w.spawn_unit(kind, 0, (cx - 34 + 3 * j as i32) * TILE, (cy - 2 + 3 * k as i32) * TILE);
+            let Some(s) = w.unit(id) else { continue };
+            w.units.facing[s] = 0;
+            for slot in 0..if j == 0 { 0 } else { 3u8 } {
+                let n = (1..am::MODS.len() as u8).filter(|&m| am::MODS[m as usize].host == kind && am::MODS[m as usize].slot == slot);
+                let ids: Vec<u8> = n.collect();
+                w.units.cold[s].mods |= (ids[(j - 1) % ids.len()] as u64) << (8 * slot as u32);
+            }
+            am::applied(&mut w, am::Host::U(s));
+        }
     }
+    // une Arche en patrouille, suivie de son convoi
+    let id = w.spawn_unit(U_ARK, 0, (cx - 20) * TILE, (cy + 20) * TILE);
+    if let Some(b) = w.unit(id) {
+        w.units.facing[b] = 0;
+        let fitted = [am::M_W_RAIL, am::M_PLATE2, am::M_HOLDS, am::M_BOOST, am::M_RADAR];
+        w.units.cold[b].mods = fitted.iter().fold(0u64, |m, &k| m | (k as u64) << (8 * am::MODS[k as usize].slot));
+        w.units.cold[b].orders.push(Order::Patrol { x: (cx + 24) * TILE, y: (cy + 24) * TILE, ox: (cx - 20) * TILE, oy: (cy + 20) * TILE });
+    }
+    // un atelier et un gabarit de production
+    if let Some(b) = place_building(&mut w, 0, B_T_WORKSHOP, cx - 10, cy - 18, 0) {
+        complete_building(&mut w, b);
+        w.buildings[b].mods = am::M_SHOP_FAST as u64 | (am::M_SHOP_REPAIR as u64) << 8;
+    }
+    crate::gabarits::record(&mut w, 0, U_RIDER as i32, 0, am::M_RIDER_LONG as u32 | (am::M_RIDER_PLATE as u32) << 8 | (am::M_RIDER_LOOT as u32) << 16);
+    crate::gabarits::activate(&mut w, 0, U_RIDER as i32, 1);
     for k in 0..10 {
         w.spawn_unit(U_LIGHT_TANK, 1, (cx + 40 + (k % 2) * 2) * TILE, (cy - 10 + 2 * k) * TILE);
     }
