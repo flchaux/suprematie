@@ -575,7 +575,7 @@
         {#if info.transh?.mods?.kits}
           <!-- Transhumants : gabarits d'équipement des unités de l'atelier -->
           {@const kinds = factoryUnits.filter(({ i }) => hasKits(d, i))}
-          <div class="row wrap small"><span class="kicker">Gabarits</span>{#each kinds as { u, i }}<button class="icon-btn small" class:on={kitKind === i} onclick={() => (kitKind = kitKind === i ? -1 : i)}>{u.name}</button>{/each}</div>
+          <div class="row wrap small"><span class="kicker">Équipement</span>{#each kinds as { u, i }}<button class="icon-btn small" class:on={kitKind === i} onclick={() => (kitKind = kitKind === i ? -1 : i)}>{u.name}</button>{/each}</div>
           {#if kitKind >= 0 && kinds.some(({ i }) => i === kitKind)}<KitPanel kind={kitKind} kits={info.transh.mods.kits} reach={info.transh.mods.reach} />{/if}
           {#if info.transh.mods.kit && info.working}<span class="dim small">L'unité en cours sortira équipée.</span>{/if}
         {/if}
