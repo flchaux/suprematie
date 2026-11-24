@@ -168,6 +168,13 @@ export function handleEvents(gc: GameClient, f: Frame): void {
           gc.alertPos = { x: c / TILE, z: d / TILE };
         }
         break;
+      case EV.CAR_LOST:
+        if (a === ui.me) {
+          const m = gc.data!.mods[e];
+          pushMessage(`Remorque détruite : ${m?.name ?? "amélioration"} hors service, l'Arche la reconstruit (45 s)`, "alert");
+          gc.alertPos = { x: c / TILE, z: d / TILE };
+        }
+        break;
       case EV.ARK_BOOST:
         if (seen(a / TILE, c / TILE)) fx?.sparks(a / TILE, groundHeight(gc.map!, a / TILE, c / TILE) + 1.2, c / TILE, [3, 1.6, 0.4], 14);
         if (d === ui.me) sfx.confirm();

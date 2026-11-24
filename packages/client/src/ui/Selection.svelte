@@ -9,6 +9,8 @@
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
   import Upgrades from "./Upgrades.svelte";
+  import KitPanel from "./KitPanel.svelte";
+  import { hasKits, kitsOf } from "../game/kits.ts";
   import { canPay } from "../game/reach.ts";
   import Icon from "./Icon.svelte";
   import { sprite } from "./sprites.ts";
@@ -107,6 +109,8 @@
     for (const b of list) m.set(b.kind, [...(m.get(b.kind) ?? []), b]);
     return [...m].sort((a, b) => a[0] - b[0]);
   };
+  /** atelier des Transhumants : type d'unité dont on règle les gabarits (-1 : aucun) */
+  let kitKind = $state(-1);
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
   /** machine ou usine terminée qu'on peut mettre en pause, et son état (enabled faux : en pause) */
   const canPause = $derived(!!info && !!bdef && mine && info.build >= 65536 && pausableClass(bdef.cls));
@@ -558,6 +562,7 @@
                 {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
                 {#if u.litter}<span class="lit num">×{u.litter}</span>{/if}
+                {#if info.transh?.mods?.kits && kitsOf(info.transh.mods.kits, i).active}<span class="lit num" title="Sort équipé selon ce gabarit">{["I", "II", "III"][kitsOf(info.transh.mods.kits, i).active - 1]}</span>{/if}
                 {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
@@ -567,6 +572,13 @@
             </div>
           {/each}
         </div>
+        {#if info.transh?.mods?.kits}
+          <!-- Transhumants : gabarits d'équipement des unités de l'atelier -->
+          {@const kinds = factoryUnits.filter(({ i }) => hasKits(d, i))}
+          <div class="row wrap small"><span class="kicker">Gabarits</span>{#each kinds as { u, i }}<button class="icon-btn small" class:on={kitKind === i} onclick={() => (kitKind = kitKind === i ? -1 : i)}>{u.name}</button>{/each}</div>
+          {#if kitKind >= 0 && kinds.some(({ i }) => i === kitKind)}<KitPanel kind={kitKind} kits={info.transh.mods.kits} reach={info.transh.mods.reach} />{/if}
+          {#if info.transh.mods.kit && info.working}<span class="dim small">L'unité en cours sortira équipée.</span>{/if}
+        {/if}
         <div class="row">
           <label class="rep"><input type="checkbox" checked={info.repeat} onchange={(e) => client.toggleRepeat((e.target as HTMLInputElement).checked)} /> <Icon name="repeat" size={14} /> Répéter</label>
           {#if !info.queue.length}<span class="dim small">File vide</span>{/if}
@@ -933,8 +945,8 @@
       {/each}
     </div>
     <!-- des œufs de la Souche ou des tourelles d'Arche seuls : ils ne reçoivent pas d'ordres -->
-    {#if ui.me >= 0 && ui.selUnits.every((g) => d.units[g.kind].turret)}<span class="dim small">Dirigées par l'Arche.</span>{/if}
-    {#if ui.me >= 0 && !ui.selUnits.every((g) => d.units[g.kind].egg || d.units[g.kind].turret)}
+    {#if ui.me >= 0 && ui.selUnits.every((g) => d.units[g.kind].car)}<span class="dim small">Suit l'Arche</span>{:else if ui.me >= 0 && ui.selUnits.every((g) => d.units[g.kind].turret)}<span class="dim small">Dirigées par l'Arche.</span>{/if}
+    {#if ui.me >= 0 && !ui.selUnits.every((g) => d.units[g.kind].egg || d.units[g.kind].turret || d.units[g.kind].car)}
       <div class="cmds">
         <button class="cmd" onclick={() => client.stopSelected()} title="Arrêt"><Icon name="stop" size={17} /><span class="key">{keyOf("stop")}</span></button>
         <button class="cmd" onclick={() => client.setMode("attackMove")} title="Attaque en mouvement"><Icon name="attack" size={17} /><span class="key">{keyOf("attackMove")}</span></button>

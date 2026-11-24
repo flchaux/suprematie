@@ -239,6 +239,9 @@ export class GameClient {
   cancelMode(): void { Orders.cancelMode(this); }
   installMod(mod: number, refs: number[]): void { Orders.installMod(this, mod, refs); }
   cancelMod(refs: number[]): void { Orders.cancelMod(this, refs); }
+  kitSet(kind: number, k: number, set: number[]): void { Orders.kitSet(this, kind, k, set); }
+  kitActive(kind: number, k: number): void { Orders.kitActive(this, kind, k); }
+  kitApply(set: number[], refs: number[]): void { Orders.kitApply(this, set, refs); }
   arkTurrets(action: 0 | 1 | 2 | 3): void { Orders.arkTurrets(this, action); }
   arkTurretType(k: number, kind: number): void { Orders.arkTurretType(this, k, kind); }
   arkBoost(): void { Orders.arkBoost(this); }

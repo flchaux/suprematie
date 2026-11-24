@@ -81,6 +81,7 @@ export const UNIT_DESCS: Record<string, string> = {
   turret_gun: "Tourelle de l'Arche, contre le sol. Détruite, elle se reconstruit à bord.",
   turret_aa: "Tourelle de l'Arche, contre les avions. Détruite, elle se reconstruit à bord.",
   turret_mortar: "Tourelle de l'Arche à dégâts de zone, jamais de près. Détruite, elle se reconstruit à bord.",
+  ark_car: "Remorque attelée à l'Arche : elle porte une de ses améliorations. Détruite, l'amélioration est perdue jusqu'à sa reconstruction.",
   ch_drill: "Se déploie en foreuse sur un gisement libre.",
   ch_furnace: "Se déploie en fonderie nomade.",
   ch_assembler: "Se déploie en assembleur nomade.",

@@ -69,6 +69,21 @@ export function cancelMod(c: GameClient, refs: number[]): void {
   c.cmd(Ord.cancelMod(refs));
   sfx.click();
 }
+/** Transhumants : enregistrer le gabarit `k` (0 à 2) d'un type d'unité. */
+export function kitSet(c: GameClient, kind: number, k: number, set: number[]): void {
+  c.cmd(Ord.kitSet(kind, k, set));
+  sfx.click();
+}
+/** Gabarit de production d'un type d'unité (1 à 3 ; 0 : aucun). */
+export function kitActive(c: GameClient, kind: number, k: number): void {
+  c.cmd(Ord.kitActive(kind, k));
+  sfx.confirm();
+}
+/** Équiper les unités `refs` (un emplacement à 0 reste comme il est). */
+export function kitApply(c: GameClient, set: number[], refs: number[]): void {
+  c.cmd(Ord.kitApply(set, refs));
+  sfx.confirm();
+}
 /** Arches sélectionnées. */
 function arks(c: GameClient): number[] {
   return c.selectedUnits().filter((u) => c.data!.units[u.kind].key === "ark").map((u) => u.id);

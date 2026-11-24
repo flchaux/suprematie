@@ -57,7 +57,10 @@ export function unitRanges(d: UnitDef, weapons: WeaponDef[], cannon = -1, mods: 
 }
 export function buildingRanges(d: BuildingDef, weapons: WeaponDef[], mods: ModDef[] = []): Partial<Record<RangeKind, number>> {
   const f = fitted(d.weapon >= 0 ? [d.weapon] : [], d.radar, mods);
-  return rangesOf(f.weapons.map((i) => weapons[i]).filter(Boolean), f.radar);
+  // bastion à affût antiaérien : son arme, longue ou non, vise aussi en l'air
+  const dual = mods.some((m) => m.key === "bastion_flak");
+  const list = f.weapons.map((i) => weapons[i]).filter(Boolean);
+  return rangesOf(dual ? list.map((w) => ({ ...w, mask: w.mask | M_AIR })) : list, f.radar);
 }
 
 /** Trop de cercles : un seul par maille, de plus en plus grande, jusqu'à tenir dans `max`. */

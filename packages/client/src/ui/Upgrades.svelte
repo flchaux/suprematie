@@ -1,23 +1,32 @@
 <script lang="ts">
   // Améliorations des Transhumants (Arche, modules, unités) : emplacements, choix, installation en cours ; pour
-  // l'Arche, tourelles, surcharge, bouclier et atelier embarqué. Règles : sim/src/ameliorations.rs.
+  // l'Arche, convoi, tourelles, surcharge, bouclier et atelier embarqué ; pour une unité, ses gabarits. Règles :
+  // sim/src/ameliorations.rs, convoi.rs et gabarits.rs.
   import { ui, hasTechUI } from "../game/state.svelte.ts";
   import { client } from "../game/client.ts";
   import { canPay } from "../game/reach.ts";
   import { factoryUnitKinds } from "../game/catalog.ts";
   import { UNIT_DESCS } from "../game/unitDescs.ts";
-  import { Factory, RACE_TRANSH, RELEVES, TU, type ModInfo } from "@supreme/shared";
+  import { CAR, Factory, RACE_TRANSH, RELEVES, TU, type ModInfo } from "@supreme/shared";
   import { keyOf } from "../game/keys.svelte.ts";
   import { sprite } from "./sprites.ts";
   import Cost from "./Cost.svelte";
   import Icon from "./Icon.svelte";
+  import KitPanel from "./KitPanel.svelte";
+  import { hasKits, kitPending, kitsOf, slotsOf } from "../game/kits.ts";
 
   // `mi` : fiche du porteur ; `refs` : tous les porteurs sélectionnés du même type (ordres donnés à tous)
   let { mi, refs }: { mi: ModInfo; refs: number[] } = $props();
   const d = $derived(ui.data);
   const mods = $derived(d?.mods ?? []);
   const isArk = $derived(!!d && d.units[mi.host]?.key === "ark");
-  const slots = $derived(d ? (isArk ? d.arkSlots : [d.oneSlot]) : []);
+  const slots = $derived(d ? slotsOf(d, mi.host) : []);
+  const pending = $derived(kitPending(mi.want, mi.mods));
+  /** atelier embarqué : type d'unité dont on règle les gabarits (-1 : aucun) */
+  let kitKind = $state(-1);
+  let showKits = $state(false);
+  const carText = (c: [number, number, number, number, number]): string =>
+    c[1] === CAR.LOST ? (c[2] ? `détruite, reconstruite dans ${secs(c[2])} s` : "détruite, attend ses composants (30 fer, 8 engrenages)") : c[1] === CAR.STOWED ? "à bord" : `attelée, ${Math.round(c[3] / 10)} % de ses points de vie`;
   const list = $derived(mods.map((m, i) => ({ m, i })).filter(({ m, i }) => i > 0 && m.host === mi.host));
   const job = $derived(mi.job ? mods[mi.job] : null);
   /** palier `id` installé, ou dépassé par un palier plus haut de sa branche */
@@ -36,7 +45,7 @@
     }
   };
   type St = "on" | "past" | "job" | "lock" | "base" | "busy" | "poor" | "ok";
-  const state = (id: number): St => {
+  const stateOf = (id: number): St => {
     const m = mods[id];
     if (mi.job === id) return "job";
     if (mi.mods[m.slot] === id) return "on";
@@ -66,6 +75,7 @@
   };
   const outN = $derived(ark ? ark.turrets.filter((t) => t[2] === TU.OUT || t[2] === TU.RETURN).length : 0);
   const workUnits = $derived(d && isArk && ark && mods[mi.mods[2]]?.key === "ark_workshop" ? factoryUnitKinds(d, Factory.Land, RACE_TRANSH).map((i) => ({ u: d.units[i], i })) : []);
+  const workKits = $derived(d ? workUnits.filter(({ i }) => hasKits(d, i)) : []);
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
 </script>
 
@@ -76,13 +86,13 @@
     {#each slots as sl, si}
       {@const cur = mods[mi.mods[si] ?? 0]}
       <div class="slot">
-        <div class="sn" title={isArk ? `Emplacement ${sl.name.toLowerCase()} : une seule branche à la fois` : "Un seul à la fois, gardé au repli"}>
+        <div class="sn" title={isArk ? `Emplacement ${sl.name.toLowerCase()} : une seule branche à la fois` : "Un seul choix à la fois"}>
           <Icon name={sl.icon} size={15} />
           <span class="st"><b>{sl.name}</b><span class="dim tiny">{mi.mods[si] ? cur.name : "vide"}</span></span>
         </div>
         <div class="opts">
           {#each list.filter(({ m }) => m.slot === si) as { m, i } (i)}
-            {@const s = state(i)}
+            {@const s = stateOf(i)}
             <div class="tip">
               <button class="mb {s}" class:branch={m.rank > 1} data-mod={m.key} disabled={s !== "ok"} aria-label={m.name} onclick={() => client.installMod(i, refs)}>
                 <Icon name={m.icon} size={19} />
@@ -118,10 +128,31 @@
         <div class="upbar"><span style:width={100 - (mi.left / Math.max(1, mi.total)) * 100 + "%"}></span></div>
       </div>
     {/if}
+    {#if pending.length}
+      <div class="row small"><Icon name="mod_fit" size={13} /><span class="dim">Gabarit : encore {pending.map((m) => mods[m].name).join(", ")}{mi.job ? "" : " (attend composants, relevés ou recherche)"}</span></div>
+    {/if}
+    {#if d && hasKits(d, mi.host) && refs.length}
+      <button class="icon-btn small kits" class:on={showKits} onclick={() => (showKits = !showKits)}><Icon name="blueprint" size={13} /> Gabarits {showKits ? "▴" : "▾"}</button>
+      {#if showKits}<KitPanel kind={mi.host} kits={mi.kits} reach={mi.reach} {refs} current={mi.mods} />{/if}
+    {/if}
 
    </div>
    {#if ark}
    <div class="col side">
+    {#if ark.cars.length}
+      <div class="sub">
+        <div class="mh"><span class="kicker">Convoi</span><span class="dim small">{ark.cars.length} remorque{ark.cars.length > 1 ? "s" : ""}</span></div>
+        <div class="turs">
+          {#each ark.cars as c}
+            <span class="tip car s{c[1]}">
+              <Icon name={mods[c[0]]?.icon ?? "mod_hold"} size={17} />
+              <span class="thp"><span style:width={(c[1] === CAR.LOST ? (c[2] ? 100 - c[2] / 9 : 0) : c[3] / 10) + "%"}></span></span>
+              <span class="tt"><b>{mods[c[0]]?.name}</b><br />Remorque {carText(c)}{#if c[1] === CAR.LOST}<br /><span class="bad">Amélioration hors service</span>{/if}</span>
+            </span>
+          {/each}
+        </div>
+      </div>
+    {/if}
     {#if ark.turrets.length}
       <div class="sub">
         <div class="mh">
@@ -171,14 +202,19 @@
               <button class="wu" class:locked={!ok} disabled={!ok} aria-label={u.name} onclick={(e) => client.arkQueue(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.arkQueue(i, e.shiftKey ? -5 : -1); }}>
                 {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
+                {#if kitsOf(mi.kits, i).active}<span class="kk" title="Sort équipé">{["I", "II", "III"][kitsOf(mi.kits, i).active - 1]}</span>{/if}
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}{UNIT_DESCS[u.key]}<br />{/if}{#if !ok}<span class="bad">Recherche : {d.techs[u.tech].name}</span><br />{/if}<span class="num">{Math.ceil(u.build / 0.6)} s</span><Cost cost={u.cost} have={mi.reach} /><span class="dim">Clic : +1 (Maj : +5) · clic droit : −1</span></div>
             </div>
           {/each}
         </div>
+        {#if workKits.length}
+          <div class="row small"><span class="dim">Gabarits :</span>{#each workKits as { u, i }}<button class="icon-btn small" class:on={kitKind === i} onclick={() => (kitKind = kitKind === i ? -1 : i)}>{u.name}</button>{/each}</div>
+          {#if kitKind >= 0}<KitPanel kind={kitKind} kits={mi.kits} reach={mi.reach} />{/if}
+        {/if}
       </div>
     {/if}
-    {#if !ark.turrets.length && !workUnits.length && ark.shieldMax <= 0}<span class="dim small">Tourelles, bouclier et atelier se commandent ici.</span>{/if}
+    {#if !ark.turrets.length && !workUnits.length && ark.shieldMax <= 0 && !ark.cars.length}<span class="dim small">Convoi, tourelles, bouclier et atelier se commandent ici.</span>{/if}
    </div>
    {/if}
   </div>
@@ -226,6 +262,11 @@
   .tb.up { color: var(--good); --b-line: rgba(77, 255, 176, 0.55); }
   .tb.s3 { color: var(--bad); --b-line: rgba(255, 90, 79, 0.5); }
   .tb.s4 { color: var(--accent); }
+  .car { position: relative; width: 30px; height: 32px; padding-bottom: 3px; display: grid; place-items: center; border: 1px solid rgba(77, 255, 176, 0.45); color: var(--good); background: rgba(3, 8, 14, 0.6); }
+  .car.s0 { color: var(--dim); border-color: var(--line); }
+  .car.s2 { color: var(--bad); border-color: rgba(255, 90, 79, 0.5); }
+  .kits { align-self: flex-start; }
+  .kk { position: absolute; left: 2px; top: 0; font-size: 9px; font-weight: 700; color: var(--good); text-shadow: 0 0 3px #000; }
   .thp { position: absolute; left: 2px; right: 2px; bottom: 2px; height: 3px; background: rgba(255, 255, 255, 0.12); }
   .thp > span { display: block; height: 100%; background: currentColor; }
   .shb { width: 110px; height: 6px; background: rgba(255, 255, 255, 0.08); }

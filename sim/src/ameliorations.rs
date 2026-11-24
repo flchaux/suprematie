@@ -1386,7 +1386,6 @@ pub fn mods_json() -> String {
             // arme donnée (rang de l'arme remplacée, arme ; -1 : aucune) et radar, pour les cercles de portée
             let (slot, wi) = match m {
                 M_BASTION_LONG => (0, W_BASTION_LONG as i32),
-                M_BASTION_FLAK => (0, W_BASTION_DUAL as i32),
                 _ => mod_weapon(d.host, m).map_or((0, -1), |(k, wi)| (k, wi as i32)),
             };
             let radar = match m {
