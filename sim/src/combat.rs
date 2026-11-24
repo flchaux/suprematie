@@ -611,7 +611,7 @@ pub fn collect_shields(w: &mut World) {
         let d = udef(w.units.kind[s]);
         // droïde roulant : bouclier seulement une fois déployé
         let up = w.units.kind[s] != U_ROLL_DROID || w.units.cold[s].deployed;
-        if (d.shield_r > 0 || w.units.cold[s].mods != 0) && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
+        if (d.shield_r > 0 || (d.race == RACE_TRANSH && w.units.cold[s].mods != 0)) && up && w.units.cold[s].shield > 0 && w.units.cold[s].shield_down == 0 {
             let id = w.unit_id(s);
             let r = crate::ameliorations::unit_shield(w, s).0;
             if r > 0 {
