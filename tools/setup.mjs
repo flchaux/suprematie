@@ -23,6 +23,11 @@ if (!existsSync(join(main, "node_modules"))) {
   process.exit(1);
 }
 
+if (worktree && !root.startsWith(main + "/") && !existsSync(join(root, "node_modules", ".package-lock.json"))) {
+  // hors du dossier principal, Node ne remonte pas jusqu'à son node_modules : vite, vitest et playwright sont introuvables
+  console.warn(`Attention : ce worktree est hors de ${main}. Les dépendances n'y seront pas trouvées (tests JS, navigateur, visualiseur) ; seuls la simulation et les outils sans dépendance marcheront. Créer plutôt le worktree dans ${main}/.claude/worktrees/.`);
+}
+
 if (worktree) {
   // un vrai « npm install » dans le worktree a déjà posé ces liens : on ne touche à rien
   const installed = existsSync(join(root, "node_modules", ".package-lock.json"));

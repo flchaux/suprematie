@@ -10,7 +10,7 @@ Rust est installé par apt : `/usr/lib/rust-1.97/bin` (les scripts tools/*.mjs l
 - Pas d'instructions relaxed SIMD.
 
 ## Worktrees
-- Dans un worktree, lancer npm run setup avant tout test ou outil : il relie le code partagé du worktree et compile la simulation. Aucune configuration Vitest ou Vite temporaire n'est nécessaire.
+- Dans un worktree, lancer npm run setup avant tout test ou outil : il relie le code partagé du worktree et compile la simulation. Aucune configuration Vitest ou Vite temporaire n'est nécessaire. Créer le worktree dans .claude/worktrees/ : ailleurs, les dépendances du dossier principal ne sont pas trouvées.
 
 ## Avant de terminer une tâche
 - Lancer npm run test:determinism et npm run bench.
