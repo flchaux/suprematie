@@ -112,6 +112,8 @@ fn the_table_of_upgrades_is_sound() {
             assert!(per.len() == 3 && per.iter().all(|n| (2..=3).contains(n)), "{} : {per:?}", u.key);
         }
     }
+    // un filet de camouflage seulement sur les types que `net_kind` reconnaît
+    assert!(MODS.iter().all(|d| !d.cloak || net_kind(d.host)));
     // clés uniques
     let mut keys: Vec<&str> = MODS.iter().map(|d| d.key).collect();
     keys.sort_unstable();

@@ -270,14 +270,20 @@ pub fn unit_vision(w: &World, s: usize) -> i32 {
 /// L'unité `s` porte un filet de camouflage.
 #[inline]
 pub fn has_net(w: &World, s: usize) -> bool {
-    let mods = w.units.cold[s].mods;
-    mods != 0 && w.units.kind[s] != U_CH_HOLD && w.units.kind[s] != U_ARK && fitted(mods).any(|d| d.cloak)
+    net_kind(w.units.kind[s]) && fitted(w.units.cold[s].mods).any(|d| d.cloak)
+}
+
+/// Types d'unités qui peuvent porter un filet de camouflage (lu pour chaque cible possible de chaque tir : le type
+/// écarte presque tout le monde sans lire l'état froid de l'unité).
+#[inline]
+pub fn net_kind(kind: u16) -> bool {
+    matches!(kind, U_TRACKER | U_TOWED_GUN)
 }
 
 /// Unité cachée sous son filet : à l'arrêt depuis NET_REST ticks, et elle n'a pas tiré (`UnitCold::reveal`).
 #[inline]
 pub fn hidden(w: &World, s: usize) -> bool {
-    w.units.cold[s].mods != 0 && w.units.cold[s].reveal == 0 && has_net(w, s)
+    net_kind(w.units.kind[s]) && w.units.cold[s].mods != 0 && w.units.cold[s].reveal == 0 && has_net(w, s)
 }
 
 /// Ticks à l'arrêt avant de se fondre sous un filet de camouflage ; après un tir.

@@ -575,7 +575,7 @@ pub fn update_units(w: &mut World) {
             if (od.layer == Layer::Air) != air {
                 return;
             }
-            let rr = r + crate::ameliorations::radius(units, o);
+            let rr = r + if units.kind[o] == U_ARK { crate::ameliorations::ark_radius(units.cold[o].mods) } else { od.radius };
             let dx = (x - units.x[o]) as i64;
             let dy = (y - units.y[o]) as i64;
             let d2 = dx * dx + dy * dy;
