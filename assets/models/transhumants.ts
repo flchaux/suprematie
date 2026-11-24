@@ -19,6 +19,7 @@ import { bastionNomade } from "./nomades/bastion.ts";
 import { poteauNomade } from "./nomades/poteau.ts";
 import { chariotConvoi } from "./nomades/convoi.ts";
 import { ameliorationsArche, amenagements, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
+import { remorqueArche } from "./nomades/remorque.ts";
 
 // ——— Bâtiments ———
 
@@ -101,10 +102,12 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       { shape: "cylinder", sides: 6, radius: 0.025, height: 1.5, pos: [-0.45, 2.2, 0.75], color: "steel", fine: true },
       { shape: "box", size: [0.02, 0.22, 0.38], pos: [-0.45, 2.8, 0.56], color: "faction", fine: true },
       { shape: "sphere", radius: 0.04, pos: [-0.45, 2.96, 0.75], color: "amber", fine: true },
-      // améliorations installées (pivots « si:… », voir nomades/arche.ts)
+      // améliorations installées : gaillard, bloc arrière, encorbellements (pivots « si:… », voir nomades/arche.ts)
       ...ameliorationsArche(),
     ],
   },
+  // ark_car : remorque du convoi de l'Arche, qui porte une amélioration de pont ou de soutien (voir nomades/remorque.ts)
+  ark_car: { parts: remorqueArche() },
   // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade)
   ch_drill: { parts: [...foreuseNomade(true), ...amenagements("drill_fast", "drill_clean")] },
   ch_furnace: { parts: [...fonderieNomade(true), ...amenagements("furnace_fast", "furnace_yield")] },
