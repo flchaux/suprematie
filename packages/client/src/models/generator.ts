@@ -41,13 +41,13 @@ export const PALETTE: Record<ColorName, number> = {
 /**
  * Matière de chaque couleur de pièce (voir render/textures.ts et render/materials.ts) : 0 blindage, 1 métal,
  * 2 métal sombre, 3 danger, 4 verre, 5 lumineux (sans texture), 6 caoutchouc, 7 cuivre, 8 béton. Les couches
- * 9 à 12 (chitine, écorce, chair, os) ne viennent que de SKIN_LAYER.
+ * 9 à 12 (chitine, écorce, chair, os) et 13 à 20 (matières de récupération) ne viennent que de SKIN_LAYER.
  */
 export const MATERIAL_LAYER: Record<ColorName, number> = { faction: 0, light: 0, metal: 1, red: 1, steel: 1, dark: 2, black: 2, hazard: 3, glass: 4, glow: 5, amber: 5, ore: 5,
   leaf: 5, leaf_dark: 5, wood: 5, dry: 5, rock: 5, snow: 5, ice: 5, crystal: 5, flower: 5, rust: 5, rubber: 6, copper: 7, concrete: 8, acid: 5 };
 
 /** Nombre de couches de matière : longueur des tables par couche (LAYER_CELL de render/textures.ts, LAYER_METAL et LAYER_ROUGH de render/materials.ts). */
-export const LAYER_COUNT = 13;
+export const LAYER_COUNT = 21;
 
 /**
  * Matières des modèles marqués `skin` (assets/models/types.ts) : pour eux seulement, les couleurs citées
@@ -55,9 +55,12 @@ export const LAYER_COUNT = 13;
  * leur. Un modèle sans `skin` ne lit jamais cette table : son maillage est le même qu'avant elle.
  * Souche : 9 chitine (plaques noires ou à la couleur du joueur), 10 écorce (racines, tertres), 11 chair
  * (chairs, feuilles, membranes), 12 os (crocs, griffes, côtes, épines).
+ * Transhumants : 13 plaques rapiécées, 14 acier usé, 15 tôle grasse, 16 peinture écaillée (couleur du joueur, panneaux
+ * clairs, rouges et de danger), 17 rouille, 18 bâche, 19 planches, 20 cuivre martelé.
  */
 export const SKIN_LAYER: Record<NonNullable<Model["skin"]>, Partial<Record<ColorName, number>>> = {
   souche: { faction: 9, black: 9, wood: 10, rust: 11, leaf_dark: 11, leaf: 11, flower: 11, rubber: 11, dry: 12 },
+  nomade: { metal: 13, steel: 14, dark: 15, black: 15, faction: 16, light: 16, red: 16, hazard: 16, rust: 17, dry: 18, snow: 18, wood: 19, copper: 20 },
 };
 
 export const PLAYER_COLORS = [0x3b82f6, 0xef4444, 0x22c55e, 0xeab308, 0xa855f7, 0xf97316, 0x06b6d4, 0xec4899];
@@ -72,6 +75,8 @@ export interface BuiltPivot {
 }
 export interface BuiltModel {
   body: THREE.BufferGeometry;
+  /** jeu de matières du modèle (les trappes ajoutées après coup le reprennent) */
+  skin?: Model["skin"];
   /** corps sans les pièces fines (niveau de détail réduit) ; absent si le modèle n'a pas de pièce fine */
   bodyLo?: THREE.BufferGeometry;
   pivots: BuiltPivot[];
@@ -689,6 +694,7 @@ export function buildModel(model: Model): BuiltModel {
   }
   const box = hi.box.isEmpty() ? new THREE.Box3(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5)) : hi.box;
   const built: BuiltModel = { body: hi.body, pivots, box, triangles: hi.triangles, trianglesLo: useLo ? lo!.triangles : hi.triangles };
+  if (model.skin) built.skin = model.skin;
   if (useLo) built.bodyLo = lo!.body;
   builtCache.set(model, built);
   return built;
@@ -864,8 +870,8 @@ export function withHatches(built: BuiltModel, w: number): BuiltModel {
   }
   let out: BuiltModel = { ...built, hatches: walls };
   if (parts.length) {
-    const hi = assemble({ parts }, false);
-    const lo = assemble({ parts }, true);
+    const hi = assemble({ parts, skin: built.skin }, false);
+    const lo = assemble({ parts, skin: built.skin }, true);
     const join = (a: THREE.BufferGeometry, b: THREE.BufferGeometry) => mergeGeometries([a, b], false) ?? a;
     out = { ...out, body: join(built.body, hi.body), triangles: built.triangles + hi.triangles, trianglesLo: built.trianglesLo + (built.bodyLo ? lo.triangles : hi.triangles) };
     if (built.bodyLo) out.bodyLo = join(built.bodyLo, lo.body);

@@ -72,7 +72,8 @@ export interface Model {
   /**
    * Jeu de matières du modèle. Absent : matières des machines (blindage, métal, grilles…). « souche » :
    * matières vivantes (chitine, écorce, chair, os) à la place, pour les mêmes couleurs de pièce (table
-   * SKIN_LAYER du générateur). Les couleurs et la teinte du joueur ne changent pas.
+   * SKIN_LAYER du générateur). Les couleurs et la teinte du joueur ne changent pas. « nomade » : matières de
+   * récupération des Transhumants (plaques rapiécées, tôle, rouille, peinture écaillée, bâche, planches, cuivre).
    */
-  skin?: "souche";
+  skin?: "souche" | "nomade";
 }

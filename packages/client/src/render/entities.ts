@@ -17,7 +17,7 @@
 //   hatches.ts      trappes ouvertes et conduites des machines jumelles
 import * as THREE from "three/webgpu";
 import type { GameData, Frame, ModView } from "@supreme/shared";
-import { frameMods, BClass, Layer, NATURE_COLOR, NATURE_TEAM } from "@supreme/shared";
+import { frameMods, BClass, Layer, NATURE_COLOR, NATURE_TEAM, RACE_TRANSH } from "@supreme/shared";
 import { texture as tslTexture, uv, vec2, instancedBufferAttribute, normalView } from "three/tsl";
 import { buildingScale, buildModel, fallbackModel, PLAYER_COLORS, withHatches } from "../models/generator.ts";
 import { FLOOR_H } from "./liftAnim.ts";
@@ -223,7 +223,11 @@ export class Entities {
       if (b.cls === BClass.Belt) {
         const built = buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(0.4));
         this.buildingMeshes.push(new KindMesh(this.group, built, bScale(b)(built), TEX_PER_TILE_BUILDING));
-      } else this.buildingMeshes.push(new KindMesh(this.group, () => hatched(buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4))), bScale(b), TEX_PER_TILE_BUILDING));
+      } else {
+        // module des Transhumants : même grain que son chenillard, qui devient lui (et inversement)
+        const tex = b.race === RACE_TRANSH ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING;
+        this.buildingMeshes.push(new KindMesh(this.group, () => hatched(buildModel(BUILDING_MODELS[b.key] ?? fallbackModel(b.w > 1 ? 1.2 : 0.4))), bScale(b), tex));
+      }
       const km = this.buildingMeshes[this.buildingMeshes.length - 1];
       const lv: KindMesh[] = [];
       for (let n = 2; BUILDING_MODELS[`${b.key}_n${n}`]; n++) {

@@ -1,6 +1,6 @@
 // Matériaux : couleur de sommet, teinte du joueur par instance (pièces « faction »), pièces lumineuses.
 import * as THREE from "three/webgpu";
-import { attribute, mix, instancedBufferAttribute, float, vec3, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionGeometry } from "three/tsl";
+import { attribute, mix, instancedBufferAttribute, float, vec3, step, clamp, positionView, normalView, dFdx, dFdy, cross, dot, sign, abs, normalize, mx_noise_float, positionGeometry, smoothstep } from "three/tsl";
 import { fogFactor, applyFog } from "./fog.ts";
 import { modelTexture } from "./textures.ts";
 
@@ -13,10 +13,17 @@ export const TEX_PER_TILE_BUILDING = 0.33;
 /**
  * Aspect métallique et rugosité de chaque couche de matière (attribut « mat », MATERIAL_LAYER et SKIN_LAYER du
  * générateur). Couches 6 à 8 : caoutchouc (mat), cuivre (très métallique, lisse), béton (mat, minéral) ;
- * 9 à 12, Souche : chitine (luisante), écorce (mate), chair (humide), os (mat).
+ * 9 à 12, Souche : chitine (luisante), écorce (mate), chair (humide), os (mat) ; 13 à 20, Transhumants : plaques
+ * rapiécées, acier usé, tôle grasse, peinture écaillée, rouille, bâche, planches, cuivre martelé.
  */
-export const LAYER_METAL = [0.3, 0.62, 0.45, 0.2, 0.1, 0, 0, 0.85, 0, 0.2, 0, 0, 0];
-export const LAYER_ROUGH = [0.5, 0.36, 0.5, 0.55, 0.1, 0.6, 0.85, 0.3, 0.88, 0.4, 0.85, 0.55, 0.62];
+export const LAYER_METAL = [0.3, 0.62, 0.45, 0.2, 0.1, 0, 0, 0.85, 0, 0.2, 0, 0, 0, 0.5, 0.58, 0.4, 0.15, 0.1, 0, 0, 0.75];
+export const LAYER_ROUGH = [0.5, 0.36, 0.5, 0.55, 0.1, 0.6, 0.85, 0.3, 0.88, 0.4, 0.85, 0.55, 0.62, 0.55, 0.46, 0.62, 0.58, 0.9, 0.95, 0.88, 0.42];
+
+/** Première couche de récupération (Transhumants) : pour elles, le canal bleu de la texture est une part d'usure. */
+export const LAYER_SALVAGE = 13;
+/** Couches sans rouille : à partir de la bâche (taches), du cuivre (vert-de-gris). */
+const LAYER_CANVAS = 18;
+const LAYER_COPPER = 20;
 
 export interface TeamMesh {
   mesh: THREE.InstancedMesh;
@@ -69,8 +76,16 @@ export function teamInstancedMesh(geometry: THREE.BufferGeometry, max: number, t
     const t = modelTexture(texScale);
     // détail : module la couleur autour de 1, avec une légère salissure (dans le repère du modèle : elle suit l'unité)
     const grime = mx_noise_float(positionGeometry.mul(0.35)).mul(0.08);
-    base = base.mul(mix(float(1), t.detail.mul(1.3).add(0.35).sub(grime), t.amount));
-    mat.roughnessNode = mix(rough, rough.add(t.rough.sub(0.5).mul(0.35)), t.amount);
+    const shade = mix(float(1), t.detail.mul(1.3).add(0.35).sub(grime), t.amount);
+    // matières de récupération : l'usure lue dans la texture (0,3 : rien ; 0,95 : entière) teinte la pièce, en
+    // rouille sur le métal et la peinture, en taches brunes sur la toile, en vert-de-gris sur le cuivre
+    const salvage = step(float(LAYER_SALVAGE - 0.5), layer);
+    const wear = smoothstep(float(0.4), float(0.8), t.rough).mul(salvage).mul(t.amount);
+    const tint = layer.lessThan(float(LAYER_CANVAS - 0.5)).select(vec3(0.24, 0.075, 0.02), layer.lessThan(float(LAYER_COPPER - 0.5)).select(vec3(0.13, 0.08, 0.035), vec3(0.16, 0.34, 0.24)));
+    base = mix(base, tint.mul(mix(float(1), ao, float(0.45))), wear.mul(0.88)).mul(shade);
+    mat.metalnessNode = metal.mul(float(1).sub(wear.mul(0.85)));
+    const relRough = mix(t.rough.sub(0.5).mul(0.35), wear.mul(0.35), salvage);
+    mat.roughnessNode = mix(rough, rough.add(relRough), t.amount);
     // relief : perturbation de la normale par les dérivées de la hauteur (sans coordonnées de texture)
     const h = t.height.mul(t.amount).mul(0.025);
     const sx = dFdx(positionView);

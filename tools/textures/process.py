@@ -3,7 +3,8 @@
 Chaque texture devient une image 512 x 512 WebP (qualité 92) :
   rouge = détail (luminance centrée sur 0,5 : module la couleur de la pièce ou du joueur),
   vert  = relief (luminance lissée, pour l'éclairage),
-  bleu  = rugosité relative (les creux et parties sombres sont plus mates).
+  bleu  = rugosité relative (les creux et parties sombres sont plus mates) ; matières de récupération : part
+          d'usure (rouille, taches, vert-de-gris ; voir `wear` dans TUNING).
 Le raccord des bords : fondu, sur une bande près des bords, avec l'image décalée d'une demi-largeur
 (dont les bords sont ceux du milieu de l'image d'origine, donc continus).
 
@@ -24,13 +25,30 @@ RAW = HERE / "raw"
 OUT = HERE.parent.parent / "packages" / "client" / "src" / "assets" / "textures"
 SIZE = 512
 BAND = 0.14  # largeur de la bande de raccord (part de la taille)
-KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete", "chitin", "bark", "flesh", "bone"]
+KEYS = ["armor", "metal", "dark", "hazard", "glass", "concrete", "chitin", "bark", "flesh", "bone",
+        "rapiece", "usure", "tole", "peinture", "rouille", "bache", "planches", "cuivre"]
 # Réglages par matière, quand ils diffèrent des valeurs ordinaires :
 #   blur   : lissage du relief en pixels (1,2). Sur une matière luisante, un relief fin éclate les reflets en
 #            paillettes : la chitine ne garde que la forme de ses plaques ;
 #   std    : écart type du détail (0,16). Les stries de l'os, discrètes, deviendraient des veines de bois ;
 #   relief : étendue du relief (1 : de 0 à 1 ; 0,5 : de 0,25 à 0,75).
-TUNING = {"chitin": {"blur": 4.0}, "bone": {"std": 0.1, "relief": 0.5}}
+#   wear   : matières de récupération (Transhumants) : le canal bleu n'est plus la rugosité relative mais la part
+#            d'usure, lue dans la teinte de l'image : "rust" rouille (et éclats sombres de peinture), "stain" taches,
+#            "verdigris" vert-de-gris, "none" aucune. 0,3 : rien ; 0,95 : usure entière (le shader la teinte, voir
+#            render/materials.ts) ;
+#   blotch : part des larges taches de rouille ajoutées (0 à 1).
+TUNING = {
+    "chitin": {"blur": 4.0},
+    "bone": {"std": 0.1, "relief": 0.5},
+    "rapiece": {"std": 0.15, "blur": 3.0, "relief": 0.5, "wear": "rust", "blotch": 0.6},
+    "usure": {"std": 0.075, "blur": 3.0, "relief": 0.35, "wear": "rust", "blotch": 0.65},
+    "tole": {"std": 0.16, "blur": 3.0, "relief": 0.55, "wear": "rust", "blotch": 0.6},
+    "peinture": {"std": 0.11, "blur": 2.4, "relief": 0.5, "wear": "rust", "blotch": 0.62},
+    "rouille": {"std": 0.17, "blur": 2.6, "relief": 0.55, "wear": "none"},
+    "bache": {"std": 0.11, "blur": 2.0, "relief": 0.6, "wear": "stain"},
+    "planches": {"std": 0.15, "blur": 1.8, "relief": 0.8, "wear": "none"},
+    "cuivre": {"std": 0.12, "blur": 2.6, "relief": 0.5, "wear": "verdigris"},
+}
 
 
 def seamless(a: np.ndarray) -> np.ndarray:
@@ -52,6 +70,39 @@ def periodic_noise(n: int, scale: float, seed: int) -> np.ndarray:
     f *= np.exp(-k * (np.pi * scale) ** 2)
     a = np.real(np.fft.ifft2(f))
     return (a - a.min()) / max(1e-9, a.max() - a.min())
+
+
+def ramp(a: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    t = np.clip((a - lo) / (hi - lo), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def wear_mask(key: str, kind: str) -> np.ndarray:
+    """Part d'usure (0 à 1) d'une matière de récupération, lue dans la teinte de l'image en couleur."""
+    if kind == "none":
+        return np.zeros((SIZE, SIZE), dtype=np.float32)
+    im = Image.open(RAW / f"{key}.png").convert("RGB").resize((SIZE, SIZE), Image.LANCZOS).filter(ImageFilter.GaussianBlur(1.0))
+    r, g, b = np.moveaxis(np.asarray(im, dtype=np.float32) / 255.0, -1, 0)
+    if kind == "verdigris":
+        c = g - r
+        return seamless(ramp(c, float(np.median(c)) + 0.025, float(np.median(c)) + 0.085))
+    # rouille, taches : plus orangé que le fond de la matière
+    c = r - b
+    med = float(np.median(c))
+    m = ramp(c, med + 0.015, med + 0.06) if kind == "stain" else ramp(c, med + 0.03, med + 0.13)
+    if key == "peinture":
+        # éclats de peinture : le métal sombre mis à nu
+        lum = 0.3 * r + 0.59 * g + 0.11 * b
+        m = np.maximum(m, ramp(float(np.median(lum)) - lum, 0.14, 0.28))
+    m = seamless(m)
+    # larges coulures de rouille, pour que l'usure se lise aussi de loin (bruit périodique, donc raccordé)
+    b = TUNING[key].get("blotch", 0)
+    if b:
+        seed = 10 * (1 + KEYS.index(key))
+        n = sum(w * periodic_noise(SIZE, z, seed + i) for i, (z, w) in enumerate([(36.0, 0.5), (14.0, 0.28), (5.0, 0.22)]))
+        spots = ramp(n, float(np.quantile(n, 0.78)), float(np.quantile(n, 0.95)))
+        m = np.maximum(m, b * spots * (0.7 + 0.3 * periodic_noise(SIZE, 2.0, seed + 5)))
+    return m
 
 
 def process(key: str) -> None:
@@ -84,6 +135,9 @@ def process(key: str) -> None:
     if "relief" in tune:
         height = 0.5 + (height - 0.5) * tune["relief"]
     rough = np.clip(0.5 + (lum.mean() - lum) * 1.2, 0, 1)
+    if "wear" in tune:
+        rough = 0.3 + 0.65 * wear_mask(key, tune["wear"])
+        print(key, f"usure {float((rough > 0.6).mean()) * 100:.0f} % de la surface")
     rgb = np.stack([detail, height, rough], axis=-1)
     out = Image.fromarray((np.clip(rgb, 0, 1) * 255 + 0.5).astype(np.uint8), "RGB")
     OUT.mkdir(parents=True, exist_ok=True)

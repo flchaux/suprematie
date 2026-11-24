@@ -115,7 +115,8 @@ if (set !== "decor") list.forEach((d, i) => {
   // la faune (mordeurs, nid) a sa propre couleur, brune
   const fauna = d.key.startsWith("beast_") || d.key === "nest";
   const color = new THREE.Color(set === "items" ? itemColor(d.key) : fauna ? NATURE_COLOR : PLAYER_COLORS[i % 8]);
-  const texScale = s * (set === "units" ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING);
+  // (module des Transhumants : même grain que son chenillard)
+  const texScale = s * (set === "units" || (d as { race?: number }).race === 2 ? TEX_PER_TILE_UNIT : TEX_PER_TILE_BUILDING);
   // ?lo : niveau de détail réduit (sans les pièces fines)
   const lo = params.has("lo");
   const body = teamInstancedMesh((lo && built.bodyLo) || built.body, 1, texScale);

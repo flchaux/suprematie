@@ -5,7 +5,7 @@
 //   node tools/textures/generate.mjs [clé…] [--quality low|medium|high] [--force]
 // Les textures du sol ont pour clé « ground_<nom> » (ex. ground_grass) ; « ground » seul les choisit toutes.
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
-import { MATERIALS, STYLE, ORGANIC_STYLE, GROUND, GROUND_STYLE } from "./manifest.mjs";
+import { MATERIALS, STYLE, ORGANIC_STYLE, SALVAGE_STYLE, GROUND, GROUND_STYLE } from "./manifest.mjs";
 
 const RAW = new URL("./raw/", import.meta.url).pathname;
 const KEY = process.env.OPENAI_API_KEY;
@@ -45,7 +45,7 @@ async function gen(key, prompt) {
 }
 
 const all = [
-  ...MATERIALS.map((m) => ({ key: m.key, prompt: `${m.style === "organic" ? ORGANIC_STYLE : STYLE} Surface: ${m.desc}` })),
+  ...MATERIALS.map((m) => ({ key: m.key, prompt: `${m.style === "organic" ? ORGANIC_STYLE : m.style === "salvage" ? SALVAGE_STYLE : STYLE} Surface: ${m.desc}` })),
   ...GROUND.map((g) => ({ key: `ground_${g.key}`, prompt: `${GROUND_STYLE} Ground: ${g.desc}` })),
 ];
 const jobs = all.filter((j) => !only.size || only.has(j.key) || (only.has("ground") && j.key.startsWith("ground_")));

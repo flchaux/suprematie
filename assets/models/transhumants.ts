@@ -27,9 +27,16 @@ import {
   equipementBelier, equipementCanon, equipementCavalier, equipementHerse, equipementPisteur, groupe, noyau,
 } from "./nomades/equipement.ts";
 
+/**
+ * Marque des modèles comme bâtis de récupération (`skin: "nomade"`, types.ts) : le générateur remplace pour eux les
+ * matières des machines par celles des Transhumants. Tous leurs modèles y passent.
+ */
+const nomades = (models: Record<string, Model>): Record<string, Model> =>
+  Object.fromEntries(Object.entries(models).map(([key, m]): [string, Model] => [key, { ...m, skin: "nomade" }]));
+
 // ——— Bâtiments ———
 
-export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
+export const TRANSH_BUILDING_MODELS: Record<string, Model> = nomades({
   // t_drill : foreuse nomade déployée ; même gréement que le chenillard foreuse (voir foreuseNomade), dans sa
   // pose finale : stabilisateurs posés, mât relevé à l'arrière, tige de forage plantée (pivot « foret »)
   t_drill: { parts: [...foreuseNomade(false), ...annexesForeuse(false)] },
@@ -53,11 +60,11 @@ export const TRANSH_BUILDING_MODELS: Record<string, Model> = {
   t_pole: { parts: poteauNomade() },
   // ark_dock : groupe électrogène posé par l'Arche à l'arrêt (voir nomades/arche.ts)
   ark_dock: { parts: groupeArche() },
-};
+});
 
 // ——— Unités ———
 
-export const TRANSH_UNIT_MODELS: Record<string, Model> = {
+export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
   // ark : l'Arche, chenillard-ville ; quatre trains de chenilles larges sous une caisse longue à jupes d'équipe,
   // tourelle de proue à canon (pivot « tourelle »), passerelle à fente vitrée, rangée de tentes sur arceaux et
   // cheminées, grue couchée, tourelle antiaérienne arrière à deux fûts (pivot « tourelle_aa »), coffres et mât
@@ -290,4 +297,4 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = {
       ...equipementBelier(),
     ],
   },
-};
+});

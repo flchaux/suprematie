@@ -24,8 +24,9 @@ const loadData = async (): Promise<GameData> => {
 };
 /** Objets propres à la Souche : sève, sels, ADN (réserves de ses réseaux et monnaie de sa recherche). */
 const SOUCHE_ITEM_KEYS = ["seve", "sels", "adn"];
-/** Couches de matière des machines (0 à 8) et de la Souche (9 à 12). */
+/** Couches de matière des machines (0 à 8), de la Souche (9 à 12) et des Transhumants (13 à 20). */
 const MACHINE_LAYERS = 9;
+const SALVAGE_LAYERS = 13;
 
 /** Couches de matière présentes dans un modèle construit (corps et pièces mobiles). */
 function layersOf(built: BuiltModel): Set<number> {
@@ -95,7 +96,10 @@ describe("matières des modèles", () => {
     expect(MATERIAL_LAYER.black).toBe(2);
     expect(MATERIAL_LAYER.wood).toBe(NO_TEXTURE);
     // le jeu de matières de la Souche ne cite que ses propres couches
-    for (const [color, layer] of Object.entries(SKIN_LAYER.souche)) expect(layer, color).toBeGreaterThanOrEqual(MACHINE_LAYERS);
+    for (const [color, layer] of Object.entries(SKIN_LAYER.souche)) {
+      expect(layer, color).toBeGreaterThanOrEqual(MACHINE_LAYERS);
+      expect(layer, color).toBeLessThan(SALVAGE_LAYERS);
+    }
   });
 
   it("seuls les modèles de la Souche portent ses matières, et ils n'ont plus de plaques ni de grilles", async () => {
@@ -113,8 +117,9 @@ describe("matières des modèles", () => {
         // lumineux, chitine, écorce, chair ou os : une couleur sans matière vivante se verrait ici
         expect(layers.filter((l) => !alive.has(l)), key).toEqual([]);
       } else {
-        expect(model.skin, key).toBeUndefined();
-        expect(layers.filter((l) => l >= MACHINE_LAYERS), key).toEqual([]);
+        // (les matières de récupération des Transhumants : nomadesVisuels.test.ts)
+        expect(model.skin, key).not.toBe("souche");
+        expect(layers.filter((l) => l >= MACHINE_LAYERS && l < SALVAGE_LAYERS), key).toEqual([]);
       }
     }
   });
