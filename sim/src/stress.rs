@@ -1118,6 +1118,69 @@ pub fn arche_demo() -> World {
     w
 }
 
+/// Démo des Transhumants (`?demo=gue`) : une Arche et son convoi, des chenillards, des unités et un chariot en navette
+/// traversent un bras de mer ; soute et modules sur les deux rives, atelier de secours de l'Arche.
+pub fn gue_demo() -> World {
+    use crate::ameliorations as am;
+    let mut w = World::new(&[31, 512, 1, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 0, RACE_TRANSH as i32, RACE_INDUS as i32]);
+    w.infinite_grid = true;
+    let (cx, cy, wl) = (w.map.w / 2, w.map.h / 2, w.map.water_level as i32);
+    flat(&mut w, cx - 40, cy - 24, cx + 40, cy + 24);
+    // bras de mer de 18 cases, rives en pente
+    for y in cy - 24..cy + 24 {
+        for x in cx - 40..cx + 40 {
+            let i = w.map.idx(x, y);
+            w.map.height[i] = (wl + (3 * (cx - 4 - x).max(x - cx - 14)).clamp(-14, 10)) as u8;
+            w.map.update_pass(x, y);
+        }
+    }
+    let Some(a) = w.unit(w.players[0].commander) else { return w };
+    let place = |w: &mut World, s: usize, x: i32, y: i32| {
+        (w.units.x[s], w.units.y[s]) = (x * TILE, y * TILE);
+        (w.units.px[s], w.units.py[s]) = (x * TILE, y * TILE);
+        w.units.facing[s] = 0;
+    };
+    let go = |w: &mut World, s: usize, x: i32, y: i32| {
+        let (ox, oy) = (w.units.x[s], w.units.y[s]);
+        w.units.cold[s].orders.push(Order::Patrol { x: x * TILE, y: y * TILE, ox, oy });
+    };
+    place(&mut w, a, cx - 10, cy);
+    let fitted = [am::M_W_SIEGE, am::M_TURRETS2, am::M_RADAR];
+    w.units.cold[a].mods = fitted.iter().fold(0u64, |m, &k| m | (k as u64) << (8 * am::MODS[k as usize].slot));
+    for &(it, n) in &[(IRON_PLATE, 200u16), (COPPER_PLATE, 100), (GEAR, 60)] {
+        crate::drones::put(&mut w.units.cold[a].hold, it, n);
+    }
+    go(&mut w, a, cx + 24, cy);
+    let mates = [U_CH_DRILL, U_CH_WORKSHOP, U_CH_HOLD, U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM];
+    for (k, &kind) in mates.iter().enumerate() {
+        let y = cy + if k % 2 == 0 { 5 + 3 * (k as i32 / 2) } else { -5 - 3 * (k as i32 / 2) };
+        let id = w.spawn_unit(kind, 0, 0, 0);
+        let Some(s) = w.unit(id) else { continue };
+        place(&mut w, s, cx - 10, y);
+        go(&mut w, s, cx + 24, y);
+    }
+    let put = |w: &mut World, kind: u16, x: i32, y: i32| -> Option<usize> {
+        let b = place_building(w, 0, kind, x, y, 0)?;
+        complete_building(w, b);
+        Some(b)
+    };
+    if let (Some(h), Some(h2), Some(f)) = (put(&mut w, B_T_HOLD, cx - 12, cy + 18), put(&mut w, B_T_HOLD, cx + 24, cy + 20), put(&mut w, B_T_FURNACE, cx + 22, cy + 16)) {
+        crate::drones::put(&mut w.buildings[h].stash, IRON_PLATE, 300);
+        crate::drones::put(&mut w.buildings[h].stash, GEAR, 60);
+        w.buildings[f].recipe = RECIPES.iter().position(|r| r.key == "iron_plate").unwrap_or(0) as u8;
+        w.buildings[f].out = 60;
+        for (site, feed) in [(f, false), (h2, true)] {
+            if crate::transhumants::hitch(&mut w, h) {
+                let s = *crate::transhumants::carts_of(&w, h).last().unwrap();
+                let site = w.building_ref(site);
+                w.units.cold[s].orders.push(Order::Haul { site, feed });
+            }
+        }
+    }
+    w.power_dirty = true;
+    w
+}
+
 /// Démo des Transhumants (`?demo=nomades`) : une soute déployée et garnie, trois chariots de convoi (deux
 /// rapportent la sortie d'une fonderie éloignée, un livre des plaques à un assembleur éloigné), un
 /// générateur nomade et une file de poteaux relais. Réseau partout.

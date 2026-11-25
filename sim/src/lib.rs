@@ -459,6 +459,15 @@ pub extern "C" fn arche_demo() -> u32 {
     h
 }
 
+/// Démo des Transhumants qui traversent un bras de mer (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn gue_demo() -> u32 {
+    let w = stress::gue_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 #[no_mangle]
 pub extern "C" fn nomades_demo() -> u32 {
     let w = stress::nomades_demo();

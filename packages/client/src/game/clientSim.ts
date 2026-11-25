@@ -77,9 +77,10 @@ export function startDemo(c: GameClient): void {
   // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
   // ?demo=apprivoisement : la Reine de la Souche charme un nid de mordeurs (joueur 0)
   // ?demo=essaim : nouveaux organes et organismes de la Souche, Reine enracinée, flaques d'acide (joueur 0)
+  // ?demo=gue : Arche, convoi, chenillards et chariots des Transhumants qui traversent un bras de mer (joueur 0)
   // ?demo=arche : Arche à tourelles et bouclier, Arche nue à équiper, modules aménagés des Transhumants (joueur 0)
   // ?demo=relais : chaîne de relais logistiques qui ravitaille un chantier et une usine éloignés (joueur 0)
-  c.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "apprivoisement" || scene === "nomades" || scene === "arche" || scene === "relais";
+  c.demoOrders = scene === "formation" || scene === "anciens" || scene === "ponte" || scene === "essaim" || scene === "apprivoisement" || scene === "nomades" || scene === "gue" || scene === "arche" || scene === "relais";
   if (c.demoOrders) ui.me = 0;
   c.worker.postMessage({ type: "demo", wasmUrl: new URL("/sim.wasm", location.href).href, water, scene });
 }

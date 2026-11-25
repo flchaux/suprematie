@@ -658,6 +658,8 @@
         <span class="dim small"><span class="num">{info.storeCap}</span> de chaque objet au plus.</span>
         <div class="row"><span class="kicker">Stock</span>{#if !stash.some((n) => n > 0)}<span class="dim small">vide</span>{/if}</div>
         <div class="row wrap">{#each stash as n, i}{#if i > 0 && n > 0}<span class="tip"><Item id={i} {n} size={20} /><span class="tt"><b>{d.items[i]?.name}</b><br /><span class="num">{n} / {info.storeCap}</span></span></span>{/if}{/each}</div>
+        <!-- (une soute des Transhumants n'a ni sorties filtrées ni agrandissement) -->
+        {#if !info.transh}
         <div class="row"><span class="kicker">Sorties</span><span class="dim small">{filters.length ? "seulement les objets choisis" : "tous les objets (par défaut)"}</span></div>
         <div class="row wrap">
           {#each Array(dp?.maxFilters ?? 4) as _, k}
@@ -674,6 +676,7 @@
         </div>
         {#if (info.level ?? 0) === 0}
           <span class="dim small">Amélioré : {dp?.cap[1] ?? 2000} de chaque objet.</span>
+        {/if}
         {/if}
       {:else if bdef.cls === BClass.Warehouse}
         {@const stash = (info.stash ?? []) as number[]}

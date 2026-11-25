@@ -683,3 +683,18 @@ fn the_ark_convoy_floats() {
         assert!(d < 8 * TILE, "tourelle à {} cases de l'Arche", d / TILE);
     }
 }
+
+/// La démo du gué : tout le monde est sur l'eau au moment de la capture (tools/e2e-gue.mjs), et un chariot livre
+/// l'autre rive.
+#[test]
+fn gue_demo_crosses_the_water() {
+    let mut w = crate::stress::gue_demo();
+    steps(&mut w, 220);
+    let wet = |w: &World, s: usize| w.map.is_water(w.units.x[s] / TILE, w.units.y[s] / TILE);
+    for kind in [U_ARK, U_CH_DRILL, U_CH_WORKSHOP] {
+        assert!(all(&w, kind).iter().any(|&s| wet(&w, s)), "{} sur l'eau", udef(kind).name);
+    }
+    steps(&mut w, 1500);
+    let h = buildings(&w, B_T_HOLD);
+    assert!(has(&w, h[1], IRON_PLATE) > 0, "la soute de l'autre rive est livrée");
+}
