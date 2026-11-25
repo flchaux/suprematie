@@ -948,7 +948,7 @@ pub const BUILDINGS: [BuildingDef; 80] = [
     BuildingDef { key: "thorn", name: "Épine", size: (2, 2), hp: 1400, cost: &[(SEVE, 80), (SELS, 30)], build: 8, class: BClass::Turret, weapon: 67, vision: 24, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "bloom", name: "Floraison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 20)], build: 6, class: BClass::Radar, radar: 55, vision: 14, race: RACE_SOUCHE, ..BD },
     // ----- Transhumants : modules déployés des chenillards ; ils ne se construisent pas (voir transhumants.rs) -----
-    BuildingDef { key: "t_drill", name: "Foreuse nomade", size: (2, 2), hp: 600, power_use: 120, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, class: BClass::Extractor, deposit: 255, race: RACE_TRANSH, ..BD },
+    BuildingDef { key: "t_drill", name: "Foreuse nomade", size: (2, 2), hp: 600, power_use: 90, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, class: BClass::Extractor, deposit: 255, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_furnace", name: "Fonderie nomade", size: (2, 2), hp: 500, power_use: 90, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, class: BClass::Crafter, crafter: Crafter::Furnace, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_assembler", name: "Assembleur nomade", size: (2, 2), hp: 600, power_use: 100, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, class: BClass::Crafter, race: RACE_TRANSH, ..BD },
     BuildingDef { key: "t_refinery", name: "Raffinerie nomade", size: (2, 2), hp: 800, power_use: 200, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], build: 14, class: BClass::Crafter, crafter: Crafter::Refinery, race: RACE_TRANSH, ..BD },
@@ -1236,21 +1236,21 @@ pub const UNITS: [UnitDef; 93] = [
     UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
     UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
-    UnitDef { key: "ark", name: "Arche", hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "ch_drill", name: "Chariot foreuse", hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
-    UnitDef { key: "ch_furnace", name: "Chenillard fonderie", hp: 1000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_FURNACE, ..UD },
-    UnitDef { key: "ch_assembler", name: "Chenillard assembleur", hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_ASSEMBLER, ..UD },
-    UnitDef { key: "ch_refinery", name: "Chenillard raffinerie", hp: 1400, speed: 20, radius: 209, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], build: 14, tech: T_T_REFINING, race: RACE_TRANSH, deploys: B_T_REFINERY, ..UD },
-    UnitDef { key: "ch_generator", name: "Chenillard générateur", hp: 1400, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 10), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_GENERATOR, ..UD },
-    UnitDef { key: "ch_hold", name: "Chenillard soute", hp: 2000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 16), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_HOLD, ..UD },
-    UnitDef { key: "ch_lab", name: "Chenillard laboratoire", hp: 1000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, race: RACE_TRANSH, deploys: B_T_LAB, ..UD },
-    UnitDef { key: "ch_workshop", name: "Chenillard atelier", hp: 6000, speed: 16, radius: 314, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, race: RACE_TRANSH, deploys: B_T_WORKSHOP, ..UD },
-    UnitDef { key: "ch_bastion", name: "Chenillard bastion", hp: 3000, speed: 18, radius: 209, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, tech: T_T_BASTION, tier: 2, race: RACE_TRANSH, deploys: B_T_BASTION, ..UD },
-    UnitDef { key: "tracker", name: "Pisteur", hp: 220, speed: 70, radius: 100, weapons: &[70], vision: 40, cost: &[(IRON_PLATE, 5), (GEAR, 2)], build: 3, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "rider", name: "Cavalier", hp: 800, speed: 40, radius: 140, weapons: &[71], cost: &[(STEEL, 4), (GEAR, 3), (CIRCUIT, 2)], build: 7, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "harrow", name: "Herse", hp: 400, speed: 32, radius: 130, weapons: &[6], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2), (AMMO, 2)], build: 7, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "towed_gun", name: "Canon tracté", hp: 420, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 5), (GEAR, 3), (AMMO, 3)], build: 9, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "ram", name: "Bélier", hp: 2800, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 10), (GEAR, 6), (CIRCUIT, 2)], build: 12, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ark", name: "Arche", layer: Layer::Hover, hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ch_drill", name: "Chariot foreuse", layer: Layer::Hover, hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
+    UnitDef { key: "ch_furnace", name: "Chenillard fonderie", layer: Layer::Hover, hp: 1000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_FURNACE, ..UD },
+    UnitDef { key: "ch_assembler", name: "Chenillard assembleur", layer: Layer::Hover, hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_ASSEMBLER, ..UD },
+    UnitDef { key: "ch_refinery", name: "Chenillard raffinerie", layer: Layer::Hover, hp: 1400, speed: 20, radius: 209, cost: &[(STEEL, 10), (GEAR, 8), (CIRCUIT, 4)], build: 14, tech: T_T_REFINING, race: RACE_TRANSH, deploys: B_T_REFINERY, ..UD },
+    UnitDef { key: "ch_generator", name: "Chenillard générateur", layer: Layer::Hover, hp: 1400, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 10), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_GENERATOR, ..UD },
+    UnitDef { key: "ch_hold", name: "Chenillard soute", layer: Layer::Hover, hp: 2000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 16), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_HOLD, ..UD },
+    UnitDef { key: "ch_lab", name: "Chenillard laboratoire", layer: Layer::Hover, hp: 1000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, race: RACE_TRANSH, deploys: B_T_LAB, ..UD },
+    UnitDef { key: "ch_workshop", name: "Chenillard atelier", layer: Layer::Hover, hp: 6000, speed: 16, radius: 314, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, race: RACE_TRANSH, deploys: B_T_WORKSHOP, ..UD },
+    UnitDef { key: "ch_bastion", name: "Chenillard bastion", layer: Layer::Hover, hp: 3000, speed: 18, radius: 209, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, tech: T_T_BASTION, tier: 2, race: RACE_TRANSH, deploys: B_T_BASTION, ..UD },
+    UnitDef { key: "tracker", name: "Pisteur", layer: Layer::Hover, hp: 220, speed: 70, radius: 100, weapons: &[70], vision: 40, cost: &[(IRON_PLATE, 5), (GEAR, 2)], build: 3, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "rider", name: "Cavalier", layer: Layer::Hover, hp: 800, speed: 40, radius: 140, weapons: &[71], cost: &[(STEEL, 4), (GEAR, 3), (CIRCUIT, 2)], build: 7, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "harrow", name: "Herse", layer: Layer::Hover, hp: 400, speed: 32, radius: 130, weapons: &[6], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2), (AMMO, 2)], build: 7, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "towed_gun", name: "Canon tracté", layer: Layer::Hover, hp: 420, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 5), (GEAR, 3), (AMMO, 3)], build: 9, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ram", name: "Bélier", layer: Layer::Hover, hp: 2800, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 10), (GEAR, 6), (CIRCUIT, 2)], build: 12, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
     // ----- Souche : œufs pondus par les couveuses (voir ponte.rs). Immobiles, sans arme, ils éclosent
     // en l'organisme qu'ils portent ; l'œuf d'une espèce est choisi d'après sa taille (ponte::egg_of) -----
     UnitDef { key: "egg_s", name: "Œuf", hp: 100, speed: 0, radius: 60, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
@@ -1258,7 +1258,7 @@ pub const UNITS: [UnitDef; 93] = [
     UnitDef { key: "egg_l", name: "Gros œuf", hp: 600, speed: 0, radius: 140, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : chariot de convoi, attelé à une soute (coût pris dans son stock), qui fait la
     // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
-    UnitDef { key: "t_cart", name: "Chariot de convoi", hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "t_cart", name: "Chariot de convoi", layer: Layer::Hover, hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Souche, suite -----
     UnitDef { key: "burster", name: "Vessie", hp: 140, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 30), (SELS, 8)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
     UnitDef { key: "dart", name: "Dard", hp: 360, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 45), (SELS, 18)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
@@ -1272,12 +1272,12 @@ pub const UNITS: [UnitDef; 93] = [
     UnitDef { key: "behemoth", name: "Béhémoth", hp: 52000, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 2400), (SELS, 1100)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : tourelles de l'Arche. Elles roulent jusqu'à leur poste, s'y déploient, et rentrent à
     // bord ; le coût est celui de la reconstruction d'une tourelle détruite (voir ameliorations.rs) -----
-    UnitDef { key: "turret_gun", name: "Tourelle mitrailleuse", hp: 700, speed: 42, radius: 130, weapons: &[90], vision: 20, cost: &[(IRON_PLATE, 12), (GEAR, 4)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "turret_aa", name: "Tourelle antiaérienne", hp: 600, speed: 42, radius: 130, weapons: &[91], vision: 28, cost: &[(IRON_PLATE, 10), (GEAR, 4), (CIRCUIT, 2)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "turret_mortar", name: "Tourelle mortier", hp: 500, speed: 42, radius: 130, weapons: &[92], vision: 24, cost: &[(STEEL, 3), (GEAR, 4), (IRON_PLATE, 6)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "turret_gun", name: "Tourelle mitrailleuse", layer: Layer::Hover, hp: 700, speed: 42, radius: 130, weapons: &[90], vision: 20, cost: &[(IRON_PLATE, 12), (GEAR, 4)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "turret_aa", name: "Tourelle antiaérienne", layer: Layer::Hover, hp: 600, speed: 42, radius: 130, weapons: &[91], vision: 28, cost: &[(IRON_PLATE, 10), (GEAR, 4), (CIRCUIT, 2)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "turret_mortar", name: "Tourelle mortier", layer: Layer::Hover, hp: 500, speed: 42, radius: 130, weapons: &[92], vision: 24, cost: &[(STEEL, 3), (GEAR, 4), (IRON_PLATE, 6)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Transhumants : remorque attelée à l'Arche ; elle porte une amélioration de pont ou de soutien. Le coût est
     // celui de sa reconstruction (voir convoi.rs) -----
-    UnitDef { key: "ark_car", name: "Remorque d'Arche", hp: 2600, speed: 16, radius: 194, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ark_car", name: "Remorque d'Arche", layer: Layer::Hover, hp: 2600, speed: 16, radius: 194, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

@@ -29,7 +29,8 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 /// - 9 : Souche, sol mangé.
 /// - 10 : formations à la vitesse du plus lent (`Order::Move::pace` et `wait` au lieu d'un tick d'arrivée).
 /// - 11 : Transhumants : emplacements des améliorations (unités, modules), gabarits d'équipement, remorques de l'Arche.
-pub const VERSION: u32 = 11;
+/// - 12 : Transhumants : navettes des chariots d'une soute repliée, file d'un atelier replié (`UnitCold::aboard`).
+pub const VERSION: u32 = 12;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])

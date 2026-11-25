@@ -348,8 +348,11 @@ pub struct UnitCold {
     pub mod_left: u16,
     /// équipement voulu, un octet par emplacement (0 : rien ; voir gabarits.rs)
     pub want: u32,
+    /// chenillard des Transhumants : ce que son module replié garde en plus. Soute : navette de chacun de ses chariots
+    /// (module, livraison) ; atelier : sa file (type, nombre ; NONE : en boucle)
+    pub aboard: Vec<(u32, u32)>,
 }
-crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 8: mods, mod_job, mod_left; since 11: want });
+crate::ser_struct!(UnitCold { orders, turret, cooldown, wtarget, stun, shield, shield_down, goal, stuck, best_dist, carried_by, cargo, deployed, timer, parent, children, work, flags, salvo_left, ready_tick, noprog, xp, lvl, last_hit, reveal; since 2: warp; since 3: pack, pack_recipe, pack_fuel; since 4: hold, supply_at; since 5: calm; since 8: mods, mod_job, mod_left; since 11: want; since 12: aboard });
 
 /// Niveau de vétérance maximal ; chaque niveau : +10 % de points de vie, +5 % de dégâts.
 pub const MAX_LVL: u8 = 5;
@@ -1099,6 +1102,10 @@ impl World {
                 }
                 if u.cold[s].want != 0 {
                     h.add(u.cold[s].want as u64);
+                }
+                // chenillard : navettes ou file à bord
+                for &(a, b) in &u.cold[s].aboard {
+                    h.add(a as u64 | (b as u64) << 32);
                 }
             }
         }

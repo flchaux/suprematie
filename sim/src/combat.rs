@@ -1252,7 +1252,7 @@ pub fn update_visibility(w: &mut World) {
             *c &= 8;
         }
     }
-    // cases de vision découvertes à ce passage, par équipe (relevés des Transhumants)
+    // relevés à ce passage, par équipe : une case de vision découverte sur quatre (Transhumants)
     let mut found = vec![0u32; w.vis.len()];
     let stamp = |vis: &mut Vec<u8>, x: i32, y: i32, r_tiles: i32, bit: u8| -> u32 {
         if r_tiles <= 0 {
@@ -1274,8 +1274,9 @@ pub fn update_visibility(w: &mut World) {
                     continue;
                 }
                 let c = &mut vis[(yy * vw + xx) as usize];
+                // une case sur quatre vaut un relevé (voir transhumants::explored)
                 if bit & 8 != 0 && *c & 8 == 0 {
-                    new += 1;
+                    new += ((xx | yy) & 1 == 0) as u32;
                 }
                 *c |= bit;
             }

@@ -5,6 +5,7 @@
 pub mod ameliorations;
 pub mod belts;
 pub mod buildings;
+pub mod chariots;
 pub mod combat;
 pub mod convoi;
 pub mod data;
@@ -593,3 +594,5 @@ pub mod stress;
 mod ameliorations_tests;
 #[cfg(test)]
 mod equipement_tests;
+#[cfg(test)]
+mod transhumants_tests;

@@ -256,8 +256,9 @@ pub fn reach_back(mods: u64, k: usize) -> i32 {
     HITCH[(at(mods, SLOT_DRIVE) != 0) as usize] + DRAWBAR + k as i32 * (CAR_BACK + DRAWBAR)
 }
 
-fn land_ok(w: &World, x: i32, y: i32) -> bool {
-    x >= 0 && y >= 0 && x < w.map.w * TILE && y < w.map.h * TILE && w.map.passable(x / TILE, y / TILE, crate::units::pass_mask(Layer::Land))
+/// Une remorque passe-t-elle en (x, y) ? (comme l'Arche : sur terre et sur l'eau)
+fn pass_ok(w: &World, x: i32, y: i32) -> bool {
+    x >= 0 && y >= 0 && x < w.map.w * TILE && y < w.map.h * TILE && w.map.passable(x / TILE, y / TILE, crate::units::pass_mask(udef(U_ARK_CAR).layer))
 }
 
 /// Où apparaît la remorque `k` : droit derrière l'Arche, sinon sur sa trace, sinon là où est l'Arche.
@@ -265,10 +266,10 @@ fn start_place(w: &World, i: usize, s: usize, k: usize) -> (i32, i32) {
     let d = reach_back(w.units.cold[s].mods, k);
     let a = w.units.facing[s].wrapping_add(32768);
     let (x, y) = (w.units.x[s] + (w.trig.cos(a) as i64 * d as i64 / 16384) as i32, w.units.y[s] + (w.trig.sin(a) as i64 * d as i64 / 16384) as i32);
-    if land_ok(w, x, y) {
+    if pass_ok(w, x, y) {
         return (x, y);
     }
-    on_trail(w, i, s, d).filter(|&(x, y)| land_ok(w, x, y)).unwrap_or((w.units.x[s], w.units.y[s]))
+    on_trail(w, i, s, d).filter(|&(x, y)| pass_ok(w, x, y)).unwrap_or((w.units.x[s], w.units.y[s]))
 }
 
 /// Chaque remorque attelée prend sa place derrière le véhicule qui la précède.
@@ -298,14 +299,14 @@ fn follow(w: &mut World, i: usize, s: usize) {
             nx = ax + (ox * clear / o) as i32;
             ny = ay + (oy * clear / o) as i32;
         }
-        if !land_ok(w, nx, ny) {
+        if !pass_ok(w, nx, ny) {
             // obstacle : elle passe par où l'Arche est passée, ou reste où elle est
-            match on_trail(w, i, s, reach_back(mods, k)).filter(|&(x, y)| land_ok(w, x, y)) {
+            match on_trail(w, i, s, reach_back(mods, k)).filter(|&(x, y)| pass_ok(w, x, y)) {
                 Some((tx, ty)) => {
                     let step = 96;
                     let (mx, my) = (cx + (tx - cx).clamp(-step, step), cy + (ty - cy).clamp(-step, step));
                     // trop loin de sa place (obstacle contourné) : elle la rejoint d'un coup
-                    (nx, ny) = if land_ok(w, mx, my) && dist(mx, my, tx, ty) < 4 * TILE { (mx, my) } else { (tx, ty) };
+                    (nx, ny) = if pass_ok(w, mx, my) && dist(mx, my, tx, ty) < 4 * TILE { (mx, my) } else { (tx, ty) };
                 }
                 None => (nx, ny) = (cx, cy),
             }

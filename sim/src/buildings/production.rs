@@ -44,9 +44,8 @@ pub(super) fn tick_extractor(w: &mut World, b: usize) {
     }
     let lvl = &EXTRACTOR_LEVELS[(w.buildings[b].level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
     // sur un gisement d'hydrocarbure, l'extracteur fonctionne sans électricité
-    let need = (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(&w.buildings[b]) as i64 / 1000) as i32;
-    let need = need * crate::ameliorations::module_power(&w.buildings[b]) / 100;
-    let s = if w.buildings[b].recipe == HYDROCARBON { 1024 } else { use_power(w, b, need) };
+    let need = power_need(&w.buildings[b]);
+    let s = if need == 0 { 1024 } else { use_power(w, b, need) };
     let mult = w.players[owner].res_mult as u32;
     // pureté du gisement : 50 % (impur), 100 % ou 200 % (pur)
     let purity = purity_of(&w.buildings[b]);
@@ -107,7 +106,7 @@ pub fn power_need(bb: &Building) -> i32 {
         BClass::Extractor if bb.recipe == HYDROCARBON => 0,
         BClass::Extractor => {
             let lvl = &EXTRACTOR_LEVELS[(bb.level as usize).min(EXTRACTOR_LEVELS.len() - 1)];
-            (bdef(B_EXTRACTOR).power_use as i64 * lvl.power as i64 / 100 * clock_power(bb) as i64 / 1000) as i32 * crate::ameliorations::module_power(bb) / 100
+            (bb.def().power_use as i64 * lvl.power as i64 / 100 * clock_power(bb) as i64 / 1000) as i32 * crate::ameliorations::module_power(bb) / 100
         }
         _ => bb.def().power_use * crate::ameliorations::module_power(bb) / 100,
     }

@@ -776,6 +776,8 @@ pub const BOOST_TICKS: u32 = 240;
 pub const BOOST_READY: u32 = 1800;
 /// Atelier embarqué : vitesse (% d'un atelier), unités d'un type en file au plus.
 pub const WORKSHOP_PCT: u32 = 60;
+/// Vitesse (% d'un atelier) à laquelle l'Arche refait un chenillard atelier sans son atelier embarqué.
+pub const RESCUE_PCT: u32 = 20;
 const QUEUE_MAX: u16 = 100;
 /// Bras réparateurs, cour de réparation d'un atelier : rayon (cases).
 const REPAIR_RANGE: i32 = 10;
@@ -905,11 +907,18 @@ fn update_ark(w: &mut World, i: usize, s: usize) {
     crate::convoi::update(w, i, s);
     update_turrets(w, i, s, left);
     update_dock(w, i, s, left);
-    if mods == 0 || carried {
+    if carried {
         return;
     }
-    if at(mods, SLOT_DECK) == M_WORKSHOP && w.units.cold[s].stun == 0 && crate::convoi::in_service(w, s, SLOT_DECK) {
-        update_workshop(w, i, s);
+    if !w.arks[i].queue.is_empty() && w.units.cold[s].stun == 0 {
+        if workshop_aboard(w, s) {
+            update_workshop(w, i, s, WORKSHOP_PCT);
+        } else if rescue_first(w, i, s) {
+            update_workshop(w, i, s, RESCUE_PCT);
+        }
+    }
+    if mods == 0 {
+        return;
     }
     if has(mods, M_REPAIR) && w.tick.is_multiple_of(20) && crate::convoi::in_service(w, s, SLOT_SUPPORT) {
         repair(w, x, y, w.units.owner[s], REPAIR_RANGE, true);
@@ -933,7 +942,7 @@ fn post(w: &World, s: usize, k: usize, n: usize) -> (i32, i32) {
     let x = w.units.x[s] + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
     let y = w.units.y[s] + (w.trig.sin(a) as i64 * r as i64 / 16384) as i32;
     let (mx, my) = (w.map.w * TILE - 1, w.map.h * TILE - 1);
-    buildings::free_spot_near(w, x.clamp(0, mx), y.clamp(0, my), crate::units::pass_mask(Layer::Land))
+    buildings::free_spot_near(w, x.clamp(0, mx), y.clamp(0, my), crate::units::pass_mask(udef(U_ARK).layer))
 }
 
 /// Retire la tourelle `u` du monde sans mort ni épave (remise à bord) ; renvoie ses points de vie (‰).
@@ -1145,16 +1154,22 @@ pub fn boost(w: &mut World, s: usize) -> bool {
     true
 }
 
+/// L'Arche `s` a-t-elle un atelier embarqué en service (remorque attelée) ?
+fn workshop_aboard(w: &World, s: usize) -> bool {
+    at(w.units.cold[s].mods, SLOT_DECK) == M_WORKSHOP && crate::convoi::in_service(w, s, SLOT_DECK)
+}
+
 /// Unité que l'atelier embarqué peut fabriquer.
 fn workshop_ok(w: &World, p: u8, kind: u16) -> bool {
     crate::races::unit_ok(w, p, kind) && udef(kind).race == RACE_TRANSH && udef(kind).factory == FactoryKind::Land && w.players[p as usize].has_tech(udef(kind).tech)
 }
 
 /// Ordre : file de l'atelier embarqué de l'Arche `s` (delta < 0 : retire ; l'unité en cours retirée est remboursée).
+/// Sans atelier embarqué, elle ne peut fabriquer qu'un chenillard atelier (secours, RESCUE_PCT).
 pub fn workshop_queue(w: &mut World, s: usize, kind: i32, delta: i32) {
     let Some(i) = ark_of(w, s) else { return };
     let p = w.units.owner[s];
-    if !(0..UNITS.len() as i32).contains(&kind) || !has(w.units.cold[s].mods, M_WORKSHOP) {
+    if !(0..UNITS.len() as i32).contains(&kind) || (delta > 0 && !has(w.units.cold[s].mods, M_WORKSHOP) && kind != U_CH_WORKSHOP as i32) {
         return;
     }
     let kind = kind as u16;
@@ -1183,6 +1198,19 @@ pub fn workshop_queue(w: &mut World, s: usize, kind: i32, delta: i32) {
     }
 }
 
+/// Sans atelier embarqué en service : le chenillard atelier de la file passe en tête (l'unité en cours, que l'Arche ne
+/// peut pas finir, est remboursée et reste en file) ; faux s'il n'y en a pas.
+fn rescue_first(w: &mut World, i: usize, s: usize) -> bool {
+    let Some(k) = w.arks[i].queue.iter().position(|e| e.0 == U_CH_WORKSHOP) else { return false };
+    if k > 0 {
+        let head = w.arks[i].queue[0].0;
+        drop_work(w, i, s, head);
+        let e = w.arks[i].queue.remove(k);
+        w.arks[i].queue.insert(0, e);
+    }
+    true
+}
+
 /// L'unité en cours de l'atelier embarqué est abandonnée : remboursée.
 fn drop_work(w: &mut World, i: usize, s: usize, kind: u16) {
     w.arks[i].prog = 0;
@@ -1199,7 +1227,7 @@ fn drop_work(w: &mut World, i: usize, s: usize, kind: u16) {
     }
 }
 
-fn update_workshop(w: &mut World, i: usize, s: usize) {
+fn update_workshop(w: &mut World, i: usize, s: usize, pct: u32) {
     let Some(&(kind, _)) = w.arks[i].queue.first() else { return };
     let p = w.units.owner[s];
     let full = w.players[p as usize].unit_count >= UNIT_CAP;
@@ -1213,15 +1241,15 @@ fn update_workshop(w: &mut World, i: usize, s: usize) {
         w.arks[i].kit = crate::gabarits::begin(w, p, x, y, kind);
     }
     let need = (factory_ticks(kind) + crate::gabarits::ticks(w.arks[i].kit)) * 100;
-    w.arks[i].prog = (w.arks[i].prog + w.players[p as usize].build_mult.max(0) as u32 * WORKSHOP_PCT / 100).min(need);
+    w.arks[i].prog = (w.arks[i].prog + w.players[p as usize].build_mult.max(0) as u32 * pct / 100).min(need);
     if w.arks[i].prog < need || full {
         return;
     }
     w.arks[i].prog = 0;
     w.arks[i].paid = false;
-    // l'unité sort sur le flanc de la remorque atelier (de l'Arche, tant qu'elle n'est pas attelée)
-    let (cx, cy) = crate::convoi::car_pos(w, i, s, 0);
-    let from = crate::convoi::car_unit(w, i, 0).unwrap_or(s);
+    // l'unité sort sur le flanc de la remorque atelier (de l'Arche, si elle n'est pas attelée)
+    let from = if workshop_aboard(w, s) { crate::convoi::car_unit(w, i, 0).unwrap_or(s) } else { s };
+    let (cx, cy) = (w.units.x[from], w.units.y[from]);
     let a = w.units.facing[from].wrapping_add(16384);
     let r = radius(&w.units, from) + udef(kind).radius + TILE / 2;
     let x = cx + (w.trig.cos(a) as i64 * r as i64 / 16384) as i32;
