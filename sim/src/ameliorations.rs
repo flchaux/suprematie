@@ -148,6 +148,12 @@ pub fn mod_weapon(kind: u16, m: u8) -> Option<(usize, u8)> {
         (U_HARROW, M_HARROW_MISSILE) => (0, W_HARROW_MISSILE),
         (U_RAM, M_RAM_SAW) => (0, W_RAM_SAW),
         (U_RAM, M_RAM_FLAME) => (1, W_RAM_FLAME),
+        (U_MASTIFF, M_MASTIFF_CRUSHER) => (0, W_MASTIFF_CRUSHER),
+        (U_MASTIFF, M_MASTIFF_GUN) => (1, W_MASTIFF_GUN),
+        (U_MASTIFF, M_MASTIFF_HARPOON) => (1, W_MASTIFF_HARPOON),
+        (U_SHEPHERD, M_SHEPHERD_ARC) => (0, W_SHEPHERD_ARC),
+        (U_SHEPHERD, M_SHEPHERD_SLING) => (1, W_SHEPHERD_SLING),
+        (U_SHEPHERD, M_SHEPHERD_LANTERN) => (1, W_SHEPHERD_LANTERN),
         _ => return None,
     })
 }
@@ -162,6 +168,10 @@ pub fn attack_range(w: &World, s: usize, target: u32) -> i32 {
     let air = w.unit(target).is_some_and(|t| udef(w.units.kind[t]).layer == Layer::Air);
     let want = if air { M_AIR } else { M_SURF };
     let (v, n) = weapons_of(w, s);
+    let first = &WEAPONS[v[0] as usize];
+    if first.mask & want != 0 && crate::troupeau::brawler(w, s) {
+        return first.range;
+    }
     let best = v[..n].iter().map(|&wi| &WEAPONS[wi as usize]).filter(|d| d.mask & want != 0).map(|d| d.range).max();
     best.unwrap_or_else(|| crate::units::max_range(kind))
 }
@@ -171,6 +181,8 @@ pub fn attack_range(w: &World, s: usize, target: u32) -> i32 {
 pub fn speed(w: &World, s: usize) -> i32 {
     let base = unit_speed(w.units.kind[s]);
     let mods = w.units.cold[s].mods;
+    // troupeau d'un Berger
+    let base = base * (100 + crate::troupeau::flock_speed(w, s)) / 100;
     if mods == 0 {
         return base;
     }
@@ -191,6 +203,7 @@ pub fn speed(w: &World, s: usize) -> i32 {
         }
         // (chenillard soute : au-delà du deuxième octet, les équipements de ses chariots)
         U_CH_HOLD => 100,
+        U_MASTIFF if has(mods, M_MASTIFF_SPRING) => (100 + fitted(mods).map(|d| d.speed as i32).sum::<i32>()) * crate::troupeau::lunge(w, s) / 100,
         _ => 100 + fitted(mods).map(|d| d.speed as i32).sum::<i32>(),
     };
     base * pct.max(10) / 100
@@ -209,6 +222,7 @@ pub fn unit_armor(w: &World, s: usize, dmg: i32) -> i32 {
             M_REACTIVE if WEAPONS.get(w.hit_weapon as usize).is_some_and(|d| matches!(d.proj, Proj::Shell | Proj::Missile | Proj::Bomb | Proj::Fire)) => 50,
             _ => 100,
         },
+        U_MASTIFF if has(mods, M_MASTIFF_FUR) && WEAPONS.get(w.hit_weapon as usize).is_some_and(|d| matches!(d.proj, Proj::Shell | Proj::Missile | Proj::Bomb)) => crate::troupeau::FUR_PCT,
         U_CH_HOLD if has(mods, M_HOLD_ARMOR) => 50,
         U_CH_HOLD => 100,
         _ => (100 - fitted(mods).map(|d| d.armor as i64).sum::<i64>()).max(10),
@@ -300,6 +314,7 @@ pub fn tick_unit(w: &mut World, s: usize) {
         let c = &mut w.units.cold[s];
         c.reveal = if moving { c.reveal.max(NET_REST) } else { c.reveal.saturating_sub(1) };
     }
+    crate::troupeau::tick(w, s);
     if w.tick.is_multiple_of(20) {
         let k: i64 = fitted(w.units.cold[s].mods).map(|d| d.regen as i64).sum();
         let max = w.max_hp(s);
@@ -1306,7 +1321,7 @@ fn update_dock(w: &mut World, i: usize, s: usize, left: bool) {
 
 /// Bras réparateurs, cour de réparation : unités (et modules, si `modules`) du joueur `owner` à moins de `range` cases
 /// du point, 1 % de points de vie par seconde (appelé une fois par seconde).
-fn repair(w: &mut World, x: i32, y: i32, owner: u8, range: i32, modules: bool) {
+pub(crate) fn repair(w: &mut World, x: i32, y: i32, owner: u8, range: i32, modules: bool) {
     let r = range * TILE;
     let r2 = r as i64 * r as i64;
     let mut near: Vec<usize> = Vec::new();

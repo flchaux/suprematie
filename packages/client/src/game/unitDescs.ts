@@ -97,4 +97,6 @@ export const UNIT_DESCS: Record<string, string> = {
   harrow: "Contre les avions seulement.",
   towed_gun: "Longue portée ; se met en batterie à l'arrêt avant de tirer.",
   ram: "Assaut blindé, gros dégâts aux bâtiments. Passe sur l'eau.",
+  mastiff: "Chien de garde mécanique : il court sus à ce qui approche et mord plus fort en meute.",
+  shepherd: "Géant à houlette : frappe en zone, et tout ce qui marche avec lui va plus vite.",
 };

@@ -329,7 +329,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 109] = [
+pub const WEAPONS: [WeaponDef; 117] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -447,6 +447,15 @@ pub const WEAPONS: [WeaponDef; 109] = [
     w!(6, 7, 50, Fire, 0, 320, M_SURF, sustain: 34),                    // 106 bélier : lance-flammes de proue
     w!(160, 30, 36, Bullet, 40, 128, M_SURF | M_AIR),                   // 107 bastion à affût antiaérien
     w!(170, 44, 36, Bullet, 48, 128, M_SURF | M_AIR),                   // 108 bastion à canon long et affût antiaérien
+    // Mâtin et Berger (voir troupeau.rs)
+    w!(90, 2, 18, Bite, 0, 0, M_SURF),                                  // 109 mâtin : mâchoire
+    w!(160, 2, 22, Bite, 0, 0, M_SURF, prefer_buildings: true),         // 110 mâtin : mâchoire de broyeur
+    w!(20, 20, 8, Bullet, 45, 0, M_SURF),                               // 111 mâtin : affût dorsal
+    w!(2, 14, 110, Bullet, 0, 0, M_SURF, sustain: 36),                  // 112 mâtin : harpon (câble tendu ; voir troupeau::reel)
+    w!(1300, 6, 45, Bite, 0, 640, M_SURF),                              // 113 berger : houlette (balaie la zone)
+    w!(1000, 6, 45, Bite, 0, 640, M_SURF, stun: 30),                    // 114 berger : houlette électrique
+    w!(650, 50, 130, Shell, 14, 704, M_SURF, min_range: 10),            // 115 berger : fronde
+    w!(24, 26, 110, Fire, 0, 160, M_SURF, sustain: 60),                 // 116 berger : lanterne ardente (3 s)
 ];
 /// Armes des améliorations des Transhumants (indices dans WEAPONS).
 pub const W_SIEGE: u8 = 85;
@@ -470,6 +479,14 @@ pub const W_RAM_SAW: u8 = 105;
 pub const W_RAM_FLAME: u8 = 106;
 pub const W_BASTION_DUAL: u8 = 107;
 pub const W_BASTION_LONG_DUAL: u8 = 108;
+pub const W_MASTIFF: u8 = 109;
+pub const W_MASTIFF_CRUSHER: u8 = 110;
+pub const W_MASTIFF_GUN: u8 = 111;
+pub const W_MASTIFF_HARPOON: u8 = 112;
+pub const W_SHEPHERD: u8 = 113;
+pub const W_SHEPHERD_ARC: u8 = 114;
+pub const W_SHEPHERD_SLING: u8 = 115;
+pub const W_SHEPHERD_LANTERN: u8 = 116;
 pub const W_CMD_UP: u8 = 1;
 /// Souche : arme de la vessie (dégâts et rayon de son éclatement) et griffes du béhémoth.
 pub const W_BURST: u8 = 75;
@@ -506,7 +523,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 92] = [
+pub const TECHS: [TechDef; 94] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -603,6 +620,8 @@ pub const TECHS: [TechDef; 92] = [
     t!("t_bubble2", "Bulle renforcée", 3, 20, 10, [83], "Arche, coque : bouclier renforcé", race: RACE_TRANSH),
     t!("t_rail", "Canon à rail", 4, 25, 12, [80, 63], "Arche, armement : canon à rail", race: RACE_TRANSH),
     t!("t_crown", "Couronne de tourelles", 4, 30, 12, [82, 89], "Arche : 9 tourelles (pont), grande bulle (coque)", race: RACE_TRANSH),
+    t!("t_mastiff", "Chiens de fer", 2, 14, 8, [58], "Mâtin : chien de garde mécanique, plus fort en meute", race: RACE_TRANSH),
+    t!("t_shepherd", "Le Grand Berger", 5, 40, 14, [92, 62], "Berger : géant à houlette, qui fait presser le pas à tout le troupeau", race: RACE_TRANSH),
 ];
 /// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
 pub const T_T_ARMORY: u8 = 80;
@@ -617,6 +636,8 @@ pub const T_T_RECON: u8 = 88;
 pub const T_T_BUBBLE2: u8 = 89;
 pub const T_T_RAIL: u8 = 90;
 pub const T_T_CROWN: u8 = 91;
+pub const T_T_MASTIFF: u8 = 92;
+pub const T_T_SHEPHERD: u8 = 93;
 /// Recherches de la Souche et des Transhumants (indices dans TECHS).
 pub const T_S_SPITTERS: u8 = 48;
 pub const T_S_SHELLS: u8 = 49;
@@ -1162,12 +1183,15 @@ pub const U_TUR_AA: u16 = 90;
 pub const U_TUR_MORTAR: u16 = 91;
 /// remorque attelée à l'Arche (voir convoi.rs)
 pub const U_ARK_CAR: u16 = 92;
+/// robots des Transhumants (voir troupeau.rs)
+pub const U_MASTIFF: u16 = 93;
+pub const U_SHEPHERD: u16 = 94;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 93] = [
+pub const UNITS: [UnitDef; 95] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1278,6 +1302,9 @@ pub const UNITS: [UnitDef; 93] = [
     // ----- Transhumants : remorque attelée à l'Arche ; elle porte une amélioration de pont ou de soutien. Le coût est
     // celui de sa reconstruction (voir convoi.rs) -----
     UnitDef { key: "ark_car", name: "Remorque d'Arche", layer: Layer::Hover, hp: 2600, speed: 16, radius: 194, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
+    // ----- Transhumants : robots (voir troupeau.rs) -----
+    UnitDef { key: "mastiff", name: "Mâtin", layer: Layer::Hover, hp: 1500, speed: 44, radius: 190, weapons: &[W_MASTIFF], vision: 24, cost: &[(STEEL, 8), (GEAR, 6), (CIRCUIT, 3)], build: 10, tech: T_T_MASTIFF, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "shepherd", name: "Berger", layer: Layer::Hover, hp: 42000, speed: 20, radius: 600, weapons: &[W_SHEPHERD], vision: 36, cost: &[(STEEL, 220), (GEAR, 100), (ENGINE, 40), (PROCESSOR, 24)], build: 120, tech: T_T_SHEPHERD, tier: 6, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

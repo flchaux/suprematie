@@ -108,7 +108,7 @@ fn the_table_of_upgrades_is_sound() {
             assert_eq!(per, [2, 2], "{}", u.key);
         } else if k == U_T_CART {
             assert_eq!(per, [2], "{}", u.key);
-        } else if [U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM].contains(&k) {
+        } else if [U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM, U_MASTIFF, U_SHEPHERD].contains(&k) {
             assert!(per.len() == 3 && per.iter().all(|n| (2..=3).contains(n)), "{} : {per:?}", u.key);
         }
     }

@@ -1118,6 +1118,62 @@ pub fn arche_demo() -> World {
     w
 }
 
+/// Démo des robots des Transhumants (`?demo=robots`) : quatre Bergers et quatre Mâtins, nus puis équipés, en ordre de
+/// marche ; à l'est, une troupe ennemie qu'ils chargent.
+pub fn robots_demo() -> World {
+    use crate::ameliorations as am;
+    let mut w = World::new(&[29, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 0, RACE_TRANSH as i32, RACE_INDUS as i32]);
+    w.infinite_grid = true;
+    let (cx, cy) = (w.map.w / 2, w.map.h / 2);
+    flat(&mut w, cx - 46, cy - 30, cx + 46, cy + 30);
+    for (t, d) in TECHS.iter().enumerate() {
+        if d.race == RACE_TRANSH {
+            w.players[0].set_tech(t as u8);
+        }
+    }
+    w.players[0].purse[RELEVES as usize] = 2000;
+    if let Some(a) = w.unit(w.players[0].commander) {
+        (w.units.x[a], w.units.y[a]) = ((cx - 30) * TILE, cy * TILE);
+        (w.units.px[a], w.units.py[a]) = (w.units.x[a], w.units.y[a]);
+        for it in 1..=ENERGY_CELL {
+            crate::drones::put(&mut w.units.cold[a].hold, it, 600);
+        }
+    }
+    let shepherds: [&[u8]; 4] = [
+        &[],
+        &[am::M_SHEPHERD_SLING, am::M_SHEPHERD_STILTS, am::M_SHEPHERD_BELLS],
+        &[am::M_SHEPHERD_ARC, am::M_SHEPHERD_CLOAK, am::M_SHEPHERD_PARASOL],
+        &[am::M_SHEPHERD_LANTERN, am::M_SHEPHERD_BOOTS, am::M_SHEPHERD_KENNEL],
+    ];
+    let mastiffs: [&[u8]; 4] = [
+        &[],
+        &[am::M_MASTIFF_CRUSHER, am::M_MASTIFF_SPRING, am::M_MASTIFF_COLLAR],
+        &[am::M_MASTIFF_GUN, am::M_MASTIFF_RAILS, am::M_MASTIFF_NOSE],
+        &[am::M_MASTIFF_HARPOON, am::M_MASTIFF_FUR, am::M_MASTIFF_BARREL],
+    ];
+    for (kind, sets, x0, dy) in [(U_SHEPHERD, shepherds, cx - 14, 9), (U_MASTIFF, mastiffs, cx - 4, 3)] {
+        for (k, set) in sets.iter().enumerate() {
+            let y = cy + dy * k as i32 - dy * 3 / 2;
+            let id = w.spawn_unit(kind, 0, x0 * TILE, y * TILE);
+            let Some(s) = w.unit(id) else { continue };
+            w.units.facing[s] = 0;
+            w.units.cold[s].mods = set.iter().fold(0u64, |m, &v| m | (v as u64) << (8 * am::MODS[v as usize].slot));
+            am::applied(&mut w, am::Host::U(s));
+            let (x, y) = ((cx + 40) * TILE, y * TILE);
+            w.units.cold[s].orders.push(Order::Move { x, y, gx: x, gy: y, attack: true, pace: 0, wait: 0 });
+        }
+    }
+    for k in 0..16 {
+        w.spawn_unit(U_LIGHT_TANK, 1, (cx + 24 + (k % 2) * 2) * TILE, (cy - 14 + 2 * k) * TILE);
+    }
+    for s in 0..w.units.alive.len() {
+        if w.units.alive[s] && w.units.owner[s] == 1 && w.units.kind[s] == U_LIGHT_TANK {
+            w.units.hp[s] = 3000;
+        }
+    }
+    w
+}
+
 /// Démo des Transhumants (`?demo=gue`) : une Arche et son convoi, des chenillards, des unités et un chariot en navette
 /// traversent un bras de mer ; soute et modules sur les deux rives, atelier de secours de l'Arche.
 pub fn gue_demo() -> World {

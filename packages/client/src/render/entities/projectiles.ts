@@ -4,6 +4,7 @@
 import * as THREE from "three/webgpu";
 import { PROJ_WORDS, Layer } from "@supreme/shared";
 import { groundHeight, HSCALE } from "../terrain.ts";
+import { parseCond } from "../../models/generator.ts";
 import type { Entities } from "../entities.ts";
 import { TILE, tmpC, tmpM, tmpQ, tmpS, tmpV, tmpV2, type FrameCtx } from "./common.ts";
 
@@ -71,6 +72,19 @@ export function drawProjectiles(e: Entities, ctx: FrameCtx): void {
       const az = z0 + ((z1 - z0) / d0) * src.fwd;
       const ay = (src.air ? unitHeightAt(e, wi, ax, az) : groundHeight(e.map, ax, az)) + src.h;
       const by = groundHeight(e.map, x1, z1) + 0.4;
+      // harpon : un câble tendu, sans lueur
+      if (w?.proj === 0) {
+        if (nk < 6000) {
+          tmpV.set(x1 - ax, by - ay, z1 - az);
+          const cl = tmpV.length();
+          tmpQ.setFromUnitVectors(Z_AXIS, tmpV.normalize());
+          tmpM.compose(tmpV.set((ax + x1) / 2, (ay + by) / 2, (az + z1) / 2), tmpQ, tmpS.set(0.07, 0.07, cl));
+          e.slugs.setMatrixAt(nk, tmpM);
+          e.slugs.setColorAt(nk, tmpC.setHex(0x6a5f52));
+          nk++;
+        }
+        continue;
+      }
       const fire = w?.proj === 10;
       const life = (buf[o + 4] & 0xffff) + alpha;
       const total = Math.max(1, (buf[o + 4] >>> 16) & 0xffff);
@@ -134,7 +148,15 @@ export function drawProjectiles(e: Entities, ctx: FrameCtx): void {
       // projectile matériel : ogive orientée selon la course, et sa lueur (traceur, propulseur, culot chaud)
       const L = look ?? PROJ_LOOKS[2]!;
       const sz = special ? 3.2 : L.grow ? Math.min(big, 1.4) : 1;
-      if (nk < 6000) {
+      // fronde du Berger : une carcasse qui tournoie
+      const junk = special === 0 && wi === slingWeapon(e);
+      if (junk && nk < 6000) {
+        tmpQ.setFromAxisAngle(tmpV.set(0.6, 0.5, 0.62).normalize(), tt * 14 + i);
+        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(0.9, 0.55, 1.3));
+        e.slugs.setMatrixAt(nk, tmpM);
+        e.slugs.setColorAt(nk, tmpC.setHex(0x8a4a2a));
+        nk++;
+      } else if (nk < 6000) {
         tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(L.slug![0] * sz, L.slug![0] * sz, L.slug![1] * sz));
         e.slugs.setMatrixAt(nk, tmpM);
         e.slugs.setColorAt(nk, tmpC.setHex(special ? 0xe8e8e8 : L.color));
@@ -187,11 +209,12 @@ function glow(e: Entities, n: number, x: number, y: number, z: number, sx: numbe
 function beamSource(e: Entities, wi: number): { h: number; fwd: number; air: boolean; big: number } {
   let s = e.beamFrom.get(wi);
   if (s) return s;
-  // arme d'amélioration (lance-flammes de l'Arche) : celle de l'Arche, depuis sa tourelle de proue
+  // arme d'amélioration : son porteur ; lance-flammes de l'Arche : depuis sa tourelle de proue
   const ark = e.data.units.findIndex((u) => u.key === "ark");
+  const mod = e.data.mods.find((m) => m.weapon[1] === wi);
   const own = e.data.units.findIndex((u) => u.weapons.includes(wi));
-  const kind = own >= 0 ? own : ark;
-  if (own < 0 && ark >= 0) {
+  const kind = own >= 0 ? own : (mod?.host ?? ark);
+  if (kind === ark && own < 0 && ark >= 0) {
     const k = e.unitMeshes[ark].scale;
     s = { h: 1.26 * k, fwd: 2.8 * k, air: false, big: 1 };
     e.beamFrom.set(wi, s);
@@ -199,17 +222,28 @@ function beamSource(e: Entities, wi: number): { h: number; fwd: number; air: boo
   }
   const km = kind >= 0 ? e.unitMeshes[kind] : undefined;
   const def = kind >= 0 ? e.data.units[kind] : undefined;
-  const piv = km?.built.pivots.find((p) => p.name === "laser");
+  const piv = km?.built.pivots.find((p) => {
+    const c = parseCond(p.name);
+    return c ? !!mod && c.base.startsWith("laser") && c.all.some((t) => t.on && t.keys.includes(mod.key)) : p.name === "laser";
+  });
   const h = piv ? piv.origin.y * km!.scale : (km?.height ?? 1) * 0.6;
-  const fwd = piv ? Math.hypot(piv.origin.x, piv.origin.z) * km!.scale : 0;
+  // (arme d'amélioration sans pivot : depuis l'avant du porteur)
+  const fwd = piv ? Math.hypot(piv.origin.x, piv.origin.z) * km!.scale : own < 0 && def ? (def.radius / TILE) * 0.9 : 0;
   const air = def ? def.layer === Layer.Air || def.layer === Layer.Hover : false;
   s = { h, fwd, air, big: def && def.tier === 6 ? 1.5 : 1 };
   e.beamFrom.set(wi, s);
   return s;
 }
 
-/** Hauteur de vol de l'unité qui porte l'arme `wi` (rayons tirés depuis les airs). */
+/** Arme de la fronde du Berger (-1 : pas dans ces données). */
+function slingWeapon(e: Entities): number {
+  if (e.sling === undefined) e.sling = e.data.mods.find((m) => m.key === "shepherd_sling")?.weapon[1] ?? -1;
+  return e.sling;
+}
+
+/** Hauteur de l'unité qui porte l'arme `wi` (rayons tirés depuis les airs, ou par un amphibie). */
 function unitHeightAt(e: Entities, wi: number, x: number, z: number): number {
-  const kind = e.data.units.findIndex((u) => u.weapons.includes(wi));
+  const own = e.data.units.findIndex((u) => u.weapons.includes(wi));
+  const kind = own >= 0 ? own : (e.data.mods.find((m) => m.weapon[1] === wi)?.host ?? -1);
   return kind >= 0 ? e.unitHeight(kind, x, z) : groundHeight(e.map, x, z);
 }

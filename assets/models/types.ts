@@ -76,4 +76,9 @@ export interface Model {
    * récupération des Transhumants (plaques rapiécées, tôle, rouille, peinture écaillée, bâche, planches, cuivre).
    */
   skin?: "souche" | "nomade";
+  /**
+   * Amélioration qui rehausse l'unité (échasses) : hauteur, en unités du modèle, dont tout le modèle est soulevé quand
+   * elle est installée. Ses pièces « si:clé#… » descendent sous y = 0 de cette hauteur.
+   */
+  lift?: Record<string, number>;
 }

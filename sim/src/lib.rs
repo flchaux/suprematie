@@ -29,6 +29,7 @@ pub mod ser;
 pub mod soil;
 pub mod souche;
 pub mod transhumants;
+pub mod troupeau;
 pub mod twins;
 pub mod units;
 pub mod world;
@@ -459,6 +460,15 @@ pub extern "C" fn arche_demo() -> u32 {
     h
 }
 
+/// Démo des robots des Transhumants (remplace le monde courant).
+#[no_mangle]
+pub extern "C" fn robots_demo() -> u32 {
+    let w = stress::robots_demo();
+    let h = w.hash();
+    WORLD.with(|x| *x.borrow_mut() = Some(w));
+    h
+}
+
 /// Démo des Transhumants qui traversent un bras de mer (remplace le monde courant).
 #[no_mangle]
 pub extern "C" fn gue_demo() -> u32 {
@@ -605,3 +615,5 @@ mod ameliorations_tests;
 mod equipement_tests;
 #[cfg(test)]
 mod transhumants_tests;
+#[cfg(test)]
+mod troupeau_tests;

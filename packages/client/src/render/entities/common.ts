@@ -20,6 +20,7 @@ export const TAME_RING = 2.9;
 // que ce calcul ne compte pas sur ce qu'elle écrase.
 export const tmpM = new THREE.Matrix4();
 export const tmpM2 = new THREE.Matrix4();
+export const tmpM3 = new THREE.Matrix4();
 export const tmpQ = new THREE.Quaternion();
 export const tmpQ2 = new THREE.Quaternion();
 export const tmpQ3 = new THREE.Quaternion();

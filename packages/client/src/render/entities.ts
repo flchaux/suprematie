@@ -52,6 +52,9 @@ export interface UnitScreen {
   drawn: boolean;
 }
 
+/** Robots à pattes des Transhumants : profondeur d'eau (cases) dans laquelle ils gardent pied. */
+const WADE: Record<string, number> = { mastiff: 0.4, shepherd: 1.6 };
+
 export class Entities {
   group = new THREE.Group();
   unitMeshes: KindMesh[] = [];
@@ -106,6 +109,8 @@ export class Entities {
   beamCore: THREE.InstancedMesh;
   beamGlow: THREE.InstancedMesh;
   /** origine des rayons prolongés par arme : hauteur et avancée (vers la cible) du pivot « laser » */
+  /** arme de la fronde du Berger (cherchée une fois) */
+  sling: number | undefined;
   beamFrom = new Map<number, { h: number; fwd: number; air: boolean; big: number }>();
   effects: Effects;
   camera: THREE.Camera | null = null;
@@ -164,7 +169,7 @@ export class Entities {
   /** animation des unités (purement visuelle) : phase de pas, angle lissé du haut du corps */
   /** dist : cases parcourues (chenilles) ; pack, packTick : déploiement (1) ou repli (2) d'un chenillard, et son tick de début */
   /** born : temps de simulation (s) où l'organisme est sorti de son œuf (il grandit pendant BIRTH_TIME) */
-  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number; born?: number }>();
+  anim = new Map<number, { phase: number; torso: number; seen: number; dep?: number; lx?: number; lz?: number; warp?: number; dist?: number; pack?: number; packTick?: number; born?: number; hit?: number; hitTick?: number }>();
   /** éclosions récentes (t0 : temps de simulation, s) : l'organisme qui apparaît là sort de son œuf */
   hatches: { x: number; z: number; t0: number }[] = [];
   /** coques vides des œufs éclos : elles se fanent puis rentrent dans le sol (voir eggAnim.ts) */
@@ -466,7 +471,8 @@ export class Entities {
         // léviathan : il nage le ventre sous la surface, et se hisse sur la rive
         if (u.key === "leviathan") return Math.max(g, water - 0.55);
         // amphibie (Transhumants) : il roule sur la terre, et flotte sur l'eau, la caisse à demi immergée
-        if (!u.altitude) return Math.max(g, water - u.radius / TILE / 4);
+        // (un robot à pattes marche au fond tant qu'il a pied)
+        if (!u.altitude) return Math.max(g, water - (WADE[u.key] ?? u.radius / TILE / 4));
         return Math.max(g, water) + u.altitude / TILE;
       case Layer.Air:
         return Math.max(g, water) + u.altitude / TILE;

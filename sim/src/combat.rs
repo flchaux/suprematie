@@ -233,7 +233,7 @@ fn target_ok(w: &World, team: u8, wi: usize, t: u32, x: i32, y: i32) -> bool {
     false
 }
 
-fn find_target(w: &World, team: u8, wi: usize, x: i32, y: i32) -> u32 {
+pub(crate) fn find_target(w: &World, team: u8, wi: usize, x: i32, y: i32) -> u32 {
     let wd = &WEAPONS[wi];
     let r = wd.range * TILE;
     let mut best = NONE;
@@ -363,8 +363,9 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         w.hit_from = (x, y);
         w.hit_weapon = wi as u8;
         if wd.aoe > 0 {
-            // griffes qui balaient (béhémoth)
+            // griffes qui balaient (béhémoth), houlette du Berger
             area_damage(w, tx, ty, wd.aoe, dmg, owner, wd.mask, false);
+            stun_area(w, owner, wd, tx, ty);
         } else {
             hit_ref(w, t, dmg, owner, 0);
         }
@@ -553,6 +554,9 @@ pub fn unit_weapons(w: &mut World, s: usize, forced: u32) {
                     mult *= 3;
                 }
             }
+            if kind == U_MASTIFF {
+                mult = mult * crate::troupeau::pack_mult(w, s) / 100;
+            }
             let me = w.unit_id(s);
             if kind == U_COMMANDO {
                 // le tir trahit le commando pendant 5 s
@@ -740,6 +744,9 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     let o = w.units.owner[s];
     if udef(w.units.kind[s]).bio && crate::essaim::spiny(w, o) {
         crate::essaim::thorns(w, dmg, o);
+    } else if crate::troupeau::spiked(w, s) {
+        // collier à clous du Mâtin : la moitié
+        crate::essaim::thorns(w, dmg * 3 / 2, o);
     }
 }
 
@@ -969,7 +976,43 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
     w.shooter = NONE;
     w.hit_from = (i32::MIN, 0);
     w.hit_weapon = 255;
+    if p.weapon == W_MASTIFF_HARPOON {
+        crate::troupeau::reel(w, p.src, p.target);
+    }
     true
+}
+
+/// Étourdit les ennemis de la zone de l'arme `wd` du joueur `owner` autour de (x, y) qu'elle peut viser (les avions
+/// au-dessus passent) ; rien pour une arme qui n'étourdit pas.
+fn stun_area(w: &mut World, owner: u8, wd: &WeaponDef, x: i32, y: i32) {
+    if wd.stun == 0 {
+        return;
+    }
+    let team = w.team_of(owner);
+    let r2 = (wd.aoe as i64).pow(2);
+    let mut stun_u = Vec::new();
+    let units = &w.units;
+    w.grid.fine.query(x, y, wd.aoe + 320, |o| {
+        if units.alive[o] && dist2(x, y, units.x[o], units.y[o]) <= r2 {
+            stun_u.push(o);
+        }
+    });
+    for o in stun_u {
+        // (la houlette électrique ne paralyse pas un géant)
+        if wd.proj == Proj::Bite && udef(w.units.kind[o]).tier == 6 {
+            continue;
+        }
+        if w.team_of(w.units.owner[o]) != team && layer_mask(w, o) & wd.mask != 0 {
+            w.units.cold[o].stun = w.units.cold[o].stun.max(wd.stun);
+        }
+    }
+    let mut stun_b = Vec::new();
+    w.grid.query_buildings(x, y, wd.aoe, |b| stun_b.push(b));
+    for b in stun_b {
+        if wd.mask & M_SURF != 0 && w.buildings[b].alive && w.team_of(w.buildings[b].owner) != team {
+            w.buildings[b].stun = w.buildings[b].stun.max(wd.stun);
+        }
+    }
 }
 
 fn impact(w: &mut World, p: &Projectile) {
@@ -999,29 +1042,7 @@ fn impact(w: &mut World, p: &Projectile) {
             crate::essaim::spill_from(w, p.weapon, p.owner, p.tx, p.ty);
         }
         area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
-        if wd.stun > 0 {
-            // étourdit les ennemis de la zone que l'arme peut viser (les avions au-dessus passent)
-            let r2 = (p.aoe as i64).pow(2);
-            let mut stun_u = Vec::new();
-            let units = &w.units;
-            w.grid.fine.query(p.tx, p.ty, p.aoe + 320, |o| {
-                if units.alive[o] && dist2(p.tx, p.ty, units.x[o], units.y[o]) <= r2 {
-                    stun_u.push(o);
-                }
-            });
-            for o in stun_u {
-                if w.team_of(w.units.owner[o]) != team && layer_mask(w, o) & wd.mask != 0 {
-                    w.units.cold[o].stun = w.units.cold[o].stun.max(wd.stun);
-                }
-            }
-            let mut stun_b = Vec::new();
-            w.grid.query_buildings(p.tx, p.ty, p.aoe, |b| stun_b.push(b));
-            for b in stun_b {
-                if wd.mask & M_SURF != 0 && w.buildings[b].alive && w.team_of(w.buildings[b].owner) != team {
-                    w.buildings[b].stun = w.buildings[b].stun.max(wd.stun);
-                }
-            }
-        }
+        stun_area(w, p.owner, wd, p.tx, p.ty);
         return;
     }
     // coup direct : la cible doit encore être là
@@ -1296,11 +1317,12 @@ pub fn update_visibility(w: &mut World) {
         let (x, y) = (w.units.x[s], w.units.y[s]);
         // Transhumants : radar, vision et brouillage selon les améliorations
         let (vision, radar, jam) = (crate::ameliorations::unit_vision(w, s), crate::ameliorations::unit_radar(w, s), crate::ameliorations::unit_jam(w, s));
+        let near = crate::troupeau::near_vision(w, s);
         let vis = &mut w.vis[team];
         found[team] += stamp(vis, x, y, vision, 1 | 8);
         // détection rapprochée : un commando camouflé est repéré à quelques cases
         if d.vision > 0 {
-            stamp(vis, x, y, 3, VIS_NEAR);
+            stamp(vis, x, y, near, VIS_NEAR);
         }
         if jam > 0 {
             stamp(vis, x, y, jam, VIS_JAM);

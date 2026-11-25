@@ -103,7 +103,7 @@ pub fn fixed_wing(kind: u16) -> bool {
 pub fn legged(kind: u16) -> bool {
     matches!(
         udef(kind).key,
-        "behemoth" | "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l"
+        "behemoth" | "commander" | "line_robot" | "assault_walker" | "siege_walker" | "shock_robot" | "heavy_artillery" | "spider" | "colossus" | "fortress" | "beast_s" | "beast_m" | "beast_l" | "mastiff" | "shepherd"
     )
 }
 
@@ -328,7 +328,7 @@ fn try_move(w: &mut World, s: usize, vx: i32, vy: i32) {
 }
 
 /// Oublie le champ de flux de l'unité s'il mène ailleurs qu'en (tx, ty) (à plus de 6 cases).
-fn retarget(w: &mut World, s: usize, tx: i32, ty: i32) {
+pub(crate) fn retarget(w: &mut World, s: usize, tx: i32, ty: i32) {
     let g = w.units.cold[s].goal;
     if g != 0 {
         let gt = (g & 0xffff_ffff) as i32;
@@ -740,6 +740,13 @@ pub fn update_units(w: &mut World) {
 
 /// Exécute l'ordre courant. Renvoie la cible imposée aux armes (ou NONE).
 fn run_order(w: &mut World, s: usize) -> u32 {
+    // Mâtin, Berger : il court sus à l'ennemi qui approche
+    if matches!(w.units.kind[s], U_MASTIFF | U_SHEPHERD) {
+        let prey = crate::troupeau::chase(w, s);
+        if prey != NONE {
+            return prey;
+        }
+    }
     let Some(&o) = w.units.cold[s].orders.first() else {
         idle(w, s);
         return NONE;
@@ -1268,6 +1275,10 @@ pub fn max_range(kind: u16) -> i32 {
 }
 
 fn has_target_in_range(w: &World, s: usize) -> bool {
+    // au corps-à-corps, l'arme de plus tire en chemin : elle n'arrête pas l'unité
+    if crate::troupeau::brawler(w, s) {
+        return w.units.cold[s].wtarget[0] != NONE;
+    }
     w.units.cold[s].wtarget.iter().any(|&t| t != NONE)
 }
 
@@ -1541,27 +1552,8 @@ fn special(w: &mut World, s: usize) {
                 }
             }
         }
-        U_COLOSSUS => {
-            // écrase les petites unités ennemies sous ses pieds
-            let (x, y) = (w.units.x[s], w.units.y[s]);
-            let team = w.team_of(owner as u8);
-            let r = udef(kind).radius;
-            let mut hits = Vec::new();
-            let units = &w.units;
-            w.grid.fine.query(x, y, r, |o| {
-                if units.alive[o] && units.cold[o].carried_by == NONE {
-                    let od = udef(units.kind[o]);
-                    if matches!(od.layer, Layer::Land | Layer::Hover) && od.radius < 300 && dist2(x, y, units.x[o], units.y[o]) < (r as i64 * r as i64) {
-                        hits.push(o);
-                    }
-                }
-            });
-            for o in hits {
-                if w.team_of(w.units.owner[o]) != team {
-                    crate::combat::damage_unit(w, o, 150, owner as u8);
-                }
-            }
-        }
+        // écrase les petites unités ennemies sous ses pieds
+        U_COLOSSUS => crate::troupeau::stomp(w, s, 150, false),
         _ => {}
     }
 }

@@ -1,7 +1,7 @@
 // Rendu des entités : modèle d'une sorte d'entité (unité, bâtiment, objet, véhicule) et ses maillages
 // instanciés, le corps et un maillage par pièce mobile.
 import * as THREE from "three/webgpu";
-import { parseCond, parseDep, type buildModel, type DepStep, type PivotCond } from "../../models/generator.ts";
+import { parseCond, parseDep, parseStrike, type buildModel, type DepStep, type PivotCond, type Strike } from "../../models/generator.ts";
 import { teamInstancedMesh, type TeamMesh } from "../materials.ts";
 
 export type Built = ReturnType<typeof buildModel>;
@@ -13,7 +13,9 @@ export type Built = ReturnType<typeof buildModel>;
  */
 export class KindMesh {
   body: TeamMesh | null = null;
-  pivots: { tm: TeamMesh; /** instances de cette image, pour une pièce d'amélioration (les autres : `n` du modèle) */ n: number; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null; cond: PivotCond | null; fixed: boolean }[] = [];
+  pivots: { tm: TeamMesh; /** instances de cette image, pour une pièce d'amélioration (les autres : `n` du modèle) */ n: number; origin: THREE.Vector3; spin: boolean; leg: number; wave: number; mode: number; slide: number; dep: DepStep[] | null; cond: PivotCond | null; fixed: boolean; strike: Strike | null }[] = [];
+  /** axe du haut du corps (origine du pivot « tourelle », à l'échelle) : les pivots de frappe tournent autour */
+  turretAt = new THREE.Vector3();
   cap = 0;
   n = 0;
   private builtV: Built | null;
@@ -44,7 +46,7 @@ export class KindMesh {
   }
   /** le modèle a des jambes articulées (pivots « jambe… ») */
   get legs(): boolean {
-    return this.built.pivots.some((p) => /^jambe/.test(p.name));
+    return this.built.pivots.some((p) => /^jambe/.test(parseCond(p.name)?.base ?? p.name));
   }
   /** niveau de détail réduit (caméra lointaine) : géométries sans les pièces fines */
   lo = false;
@@ -79,7 +81,7 @@ export class KindMesh {
       const cond = parseCond(p.name);
       const name = cond?.base ?? p.name;
       // jambe : 1 ou 2 selon la phase (gauche ou arrière décalée d'un demi-pas), 0 sinon
-      const leg = /^jambe/.test(p.name) ? 1 + (Number(/_g\b|_g_|_g$/.test(p.name)) ^ Number(/_ar/.test(p.name))) : 0;
+      const leg = /^jambe/.test(name) ? 1 + (Number(/_g\b|_g_|_g$/.test(name)) ^ Number(/_ar/.test(name))) : 0;
       // anneau d'un corps qui ondule (« ondule1 », « ondule2 »… de la tête vers la queue), 0 sinon
       const wave = Number(/^ondule(\d+)/.exec(p.name)?.[1] ?? 0);
       // droïde roulant : 1 « boule » (roulé), 2 « deplie… » (déployé), 3 « deplie_tourelle » (déployé, vise) ;
@@ -88,8 +90,10 @@ export class KindMesh {
       // « chenille_p0.25 » : crampons du brin supérieur d'une chenille, qui glissent vers l'avant quand l'unité
       // roule, d'un pas (0,25 unité du modèle) par période ; 0 sinon
       const slide = Number(/^chenille_p([\d.]+)/.exec(name)?.[1] ?? 0);
-      return { tm, n: 0, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(name), cond, fixed: !!cond && /^fixe/.test(name) };
+      return { tm, n: 0, origin: p.origin.clone().multiplyScalar(this.scale), spin: /rotor|helice|foret|radar|cristal|feu/.test(name) || (!cond && /emetteur/.test(name)), leg, wave, mode, slide, dep: parseDep(name), cond, fixed: !!cond && /^fixe/.test(name), strike: parseStrike(name) };
     });
+    const tur = this.built.pivots.find((p) => (parseCond(p.name)?.base ?? p.name) === "tourelle");
+    this.turretAt.copy(tur?.origin ?? this.turretAt.set(0, 0, 0)).multiplyScalar(this.scale);
     this.cap = cap;
   }
   begin(): void {

@@ -22,6 +22,8 @@ import { annexesAssembleur, annexesFonderie, annexesForeuse, annexesRaffinerie }
 import { annexesAtelier, annexesBastion, annexesGenerateur, annexesLaboratoire, annexesSoute } from "./nomades/annexes-service.ts";
 import { ameliorationsArche, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
 import { remorqueArche } from "./nomades/remorque.ts";
+import { matin } from "./nomades/matin.ts";
+import { berger, ECHASSES } from "./nomades/berger.ts";
 import {
   ARME_CANON, ARME_CAVALIER, ARME_HERSE, ARME_PISTEUR, BOUCLIER_CANON, COFFRE_HERSE, DENTS_BELIER, PLAGE_CAVALIER, POUPE_BELIER,
   equipementBelier, equipementCanon, equipementCavalier, equipementHerse, equipementPisteur, groupe, noyau,
@@ -297,4 +299,8 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       ...equipementBelier(),
     ],
   },
+  // mastiff : Mâtin, chien de garde mécanique (voir nomades/matin.ts)
+  mastiff: { parts: matin() },
+  // shepherd : Berger, géant à houlette (voir nomades/berger.ts) ; ses échasses le soulèvent
+  shepherd: { parts: berger(), lift: { shepherd_stilts: ECHASSES } },
 });

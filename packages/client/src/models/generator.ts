@@ -77,6 +77,8 @@ export interface BuiltModel {
   body: THREE.BufferGeometry;
   /** jeu de matières du modèle (les trappes ajoutées après coup le reprennent) */
   skin?: Model["skin"];
+  /** améliorations qui rehaussent l'unité (clé, hauteur en unités du modèle ; absent : aucune) */
+  lift?: [string, number][];
   /** corps sans les pièces fines (niveau de détail réduit) ; absent si le modèle n'a pas de pièce fine */
   bodyLo?: THREE.BufferGeometry;
   pivots: BuiltPivot[];
@@ -695,6 +697,7 @@ export function buildModel(model: Model): BuiltModel {
   const box = hi.box.isEmpty() ? new THREE.Box3(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5)) : hi.box;
   const built: BuiltModel = { body: hi.body, pivots, box, triangles: hi.triangles, trianglesLo: useLo ? lo!.triangles : hi.triangles };
   if (model.skin) built.skin = model.skin;
+  if (model.lift) built.lift = Object.entries(model.lift);
   if (useLo) built.bodyLo = lo!.body;
   builtCache.set(model, built);
   return built;
@@ -714,6 +717,22 @@ export function parseCond(name: string): PivotCond | null {
   const all = m[2].split("&").map((t) => (t.startsWith("!") ? { on: !on, keys: t.slice(1).split("+") } : { on, keys: t.split("+") }));
   return { on, all, base: m[3] };
 }
+/**
+ * Frappe (mâchoire, bras, houlette) : pivot « coup|x,DEG#nom ». Modélisée au repos, la pièce tourne de DEG degrés
+ * autour de l'axe donné, par son origine, quand l'unité frappe, puis revient ; elle suit l'orientation du haut du corps.
+ */
+export interface Strike { axis: "x" | "y" | "z"; rad: number }
+export function parseStrike(name: string): Strike | null {
+  const m = /^coup\|([xyz]),(-?[\d.]+)#/.exec(name);
+  return m ? { axis: m[1] as "x" | "y" | "z", rad: (Number(m[2]) * Math.PI) / 180 } : null;
+}
+/** Avancement d'une frappe (0 au repos, 1 au plus fort) `age` secondes après le coup, sur une durée `T`. */
+export function strikePhase(age: number, T: number): number {
+  if (age < 0 || age >= T) return 0;
+  const up = T * 0.28;
+  return age < up ? 1 - (1 - age / up) ** 2 : 1 - (age - up) / (T - up);
+}
+
 /** Le pivot est-il dessiné, avec ces améliorations (clés) installées ? */
 export function condShown(c: PivotCond | null, has: (key: string) => boolean): boolean {
   return !c || c.all.every((t) => t.keys.some(has) === t.on);

@@ -5,12 +5,12 @@
 // les coques vides des œufs éclos.
 import * as THREE from "three/webgpu";
 import { UNIT_WORDS, UF, Layer } from "@supreme/shared";
-import { condShown, depMatrix } from "../../models/generator.ts";
+import { condShown, depMatrix, strikePhase } from "../../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "../eggAnim.ts";
 import { setTeamColor } from "../materials.ts";
 import { groundHeight, HSCALE } from "../terrain.ts";
 import type { Entities } from "../entities.ts";
-import { ANG, ORDER_TAME, TAME_SHOW, TILE, UP, ZAXIS, tmpC, tmpM, tmpM2, tmpQ, tmpQ2, tmpQ3, tmpS, tmpV, tmpV2, type FrameCtx } from "./common.ts";
+import { ANG, ORDER_TAME, TAME_SHOW, TILE, UP, ZAXIS, tmpC, tmpM, tmpM2, tmpM3, tmpQ, tmpQ2, tmpQ3, tmpS, tmpV, tmpV2, type FrameCtx } from "./common.ts";
 
 /** code de l'ordre de récolte du commandant (Order::Harvest), dans le mot aux des unités */
 const ORDER_HARVEST = 16;
@@ -107,6 +107,13 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / packLen) : 0;
     // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
     let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : def.turret && flags & UF.DEPLOYED ? 1 : 0;
+    // frappe (mâchoire, houlette) : part au tick où l'unité tire ou mord
+    if (flags & UF.FIRING && st.hitTick !== f.tick) {
+      st.hitTick = f.tick;
+      st.hit = simT;
+    }
+    // échasses : tout le modèle est rehaussé
+    if (km.built.lift) for (const [k, h] of km.built.lift) if (has(k)) bob += h * km.scale;
     if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
     tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);
     // œuf de la Souche : il respire, s'agite avant d'éclore, puis ouvre ses lèvres (le temps restant tient
@@ -172,6 +179,12 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
         const amp = Math.min(1, (p.wave - 1) * 0.35) * 0.45 * sc;
         tmpM2.multiply(new THREE.Matrix4().makeTranslation(Math.sin(ph) * amp, Math.sin(ph * 0.5 + p.wave) * amp * 0.25, 0));
         tmpM2.multiply(new THREE.Matrix4().makeRotationY(Math.cos(ph) * 0.35 * Math.min(1, (p.wave - 1) * 0.35)));
+      } else if (p.strike) {
+        // pièce qui frappe : portée par le haut du corps, elle tourne autour de son origine au moment du coup
+        const t0 = km.turretAt;
+        tmpM2.makeTranslation(t0.x * og, t0.y * og, t0.z * og).multiply(tmpM3.makeRotationY(st.torso)).multiply(tmpM3.makeTranslation((p.origin.x - t0.x) * og, (p.origin.y - t0.y) * og, (p.origin.z - t0.z) * og));
+        const a = p.strike.rad * strikePhase(simT - (st.hit ?? -9), def.tier === 6 ? 1.1 : 0.4);
+        tmpM2.multiply(p.strike.axis === "x" ? tmpM3.makeRotationX(a) : p.strike.axis === "y" ? tmpM3.makeRotationY(a) : tmpM3.makeRotationZ(a));
       } else if (p.leg !== 0) {
         // jambes opposées (gauche / droite, avant / arrière) : balancement autour de la hanche
         tmpM2.multiply(new THREE.Matrix4().makeRotationX(Math.sin(st.phase + (p.leg > 1 ? Math.PI : 0)) * 0.55 * walk));

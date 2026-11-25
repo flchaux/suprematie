@@ -673,6 +673,8 @@ pub struct World {
     pub royal: Vec<u16>,
     /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
     pub arks: Vec<crate::ameliorations::Ark>,
+    /// Transhumants : Bergers en jeu et leur troupeau (dérivé, refait à chaque tick ; voir troupeau.rs)
+    pub flock: Vec<crate::troupeau::Flock>,
 }
 
 impl World {
@@ -782,6 +784,7 @@ impl World {
             eaters: Vec::new(),
             royal: Vec::new(),
             arks: Vec::new(),
+            flock: Vec::new(),
         };
         w.wear = vec![0; w.map.spots.len()];
         for p in 0..np {
@@ -1054,6 +1057,7 @@ impl World {
         crate::drones::plan(self);
         crate::belts::update_belts(self);
         crate::nature::update(self);
+        crate::troupeau::begin_tick(self);
         crate::units::update_units(self);
         crate::essaim::update_units(self);
         crate::souche::regen_organs(self);

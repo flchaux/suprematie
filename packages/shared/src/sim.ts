@@ -47,6 +47,7 @@ export interface SimExports {
   relais_demo(): number;
   nomades_demo(): number;
   gue_demo(): number;
+  robots_demo(): number;
   arche_demo(): number;
   unit_orders(nBytes: number): number;
   planned_builds(player: number): number;
@@ -251,6 +252,9 @@ export class Sim {
     return this.ex.lifts_demo() >>> 0;
   }
   /** Démo des Transhumants (soute, chariots de convoi en navette, générateur et poteaux). */
+  robotsDemo(): number {
+    return this.ex.robots_demo() >>> 0;
+  }
   gueDemo(): number {
     return this.ex.gue_demo() >>> 0;
   }
