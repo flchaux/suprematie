@@ -446,3 +446,27 @@ describe("données", () => {
     expect(b.logistic_relay).toBeDefined();
   });
 });
+
+describe("commandant sur l'eau (Arche, amphibie)", () => {
+  const at = (g: Game, x: number, y: number, buildings: BotView["buildings"]): SkirmishAI => {
+    const ai = mkAI(g, 0);
+    face(g, ai, 30000, []);
+    const cmd = g.view.players[1].commander;
+    const units = g.view.units.map((u) => (u.id === cmd ? { ...u, x: x * TILE, y: y * TILE } : u));
+    ai.view = { ...g.view, units, buildings };
+    ai.ix = indexView(ai.view);
+    ai.unitMap = null;
+    return ai;
+  };
+  it("sa base à terre reste une cible ; sans base à terre, il n'est plus joignable à pied", () => {
+    const sea = usefulSea(lake.map, 0, [1]);
+    const W = watersOf(lake.map);
+    const cell = W.comp.findIndex((c) => c === sea);
+    const [wx, wy] = [cell % lake.map.w, (cell / lake.map.w) | 0];
+    const [sx, sy] = lake.map.starts[1];
+    const base = { ...lake.view.buildings[0], owner: 1, x: sx, y: sy };
+    expect(at(lake, sx, sy, []).reachable(1)).toBe(true);
+    expect(at(lake, wx, wy, [base]).reachable(1)).toBe(true);
+    expect(at(lake, wx, wy, []).reachable(1)).toBe(false);
+  });
+});

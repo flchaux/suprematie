@@ -256,14 +256,18 @@ export class SkirmishAI implements Bot {
     const c = this.unitById(this.view.players[i].commander);
     return c ? [c.x, c.y] : [this.ctx.map.starts[i][0] * TILE + TILE / 2, this.ctx.map.starts[i][1] * TILE + TILE / 2];
   }
-  /** Le joueur est-il joignable par la terre depuis notre base ? */
+  /**
+   * Le joueur est-il joignable par la terre depuis notre base ? Son commandant est sur notre terre ou, s'il est sur
+   * l'eau (Arche, amphibie), un de ses bâtiments.
+   */
   reachable(i: number): boolean {
     const comp = landComponents(this.ctx.map);
+    const w = this.ctx.map.w;
     const [hx, hy] = this.home;
     const [x, y] = this.playerPos(i);
-    const a = comp[hy * this.ctx.map.w + hx];
-    const b = comp[Math.floor(y / TILE) * this.ctx.map.w + Math.floor(x / TILE)];
-    return a >= 0 && a === b;
+    const a = comp[hy * w + hx];
+    const b = comp[Math.floor(y / TILE) * w + Math.floor(x / TILE)];
+    return a >= 0 && (a === b || (b < 0 && (this.ix.buildingsBy[i] ?? []).some((o) => comp[o.y * w + o.x] === a)));
   }
   anyUnreachable(): boolean {
     for (let i = 0; i < this.view.players.length; i++) {

@@ -26,7 +26,7 @@ Dossier `packages/server/src/bots/`. `ai.ts` ne garde que la classe `SkirmishAI`
 | Module | Thème |
 | --- | --- |
 | `strategy.ts` | Adversaire visé (`pickTarget`), rapports de force (`analyse`), objectifs d'attaque (`objective`), appels à l'aide entre alliés |
-| `land.ts` | Terres joignables à pied (`landComponents`, `landNear`) |
+| `land.ts` | Terres joignables à pied (`landComponents`, `landNear`). Un adversaire est joignable (`SkirmishAI.reachable`) si son commandant est sur la même terre ou, quand ce commandant est sur l'eau (Arche des Transhumants), si un de ses bâtiments y est |
 | `engineers.ts` | Gestionnaire des ingénieurs : chantiers (`Project`), bâtisseurs, coûts et réserves, recyclage des épaves |
 | `builders.ts` | Liste des builders d'ingénieurs et leurs priorités (`engBuilders`), fabrication des chantiers (emplacements des modules, extracteurs, tourelles, dépôts, modules) |
 | `fuel.ts` | Combustible des générateurs : dépôts collés, mines de combustible |
