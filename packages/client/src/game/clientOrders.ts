@@ -304,14 +304,16 @@ export function contextCommand(c: GameClient, x: number, y: number, queue: boole
       return;
     }
     // chariots de convoi sur un de nos modules éloignés : navette avec leur soute (Maj : livrer à ce fabricant)
+    // sur une soute : lui porter ce que la leur a de plus (la leur : rentrer et décharger)
     const carts = units.filter((u) => c.data!.units[u.kind].key === "t_cart").map((u) => u.id);
-    if (carts.length && canPickup(c, def.cls, tb.build)) {
-      const feed = queue && def.cls === BClass.Crafter;
+    const hold = def.key === "t_hold" && tb.build >= 65536;
+    if (carts.length && (hold || canPickup(c, def.cls, tb.build))) {
+      const feed = hold || (queue && def.cls === BClass.Crafter);
       c.cmd(Ord.haul(carts, tb.ref, feed));
       const rest = units.filter((u) => !carts.includes(u.id));
       if (rest.length) c.cmd(Ord.move(rest, gx, gy, queue, false));
       c.scene?.addMarker(g.x, g.z, 0xffc83c);
-      pushMessage(feed ? `Convoi : la soute livre à ${def.name.toLowerCase()} les ingrédients de sa recette` : `Convoi : ce qui sort de ${def.name.toLowerCase()} est rapporté à la soute (Maj+clic droit sur un fabricant : le livrer)`, "info");
+      pushMessage(hold ? "Convoi : la soute du chariot porte à celle-ci ce qu'elle a de plus, jusqu'à égalité" : feed ? `Convoi : la soute livre à ${def.name.toLowerCase()} les ingrédients de sa recette` : `Convoi : ce qui sort de ${def.name.toLowerCase()} est rapporté à la soute (Maj+clic droit sur un fabricant : le livrer)`, "info");
       sfx.confirm();
       return;
     }

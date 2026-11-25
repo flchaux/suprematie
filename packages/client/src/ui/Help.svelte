@@ -29,7 +29,7 @@
     <div class="two">
       <div>
         <h3>But</h3>
-        <p>Détruire le robot de commandement de chaque adversaire. Quand il est détruit, il explose et son joueur est éliminé. La dernière équipe qui a encore un robot de commandement gagne.</p>
+        <p>Détruire l'unité de commandement de chaque adversaire (robot de commandement, Reine ou Arche). Quand elle est détruite, son joueur est éliminé. La dernière équipe qui en a encore une gagne.</p>
         <h3>Économie</h3>
         <ul>
           <li>Il n'y a pas de réserve commune : chaque <b>dépôt</b> garde son propre stock (affiché dans sa fiche ; le total de vos dépôts est en haut). Vous commencez sans dépôt : les ressources de départ sont dans la soute du robot de commandement, qui compte comme un dépôt (le total du haut l'inclut).</li>
@@ -52,9 +52,13 @@
           <h3>Transhumants</h3>
           <ul>
             <li><b>Améliorations</b> : sélectionnez l'<b>Arche</b> seule. Elle a cinq emplacements (armement, coque, pont, mobilité, soutien) ; chacun ne garde qu'une branche. Une amélioration coûte des composants (soute de l'Arche, réserves et soutes repliées à moins de 30 cases) et des relevés, et s'installe en 25 à 90 s, même en roulant ; l'annuler rend tout, la remplacer par une autre branche rend la moitié des composants.</li>
-            <li>Chaque <b>module</b> et chaque <b>unité</b> a un aménagement au choix parmi deux, dans sa fiche ; un module le garde quand il se replie et se redéploie. Plusieurs unités du même type se sélectionnent et s'équipent ensemble.</li>
+            <li><b>Amphibie</b> : l'Arche, ses remorques, les chenillards, les chariots et toutes vos unités traversent l'eau. Un module ne se déploie que sur la terre ; sur l'eau, vos unités craignent les torpilles.</li>
+            <li><b>Soute</b> : elle alimente les fabricants collés à ses faces. Les ateliers passent avant : elle garde pour eux ce qui manque à leur prochaine unité. Dès qu'elle a 100 exemplaires d'un produit, elle garde aussi les 40 derniers de ses ingrédients. Une fonderie « Automatique » collée à une soute fond son minerai le plus abondant.</li>
+            <li><b>Chariots</b> (six par soute, payés par elle puis par les réserves à moins de 30 cases) : clic droit sur un module pour rapporter sa production, Maj+clic droit sur un fabricant pour le ravitailler, clic droit sur une autre soute pour lui porter ce que la leur a de plus. Ils reprennent leur navette quand leur soute est repliée puis redéployée.</li>
+            <li><b>Atelier perdu</b> : l'Arche peut toujours refaire un chenillard atelier, cinq fois plus lentement qu'un atelier, payé dans sa soute et les réserves à moins de 30 cases.</li>
+            <li>Chaque <b>module</b> a deux emplacements (rendement, spécialité), chaque <b>unité de combat</b> trois (arme, châssis, équipement) et chaque chariot un, dans leur fiche ; un module garde les siens quand il se replie et se redéploie. Plusieurs unités du même type se sélectionnent et s'équipent ensemble, ou sortent de l'atelier selon un gabarit.</li>
             <li><b>Tourelles</b> (pont) : 1, 3 puis 9. « Déployer » (touche {keyOf("deploy") || "Déployer"}) les pose autour de l'Arche à l'arrêt. Consigne « suivre » : elles rentrent quand l'Arche part et se redéploient où elle s'arrête ; « tenir la place » : elles restent en avant-poste jusqu'au rappel. Une tourelle détruite se reconstruit à bord (30 s, payée).</li>
-            <li><b>Relevés</b> : gagnés en explorant et en détruisant des ennemis ; ils paient la recherche et une part des améliorations. La recherche débloque surtout des améliorations.</li>
+            <li><b>Relevés</b> : gagnés en explorant (un par carré de 8 × 8 cases découvert) et en détruisant des ennemis ; ils paient la recherche et une part des améliorations. La recherche débloque surtout des améliorations.</li>
           </ul>
         {/if}
         <h3>Furtivité et radar</h3>

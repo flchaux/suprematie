@@ -343,8 +343,10 @@ export class GameClient {
     if (!me || !this.data) return false;
     return !hasTech(me, t) && this.data.techs[t].prereq.every((p) => hasTech(me, p));
   }
-  unitLayerName(l: number): string {
-    return ["Terre", "Aéroglisseur", "Mer", "Sous-marin", "Air"][l] ?? "";
+  /** milieu d'une unité (couche et altitude de sa fiche) : un glisseur posé au sol est un amphibie */
+  unitLayerName(u: { layer: number; altitude: number }): string {
+    if (u.layer === Layer.Hover && !u.altitude) return "Amphibie";
+    return ["Terre", "Aéroglisseur", "Mer", "Sous-marin", "Air"][u.layer] ?? "";
   }
   factoryName(f: number): string {
     return ["", "terrestre", "aérienne", "navale", "expérimentale"][f] ?? "";

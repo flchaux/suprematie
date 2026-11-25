@@ -77,7 +77,7 @@ export const BUILDING_DESCS: Record<string, string> = {
   t_assembler: "Recettes de l'assembleur ; échange avec les modules collés. Garde sa recette au repli.",
   t_refinery: "Raffine l'hydrocarbure en carburant, et le cristal une fois la recherche faite.",
   t_generator: "Alimente les modules proches. Brûle hydrocarbure ou carburant, gardé au repli.",
-  t_hold: "Dépôt des Transhumants : sert les modules collés et les drones. Garde son stock au repli.",
+  t_hold: "Dépôt des Transhumants : sert les ateliers, puis les modules collés. Garde son stock et ses navettes au repli.",
   t_lab: "Change les relevés en recherche ; sans relevés, en tire lentement des environs.",
   t_workshop: "Produit chenillards et armée. Ses drones prennent les composants dans les soutes proches.",
   t_bastion: "Tourelle lourde à canon cinétique.",

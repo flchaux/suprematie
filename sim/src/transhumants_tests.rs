@@ -418,6 +418,27 @@ fn the_workshop_reserve_never_starves_the_parts_it_waits_for() {
     panic!("jamais lancée : plaques {}, engrenages {}", crate::buildings::factory_has(&w.buildings[s], IRON_PLATE), crate::buildings::factory_has(&w.buildings[s], GEAR));
 }
 
+/// Un fabricant ne vide pas la soute pour un produit qu'elle a déjà en nombre ; tant que l'ingrédient abonde, il continue.
+#[test]
+fn a_crafter_leaves_the_last_plates_of_the_hold_once_its_product_abounds() {
+    let (mut w, x, y) = base();
+    let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
+    put(&mut w, B_T_ASSEMBLER, x - 2, y + 20, rec("gear"));
+    stock(&mut w, h, IRON_PLATE, 100);
+    stock(&mut w, h, GEAR, 80);
+    steps(&mut w, 6000);
+    // 80 engrenages, puis 60 plaques de plus en font 30 : les 40 dernières restent
+    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (40, 110));
+    // des plaques de plus : il reprend
+    stock(&mut w, h, IRON_PLATE, 50);
+    steps(&mut w, 6000);
+    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (40, 135));
+    // plus d'engrenages en nombre : il prend tout
+    w.buildings[h].stash[GEAR as usize] = 0;
+    steps(&mut w, 6000);
+    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (0, 20));
+}
+
 // ---------- repli ----------
 
 /// Replier un module surcadencé rend ses fragments d'énergie.

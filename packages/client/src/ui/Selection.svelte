@@ -5,7 +5,8 @@
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
-  import { BClass, RECIPE_NONE, ADN, SEVE, SELS, PACK1, HYDROCARBON, ENERGY_CELL, pausableClass } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, ADN, SEVE, SELS, PACK1, HYDROCARBON, ENERGY_CELL, RACE_TRANSH, pausableClass } from "@supreme/shared";
+  import { recipeOfRace } from "../game/research.ts";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
   import Upgrades from "./Upgrades.svelte";
@@ -98,7 +99,7 @@
   const broodFull = $derived(!!brood && brood.litters.length >= brood.max);
   /** vitesse effective d'un fabricant : niveau de la fonderie compris (comme crafter_speed dans la simulation) */
   const cspeed = $derived(bdef ? (bdef.speed * (bdef.key === "furnace" ? (d?.furnaceLevels?.[info?.level ?? 0]?.speed ?? 100) : (info?.transh?.speed ?? 100))) / 100 : 100);
-  const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter) : []);
+  const allRecipes = $derived(bdef && d && bdef.cls === BClass.Crafter ? d.recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.crafter === bdef.crafter && recipeOfRace(d, ui.race, r)) : []);
   // seulement les recettes débloquées par nos recherches (les autres apparaissent dans l'écran des recettes)
   const recipes = $derived(allRecipes.filter(({ r }) => hasTechUI(r.tech)));
   const lockedRecipes = $derived(allRecipes.length - recipes.length);
@@ -384,9 +385,9 @@
       {#if info.transh?.mods}<Upgrades mi={info.transh.mods} refs={[sb.ref]} />{/if}
       {#if info.transh?.cartsMax}
         {@const tc = info.transh}
-        <div class="row small" title="Clic droit sur un module : rapporter sa production. Maj+clic droit : le ravitailler.">
+        <div class="row small" title="Avec un chariot, clic droit sur un module : rapporter sa production ; Maj+clic droit sur un fabricant : le ravitailler ; clic droit sur une autre soute : lui porter ce que celle-ci a de plus.">
           <span class="kicker">Chariots</span> <b class="num">{tc.carts}</b><span class="dim"> / <span class="num">{tc.cartsMax}</span></span>
-          {#if tc.carts < tc.cartsMax}<button class="icon-btn" onclick={() => client.hitchCart()} title="Atteler un chariot de convoi, payé avec le stock de cette soute">Atteler un chariot {#each tc.cartCost as [it, n]}<Item id={it} n={n} size={14} />{/each}</button>{/if}
+          {#if tc.carts < tc.cartsMax}{@const poor = !!tc.mods && !canPay(tc.mods.reach, tc.cartCost)}<button class="icon-btn" disabled={!mine || poor} onclick={() => client.hitchCart()} title={poor ? "Il manque des composants dans les réserves à moins de 30 cases" : "Atteler un chariot de convoi, payé par cette soute, puis par les réserves à moins de 30 cases"}>Atteler un chariot {#each tc.cartCost as [it, n]}<Item id={it} n={n} size={14} />{/each}</button>{/if}
         </div>
       {/if}
       {#if info.transh?.poles}
@@ -819,7 +820,7 @@
             <span class="dim">Dégâts/s</span><span class="num">{st.dps ? st.dps.toFixed(0) : "—"}</span>
             <span class="dim">Portée</span><span class="num">{st.range ? st.range + " cases" : "—"}</span>
             <span class="dim">Vitesse</span><span class="num">{st.speed ? st.speed.toFixed(1) + " cases/s" : "immobile"}</span>
-            <span class="dim">Milieu</span><span>{client.unitLayerName(st.u.layer)}</span>
+            <span class="dim">Milieu</span><span>{client.unitLayerName(st.u)}</span>
             <span class="dim">Vision</span><span class="num">{st.u.vision} cases</span>
           </div>
           {#if ui.selUnits.length === 1 && UNIT_DESCS[st.u.key]}<p class="udesc small">{UNIT_DESCS[st.u.key]}</p>{/if}
@@ -941,7 +942,7 @@
           {#if sprite("units", d.units[g.kind].key)}<img src={sprite("units", d.units[g.kind].key)} alt="" />{:else}<span class="ab">{abbrev(d.units[g.kind].name)}</span>{/if}
           <span class="cnt num">{g.count}</span>
           {#if g.lvl}<span class="vet">{"◆".repeat(g.lvl)}</span>{/if}
-          <span class="tt"><b>{d.units[g.kind].name}</b><br /><span class="num">PV {d.units[g.kind].hp}</span> · {client.unitLayerName(d.units[g.kind].layer)}{#if g.lvl}<br /><span class="good">Vétérance {g.lvl} : +{g.lvl * 10} % de points de vie, +{g.lvl * 5} % de dégâts</span>{/if}<br /><span class="dim">Clic : ne garder que ce type</span></span>
+          <span class="tt"><b>{d.units[g.kind].name}</b><br /><span class="num">PV {d.units[g.kind].hp}</span> · {client.unitLayerName(d.units[g.kind])}{#if g.lvl}<br /><span class="good">Vétérance {g.lvl} : +{g.lvl * 10} % de points de vie, +{g.lvl * 5} % de dégâts</span>{/if}<br /><span class="dim">Clic : ne garder que ce type</span></span>
         </button>
       {/each}
     </div>
@@ -998,8 +999,8 @@
     {#if depUser}
       <div class="status {depUser.owner === ui.me ? 'good' : 'warn'}"><span class="led"></span>Exploité par {depUser.owner === ui.me ? "vous" : (ui.names[depUser.owner] ?? "un autre joueur")} ({d.buildings[depUser.kind]?.name})</div>
     {:else}
-      <div class="status idle"><span class="led"></span>Libre : posez {dep.kind === GEYSER ? "une centrale géothermique" : "un extracteur"} dessus pour l'exploiter</div>
-      {#if client.harvestRecipe(dep.kind) >= 0}<span class="dim small">Ou clic droit avec le commandant, plus lentement.</span>{/if}
+      <div class="status idle"><span class="led"></span>{#if ui.race === RACE_TRANSH}{dep.kind === GEYSER ? "Libre : vos modules ne s'en servent pas" : "Libre : déployez une foreuse dessus pour l'exploiter"}{:else}Libre : posez {dep.kind === GEYSER ? "une centrale géothermique" : "un extracteur"} dessus pour l'exploiter{/if}</div>
+      {#if ui.race === 0 && client.harvestRecipe(dep.kind) >= 0}<span class="dim small">Ou clic droit avec le commandant, plus lentement.</span>{/if}
     {/if}
   </div>
 {/if}

@@ -2,7 +2,7 @@
 // Souche. Fonctions pures, sans état de l'interface : les composants (ui/Research.svelte, ResearchCard.svelte,
 // MutationTree.svelte) leur passent les données de la partie et ce que le joueur a acquis.
 import type { GameData } from "@supreme/shared";
-import { RACE_SOUCHE } from "@supreme/shared";
+import { PACK1, RACE_SOUCHE } from "@supreme/shared";
 
 /** Ce que le joueur a : recherches acquises, recherche en cours (0 : aucune), file d'attente. */
 export interface ResearchState {
@@ -43,6 +43,13 @@ export function raceTechs(d: GameData, race: number): number[] {
     if (i > 0 && (t.race ?? 0) === race) out.push(i);
   });
   return out;
+}
+
+/** Une race peut-elle avoir cette recette ? Sa recherche est à elle (ou acquise avec une des siennes), et un lot de
+ * recherche ne sert qu'aux Industriels. */
+export function recipeOfRace(d: GameData, race: number, r: { tech: number; output: readonly [number, number] }): boolean {
+  if (race !== 0 && r.output[0] >= PACK1 && r.output[0] < PACK1 + 6) return false;
+  return !r.tech || (d.techs[r.tech].race ?? 0) === race || d.techs.some((t) => t.race === race && t.also === r.tech);
 }
 
 /** Recherche interdite par un choix exclusif déjà fait, en cours ou prévu. */

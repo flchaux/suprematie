@@ -4,7 +4,7 @@
 // Méthodes de GameClient (client.ts) sorties en fonctions libres : le client est leur premier paramètre, `c`
 // (`gc` dans les fonctions qui ont déjà une variable `c`).
 import * as THREE from "three/webgpu";
-import { EV, BClass, Layer } from "@supreme/shared";
+import { EV, BClass, Layer, RACE_TRANSH } from "@supreme/shared";
 import type { Frame } from "@supreme/shared";
 import { groundHeight } from "../render/terrain.ts";
 import { ownerColor, ownerHex } from "./colors.ts";
@@ -113,7 +113,8 @@ export function handleEvents(gc: GameClient, f: Frame): void {
           const name = gc.data!.buildings[e]?.name ?? "Générateur";
           if (type === EV.FUEL_DRY) {
             say("energie");
-            pushMessage(`${name} à sec : sa zone électrique est éteinte (collez-lui un extracteur d'hydrocarbure ou un dépôt, ou amenez du combustible)`, "alert");
+            const how = ui.race === RACE_TRANSH ? "collez-lui une foreuse d'hydrocarbure, ou mettez-en dans une soute à moins de 30 cases" : "collez-lui un extracteur d'hydrocarbure ou un dépôt, ou amenez du combustible";
+            pushMessage(`${name} à sec : sa zone électrique est éteinte (${how})`, "alert");
           } else pushMessage(`${name} : moins d'une minute de combustible`, "alert");
           gc.alertPos = { x: c / TILE, z: d / TILE };
         }
@@ -136,7 +137,7 @@ export function handleEvents(gc: GameClient, f: Frame): void {
       case EV.NO_DEPOT:
         // livraison de la soute : aucun de nos dépôts n'a de place pour cet objet
         if (a === ui.me) {
-          pushMessage(`Livraison impossible : aucun de vos dépôts n'a de place pour ${gc.data!.items[e]?.name.toLowerCase() ?? "cet objet"} (il reste dans la soute)`, "alert");
+          pushMessage(`Livraison impossible : ${ui.race === RACE_TRANSH ? "aucune de vos soutes" : "aucun de vos dépôts"} n'a de place pour ${gc.data!.items[e]?.name.toLowerCase() ?? "cet objet"} (il reste dans la soute)`, "alert");
           sfx.error();
         }
         break;
@@ -149,7 +150,7 @@ export function handleEvents(gc: GameClient, f: Frame): void {
         } else if (a === ui.me) {
           const u = gc.data!.units[e];
           const drill = (u?.deploys ?? -1) >= 0 && gc.data!.buildings[u.deploys].deposit !== 0;
-          pushMessage(`${u?.name ?? "Chenillard"} : pas la place de se déployer ici${drill ? " (une foreuse se déploie sur un gisement, à 3 cases au plus)" : " (terrain plat et libre)"}`, "alert");
+          pushMessage(`${u?.name ?? "Chenillard"} : pas la place de se déployer ici${drill ? " (une foreuse se déploie sur un gisement, à 3 cases au plus)" : " (terrain plat et libre, hors de l'eau)"}`, "alert");
           sfx.error();
         }
         break;
@@ -190,7 +191,8 @@ export function handleEvents(gc: GameClient, f: Frame): void {
         // usine à l'arrêt faute de composants (au plus une annonce toutes les 30 s)
         if (a === ui.me && performance.now() - gc.lastStarveAlert > 30000) {
           gc.lastStarveAlert = performance.now();
-          pushMessage(`Usine à l'arrêt, composant manquant : ${gc.data!.items[e]?.name ?? "?"} (collez un dépôt à l'usine ou amenez un tapis)`, "alert");
+          const item = gc.data!.items[e]?.name ?? "?";
+          pushMessage(ui.race === RACE_TRANSH ? `Atelier à l'arrêt, composant manquant : ${item} (aucune soute à moins de 30 cases n'en a)` : `Usine à l'arrêt, composant manquant : ${item} (collez un dépôt à l'usine ou amenez un tapis)`, "alert");
           gc.alertPos = { x: c / TILE, z: d / TILE };
         }
         break;
@@ -385,7 +387,7 @@ function onAttacked(c: GameClient, x: number, z: number, commander: boolean): vo
     if (now - c.lastCmdHit > 12000) {
       say("commandant");
       sfx.alert();
-      pushMessage("Le robot de commandement est attaqué !", "alert");
+      pushMessage(["Le robot de commandement est attaqué !", "La Reine est attaquée !", "L'Arche est attaquée !"][ui.race] ?? "Votre commandant est attaqué !", "alert");
       c.alertPos = { x, z };
     }
     c.lastCmdHit = now;

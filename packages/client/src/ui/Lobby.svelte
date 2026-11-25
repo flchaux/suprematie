@@ -9,7 +9,7 @@
   const RACE_DESC = [
     "Usines à tapis, électricité par zones, recherche par lots",
     "Base vivante : racines, sève et sels partagés, recherche par l'ADN",
-    "Industrie mobile qui se déploie, Arche à améliorer, recherche par l'exploration et butin",
+    "Industrie mobile et amphibie qui se déploie, Arche à améliorer, recherche par l'exploration et butin",
   ];
   const FAUNA_DESC: Record<Fauna, string> = {
     none: "Pas de nids sur la carte",

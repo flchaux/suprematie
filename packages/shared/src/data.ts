@@ -7,6 +7,8 @@ export interface TechDef {
   key: string; name: string; tier: number; count: number; time: number; prereq: number[]; desc: string;
   /** race qui peut la rechercher ; choix exclusif (Souche) : recherche qu'elle interdit (0 : aucune) */
   race: number; excl: number;
+  /** recherche des Industriels acquise en même temps (recettes partagées ; 0 : aucune) */
+  also: number;
 }
 /** Race jouable (voir docs/spec/races.md). */
 export interface RaceDef { key: string; name: string; desc: string }

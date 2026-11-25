@@ -26,6 +26,10 @@ const HAUL_STUCK: u16 = 15;
 /// puis vers le second.
 const HAUL_OUT: u16 = 0;
 const HAUL_BACK: u16 = 1;
+/// Une soute qui a déjà PLENTY exemplaires d'un produit garde les LAST derniers de chacun de ses ingrédients : un
+/// fabricant ne vide pas la soute pour un produit qu'elle a en nombre.
+pub const PLENTY: u16 = 100;
+pub const LAST: u16 = 40;
 /// Minerais et matières brutes qu'une soute donne à un fabricant collé en recette automatique.
 const RAW: [u8; 5] = [IRON_ORE, COPPER_ORE, SILICON, HYDROCARBON, CRYSTAL];
 
@@ -228,11 +232,12 @@ fn load_inputs(w: &mut World, s: usize, h: usize, b: usize) {
     let inputs = RECIPES[w.buildings[b].recipe as usize].inputs;
     unload_but(w, s, h, &|it| inputs.iter().any(|x| x.0 == it));
     let keep = reserved(w, h);
+    let last = last_kept(w, h, w.buildings[b].recipe);
     let cap = crate::ameliorations::cart_cap(w, s);
     let share = (cap / inputs.len().max(1) as u32).max(1) as u16;
     for &(it, _) in inputs {
         let want = share.saturating_sub(crate::drones::has(&w.units.cold[s].hold, it));
-        let k = want.min(crate::drones::has(&w.buildings[h].stash, it).saturating_sub(keep[it as usize]));
+        let k = want.min(crate::drones::has(&w.buildings[h].stash, it).saturating_sub(keep[it as usize].max(last)));
         if k > 0 {
             crate::drones::take(&mut w.buildings[h].stash, it, k);
             crate::drones::put(&mut w.units.cold[s].hold, it, k);
@@ -399,8 +404,18 @@ pub fn reserved(w: &World, h: usize) -> [u16; NUM_ITEMS] {
     keep
 }
 
+/// Ce que la soute `h` garde de chaque ingrédient de la recette `r`, selon ce qu'elle a déjà de son produit.
+fn last_kept(w: &World, h: usize, r: u8) -> u16 {
+    if crate::drones::has(&w.buildings[h].stash, RECIPES[r as usize].output.0) >= PLENTY {
+        LAST
+    } else {
+        0
+    }
+}
+
 /// Soute d'un Transhumant : elle alimente depuis son stock les fabricants collés à ses faces (un objet par fabricant
-/// et par passage), une fois les ateliers servis (`reserved`). Un fabricant en recette automatique reçoit du minerai
+/// et par passage), une fois les ateliers servis (`reserved`) et sans s'épuiser pour un produit qu'elle a en nombre
+/// (`last_kept`). Un fabricant en recette automatique reçoit du minerai
 /// (`auto_ore`).
 pub fn feed_crafters(w: &mut World, b: usize) {
     let bb = &w.buildings[b];
@@ -442,8 +457,9 @@ pub fn feed_crafters(w: &mut World, b: usize) {
         if r == RECIPE_NONE {
             continue;
         }
+        let last = last_kept(w, b, r);
         for &(it, _) in RECIPES[r as usize].inputs {
-            if crate::drones::has(&w.buildings[b].stash, it) > keep[it as usize] && buildings::accepts(w, o, it) {
+            if crate::drones::has(&w.buildings[b].stash, it) > keep[it as usize].max(last) && buildings::accepts(w, o, it) {
                 crate::drones::take(&mut w.buildings[b].stash, it, 1);
                 buildings::insert_item(w, o, it);
             }

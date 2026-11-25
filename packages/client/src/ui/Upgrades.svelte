@@ -74,7 +74,9 @@
     return `${TUR[kind]?.name ?? "?"} : ${s}${want !== kind ? ` ; deviendra ${TUR[want]?.name.toLowerCase()} à bord` : ""}`;
   };
   const outN = $derived(ark ? ark.turrets.filter((t) => t[2] === TU.OUT || t[2] === TU.RETURN).length : 0);
-  const workUnits = $derived(d && isArk && ark && mods[mi.mods[2]]?.key === "ark_workshop" ? factoryUnitKinds(d, Factory.Land, RACE_TRANSH).map((i) => ({ u: d.units[i], i })) : []);
+  /** atelier embarqué installé ; sans lui, l'Arche ne peut refaire qu'un chenillard atelier, lentement */
+  const shopAboard = $derived(mods[mi.mods[2]]?.key === "ark_workshop");
+  const workUnits = $derived(d && isArk && ark ? factoryUnitKinds(d, Factory.Land, RACE_TRANSH).filter((i) => shopAboard || d.units[i].key === "ch_workshop").map((i) => ({ u: d.units[i], i })) : []);
   const workKits = $derived(d ? workUnits.filter(({ i }) => hasKits(d, i)) : []);
   const abbrev = (n: string) => n.split(/[\s-]/).map((w) => w[0]).join("").slice(0, 3).toUpperCase();
 </script>
@@ -192,7 +194,7 @@
     {/if}
     {#if workUnits.length}
       <div class="sub">
-        <div class="mh"><span class="kicker">Atelier embarqué</span>{#if ark.queue.length}<span class="small">{d.units[ark.queue[0][0]].name}{#if !ark.paid}<span class="bad"> · attend ses composants</span>{/if}</span>{:else}<span class="dim small">file vide</span>{/if}</div>
+        <div class="mh"><span class="kicker" title={shopAboard ? "" : "Sans atelier embarqué, l'Arche ne sait refaire qu'un chenillard atelier"}>{shopAboard ? "Atelier embarqué" : "Atelier de secours"}</span>{#if ark.queue.length}<span class="small">{d.units[ark.queue[0][0]].name}{#if !ark.paid}<span class="bad"> · attend ses composants</span>{/if}</span>{:else}<span class="dim small">file vide</span>{/if}</div>
         {#if ark.queue.length}<div class="upbar"><span style:width={ark.prog / 10 + "%"}></span></div>{/if}
         <div class="wus">
           {#each workUnits as { u, i }}
@@ -204,7 +206,7 @@
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
                 {#if kitsOf(mi.kits, i).active}<span class="kk" title="Sort équipé">{["I", "II", "III"][kitsOf(mi.kits, i).active - 1]}</span>{/if}
               </button>
-              <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}{UNIT_DESCS[u.key]}<br />{/if}{#if !ok}<span class="bad">Recherche : {d.techs[u.tech].name}</span><br />{/if}<span class="num">{Math.ceil(u.build / 0.6)} s</span><Cost cost={u.cost} have={mi.reach} /><span class="dim">Clic : +1 (Maj : +5) · clic droit : −1</span></div>
+              <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}{UNIT_DESCS[u.key]}<br />{/if}{#if !ok}<span class="bad">Recherche : {d.techs[u.tech].name}</span><br />{/if}<span class="num">{Math.ceil(u.build / (shopAboard ? 0.6 : 0.2))} s</span><Cost cost={u.cost} have={mi.reach} /><span class="dim">Clic : +1 (Maj : +5) · clic droit : −1</span></div>
             </div>
           {/each}
         </div>
@@ -214,7 +216,7 @@
         {/if}
       </div>
     {/if}
-    {#if !ark.turrets.length && !workUnits.length && ark.shieldMax <= 0 && !ark.cars.length}<span class="dim small">Convoi, tourelles, bouclier et atelier se commandent ici.</span>{/if}
+    {#if !ark.turrets.length && !shopAboard && ark.shieldMax <= 0 && !ark.cars.length}<span class="dim small">Convoi, tourelles, bouclier et atelier se commandent ici.</span>{/if}
    </div>
    {/if}
   </div>

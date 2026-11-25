@@ -25,7 +25,7 @@
       {#if src}<img {src} alt={u.name} />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
       {#if u.litter}<span class="lit num">×{u.litter}</span>{/if}
       <span class="tt">
-        <span class="kind">Unité · {client.unitLayerName(u.layer)}</span><br />
+        <span class="kind">Unité · {client.unitLayerName(u)}</span><br />
         <b>{u.name}</b><br />
         {#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}
         <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s{#if !u.litter && u.build} · {u.build} s{/if}</span><br />

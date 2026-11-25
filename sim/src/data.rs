@@ -592,13 +592,13 @@ pub const TECHS: [TechDef; 92] = [
     t!("s_behemoth", "Métamorphose", 6, 60, 15, [77, 78], "Cocon : organe géant dont sort un Béhémoth", race: RACE_SOUCHE),
     // améliorations (voir ameliorations.rs) : ces recherches débloquent des choix à installer depuis les fiches
     t!("t_armory", "Armurerie de l'Arche", 1, 8, 6, [], "Arche, armement : canon lourd, batterie de roquettes, batterie antiaérienne", race: RACE_TRANSH),
-    t!("t_fittings", "Modules aménagés", 1, 8, 6, [], "Deux améliorations au choix pour les modules de base et le chariot", race: RACE_TRANSH),
+    t!("t_fittings", "Modules aménagés", 1, 8, 6, [], "Rendement de la foreuse, de la fonderie, de l'assembleur et du générateur ; aménagement du chariot", race: RACE_TRANSH),
     t!("t_mounts", "Affûts en étoile", 2, 15, 8, [80], "Arche, pont : 3 tourelles déployables", race: RACE_TRANSH),
     t!("t_bubble", "Bulle de convoi", 2, 15, 8, [60], "Arche, coque : bouclier de convoi, blindage lourd, blindage réactif", race: RACE_TRANSH),
     t!("t_drive", "Trains de roulement", 2, 12, 8, [], "Arche, mobilité : moteurs jumelés, éperon, surcharge", race: RACE_TRANSH),
     t!("t_onboard", "Ateliers de bord", 2, 15, 8, [81], "Arche : atelier embarqué, soutes de pont, groupe électrogène", race: RACE_TRANSH),
-    t!("t_gear", "Équipement de guerre", 2, 12, 8, [58], "Deux équipements au choix par unité de combat et pour le pisteur", race: RACE_TRANSH),
-    t!("t_fittings2", "Modules lourds", 2, 15, 8, [81], "Deux améliorations au choix pour les autres modules", race: RACE_TRANSH),
+    t!("t_gear", "Équipement de guerre", 2, 12, 8, [58], "Arme, châssis et équipement des unités de combat", race: RACE_TRANSH),
+    t!("t_fittings2", "Modules lourds", 2, 15, 8, [81], "Rendement des autres modules, spécialité de tous les modules", race: RACE_TRANSH),
     t!("t_recon", "Guerre de mouvement", 3, 20, 10, [84], "Arche, soutien : radar de crête, brouilleur, grues de pillage", race: RACE_TRANSH),
     t!("t_bubble2", "Bulle renforcée", 3, 20, 10, [83], "Arche, coque : bouclier renforcé", race: RACE_TRANSH),
     t!("t_rail", "Canon à rail", 4, 25, 12, [80, 63], "Arche, armement : canon à rail", race: RACE_TRANSH),
@@ -1392,8 +1392,8 @@ pub fn data_json() -> String {
         }
         let p: Vec<String> = t.prereq.iter().map(|x| x.to_string()).collect();
         s.push_str(&format!(
-            "{{\"key\":{},\"name\":{},\"tier\":{},\"count\":{},\"time\":{},\"prereq\":[{}],\"desc\":{},\"race\":{},\"excl\":{}}}",
-            js(t.key), js(t.name), t.tier, t.count, t.time, p.join(","), js(t.desc), t.race, t.excl
+            "{{\"key\":{},\"name\":{},\"tier\":{},\"count\":{},\"time\":{},\"prereq\":[{}],\"desc\":{},\"race\":{},\"excl\":{},\"also\":{}}}",
+            js(t.key), js(t.name), t.tier, t.count, t.time, p.join(","), js(t.desc), t.race, t.excl, t.also
         ));
     }
     s.push_str("],\"buildings\":[");

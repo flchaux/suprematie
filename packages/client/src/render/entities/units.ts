@@ -8,7 +8,7 @@ import { UNIT_WORDS, UF, Layer } from "@supreme/shared";
 import { condShown, depMatrix } from "../../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "../eggAnim.ts";
 import { setTeamColor } from "../materials.ts";
-import { groundHeight } from "../terrain.ts";
+import { groundHeight, HSCALE } from "../terrain.ts";
 import type { Entities } from "../entities.ts";
 import { ANG, ORDER_TAME, TAME_SHOW, TILE, UP, ZAXIS, tmpC, tmpM, tmpM2, tmpQ, tmpQ2, tmpQ3, tmpS, tmpV, tmpV2, type FrameCtx } from "./common.ts";
 
@@ -60,7 +60,8 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     const facing = (buf[o + 6] & 0xffff) * ANG;
     const turret = ((buf[o + 6] >>> 16) & 0xffff) * ANG;
     let bob = 0;
-    if (def.layer === Layer.Air || def.layer === Layer.Hover) bob = Math.sin(performance.now() / 400 + id) * 0.06;
+    // en vol, ou flottant sur l'eau
+    if (def.layer === Layer.Air || (def.layer === Layer.Hover && (def.altitude > 0 || y < e.map.waterLevel * HSCALE))) bob = Math.sin(performance.now() / 400 + id) * 0.06;
     // marche : la phase avance avec la distance parcourue, l'amplitude suit la vitesse
     let st = e.anim.get(id);
     if (!st) {

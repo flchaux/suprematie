@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim, RACE_INDUS, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
 import type { GameData } from "@supreme/shared";
-import { researchTabs, defaultTab, mutationTree, techUnlocks, techStatus, prereqText, raceTechs, isMutation, mutationFigure, mutationEffect, genome, type ResearchState } from "../src/game/research.ts";
+import { researchTabs, defaultTab, mutationTree, techUnlocks, techStatus, prereqText, raceTechs, isMutation, mutationFigure, mutationEffect, genome, recipeOfRace, type ResearchState } from "../src/game/research.ts";
 
 let d: GameData;
 const tech = (key: string): number => d.techs.findIndex((t) => t.key === key);
@@ -165,5 +165,17 @@ describe("mise en avant de l'effet d'une mutation", () => {
     expect(mutationFigure("Mutation : éclosion des œufs et croissance des organes 50 % plus rapides. Exclut Acide.")).toBe("+50 %");
     expect(mutationFigure("Mutation : renvoie un tiers des morsures subies. Exclut Sang acide.")).toBe("1/3");
     expect(mutationFigure("Mutation : un organisme tué au sol laisse une flaque d'acide. Exclut Carapaces d'épines.")).toBeNull();
+  });
+});
+
+describe("recettes d'une race", () => {
+  it("seulement celles que ses recherches peuvent débloquer, sans lot de recherche hors des Industriels", () => {
+    const keys = (race: number) => d.recipes.filter((r) => recipeOfRace(d, race, r)).map((r) => r.key);
+    expect(keys(RACE_INDUS)).toEqual(d.recipes.map((r) => r.key));
+    const t = keys(RACE_TRANSH);
+    for (const k of ["iron_plate", "gear", "processor", "engine", "refined_crystal", "energy_cell"]) expect(t).toContain(k);
+    expect(t.filter((k) => k.startsWith("pack"))).toEqual([]);
+    // pièce de bras : seule l'automatisation des Industriels la débloque
+    expect(t).not.toContain("arm_part");
   });
 });

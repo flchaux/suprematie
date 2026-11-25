@@ -465,6 +465,8 @@ export class Entities {
       case Layer.Hover:
         // léviathan : il nage le ventre sous la surface, et se hisse sur la rive
         if (u.key === "leviathan") return Math.max(g, water - 0.55);
+        // amphibie (Transhumants) : il roule sur la terre, et flotte sur l'eau, la caisse à demi immergée
+        if (!u.altitude) return Math.max(g, water - u.radius / TILE / 4);
         return Math.max(g, water) + u.altitude / TILE;
       case Layer.Air:
         return Math.max(g, water) + u.altitude / TILE;
