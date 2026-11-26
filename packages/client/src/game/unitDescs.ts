@@ -72,7 +72,7 @@ export const UNIT_DESCS: Record<string, string> = {
   moray: "Courte portée, contre navires, sous-marins et rivage.",
   leviathan: "Géant amphibie, contre le sol et l'air. Guérit de chaque proie.",
   behemoth: "Géant qui balaie ce qui l'entoure ; antiaérien. Guérit de chaque proie.",
-  // œufs pondus par les couveuses (voir sim/src/ponte.rs)
+  // œufs pondus par les graines-mères (voir sim/src/ponte.rs)
   egg_s: "Puise son prix dans le réseau, puis éclot. Détruit, ce qu'il a puisé est perdu.",
   egg_m: "Puise son prix dans le réseau, puis éclot. Détruit, ce qu'il a puisé est perdu.",
   egg_l: "Œuf cuirassé. Puise son prix dans le réseau, puis éclot. Détruit, ce qu'il a puisé est perdu.",

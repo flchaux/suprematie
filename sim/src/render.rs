@@ -234,7 +234,7 @@ fn building_words(w: &World, b: usize, broods: &[(u32, u32)], out: &mut Vec<i32>
             let front = bb.queue.first().map(|q| q.0 as i32 + 1).unwrap_or(0);
             let total: i32 = bb.queue.iter().map(|q| q.1 as i32).sum();
             // couveuse : niveau (bits 24-25), portées en train de couver (bits 26-29)
-            let brood = if bb.kind == B_BROOD {
+            let brood = if crate::ponte::lays(bb.kind) {
                 let n = broods.binary_search_by_key(&w.building_ref(b), |x| x.0).map_or(0, |k| broods[k].1);
                 (bb.level as i32 & 3) << 24 | (n.min(15) as i32) << 26
             } else {

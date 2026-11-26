@@ -149,7 +149,7 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
     // un cycle de `ticks` ticks qui consomme ou produit `n` objets : n × 100 × 1200 / ticks centièmes par minute
     let per_cycle = |n: u64, ticks: u64| n * 100 * MIN / ticks.max(1);
     // pendant une amélioration, la machine ne travaille pas (le générateur principal reste en service)
-    if (bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR && bb.kind != B_BROOD) || (bb.mod_job != 0 && bb.def().class != BClass::Power) {
+    if (bb.upgrade > 0 && bb.kind != B_MAIN_GENERATOR && !crate::ponte::lays(bb.kind)) || (bb.mod_job != 0 && bb.def().class != BClass::Power) {
         return;
     }
     match bb.def().class {
@@ -175,6 +175,10 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
         }
         // une unité : build × 20 × RECIPE_SCALE de progrès, 1024 × build_mult par tick ; ses composants
         BClass::Factory => {
+            // graine-mère : sa sève, en plus de sa ponte
+            if bb.kind == B_SEED_HEART {
+                prod[SEVE as usize] += crate::souche::organ_rate(w, b).0.max(0) as u64 * 60;
+            }
             let Some(&(kind, _)) = bb.queue.first() else { return };
             let mut mult = pl.build_mult.max(0) as u64 * crate::ameliorations::module_speed(bb) as u64 / 100;
             if bb.def().race == RACE_SOUCHE {

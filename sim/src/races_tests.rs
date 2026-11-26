@@ -106,11 +106,8 @@ fn each_race_builds_produces_and_researches_its_own_things() {
     assert_eq!(w.players[1].research, 0);
     order(&mut w, 1, O_RESEARCH, &[T_S_SPITTERS as i32]);
     assert_eq!(w.players[1].research, T_S_SPITTERS);
-    // unités : une couveuse ne produit pas de char léger
-    let heart = find_building(&w, 1, B_SEED_HEART).unwrap();
-    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
-    let brood = place_building(&mut w, 1, B_BROOD, hx + 4, hy, 0).or_else(|| place_building(&mut w, 1, B_BROOD, hx - 4, hy, 0)).unwrap();
-    complete_building(&mut w, brood);
+    // unités : une graine-mère ne pond pas de char léger
+    let brood = find_building(&w, 1, B_SEED_HEART).unwrap();
     let r = w.building_ref(brood) as i32;
     order(&mut w, 1, O_FACTORY_QUEUE, &[r, U_LIGHT_TANK as i32, 1]);
     assert!(w.buildings[brood].queue.is_empty());
@@ -284,9 +281,7 @@ fn a_cut_root_splits_the_network_and_its_reserve() {
 fn brood_pays_units_from_the_network() {
     let mut w = game(RACE_SOUCHE, RACE_INDUS);
     let heart = find_building(&w, 0, B_SEED_HEART).unwrap();
-    let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
-    let brood = [(4, 0), (-4, 0), (0, 4), (0, -4)].iter().find_map(|&(dx, dy)| place_building(&mut w, 0, B_BROOD, hx + dx, hy + dy, 0)).expect("couveuse");
-    complete_building(&mut w, brood);
+    let brood = heart;
     steps(&mut w, 6);
     let r = w.building_ref(brood) as i32;
     let before = net_of(&w, heart).seve;
@@ -1041,7 +1036,7 @@ fn a_seed_heart_grows_from_sacrificed_organisms() {
     assert!(w.unit(g).is_some());
 }
 
-/// Une couveuse dont le ralliement est sur une graine-mère en croissance y envoie ses organismes se sacrifier.
+/// Une graine-mère dont le ralliement est sur une graine-mère en croissance y envoie ses organismes se sacrifier.
 #[test]
 fn a_brood_rallied_on_a_growing_heart_feeds_it() {
     let mut w = game(RACE_SOUCHE, RACE_INDUS);
@@ -1049,8 +1044,7 @@ fn a_brood_rallied_on_a_growing_heart_feeds_it() {
     let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
     flatten(&mut w, hx - 6, hy - 10, hx + 40, hy + 12);
     let h2 = place_building(&mut w, 0, B_SEED_HEART, hx + 16, hy, 0).expect("seconde graine-mère");
-    let b = place_building(&mut w, 0, B_BROOD, hx + 4, hy, 0).expect("couveuse");
-    complete_building(&mut w, b);
+    let b = heart;
     steps(&mut w, 6);
     w.buildings[b].rally = w.buildings[h2].center();
     let br = w.building_ref(b) as i32;

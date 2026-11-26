@@ -124,7 +124,7 @@ pub fn update_buildings(w: &mut World) {
             // générateur principal, resté en service, garde l'apport de son dépôt collé (sans partage)
             let main = bb.kind == B_MAIN_GENERATOR;
             // couveuse : elle pond pendant sa croissance
-            let brood = bb.kind == B_BROOD;
+            let brood = crate::ponte::lays(bb.kind);
             tick_upgrade(w, b);
             if main && w.buildings[b].upgrade > 0 && w.tick.is_multiple_of(DEPOT_FEED_PERIOD) {
                 feed_generator_from_depot(w, b);

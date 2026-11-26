@@ -40,7 +40,7 @@ fn eggs(w: &World) -> Vec<usize> {
     (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.owner[s] == 0 && ponte::is_egg(w.units.kind[s])).collect()
 }
 
-/// Couveuse terminée du joueur 0, près de sa graine-mère, sur un terrain aplani.
+/// Graine-mère du joueur 0 (elle pond), sur un terrain aplani.
 fn brood(w: &mut World) -> usize {
     let h = heart(w);
     let (hx, hy) = (w.buildings[h].x, w.buildings[h].y);
@@ -49,13 +49,14 @@ fn brood(w: &mut World) -> usize {
             let i = w.map.idx(x, y);
             w.map.height[i] = 150;
             w.map.cliff[i] = 0;
-            w.map.update_pass(x, y);
+            // (pas sous la graine-mère : ses cases restent bloquées)
+            if w.map.occ[i] == 0 {
+                w.map.update_pass(x, y);
+            }
         }
     }
-    let b = [(4, 0), (-4, 0), (0, 4), (0, -4)].iter().find_map(|&(dx, dy)| place_building(w, 0, B_BROOD, hx + dx, hy + dy, 0)).expect("couveuse");
-    complete_building(w, b);
     steps(w, 6);
-    b
+    h
 }
 
 fn queue(w: &mut World, b: usize, kind: u16, n: i32) {
@@ -72,6 +73,40 @@ fn until_laid(w: &mut World, max: u32) -> u32 {
         w.step(&[]);
     }
     panic!("pas de ponte en {max} ticks");
+}
+
+/// La graine-mère pond ; la couveuse ne se pose plus, mais celle d'une ancienne partie pond encore.
+#[test]
+fn the_seed_heart_lays_and_the_brood_is_gone() {
+    let mut w = game();
+    let h = brood(&mut w);
+    assert_eq!(w.buildings[h].kind, B_SEED_HEART);
+    let (hx, hy) = (w.buildings[h].x, w.buildings[h].y);
+    assert!([(4, 0), (-4, 0), (0, 4), (0, -4)].iter().all(|&(dx, dy)| place_building(&mut w, 0, B_BROOD, hx + dx, hy + dy, 0).is_none()), "plus de couveuse");
+    queue(&mut w, h, U_GNAWER, 1);
+    until_laid(&mut w, 400);
+    assert_eq!(eggs(&w).len(), 6);
+    steps(&mut w, ponte::incubation(U_GNAWER) + 10);
+    assert!(eggs(&w).is_empty());
+    // sa sève d'une par seconde, en plus de la ponte
+    let net = w.buildings[h].net as usize;
+    w.nets[net].sels = 0;
+    w.nets[net].seve = 0;
+    steps(&mut w, 200);
+    assert!((9..=11).contains(&w.nets[net].seve), "{}", w.nets[net].seve);
+    // une couveuse d'une ancienne partie (posée sans les règles de pose) pond encore
+    let mut w = game();
+    let h = brood(&mut w);
+    let (hx, hy) = (w.buildings[h].x, w.buildings[h].y);
+    let old = place_building(&mut w, 0, B_MATRIX, hx + 4, hy, 0).expect("emplacement");
+    w.buildings[old].kind = B_BROOD;
+    complete_building(&mut w, old);
+    crate::buildings::rebuild_power(&mut w);
+    steps(&mut w, 4);
+    assert!(w.buildings[old].net != 0);
+    queue(&mut w, old, U_GNAWER, 1);
+    until_laid(&mut w, 400);
+    assert!(eggs(&w).iter().all(|&s| w.units.cold[s].parent == w.building_ref(old)));
 }
 
 #[test]
@@ -403,7 +438,7 @@ fn the_demo_lays_and_hatches_in_a_loop() {
             }
         }
     }
-    assert_eq!(hatched.into_iter().collect::<Vec<_>>(), vec![U_GNAWER, U_SPITTER, U_SHELL, U_MEMBRANE], "les quatre couveuses font éclore leur espèce");
+    assert_eq!(hatched.into_iter().collect::<Vec<_>>(), vec![U_GNAWER, U_SPITTER, U_SHELL, U_MEMBRANE], "les trois graines-mères font éclore leurs espèces");
     assert!(most >= 10, "plusieurs portées couvent en même temps ({most})");
     assert!(crushed > 0, "les chars adverses ont détruit des œufs");
 }
@@ -480,7 +515,7 @@ fn a_brood_grows_to_six_then_twelve_litters() {
     let counts = ponte::litter_counts(&w);
     assert_eq!(counts, vec![(w.building_ref(b), n as u32)]);
     let f = crate::render::render(&w, 0, 0, w.map.w, w.map.h, 2, 0, false);
-    let word = f.windows(6).find(|k| k[0] == r && k[1] & 0xff == B_BROOD as i32).map(|k| k[5]).expect("couveuse dans l'image");
+    let word = f.windows(6).find(|k| k[0] == r && k[1] & 0xff == B_SEED_HEART as i32).map(|k| k[5]).expect("graine-mère dans l'image");
     assert_eq!((word >> 24 & 3, word >> 26 & 15), (2, n as i32));
 }
 
@@ -535,3 +570,4 @@ fn eggs_survive_save_and_restore() {
     }
     assert_eq!(units_of(&r, U_GNAWER).len(), 6);
 }
+

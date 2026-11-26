@@ -252,8 +252,9 @@ pub const MAIN_GENERATOR_LEVELS: [MainGeneratorLevel; 2] = [
     MainGeneratorLevel { supply: 27, connect: 45, cost: &[(STEEL, 60), (ENGINE, 15), (CIRCUIT, 40)], tech: T_ELECTRONICS, time: 60 },
 ];
 
-/// Niveaux d'une couveuse de la Souche (amélioration sur place, payée par son réseau de racines ; elle pond pendant ce
-/// temps) : portées qui couvent en même temps au plus, coût de passage, recherche et durée (secondes).
+/// Niveaux d'un pondoir de la Souche, graine-mère (ou couveuse d'une ancienne partie) : amélioration sur place, payée par
+/// son réseau de racines, sans arrêter la ponte ; portées qui couvent en même temps au plus, coût de passage, recherche
+/// et durée (secondes).
 pub struct BroodLevel {
     pub litters: u16,
     pub cost: &'static [(u8, u16)],
@@ -959,7 +960,8 @@ pub const BUILDINGS: [BuildingDef; 80] = [
     // socle à EPPZ : demande un EPPZ capturé (Player::eppz), produit sans combustible
     BuildingDef { key: "eppz_socket", name: "Socle à EPPZ", size: (2, 2), hp: 3000, power_prod: 25000, cost: &[(STEEL, 20), (CIRCUIT, 10)], build: 15, class: BClass::Power, supply: 14, connect: 30, ..BD },
     // ----- Souche : organes, posés sur le terreau d'un réseau de racines, qui poussent seuls -----
-    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 4000, build: 90, class: BClass::Organ, supply: 2, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
+    // la graine-mère pond aussi les organismes terrestres (comme une usine, voir ponte.rs) ; la couveuse ne se construit plus
+    BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 6000, build: 90, class: BClass::Factory, factory: FactoryKind::Land, supply: 2, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "root", name: "Racine", hp: 150, cost: &[(SEVE, 4)], build: 2, class: BClass::Pylon, supply: 3, connect: 5, passable: true, vision: 0, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "leaves", name: "Frondaison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 10)], build: 8, class: BClass::Organ, vision: 6, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "taproot", name: "Racine-puits", size: (2, 2), hp: 600, cost: &[(SEVE, 60)], build: 10, class: BClass::Organ, deposit: 255, race: RACE_SOUCHE, ..BD },
@@ -1063,7 +1065,7 @@ pub struct UnitDef {
     pub bio: bool,
     /// chenillard des Transhumants : bâtiment qu'il devient une fois déployé (NO_KIND : aucun)
     pub deploys: u16,
-    /// organisme de la Souche : taille de la portée pondue par la couveuse pour une entrée de file
+    /// organisme de la Souche : taille de la portée pondue par la graine-mère pour une entrée de file
     /// (0 : unité fabriquée une par une ; voir ponte.rs)
     pub litter: u8,
 }
@@ -1251,7 +1253,7 @@ pub const UNITS: [UnitDef; 95] = [
     // réplicateur : faune mécanique, insensible à toute arme sauf celle du disrupteur (voir combat.rs)
     UnitDef { key: "replicator", name: "Réplicateur", hp: 300, speed: 44, radius: 100, weapons: &[60], vision: 16, factory: FactoryKind::None, tier: 2, ..UD },
     UnitDef { key: "disruptor", name: "Disrupteur", hp: 450, speed: 32, radius: 120, weapons: &[61], cost: &[(IRON_PLATE, 8), (GEAR, 2), (CIRCUIT, 3)], build: 6, tech: 2, tier: 1, ..UD },
-    // ----- Souche : organismes vivants, nés dans les couveuses (voir souche.rs) -----
+    // ----- Souche : organismes vivants, pondus par les graines-mères (voir ponte.rs) -----
     UnitDef { key: "queen", name: "Reine", hp: 10000, speed: 18, radius: 220, weapons: &[62], vision: 26, factory: FactoryKind::None, build_power: 15, tier: 0, commander: true, bio: true, race: RACE_SOUCHE, ..UD },
     UnitDef { key: "sower", name: "Semeur", hp: 250, speed: 34, radius: 90, cost: &[(SEVE, 30), (SELS, 5)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
     UnitDef { key: "gnawer", name: "Rongeur", hp: 260, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 25), (SELS, 4)], build: 4, bio: true, race: RACE_SOUCHE, litter: 6, ..UD },
@@ -1275,7 +1277,7 @@ pub const UNITS: [UnitDef; 95] = [
     UnitDef { key: "harrow", name: "Herse", layer: Layer::Hover, hp: 400, speed: 32, radius: 130, weapons: &[6], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2), (AMMO, 2)], build: 7, race: RACE_TRANSH, ..UD },
     UnitDef { key: "towed_gun", name: "Canon tracté", layer: Layer::Hover, hp: 420, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 5), (GEAR, 3), (AMMO, 3)], build: 9, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ram", name: "Bélier", layer: Layer::Hover, hp: 2800, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 10), (GEAR, 6), (CIRCUIT, 2)], build: 12, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
-    // ----- Souche : œufs pondus par les couveuses (voir ponte.rs). Immobiles, sans arme, ils éclosent
+    // ----- Souche : œufs pondus par les graines-mères (voir ponte.rs). Immobiles, sans arme, ils éclosent
     // en l'organisme qu'ils portent ; l'œuf d'une espèce est choisi d'après sa taille (ponte::egg_of) -----
     UnitDef { key: "egg_s", name: "Œuf", hp: 100, speed: 0, radius: 60, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
     UnitDef { key: "egg_m", name: "Œuf", hp: 180, speed: 0, radius: 85, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
@@ -1292,7 +1294,7 @@ pub const UNITS: [UnitDef; 95] = [
     // la Frayère met bas des petits déjà formés, un par un (pas d'œufs sur l'eau)
     UnitDef { key: "moray", name: "Murène", layer: Layer::Naval, hp: 1600, speed: 44, radius: 260, weapons: &[79], vision: 26, cost: &[(SEVE, 160), (SELS, 60)], build: 16, tech: T_S_TIDES, factory: FactoryKind::Naval, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
     UnitDef { key: "leviathan", name: "Léviathan", layer: Layer::Hover, hp: 14000, speed: 26, radius: 480, weapons: &[80, 81], vision: 32, cost: &[(SEVE, 900), (SELS, 420)], build: 70, tech: T_S_LEVIATHAN, factory: FactoryKind::Naval, tier: 5, bio: true, race: RACE_SOUCHE, ..UD },
-    // il sort d'un Cocon, aucune couveuse ne le pond (voir souche::tick_cocoon)
+    // il sort d'un Cocon, aucune graine-mère ne le pond (voir souche::tick_cocoon)
     UnitDef { key: "behemoth", name: "Béhémoth", hp: 52000, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 2400), (SELS, 1100)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : tourelles de l'Arche. Elles roulent jusqu'à leur poste, s'y déploient, et rentrent à
     // bord ; le coût est celui de la reconstruction d'une tourelle détruite (voir ameliorations.rs) -----

@@ -142,7 +142,7 @@ await select(null);
 // ---------- œuf qui puise son prix, graine-mère nourrie de sacrifices ----------
 await look(heart.x + 8, heart.z + 4, 40);
 const [egg] = await find("egg_s", true);
-check(!!egg, "œufs pondus par la couveuse");
+check(!!egg, "œufs pondus par la graine-mère");
 await select(egg?.ref ?? null);
 await page.waitForFunction(() => window.__game.ui.unitInfo?.egg?.paid?.length === 2, null, { timeout: 60000 }).catch(() => {});
 check(await page.evaluate(() => [...document.querySelectorAll(".sel .kicker")].some((e) => e.textContent === "Puisé")), "fiche de l'œuf : prix puisé", JSON.stringify(await page.evaluate(() => window.__game.ui.unitInfo?.egg)));
@@ -155,23 +155,16 @@ check(fed?.fed === 480 && [...(await page.evaluate(() => [...document.querySelec
 await shot("graine");
 await select(null);
 
-// ---------- couveuse : limite de portées, agrandissement ----------
-const broods = await find("brood");
-const small = broods.find((b) => b.x > heart.x);
-const big = broods.find((b) => b.x < heart.x);
-/** Fiche de la couveuse : compte, places, places libres. */
+// ---------- graine-mère : elle pond, limite de portées, agrandissement ----------
+/** Fiche du pondoir : compte, places, places libres. */
 const places = () => page.evaluate(() => ({ text: document.querySelector(".sel .brood")?.textContent ?? "", all: document.querySelectorAll(".sel .place").length, free: document.querySelectorAll(".sel .place.empty").length }));
-await look(heart.x + 2, heart.z + 4, 30);
-await select(big?.ref ?? null);
-await page.waitForFunction(() => document.querySelectorAll(".sel .place").length === 12, null, { timeout: 60000 }).catch(() => {});
-let pl = await places();
-check(pl.all === 12 && pl.free >= 6 && pl.free < 12 && /\d \/ 12/.test(pl.text) && !/limite/.test(pl.text), "couveuse agrandie : douze places", JSON.stringify(pl));
-await shot("couveuse12");
-await select(small?.ref ?? null);
+check((await find("brood")).length === 0, "plus de couveuse");
+await look(heart.x + 4, heart.z + 2, 30);
+await select(heart.ref);
 await page.waitForFunction(() => document.querySelectorAll(".sel .place").length === 3, null, { timeout: 60000 }).catch(() => {});
-pl = await places();
-check(pl.all === 3 && pl.free === 0 && /3 \/ 3/.test(pl.text) && /limite atteinte/.test(pl.text), "couveuse : trois places, limite atteinte", JSON.stringify(pl));
-await shot("couveuse");
+const pl = await places();
+check(pl.all === 3 && pl.free === 0 && /3 \/ 3/.test(pl.text) && /limite atteinte/.test(pl.text), "graine-mère : trois places, limite atteinte", JSON.stringify(pl));
+await shot("pondoir");
 await page.evaluate(() => [...document.querySelectorAll(".sel .upcard button")].find((b) => /6 portées/.test(b.textContent))?.click());
 await run(20);
 await page.waitForFunction(() => (window.__game.ui.buildingInfo?.upgrade ?? 0) > 0, null, { timeout: 60000 }).catch(() => {});

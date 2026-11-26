@@ -576,10 +576,10 @@ pub fn showcase_demo() -> World {
     w
 }
 
-/// Démo de la ponte de la Souche (?demo=ponte) : le joueur 0 (Souche) a quatre couveuses autour de sa
-/// graine-mère, qui pondent en boucle (rongeurs, cracheurs, carapaces, planeurs à membranes) grâce à une
-/// réserve sans fond ; des chars adverses viennent tirer sur la première portée. Le client y joue le
-/// joueur 0 en local : on peut cliquer sur une couveuse, un œuf, et changer les files.
+/// Démo de la ponte de la Souche (?demo=ponte) : le joueur 0 (Souche) a trois graines-mères, sa première et deux
+/// autres de part et d'autre, qui pondent en boucle (rongeurs et planeurs à membranes, cracheurs, carapaces) grâce à
+/// une réserve sans fond ; des chars adverses viennent tirer sur la première portée. Le client y joue le joueur 0 en
+/// local : on peut cliquer sur une graine-mère, un œuf, et changer les files.
 pub fn ponte_demo() -> World {
     let mut w = World::new(&[19, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 1, RACE_SOUCHE as i32, RACE_INDUS as i32]);
     let (sx, sy) = w.map.starts[0];
@@ -591,25 +591,28 @@ pub fn ponte_demo() -> World {
     let heart = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].owner == 0 && w.buildings[b].kind == B_SEED_HEART);
     let Some(heart) = heart else { return w };
     let (hx, hy) = (w.buildings[heart].x, w.buildings[heart].y);
-    // une couveuse de chaque côté de la graine-mère, sortie vers l'extérieur
-    let mut broods = Vec::new();
-    for (dx, dy, dir, kind) in [(4, 0, 0u8, U_GNAWER), (0, 4, 1, U_SPITTER), (-4, 0, 2, U_SHELL), (0, -4, 3, U_MEMBRANE)] {
-        if let Some(b) = place_building(&mut w, 0, B_BROOD, hx + dx, hy + dy, dir) {
+    // deux autres graines-mères, au sud et à l'ouest, sortie vers l'extérieur
+    let mut broods = vec![(heart, vec![U_GNAWER, U_MEMBRANE])];
+    for (dx, dy, dir, kind) in [(0, 9, 1u8, U_SPITTER), (-9, 0, 2, U_SHELL)] {
+        if let Some(b) = place_building(&mut w, 0, B_SEED_HEART, hx + dx, hy + dy, dir) {
             complete_building(&mut w, b);
-            broods.push((b, kind));
+            broods.push((b, vec![kind]));
         }
     }
-    // le réseau se forme, puis reçoit une réserve sans fond
+    // les réseaux se forment, puis reçoivent une réserve sans fond
     for _ in 0..10 {
         w.step(&[]);
     }
-    for &(b, kind) in &broods {
+    for (b, kinds) in &broods {
+        let b = *b;
         let net = w.buildings[b].net as usize;
         if net != 0 {
             w.nets[net].seve = 1_000_000;
             w.nets[net].sels = 1_000_000;
         }
-        w.buildings[b].queue.push((kind, 1));
+        for &kind in kinds {
+            w.buildings[b].queue.push((kind, 1));
+        }
         w.buildings[b].repeat = true;
         w.buildings[b].wake = 0;
         // ralliement à l'écart, pour que les œufs suivants aient la place
@@ -665,7 +668,6 @@ pub fn essaim_demo() -> World {
     put(&mut w, 0, B_COCOON, hx + 8, hy - 5);
     put(&mut w, 0, B_MATRIX, hx - 4, hy - 2);
     let leaves = put(&mut w, 0, B_LEAVES, hx - 8, hy - 2);
-    let brood = put(&mut w, 0, B_BROOD, hx + 4, hy + 3);
     let maw = put(&mut w, 0, B_MAW, hx - 6, hy + 3);
     let a = put(&mut w, 0, B_BURROW, hx + 3, hy - 3);
     let b = put(&mut w, 0, B_BURROW, hx + 20, hy + 5);
@@ -698,18 +700,10 @@ pub fn essaim_demo() -> World {
     if let (Some(a), Some(b)) = (a, b) {
         crate::souche::link_burrow(&mut w, a, b);
     }
-    // la couveuse pond en boucle ; quatre carapaces vont se sacrifier dans une seconde graine-mère
-    if let Some(b) = brood {
-        w.buildings[b].queue.push((U_GNAWER, 1));
-        w.buildings[b].repeat = true;
-        w.buildings[b].wake = 0;
-    }
-    // une seconde couveuse, agrandie (douze portées à la fois), qui en couve cinq
-    if let Some(b) = place_building(&mut w, 0, B_BROOD, hx - 2, hy + 5, 2) {
-        complete_building(&mut w, b);
-        w.buildings[b].level = 2;
-        w.buildings[b].queue.push((U_SPITTER, 5));
-    }
+    // la graine-mère pond en boucle ; quatre carapaces vont se sacrifier dans une seconde graine-mère
+    w.buildings[heart].queue.push((U_GNAWER, 1));
+    w.buildings[heart].repeat = true;
+    w.buildings[heart].wake = 0;
     if let Some(h) = place_building(&mut w, 0, B_SEED_HEART, hx + 12, hy + 6, 0) {
         let target = w.building_ref(h);
         for k in 0..4 {
