@@ -941,6 +941,45 @@ fn a_cart_brings_a_distant_module_output_back_to_its_hold() {
     assert!(matches!(w.units.cold[c].orders.first(), Some(Order::Haul { .. })), "la navette continue");
 }
 
+/// Distance (sous-unités) du centre de l'unité `s` au bord du bâtiment `b`.
+fn edge_dist(w: &World, s: usize, b: usize) -> i32 {
+    let bb = &w.buildings[b];
+    let (bx, by, (bw, bh)) = (bb.x * TILE, bb.y * TILE, bb.size());
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    crate::fixed::dist(x, y, x.clamp(bx, bx + bw * TILE), y.clamp(by, by + bh * TILE))
+}
+
+/// Un module à trois cases de la soute : le chariot ne charge et ne décharge que collé au bâtiment, il fait donc
+/// le trajet, même court (avant, à deux cases de chaque bord, il les servait tous deux sans bouger).
+#[test]
+fn a_cart_drives_up_to_each_building_even_when_they_are_close() {
+    let (mut w, hb, sx) = hold_camp();
+    let f = module_at(&mut w, hb, B_T_FURNACE, sx * 5, recipe("iron_plate"));
+    w.buildings[f].out = 30;
+    let r = w.building_ref(hb) as i32;
+    order(&mut w, 0, O_HITCH, &[r]);
+    let c = carts(&w)[0];
+    let (id, fr) = (w.unit_id(c) as i32, w.building_ref(f) as i32);
+    order(&mut w, 0, O_HAUL, &[0, fr, 1, id]);
+    let (mut out, mut plates) = (w.buildings[f].out, crate::drones::has(&w.buildings[hb].stash, IRON_PLATE));
+    let (mut loads, mut unloads) = (0, 0);
+    for _ in 0..1600 {
+        w.step(&[]);
+        if w.buildings[f].out < out {
+            loads += 1;
+            assert!(edge_dist(&w, c, f) <= TILE / 2, "chargé à {} de la fonderie", edge_dist(&w, c, f));
+        }
+        let now = crate::drones::has(&w.buildings[hb].stash, IRON_PLATE);
+        if now > plates {
+            unloads += 1;
+            assert!(edge_dist(&w, c, hb) <= TILE / 2, "déchargé à {} de la soute", edge_dist(&w, c, hb));
+        }
+        (out, plates) = (w.buildings[f].out, now);
+    }
+    assert!(loads >= 2 && unloads >= 2, "deux voyages : {loads} chargements, {unloads} déchargements");
+    assert_eq!(w.buildings[f].out, 0, "toute la sortie rapportée");
+}
+
 #[test]
 fn a_cart_feeds_a_distant_crafter_from_its_hold() {
     let (mut w, hb, sx) = hold_camp();

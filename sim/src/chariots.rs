@@ -16,10 +16,11 @@ pub const CARTS_PER_HOLD: usize = 6;
 /// Navette d'un chariot : au module, attente (ticks) sans que rien n'en sorte avant de rentrer avec un chargement
 /// incomplet ; en livraison, avant de rentrer avec ce que le fabricant ne prend pas.
 pub const HAUL_WAIT: u32 = 100;
-/// Distance (sous-unités) au bord d'un bâtiment à laquelle un chariot charge ou décharge.
-const HAUL_REACH: i32 = 2 * TILE;
-/// Chariot arrêté en chemin (modules collés autour du bâtiment, foule) depuis HAUL_STUCK ticks : distance au bord du
-/// bâtiment qui lui suffit.
+/// Distance (sous-unités) du centre d'un chariot au bord d'un bâtiment à laquelle il charge ou décharge : il y est
+/// collé (sa caisse touche le bâtiment). Il fait donc le trajet même entre deux bâtiments proches.
+const HAUL_REACH: i32 = TILE / 2;
+/// Chariot arrêté en chemin depuis HAUL_STUCK ticks par un obstacle entre lui et le bâtiment (module collé autour,
+/// case infranchissable ; pas une foule, qui s'écarte) : distance au bord du bâtiment qui lui suffit.
 const HAUL_OVER: i32 = 5 * TILE;
 const HAUL_STUCK: u16 = 15;
 /// Phases de la navette (bit 0 de `UnitCold::timer`) : vers le premier arrêt (le module, ou la soute en livraison),
@@ -109,21 +110,34 @@ pub fn haul_ok(w: &World, p: u8, b: usize, feed: bool) -> bool {
     }
 }
 
-/// Le chariot `s` est-il au bord du bâtiment `b` ? Sinon il y roule. Arrêté en chemin près de lui (modules collés
-/// autour, foule), il charge et décharge par-dessus ce qui l'arrête.
+/// Le chariot `s` est-il collé au bâtiment `b` ? Sinon il y roule. Arrêté en chemin près de lui par un obstacle
+/// (modules collés autour), il charge et décharge par-dessus ce qui l'arrête.
 fn cart_at(w: &mut World, s: usize, b: usize) -> bool {
     let bb = &w.buildings[b];
     let (tx, ty) = bb.center();
     let (bx, by) = (bb.x * TILE, bb.y * TILE);
     let (bw, bh) = bb.size();
     let (x, y) = (w.units.x[s], w.units.y[s]);
-    let d = dist(x, y, x.clamp(bx, bx + bw * TILE), y.clamp(by, by + bh * TILE));
-    if d > HAUL_REACH && !(d <= HAUL_OVER && w.units.cold[s].stuck > HAUL_STUCK) {
+    let (px, py) = (x.clamp(bx, bx + bw * TILE), y.clamp(by, by + bh * TILE));
+    let d = dist(x, y, px, py);
+    if d > HAUL_REACH && !(d <= HAUL_OVER && w.units.cold[s].stuck > HAUL_STUCK && walled_off(w, s, b, px, py)) {
         crate::units::steer(w, s, tx, ty, tx, ty, TILE);
         return false;
     }
     crate::units::clear_goal(w, s);
     true
+}
+
+/// Un obstacle sépare-t-il le chariot `s` du point (px, py) du bord du bâtiment `b` : une case qu'il ne peut pas
+/// franchir (autre bâtiment, falaise) sur la ligne droite qui les joint ? Les unités ne comptent pas.
+fn walled_off(w: &World, s: usize, b: usize, px: i32, py: i32) -> bool {
+    let (x, y) = (w.units.x[s], w.units.y[s]);
+    let m = crate::units::pass_mask(udef(w.units.kind[s]).layer);
+    let n = dist(x, y, px, py) / (TILE / 4) + 1;
+    (1..=n).any(|k| {
+        let (tx, ty) = ((x + (px - x) * k / n).div_euclid(TILE), (y + (py - y) * k / n).div_euclid(TILE));
+        w.map.inside(tx, ty) && w.map.occ[w.map.idx(tx, ty)] as usize != b + 1 && !w.map.passable(tx, ty, m)
+    })
 }
 
 /// Attente d'un chariot (au module, ou au fabricant qui ne prend plus rien) : compte les ticks dans les bits
