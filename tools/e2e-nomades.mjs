@@ -21,6 +21,40 @@ page.on("pageerror", (e) => errors.push(e.message));
 await page.goto(`${base}/?k=testkey&demo=nomades&webgl`);
 await page.waitForFunction(() => window.__game?.client.frame?.nBuildings > 0 && window.__game.ui.me === 0, null, { timeout: 150000 });
 
+// chargement dans la benne : au tick 200, deux chariots rentrent pleins de plaques de la fonderie (6 places)
+// et le troisième en a encore 4 places à l'assembleur
+const LOADED_AT = 200;
+await page.evaluate((t) => window.__game.client.stopReplayAt(t), LOADED_AT);
+await page.waitForFunction((t) => window.__game.client.frame.tick >= t, LOADED_AT, { timeout: 240000 });
+const loads = await page.evaluate(() => {
+  const { client, ui } = window.__game;
+  const k = ui.data.units.findIndex((u) => u.key === "t_cart");
+  const f = client.frame;
+  const out = [];
+  for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) {
+    if ((f.buf[o + 1] & 0xff) !== k) continue;
+    const l = f.buf[o + 6] >>> 16;
+    out.push({ x: f.buf[o + 2] / 256, z: f.buf[o + 3] / 256, item: ui.data.items[l & 0xff]?.key ?? "", n: l >> 8 });
+  }
+  // caméra rapprochée sur les deux chariots qui rentrent de la fonderie
+  const back = out.filter((c) => c.n === 6).sort((a, b) => a.x - b.x);
+  const sc = client.scene;
+  if (back.length) {
+    sc.target.set(back[0].x, 0, back[0].z);
+    sc.distance = 9;
+    sc.updateCamera();
+  }
+  return out;
+});
+check(loads.filter((c) => c.item === "iron_plate" && c.n === 6).length === 2, "deux chariots pleins de plaques", JSON.stringify(loads));
+await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))));
+const drawn = await page.evaluate(() => window.__game.client.scene.entities.nCartLoads);
+// (le troisième, à l'assembleur, est hors du champ de la caméra : son modèle n'est pas dessiné)
+check(drawn === 2, "chargement des deux chariots à l'écran dessiné dans leur benne", String(drawn));
+await page.screenshot({ path: `${outDir}/nomades-chargement.png`, timeout: 240000 });
+console.log(`capture : ${outDir}/nomades-chargement.png`);
+await page.evaluate(() => window.__game.client.stopReplayAt(1 << 30));
+
 const carts = () => page.evaluate(() => {
   const { client, ui } = window.__game;
   const k = ui.data.units.findIndex((u) => u.key === "t_cart");

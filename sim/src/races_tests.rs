@@ -975,6 +975,29 @@ fn a_cart_drives_up_to_each_building_even_when_they_are_close() {
     assert_eq!(w.buildings[f].out, 0, "toute la sortie rapportée");
 }
 
+/// L'image montre ce que porte un chariot, à la place de l'angle de tourelle (il n'en a pas) : l'objet qu'il a le
+/// plus et le nombre de places remplies de sa benne (1 à 6, selon sa cale) ; 0 quand il est vide.
+#[test]
+fn a_cart_shows_what_it_carries() {
+    let (mut w, hb, _) = hold_camp();
+    let r = w.building_ref(hb) as i32;
+    order(&mut w, 0, O_HITCH, &[r]);
+    let c = carts(&w)[0];
+    let id = w.unit_id(c) as i32;
+    let shown = |w: &World| {
+        let f = crate::render::render(w, 0, 0, w.map.w, w.map.h, 2, 0, false);
+        f.windows(9).find(|k| k[0] == id && k[1] & 0xff == U_T_CART as i32).map(|k| k[6] >> 16 & 0xffff).expect("chariot dans l'image")
+    };
+    assert_eq!(shown(&w), 0, "vide");
+    crate::drones::put(&mut w.units.cold[c].hold, GEAR, 3);
+    crate::drones::put(&mut w.units.cold[c].hold, IRON_PLATE, 10);
+    // 13 objets sur 20 : 4 places sur 6
+    assert_eq!(shown(&w), IRON_PLATE as i32 | 4 << 8);
+    crate::drones::put(&mut w.units.cold[c].hold, GEAR, 7);
+    // à égalité (10 et 10), le premier objet ; cale pleine : 6 places
+    assert_eq!(shown(&w), IRON_PLATE.min(GEAR) as i32 | 6 << 8);
+}
+
 #[test]
 fn a_cart_feeds_a_distant_crafter_from_its_hold() {
     let (mut w, hb, sx) = hold_camp();

@@ -154,8 +154,16 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
         w.units.y[s],
         w.units.px[s],
         w.units.py[s],
-        // œuf de la Souche : les ticks avant l'éclosion tiennent la place de l'angle de tourelle
-        w.units.facing[s] as i32 | (if crate::ponte::is_egg(w.units.kind[s]) { crate::ponte::hatch_left(w, s) as i32 } else { c.turret as i32 }) << 16,
+        // œuf de la Souche : les ticks avant l'éclosion tiennent la place de l'angle de tourelle ; chariot de convoi
+        // des Transhumants : ce que montre sa benne (chariots::load_view)
+        w.units.facing[s] as i32
+            | (if crate::ponte::is_egg(w.units.kind[s]) {
+                crate::ponte::hatch_left(w, s) as i32
+            } else if w.units.kind[s] == U_T_CART {
+                crate::chariots::load_view(w, s)
+            } else {
+                c.turret as i32
+            }) << 16,
         w.units.hp[s],
         aux,
     ]);

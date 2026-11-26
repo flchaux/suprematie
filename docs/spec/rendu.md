@@ -12,7 +12,7 @@ Le jeu cible Chrome uniquement. Le rendu utilise Three.js avec son moteur WebGPU
     - `kindMesh.ts` : modèle d'une sorte d'entité et ses maillages instanciés (`KindMesh`) ;
     - `units.ts` : unités (`drawUnits`), fantômes des unités qui passent une porte (`drawGhosts`), coques des œufs éclos (`drawHusks`) ;
     - `buildings.ts` : bâtiments (`drawBuildings`) : modèles, tapis, murs, racines, goulottes, porte et anneaux, et les repères placés avec eux (sélection, diagnostic, barres de vie, de chantier, de combustible) ;
-    - `cargo.ts` : trains et drones de fret (`drawCarriers`), objets sur les tapis et plateaux des ascenseurs (`drawItems`) ;
+    - `cargo.ts` : trains et drones de fret (`drawCarriers`), objets sur les tapis, chargement des chariots de convoi dans leur benne (relevés par la passe des unités, `Entities::cartLoads`) et plateaux des ascenseurs (`drawItems`) ;
     - `projectiles.ts` : projectiles et rayons prolongés (`drawProjectiles`) ;
     - `wrecks.ts` : épaves (`drawWrecks`) ;
     - `energyFx.ts` : bulles des boucliers (`drawShields`, `shieldMaterial`), matière de l'horizon d'une porte (`vortexMaterial`) ;

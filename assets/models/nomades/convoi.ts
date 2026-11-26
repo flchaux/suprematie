@@ -1,10 +1,11 @@
 // Chariot de convoi (t_cart) : petit chenillard de charge attelé à une soute, qui fait la navette entre elle et
 // un module éloigné. Deux chenilles courtes, un châssis bas, un poste de conduite à l'avant gauche (siège,
-// guidon, pare-brise, auvent de bâche), une benne ouverte à ridelles de bois chargée de caisses sanglées et d'un
-// sac sous bâche, un timon d'attelage replié à l'arrière, des jupes et une bande aux couleurs de l'équipe.
+// guidon, pare-brise, auvent de bâche), une benne ouverte à ridelles de bois, un timon d'attelage replié à
+// l'arrière, des jupes et une bande aux couleurs de l'équipe. La benne est vide : le client y pose ce que le
+// chariot porte (CART_SLOTS dans packages/client/src/render/entities/cargo.ts, plancher à CART_FLOOR).
 // Repère : +x à droite, +y en haut, +z vers l'avant.
 import type { Part } from "../types.ts";
-import { chenille, coffre, voute } from "./commun.ts";
+import { chenille, voute } from "./commun.ts";
 
 export function chariotConvoi(): Part[] {
   const p: Part[] = [
@@ -31,13 +32,6 @@ export function chariotConvoi(): Part[] {
     { shape: "box", size: [0.5, 0.22, 0.04], pos: [0.23, 0.58, 0.28], color: "wood" },
     { shape: "box", size: [0.98, 0.035, 0.05], pos: [0, 0.68, -0.72], color: "faction" },
     ...[0.26, -0.22, -0.7].map((z): Part => ({ shape: "box", size: [0.05, 0.26, 0.05], pos: [0.49, 0.58, z], color: "steel", mirror: true, fine: true })),
-    // chargement : caisses sanglées, sac sous bâche
-    ...coffre([0.22, 0.6, -0.08], [0.36, 0.26, 0.3]),
-    ...coffre([0.2, 0.84, -0.1], [0.28, 0.2, 0.24], "rust"),
-    ...coffre([-0.22, 0.6, -0.46], [0.36, 0.26, 0.3], "metal"),
-    { shape: "sphere", radius: 0.2, detail: 1, pos: [-0.24, 0.6, -0.08], scale: [1, 0.7, 1.1], color: "dry" },
-    { shape: "box", size: [0.03, 0.02, 0.4], pos: [-0.24, 0.73, -0.08], color: "black", fine: true },
-    { shape: "sphere", radius: 0.14, detail: 1, pos: [0.22, 0.58, -0.48], scale: [1, 0.7, 1], color: "copper" },
     // timon d'attelage replié sous la benne, anneau
     { shape: "box", size: [0.06, 0.05, 0.36], pos: [0, 0.34, -0.9], color: "rust" },
     { shape: "torus", radius: 0.06, tube: 0.015, sides: 8, pos: [0, 0.34, -1.1], rot: [90, 0, 0], color: "steel", fine: true },

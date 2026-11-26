@@ -718,9 +718,12 @@ export function weaponSize(dmg: number, aoe: number): number {
   return Math.max(0.7, Math.min(1.8, 0.55 + Math.log10(Math.max(1, dmg)) * 0.3 + aoe / 1800));
 }
 
-/** Son d'une arme : taille arrondie au dixième, pour que des armes voisines partagent leurs tampons. */
+/** Son d'une arme : taille arrondie au dixième, pour que des armes voisines partagent leurs tampons. Seuls un rayon
+ * (8) et un jet de flammes (10) font un son tenu ; la durée d'une autre arme (câble tendu du grappin du Mâtin) ne
+ * s'entend pas. */
 export function shotSpec(w: { proj: number; dmg: number; aoe: number; cooldown: number; sustain: number }): ShotSpec {
-  return { proj: w.proj, size: Math.round(weaponSize(w.dmg, w.aoe) * 10) / 10, rapid: w.cooldown <= 12, sustain: w.sustain * 0.05 };
+  const held = w.proj === 8 || w.proj === 10;
+  return { proj: w.proj, size: Math.round(weaponSize(w.dmg, w.aoe) * 10) / 10, rapid: w.cooldown <= 12, sustain: held ? w.sustain * 0.05 : 0 };
 }
 
 export function specKey(s: ShotSpec): string {
