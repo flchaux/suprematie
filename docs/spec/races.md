@@ -184,7 +184,7 @@ Les unités de combat produites par l'atelier (pisteur, cavalier, herse, canon t
 
 ### Chariot bouclier
 
-Code : `sim/src/bouclier.rs`. Tests : `sim/src/bouclier_tests.rs`. Modèle : `assets/models/nomades/bouclier.ts`. Démo : `?demo=arche` (quatre chariots bouclier sur la route du siège de chars).
+Code : `sim/src/bouclier.rs`. Tests : `sim/src/bouclier_tests.rs`. Modèle : `assets/models/nomades/bouclier.ts`. Démo : `?demo=arche` (quatre chariots bouclier et quatre cavaliers nus sur la route du siège de chars), contrôle d'affichage `tools/e2e-bouclier.mjs` (WebGPU : `WEBGPU=1`, sous xvfb-run).
 
 - **Unité** (`t_shield_cart`, palier 3, recherche Projecteurs de convoi ; produit par l'atelier ; 1 800 PV, vitesse 2,4, sans arme ; 10 acier, 10 circuits, 16 plaques de cuivre, 25 s) : petit chenillard qui porte un projecteur de bulle. Bulle d'origine (`UnitDef::shield_r`, `shield_hp`) : 6 cases, 3 000 points, pleine en 30 s, revient au quart 10 s après sa rupture.
 - **Règles** : celles des autres boucliers (`combat::collect_shields`, `shield_absorb`) : elle arrête ce qui vise l'intérieur depuis le dehors, ou du ciel ; pas ce qui est tiré de l'intérieur, ni le corps à corps. Une nouvelle unité part de 0 point et se charge. Les points (`UnitCold::shield`, `shield_down`) et les améliorations (`UnitCold::mods`) sont déjà sauvegardés : pas de nouveau format.
