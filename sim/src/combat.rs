@@ -363,9 +363,9 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         w.hit_from = (x, y);
         w.hit_weapon = wi as u8;
         if wd.aoe > 0 {
-            // griffes qui balaient (béhémoth), houlette du Berger
+            // griffes qui balaient (béhémoth)
             area_damage(w, tx, ty, wd.aoe, dmg, owner, wd.mask, false);
-            stun_area(w, owner, wd, tx, ty);
+            stun_area(w, owner, wi, tx, ty);
         } else {
             hit_ref(w, t, dmg, owner, 0);
         }
@@ -744,8 +744,8 @@ pub fn damage_unit(w: &mut World, s: usize, dmg: i32, attacker: u8) {
     let o = w.units.owner[s];
     if udef(w.units.kind[s]).bio && crate::essaim::spiny(w, o) {
         crate::essaim::thorns(w, dmg, o);
-    } else if crate::troupeau::spiked(w, s) {
-        // collier à clous du Mâtin : la moitié
+    } else if crate::troupeau::shocks(w, s) {
+        // coque électrifiée du Mâtin : la moitié
         crate::essaim::thorns(w, dmg * 3 / 2, o);
     }
 }
@@ -976,15 +976,16 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
     w.shooter = NONE;
     w.hit_from = (i32::MIN, 0);
     w.hit_weapon = 255;
-    if p.weapon == W_MASTIFF_HARPOON {
+    if p.weapon == W_MASTIFF_GRAPPLE {
         crate::troupeau::reel(w, p.src, p.target);
     }
     true
 }
 
-/// Étourdit les ennemis de la zone de l'arme `wd` du joueur `owner` autour de (x, y) qu'elle peut viser (les avions
+/// Étourdit les ennemis de la zone de l'arme `wi` du joueur `owner` autour de (x, y) qu'elle peut viser (les avions
 /// au-dessus passent) ; rien pour une arme qui n'étourdit pas.
-fn stun_area(w: &mut World, owner: u8, wd: &WeaponDef, x: i32, y: i32) {
+fn stun_area(w: &mut World, owner: u8, wi: usize, x: i32, y: i32) {
+    let wd = &WEAPONS[wi];
     if wd.stun == 0 {
         return;
     }
@@ -998,8 +999,8 @@ fn stun_area(w: &mut World, owner: u8, wd: &WeaponDef, x: i32, y: i32) {
         }
     });
     for o in stun_u {
-        // (la houlette électrique ne paralyse pas un géant)
-        if wd.proj == Proj::Bite && udef(w.units.kind[o]).tier == 6 {
+        // (l'arc paralysant du Berger ne paralyse pas un géant)
+        if wi == W_SHEPHERD_ARC as usize && udef(w.units.kind[o]).tier == 6 {
             continue;
         }
         if w.team_of(w.units.owner[o]) != team && layer_mask(w, o) & wd.mask != 0 {
@@ -1042,7 +1043,7 @@ fn impact(w: &mut World, p: &Projectile) {
             crate::essaim::spill_from(w, p.weapon, p.owner, p.tx, p.ty);
         }
         area_damage(w, p.tx, p.ty, p.aoe, p.dmg, p.owner, wd.mask, false);
-        stun_area(w, p.owner, wd, p.tx, p.ty);
+        stun_area(w, p.owner, p.weapon as usize, p.tx, p.ty);
         return;
     }
     // coup direct : la cible doit encore être là

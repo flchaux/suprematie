@@ -220,7 +220,7 @@ export function equipementPisteur(): Part[] {
       tache(c, 2, 0.5, -1, 0.15, 0.34, 0.24, "leaf"),
       tache(c, 2, 0.5, -1, -0.62, 0.3, 0.2, "dry"),
     ])),
-    // longue-vue : gros tube de cuivre sur la tête du mât, objectif cyan
+    // optique longue portée : gros tube de cuivre sur la tête du mât, objectif cyan
     ...groupe("si:tracker_scope#tourelle_vue", [
       { shape: "cylinder", sides: 6, radius: 0.06, height: 0.16, pos: [0, 2.1, -0.3], color: "steel" },
       { shape: "box", size: [0.4, 0.1, 0.3], pos: [0, 2.2, -0.3], color: "dark" },

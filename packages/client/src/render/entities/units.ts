@@ -107,12 +107,12 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / packLen) : 0;
     // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
     let depP = packing === 1 ? packT : packing === 2 ? 1 - packT : def.turret && flags & UF.DEPLOYED ? 1 : 0;
-    // frappe (mâchoire, houlette) : part au tick où l'unité tire ou mord
+    // frappe ou tir (mâchoire, mât émetteur, mortier) : part au tick où l'unité tire ou mord
     if (flags & UF.FIRING && st.hitTick !== f.tick) {
       st.hitTick = f.tick;
       st.hit = simT;
     }
-    // échasses : tout le modèle est rehaussé
+    // jambes télescopiques : tout le modèle est rehaussé
     if (km.built.lift) for (const [k, h] of km.built.lift) if (has(k)) bob += h * km.scale;
     if (walk > 0.05 && km.legs) bob += Math.abs(Math.sin(st.phase)) * 0.025 * km.height * walk;
     tmpQ.setFromAxisAngle(UP, Math.PI / 2 - facing);

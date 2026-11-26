@@ -740,8 +740,8 @@ pub fn update_units(w: &mut World) {
 
 /// Exécute l'ordre courant. Renvoie la cible imposée aux armes (ou NONE).
 fn run_order(w: &mut World, s: usize) -> u32 {
-    // Mâtin, Berger : il court sus à l'ennemi qui approche
-    if matches!(w.units.kind[s], U_MASTIFF | U_SHEPHERD) {
+    // Mâtin : il court sus à l'ennemi qui approche
+    if w.units.kind[s] == U_MASTIFF {
         let prey = crate::troupeau::chase(w, s);
         if prey != NONE {
             return prey;
@@ -1275,8 +1275,8 @@ pub fn max_range(kind: u16) -> i32 {
 }
 
 fn has_target_in_range(w: &World, s: usize) -> bool {
-    // au corps-à-corps, l'arme de plus tire en chemin : elle n'arrête pas l'unité
-    if crate::troupeau::brawler(w, s) {
+    // l'arme de plus tire en chemin : elle n'arrête pas l'unité qui se bat à la portée de son arme principale
+    if crate::troupeau::closes_in(w, s) {
         return w.units.cold[s].wtarget[0] != NONE;
     }
     w.units.cold[s].wtarget.iter().any(|&t| t != NONE)
@@ -1553,7 +1553,7 @@ fn special(w: &mut World, s: usize) {
             }
         }
         // écrase les petites unités ennemies sous ses pieds
-        U_COLOSSUS => crate::troupeau::stomp(w, s, 150, false),
+        U_COLOSSUS => crate::troupeau::stomp(w, s, 150),
         _ => {}
     }
 }

@@ -1,8 +1,10 @@
-// Berger des Transhumants (shepherd) : géant bipède de ferraille, voûté. Buste de chaudière de locomotive à foyer ambre
-// (pivot « tourelle », sur l'axe), épaules de cabines de camion, houppelande de bâche, tête basse à barbe de chaînes sous
-// un grand chapeau de tôle (couvercle de cuve), jambes de poutrelles guêtrées de toile (pivots « jambe_d », « jambe_g »),
-// bras gauche à pince ; bras droit et houlette (flèche de grue en crosse) en pivot de frappe « coup|… », à l'épaule.
-// Équipements : voir sim/src/ameliorations/table.rs et docs/spec/races.md ; échasses modelées sous y = 0 (`lift`).
+// Berger des Transhumants (shepherd) : marcheur géant de commandement, bâti de ferraille, voûté. Buste de chaudière à
+// foyer ambre (pivot « tourelle », sur l'axe), épaules de cabines de camion, houppelande de bâche, tête basse à câbles
+// pendants sous un dôme de capteurs à collerette, jambes de poutrelles guêtrées de toile (pivots « jambe_d », « jambe_g »),
+// bras gauche à pince ; bras droit et mât émetteur (flèche de grue à couronne d'électrodes), qui tire les décharges d'arc,
+// en pivot « coup|… » à l'épaule : il le pointe vers sa cible à chaque tir.
+// Équipements : voir sim/src/ameliorations/table.rs et docs/spec/races.md ; jambes télescopiques modelées sous y = 0
+// (`lift`).
 // Repère : +x à droite, +y en haut, +z vers l'avant. Les pièces « si: » ne comptent pas dans la taille du modèle.
 import type { Part, Vec3 } from "../types.ts";
 import { q, coffre } from "./commun.ts";
@@ -15,14 +17,14 @@ const fin = (p: Part): Part => ({ ...p, fine: true });
 const HANCHE: Vec3 = [0.6, 1.95, 0];
 const AXE: Vec3 = [0, 2.4, 0];
 const EPAULE: Vec3 = [1.42, 3.42, 0.05];
-/** Axe de la houlette (x, z). */
+/** Axe du mât émetteur (x, z). */
 const HX = 1.8;
 const HZ = 1.0;
-/** Frappe : le bras lève et abat la houlette devant lui (degrés). */
-const FRAPPE = "coup|x,100";
+/** Tir : le bras pointe le mât vers l'avant (degrés). */
+const FRAPPE = "coup|x,30";
 
-/** Hauteur dont les échasses soulèvent le Berger (unités du modèle). */
-export const ECHASSES = 1.7;
+/** Hauteur dont les jambes télescopiques soulèvent le Berger (unités du modèle). */
+export const TELESCOPE = 1.7;
 
 /** Segment tourné d'une nappe conique (toile, tôle) : de l'angle `phi` (0 : avant, 180 : dos), sur `arc` degrés. */
 function pan(y: number, rh: number, rb: number, h: number, ep: number, phi: number, arc: number, color: C, sides = 1, z = 0): Part {
@@ -75,7 +77,7 @@ function bassin(): Part[] {
   ];
 }
 
-/** Buste : chaudière, foyer, houppelande, cabines d'épaule, tête, chapeau, bras gauche. */
+/** Buste : chaudière, foyer, houppelande, cabines d'épaule, tête, dôme de capteurs, bras gauche. */
 function torse(): Part[] {
   const barbe: Part[] = [-0.3, -0.18, -0.06, 0.06, 0.18, 0.3].map((x, i): Part => ({
     shape: "tube", radius: 0.075, sides: 4, bend: 0.05, color: (["steel", "rust", "light", "steel", "copper", "steel"] as C[])[i], fine: i === 1 || i === 4,
@@ -108,16 +110,17 @@ function torse(): Part[] {
     { shape: "box", size: [0.2, 0.14, 0.06], pos: [1.6, 3.38, 0.54], color: "amber", mirror: true },
     { shape: "box", size: [0.16, 0.13, 0.06], pos: [1.08, 3.42, 0.54], color: "amber", mirror: true, fine: true },
     { shape: "box", size: [0.86, 0.12, 0.1], pos: [1.33, 3.24, 0.54], rot: [0, 0, -8], color: "hazard", mirror: true },
-    // cou, tête de tôle, yeux, barbe de chaînes
+    // cou, tête de tôle, yeux, câbles pendants
     { shape: "cylinder", sides: 6, radius: 0.36, height: 0.5, pos: [0, 3.86, 0.5], rot: [40, 0, 0], color: "rubber", fine: true },
     { shape: "bevel", size: [0.7, 0.6, 0.64], pos: [0, 4.02, 0.8], bevel: 0.1, color: "metal" },
     { shape: "box", size: [0.58, 0.16, 0.06], pos: [0, 4.08, 1.12], color: "black" },
     { shape: "cylinder", sides: 6, radius: 0.1, height: 0.06, pos: [0.17, 4.08, 1.15], rot: [90, 0, 0], color: "amber", mirror: true },
     { shape: "wedge", size: [0.16, 0.2, 0.22], pos: [0, 3.94, 1.18], color: "copper" },
     ...barbe,
-    // chapeau : couvercle de cuve à large bord, ruban du joueur, pièces rapportées
-    { shape: "lathe", sides: 14, profile: [[0, -0.06], [1.02, -0.14], [1.14, -0.08], [1.04, 0.02], [0.58, 0.1], [0, 0.1]], pos: [0, 4.36, 0.62], rot: [10, 0, 0], color: "metal" },
-    { shape: "lathe", sides: 10, profile: [[0.58, 0.04], [0.52, 0.42], [0.36, 0.58], [0.12, 0.64], [0, 0.6]], pos: [0, 4.36, 0.62], rot: [10, 0, 0], color: "rust" },
+    // dôme de capteurs : collerette de blindage, bandeau du joueur, plaques rapportées
+    { shape: "lathe", sides: 14, profile: [[0, -0.06], [0.8, -0.1], [0.86, -0.04], [0.78, 0.04], [0.58, 0.1], [0, 0.1]], pos: [0, 4.36, 0.62], rot: [10, 0, 0], color: "dark" },
+    { shape: "lathe", sides: 10, profile: [[0.58, 0.04], [0.52, 0.42], [0.36, 0.58], [0.12, 0.64], [0, 0.6]], pos: [0, 4.36, 0.62], rot: [10, 0, 0], color: "metal" },
+    { shape: "box", size: [0.56, 0.09, 0.08], pos: [0, 4.72, 1.1], rot: [24, 0, 0], color: "glow" },
     { shape: "cylinder", sides: 10, radius: 0.61, radiusTop: 0.58, height: 0.16, pos: [0, 4.52, 0.65], rot: [10, 0, 0], color: "faction" },
     { shape: "box", size: [0.42, 0.04, 0.3], pos: [0.66, 4.36, 0.95], rot: [12, 24, 2], color: "hazard", fine: true },
     { shape: "box", size: [0.36, 0.04, 0.36], pos: [-0.72, 4.42, 0.42], rot: [8, -16, -2], color: "copper", fine: true },
@@ -133,7 +136,8 @@ function torse(): Part[] {
   ]);
 }
 
-/** Bras droit et houlette : bras, main, mât de grue rayé, pointe ; la crosse est à part (remplacée par l'électrique). */
+/** Bras droit et mât émetteur : bras, main, mât de grue rayé, pointe ; la tête du mât est à part (remplacée par l'arc
+ * paralysant). */
 function brasDroit(): Part[] {
   const bandes = [0.75, 1.65, 3.15, 3.95];
   return porte(`${FRAPPE}#bras`, EPAULE, [
@@ -151,41 +155,39 @@ function brasDroit(): Part[] {
   ]);
 }
 
-/** Points d'une crosse de rayon `r` au sommet du mât, recourbée vers l'avant. */
-function crosse(r: number, y: number, fin_: number, n = 6): Vec3[] {
-  const out: Vec3[] = [[HX, q(y - 0.5), HZ]];
-  for (let i = 0; i <= n; i++) {
-    const a = ((180 - ((180 + fin_) * i) / n) * Math.PI) / 180;
-    out.push([HX, q(y + Math.sin(a) * r), q(HZ + r + Math.cos(a) * r)]);
-  }
-  return out;
-}
-
-function crosseOrigine(): Part[] {
-  const bout = crosse(0.55, 5.1, 60).at(-1)!;
-  return porte(`sauf:shepherd_arc#${FRAPPE}#crosse`, EPAULE, [
-    { shape: "tube", radius: 0.13, sides: 5, path: crosse(0.55, 5.1, 60), bend: 0.1, color: "steel" },
-    { shape: "cylinder", sides: 6, radius: 0.18, height: 0.14, pos: bout, rot: [0, 0, 90], color: "dark", fine: true },
-    // chaîne et crochet de levage
-    { shape: "tube", radius: 0.04, sides: 4, path: [bout, [HX, q(bout[1] - 0.5), bout[2]]], color: "dark" },
-    { shape: "torus", radius: 0.17, tube: 0.06, sides: 8, arc: 270, pos: [HX, q(bout[1] - 0.68), bout[2]], rot: [90, 0, 90], color: "hazard" },
+/** Tête du mât émetteur : couronne d'électrodes autour d'une tige, isolateurs, cœur lumineux. */
+function emetteur(): Part[] {
+  const T: Vec3 = [HX, 5.1, HZ];
+  return porte(`sauf:shepherd_arc#${FRAPPE}#emetteur`, EPAULE, [
+    { shape: "cylinder", sides: 6, radius: 0.09, height: 0.8, pos: [HX, 4.95, HZ], color: "steel" },
+    ...[4.86, 5.04].map((y): Part => ({ shape: "torus", radius: 0.2, tube: 0.06, sides: 8, pos: [HX, y, HZ], color: "light", fine: y > 5 })),
+    { shape: "torus", radius: 0.46, tube: 0.07, sides: 12, pos: T, color: "copper" },
+    ...[0, 120, 240].flatMap((d): Part[] => {
+      const a = (d * Math.PI) / 180;
+      const P: Vec3 = [q(HX + Math.sin(a) * 0.46), T[1], q(HZ + Math.cos(a) * 0.46)];
+      return [
+        entre([HX, 4.72, HZ], P, 0.05, 0, { shape: "cylinder", sides: 4, color: "dark" }),
+        { shape: "cone", sides: 5, radius: 0.08, height: 0.36, pos: [P[0], q(P[1] + 0.18), P[2]], color: "steel" },
+      ];
+    }),
+    { shape: "sphere", radius: 0.16, detail: 1, pos: [HX, 5.36, HZ], color: "glow" },
   ]);
 }
 
 // ——— Arme ———
 
-/** Houlette électrique : grande crosse de cuivre, isolateurs, globe cyan ; bobines sur l'épaule droite. */
+/** Arc paralysant : colonne de bobines de cuivre, grand globe cyan cerclé d'acier, arcs figés ; bobines sur l'épaule. */
 function electrique(): Part[] {
-  const R = 0.72;
-  const c: Vec3 = [HX, 5.15, q(HZ + R)];
+  const c: Vec3 = [HX, 5.42, HZ];
   return [
     ...porte(`si:shepherd_arc#${FRAPPE}#arc`, EPAULE, [
-      { shape: "tube", radius: 0.16, sides: 6, path: crosse(R, 5.15, 75), bend: 0.12, color: "copper" },
+      { shape: "cylinder", sides: 6, radius: 0.12, height: 1.0, pos: [HX, 4.95, HZ], color: "copper" },
       ...[4.35, 4.6, 4.85].map((y, i): Part => ({ shape: "torus", radius: q(0.34 - i * 0.05), tube: 0.08, sides: 10, pos: [HX, y, HZ], color: i === 1 ? "light" : "copper" })),
       ...[0.9, 1.35, 3.0, 3.5].map((y, i): Part => ({ shape: "torus", radius: 0.22, tube: 0.07, sides: 8, pos: [HX, y, HZ], color: "copper", fine: i % 2 === 1 })),
       { shape: "sphere", radius: 0.36, detail: 1, pos: c, color: "glow" },
       { shape: "torus", radius: 0.5, tube: 0.06, sides: 12, pos: c, rot: [0, 0, 90], color: "steel" },
-      // éclairs figés entre le globe et la crosse
+      { shape: "torus", radius: 0.5, tube: 0.06, sides: 12, pos: c, rot: [90, 0, 0], color: "steel", fine: true },
+      // arcs figés autour du globe
       { shape: "tube", radius: 0.045, sides: 3, path: [c, [q(HX + 0.12), q(c[1] + 0.36), q(c[2] - 0.2)], [q(HX - 0.06), q(c[1] + 0.5), q(c[2] - 0.34)], [HX, q(c[1] + 0.68), q(c[2] - 0.3)]], bend: 0.01, color: "glow" },
       { shape: "tube", radius: 0.045, sides: 3, path: [c, [q(HX - 0.14), q(c[1] + 0.2), q(c[2] + 0.34)], [q(HX + 0.08), q(c[1] + 0.34), q(c[2] + 0.44)], [HX, q(c[1] + 0.3), q(c[2] + 0.66)]], bend: 0.01, color: "glow" },
       { shape: "tube", radius: 0.045, sides: 3, path: [[HX, 4.4, HZ], [q(HX + 0.3), 4.62, q(HZ + 0.24)], [q(HX + 0.1), 4.8, q(HZ + 0.4)], c], bend: 0.01, color: "glow" },
@@ -203,100 +205,96 @@ function electrique(): Part[] {
   ];
 }
 
-/** Fronde : trébuchet à l'épaule gauche, contrepoids, carcasse de voiture au bout du bras (pivot de frappe). */
-function fronde(): Part[] {
-  const O: Vec3 = [-1.36, 4.72, -0.2];
-  const V: Vec3 = [-1.36, 4.5, -2.45];
+/** Mortier lourd : affût sur l'épaule gauche, gros tube levé vers l'avant (pivot de recul), caisse d'obus au dos. */
+function mortier(): Part[] {
+  const O: Vec3 = [-1.36, 4.62, -0.3];
+  // tube levé de 60° : son axe y basculé de 30° vers l'avant
+  const le = (d: number): Vec3 => [O[0], q(O[1] + Math.cos(Math.PI / 6) * d), q(O[2] + Math.sin(Math.PI / 6) * d)];
   return [
-    ...porte("si:shepherd_sling#tourelle", AXE, [
-      ...[-0.5, 0.5].flatMap((dx): Part[] => [
-        entre([q(O[0] + dx), 3.9, 0.36], [q(O[0] + dx * 0.9), 4.8, -0.2], 0.14, 0.16, { shape: "box", color: "wood" }),
-        entre([q(O[0] + dx), 3.9, -0.66], [q(O[0] + dx * 0.9), 4.8, -0.2], 0.14, 0.16, { shape: "box", color: "wood" }),
-      ]),
-      { shape: "box", size: [1.3, 0.16, 1.3], pos: [O[0], 3.98, -0.14], color: "rust" },
-      { shape: "cylinder", sides: 8, radius: 0.13, height: 1.3, pos: O, rot: [0, 0, 90], color: "steel" },
-      { shape: "cylinder", sides: 8, radius: 0.2, height: 0.12, pos: [q(O[0] - 0.66), O[1], O[2]], rot: [0, 0, 90], color: "faction" },
+    ...porte("si:shepherd_mortar#tourelle", AXE, [
+      { shape: "box", size: [1.2, 0.18, 1.3], pos: [O[0], 3.98, -0.3], color: "dark" },
+      ...[-0.44, 0.44].map((dx): Part => ({ shape: "extrude", profile: [[-0.5, 0], [0.5, 0], [0.24, 0.62], [-0.24, 0.62]], depth: 0.12, pos: [q(O[0] + dx), 4.06, O[2]], rot: [0, -90, 0], color: "rust" })),
+      { shape: "cylinder", sides: 8, radius: 0.14, height: 1.1, pos: O, rot: [0, 0, 90], color: "steel" },
+      { shape: "box", size: [0.06, 0.2, 1.2], pos: [q(O[0] - 0.62), 4.12, -0.3], color: "faction" },
+      // caisse d'obus et ses ogives
+      { shape: "box", size: [0.9, 0.5, 0.62], pos: [O[0], 4.32, -1.2], color: "metal" },
+      { shape: "box", size: [0.92, 0.08, 0.64], pos: [O[0], 4.46, -1.2], color: "hazard" },
+      ...[-0.24, 0, 0.24].map((dx): Part => ({ shape: "cone", sides: 6, radius: 0.1, height: 0.26, pos: [q(O[0] + dx), 4.7, -1.2], color: "copper", fine: dx !== 0 })),
     ]),
-    ...porte("si:shepherd_sling#coup|x,120#fronde", O, [
-      entre([O[0], 5.02, 0.72], [O[0], 4.42, -2.3], 0.2, 0.22, { shape: "box", color: "wood" }),
-      ...[0.2, -0.7, -1.5].map((z): Part => ({ shape: "box", size: [0.26, 0.28, 0.16], pos: [O[0], q(4.88 + (z - 0.2) * 0.2), z], color: "hazard" })),
-      // contrepoids : bloc de moteur rouillé
-      { shape: "bevel", size: [0.66, 0.6, 0.5], pos: [O[0], 4.78, 0.86], bevel: 0.06, color: "rust" },
-      { shape: "box", size: [0.5, 0.1, 0.52], pos: [O[0], 5.1, 0.86], color: "faction" },
-      // carcasse de voiture dans sa poche de bâche
-      { shape: "box", size: [1.1, 0.1, 1.5], pos: [V[0], 4.36, -2.55], rot: [-6, 0, 0], color: "dry" },
-      { shape: "bevel", size: [0.86, 0.34, 1.6], pos: [V[0], 4.62, -2.55], rot: [-6, 8, 0], bevel: 0.1, color: "red" },
-      { shape: "bevel", size: [0.74, 0.3, 0.76], pos: [V[0], 4.9, -2.6], rot: [-6, 8, 0], bevel: 0.1, color: "black" },
-      { shape: "box", size: [0.66, 0.05, 0.6], pos: [V[0], 5.06, -2.6], rot: [-6, 8, 0], color: "rust" },
-      ...[[0.42, 0.5], [-0.42, 0.5], [0.42, -0.55], [-0.42, -0.55]].map(([dx, dz]): Part => ({ shape: "cylinder", sides: 8, radius: 0.2, height: 0.16, pos: [q(V[0] + dx), 4.5, q(-2.55 + dz)], rot: [0, 0, 90], color: "rubber" })),
-      ...[-0.5, 0.5].map((dx): Part => ({ shape: "tube", radius: 0.05, sides: 4, path: [[O[0], 4.6, -1.7], [q(V[0] + dx), 4.44, -1.85], [q(V[0] + dx), 4.36, -3.2]], bend: 0.1, color: "dark" })),
+    ...porte("si:shepherd_mortar#coup|x,-8#mortier", O, [
+      { shape: "cylinder", sides: 10, radius: 0.3, height: 2.0, pos: le(0.7), rot: [30, 0, 0], color: "metal" },
+      { shape: "cylinder", sides: 10, radius: 0.36, height: 0.5, pos: le(-0.1), rot: [30, 0, 0], color: "dark" },
+      { shape: "torus", radius: 0.31, tube: 0.07, sides: 10, pos: le(1.62), rot: [30, 0, 0], color: "steel" },
+      { shape: "torus", radius: 0.31, tube: 0.05, sides: 10, pos: le(0.9), rot: [30, 0, 0], color: "faction", fine: true },
+      // vérins de recul de part et d'autre
+      ...[-0.36, 0.36].map((dx): Part => ({ shape: "cylinder", sides: 6, radius: 0.07, height: 1.0, pos: [q(O[0] + dx), le(0.3)[1], le(0.3)[2]], rot: [30, 0, 0], color: "light" })),
     ]),
   ];
 }
 
-/** Lanterne ardente : potence à l'épaule gauche, grande lanterne de cuivre à foyer ambre pendue devant. */
-function lanterne(): Part[] {
-  const L: Vec3 = [-1.24, 4.4, 1.5];
+/** Lance-plasma : console sur l'épaule gauche, long corps à anneaux de refroidissement pointé vers l'avant, bouche
+ * ambre, réservoirs et durite ; le jet part de la bouche (pivot « laser »). */
+function plasma(): Part[] {
+  const L: Vec3 = [-1.32, 4.6, 0.9];
+  const ax = (z: number): Vec3 => [L[0], L[1], q(L[2] + z)];
   return [
-    ...porte("si:shepherd_lantern#tourelle", AXE, [
-      entre([-1.4, 3.8, -0.3], [-1.4, 5.5, -0.2], 0.2, 0.2, { shape: "box", color: "wood" }),
-      entre([-1.4, 5.42, -0.4], [L[0], 5.6, 1.75], 0.18, 0.2, { shape: "box", color: "wood" }),
-      entre([-1.4, 4.7, -0.24], [-1.32, 5.48, 0.7], 0.12, 0.12, { shape: "box", color: "rust" }),
-      { shape: "box", size: [0.3, 0.3, 0.3], pos: [-1.4, 5.44, -0.24], color: "hazard" },
-      { shape: "tube", radius: 0.05, sides: 4, path: [[L[0], 5.56, L[2]], [L[0], 5.2, L[2]]], color: "dark" },
-      // lanterne : chapeau, cage, foyer, socle
-      { shape: "lathe", sides: 10, profile: [[0.72, 0], [0.62, 0.12], [0.2, 0.42], [0.1, 0.56], [0, 0.56]], pos: [L[0], 4.82, L[2]], color: "copper" },
-      { shape: "cylinder", sides: 10, radius: 0.42, height: 0.86, pos: [L[0], 4.4, L[2]], color: "amber" },
-      ...[0, 60, 120, 180, 240, 300].map((d): Part => {
-        const a = (d * Math.PI) / 180;
-        return { shape: "box", size: [0.09, 0.9, 0.09], pos: [q(L[0] + Math.sin(a) * 0.46), 4.4, q(L[2] + Math.cos(a) * 0.46)], rot: [0, d, 0], color: "dark" };
-      }),
-      { shape: "cylinder", sides: 10, radius: 0.6, radiusTop: 0.5, height: 0.18, pos: [L[0], 3.9, L[2]], color: "copper" },
-      { shape: "torus", radius: 0.5, tube: 0.06, sides: 10, pos: [L[0], 4.4, L[2]], color: "faction" },
+    ...porte("si:shepherd_plasma#tourelle", AXE, [
+      entre([-1.4, 3.86, -0.2], [L[0], q(L[1] - 0.2), 0.5], 0.24, 0.3, { shape: "box", color: "steel" }),
+      { shape: "box", size: [0.5, 0.2, 0.7], pos: [L[0], q(L[1] - 0.3), 0.6], color: "dark" },
+      { shape: "cylinder", sides: 10, radius: 0.32, height: 1.4, pos: ax(0), rot: [90, 0, 0], color: "dark" },
+      { shape: "cylinder", sides: 10, radius: 0.2, height: 0.7, pos: ax(1.0), rot: [90, 0, 0], color: "steel" },
+      ...[-0.4, 0, 0.4].map((z, i): Part => ({ shape: "torus", radius: 0.34, tube: 0.06, sides: 10, pos: ax(z), rot: [90, 0, 0], color: "copper", fine: i === 1 })),
+      { shape: "torus", radius: 0.21, tube: 0.05, sides: 10, pos: ax(1.32), rot: [90, 0, 0], color: "faction" },
+      { shape: "cylinder", sides: 10, radius: 0.15, height: 0.06, pos: ax(1.36), rot: [90, 0, 0], color: "amber" },
+      // réservoirs et durite
+      ...[-1.62, -1.02].map((x): Part => ({ shape: "cylinder", sides: 8, radius: 0.17, height: 0.8, pos: [x, 4.32, -0.5], rot: [90, 0, 0], color: "hazard" })),
+      { shape: "tube", radius: 0.05, sides: 4, path: [[-1.32, 4.32, -0.1], [-1.5, 4.5, 0.1], [L[0], q(L[1] - 0.1), 0.3]], bend: 0.2, color: "dark" },
     ]),
-    { shape: "box", size: [0.02, 0.02, 0.02], pos: [0, 4.3, 1.5], color: "dark", pivot: "si:shepherd_lantern#laser" },
+    { shape: "box", size: [0.02, 0.02, 0.02], pos: [0, 4.6, 2.3], color: "dark", pivot: "si:shepherd_plasma#laser" },
   ];
 }
 
 // ——— Châssis (pivots des jambes, origine à la hanche) ———
 
-/** Échasses : quatre poutrelles évasées par pied, entretoises, patins ; sous y = 0 (le jeu soulève le Berger). */
-function echasse(): Part[] {
-  const p: Part[] = [];
-  const bas = -ECHASSES;
-  for (const dx of [-1, 1])
-    for (const dz of [-1, 1]) {
-      const T: Vec3 = [q(0.78 + dx * 0.24), 0.1, q(0.12 + dz * 0.42)];
-      const B: Vec3 = [q(0.84 + dx * 0.42), q(bas + 0.08), q(0.12 + dz * 0.66)];
-      p.push(entre(T, B, 0.15, 0.15, { shape: "box", color: dz > 0 ? "hazard" : "steel" }));
-      p.push({ shape: "box", size: [0.36, 0.14, 0.36], pos: [B[0], q(bas + 0.07), B[2]], color: "dark" });
-    }
-  for (const [y, w, l, c] of [[-0.45, 0.72, 1.06, "rust"], [-1.05, 0.88, 1.28, "wood"]] as [number, number, number, C][]) {
-    p.push({ shape: "box", size: [w, 0.12, 0.12], pos: [0.81, y, q(0.12 + l / 2 - 0.1)], color: c }, { shape: "box", size: [w, 0.12, 0.12], pos: [0.81, y, q(0.12 - l / 2 + 0.1)], color: c });
-    p.push({ shape: "box", size: [0.12, 0.12, l], pos: [q(0.81 + w / 2 - 0.08), y, 0.12], color: c }, { shape: "box", size: [0.12, 0.12, l], pos: [q(0.81 - w / 2 + 0.08), y, 0.12], color: c });
+/** Jambes télescopiques : deux vérins d'acier par pied, guides et patin ; sous y = 0 (le jeu soulève le Berger). */
+function telescope(): Part[] {
+  const bas = -TELESCOPE;
+  const p: Part[] = [{ shape: "box", size: [0.86, 0.16, 1.1], pos: [0.78, 0.0, 0.12], color: "dark" }];
+  for (const dz of [-0.3, 0.42]) {
+    const z = q(0.12 + dz);
+    p.push(
+      { shape: "cylinder", sides: 10, radius: 0.24, height: 0.8, pos: [0.78, -0.4, z], color: "metal" },
+      { shape: "torus", radius: 0.24, tube: 0.05, sides: 10, pos: [0.78, -0.06, z], color: "hazard", fine: true },
+      { shape: "cylinder", sides: 8, radius: 0.15, height: q(-bas - 0.7), pos: [0.78, q((-0.8 + bas + 0.12) / 2), z], color: "light" },
+      { shape: "cylinder", sides: 10, radius: 0.27, height: 0.1, pos: [0.78, -0.8, z], color: "dark" },
+    );
   }
-  // croisillons, cordages de la cheville, fanion
-  p.push(entre([1.06, -0.45, 0.6], [1.16, -1.05, -0.4], 0.08, 0.08, { shape: "box", color: "steel", fine: true }), entre([1.06, -0.45, -0.4], [1.16, -1.05, 0.6], 0.08, 0.08, { shape: "box", color: "steel", fine: true }));
-  p.push({ shape: "cylinder", sides: 8, radius: 0.46, height: 0.2, pos: [0.77, 0.42, 0.04], color: "dry" }, { shape: "box", size: [0.06, 0.44, 0.5], pos: [1.32, -0.75, 0.12], color: "faction" });
+  // patin, guide entre les deux vérins, bande du joueur
+  p.push(
+    { shape: "box", size: [0.76, 0.2, 1.36], pos: [0.78, q(bas + 0.1), 0.18], color: "dark" },
+    { shape: "box", size: [0.8, 0.05, 1.4], pos: [0.78, q(bas + 0.02), 0.18], color: "rubber" },
+    { shape: "box", size: [0.16, 0.14, 0.86], pos: [0.78, -0.62, 0.18], color: "steel" },
+    { shape: "box", size: [0.06, 0.36, 0.5], pos: [1.2, -0.45, 0.18], color: "faction" },
+  );
   return p;
 }
 
-/** Sabot de fonte : énorme galoche à bout relevé, bride du joueur, clous. */
-function sabot(): Part[] {
-  return [
-    { shape: "extrude", profile: [[-0.86, 0], [0.96, 0], [1.4, 0.2], [1.56, 0.64], [1.3, 0.62], [0.9, 0.56], [0.5, 0.82], [0.3, 1.0], [-0.6, 1.04], [-0.9, 0.7]], depth: 1.14, bevel: 0.1, pos: [0.8, 0, 0.1], rot: [0, -90, 0], color: "dark" },
-    { shape: "extrude", profile: [[-0.92, 0], [1.0, 0], [1.46, 0.2], [1.36, 0.28], [0.9, 0.16], [-0.94, 0.16]], depth: 1.26, pos: [0.8, 0, 0.1], rot: [0, -90, 0], color: "steel" },
-    { shape: "box", size: [1.2, 0.16, 0.4], pos: [0.8, 0.94, 0.14], rot: [-8, 0, 0], color: "faction" },
-    { shape: "torus", radius: 0.5, tube: 0.1, sides: 10, pos: [0.78, 1.02, -0.06], color: "dry" },
-    ...[-0.4, 0, 0.4].map((dx): Part => ({ shape: "cone", sides: 5, radius: 0.12, height: 0.3, pos: [q(0.8 + dx), 0.42, 1.62], rot: [76, 0, 0], color: "light" })),
-    ...[-0.4, 0.1, 0.6].map((dz): Part => ({ shape: "sphere", radius: 0.1, pos: [1.4, 0.36, dz], color: "copper" })),
-  ];
+/** Blindage réactif : briques explosives sur le devant de la cuisse et du tibia, et sur le flanc du tibia. */
+function reactif(): Part[] {
+  const p: Part[] = [];
+  const brique = (x: number, y: number, z: number, rx: number, i: number): Part => ({ shape: "box", size: [0.24, 0.2, 0.1], pos: [x, y, z], rot: [rx, 0, 0], color: i % 3 === 1 ? "hazard" : "metal", fine: i % 2 === 1 });
+  let i = 0;
+  for (const y of [0.5, 0.72, 0.94]) for (const x of [0.62, 0.88]) p.push(brique(x, y, q(0.5 + (y - 0.5) * 0.1), -6, i++));
+  for (const y of [1.34, 1.56, 1.78]) for (const x of [0.56, 0.82]) p.push(brique(x, y, q(0.5 - (y - 1.3) * 0.14), 12, i++));
+  for (const y of [0.56, 0.8]) p.push({ shape: "box", size: [0.1, 0.22, 0.4], pos: [1.14, y, 0.1], color: "metal" });
+  p.push({ shape: "box", size: [0.56, 0.06, 0.12], pos: [0.75, 1.15, 0.52], color: "faction" });
+  return p;
 }
 
-/** Manteau de grandes tôles ondulées, des épaules aux genoux, ouvert devant ; galon du joueur au bas. */
-function manteau(): Part[] {
+/** Blindage lourd : jupe de grandes plaques ondulées, des épaules aux genoux, ouverte devant ; galon du joueur au bas. */
+function blindage(): Part[] {
   const p: Part[] = [];
-  const teintes: C[] = ["rust", "metal", "light", "rust", "metal", "hazard", "metal", "rust", "light", "metal", "rust"];
+  const teintes: C[] = ["metal", "steel", "metal", "dark", "metal", "steel", "rust", "metal", "steel", "dark", "metal"];
   const n = 22;
   const arc = 250 / n;
   for (let i = 0; i < n; i++) {
@@ -308,87 +306,94 @@ function manteau(): Part[] {
   p.push(pan(4.22, 0.6, 1.12, 0.22, 0.1, 50, 260, "steel", 8, -0.02));
   p.push(pan(1.96, 1.76, 1.86, 0.3, 0.08, 58, 244, "faction", 11, -0.02));
   // pans d'épaule, plus larges que le buste
-  p.push({ shape: "box", size: [0.9, 0.08, 1.4], pos: [1.5, 4.02, -0.06], rot: [0, 0, -20], color: "rust", mirror: true });
+  p.push({ shape: "box", size: [0.9, 0.08, 1.4], pos: [1.5, 4.02, -0.06], rot: [0, 0, -20], color: "metal", mirror: true });
   p.push({ shape: "box", size: [0.5, 0.06, 1.1], pos: [1.5, 4.08, -0.06], rot: [0, 0, -20], color: "faction", mirror: true });
-  return porte("si:shepherd_cloak#tourelle", AXE, p);
+  return porte("si:shepherd_plate#tourelle", AXE, p);
 }
 
 // ——— Équipement ———
 
-/** Cloche de cuivre, anse en (x, y, z), taille `k`. */
-function cloche(x: number, y: number, z: number, k: number, color: C = "copper"): Part[] {
+/** Module d'antenne : boîtier, fouet, petite parabole et voyant, en (x, y, z), taille `k`. */
+function antenne(x: number, y: number, z: number, k: number): Part[] {
   return [
-    { shape: "lathe", sides: 8, profile: [[0.4, -0.62], [0.36, -0.5], [0.26, -0.3], [0.22, -0.1], [0.12, 0], [0, 0]].map(([r, h]): [number, number] => [q(r * k), q(h * k)]), pos: [x, y, z], color },
-    { shape: "cylinder", sides: 6, radius: q(0.36 * k), height: 0.03, pos: [x, q(y - 0.6 * k), z], color: "black", fine: true },
-    { shape: "sphere", radius: q(0.13 * k), pos: [x, q(y - 0.68 * k), z], color: "steel", fine: true },
+    { shape: "bevel", size: [q(0.44 * k), q(0.5 * k), q(0.44 * k)], pos: [x, y, z], bevel: 0.04, color: "dark" },
+    { shape: "box", size: [q(0.46 * k), 0.06, q(0.46 * k)], pos: [x, q(y + 0.12 * k), z], color: "faction", fine: true },
+    { shape: "cylinder", sides: 4, radius: 0.03, height: q(1.4 * k), pos: [x, q(y + 0.95 * k), z], color: "steel" },
+    { shape: "sphere", radius: q(0.07 * k), pos: [x, q(y + 1.65 * k), z], color: "glow", fine: true },
+    { shape: "lathe", sides: 8, profile: [[0, 0], [0.16, 0.03], [0.26, 0.1], [0.28, 0.1], [0.16, 0], [0, -0.03]].map(([r, h]): [number, number] => [q(r * k), q(h * k)]), pos: [q(x + 0.2 * Math.sign(x) * k), q(y + 0.3 * k), z], rot: [0, 0, q(-60 * Math.sign(x))], color: "light" },
+    { shape: "box", size: [0.08, 0.06, 0.03], pos: [x, q(y + 0.02), q(z + 0.23 * k)], color: "amber" },
   ];
 }
 
-/** Sonnailles : joug de bois en travers des épaules, grosses cloches pendues, bandoulière et ceinture de cloches. */
-function sonnailles(): Part[] {
+/** Relais de commandement : poutre d'acier en travers des épaules, modules d'antenne aux bouts, émetteurs, ceinture de
+ * boîtiers. */
+function relais(): Part[] {
   return [
-    ...porte("si:shepherd_bells#tourelle", AXE, [
-      { shape: "box", size: [5.0, 0.24, 0.28], pos: [0, 4.2, -0.5], color: "wood" },
+    ...porte("si:shepherd_relay#tourelle", AXE, [
+      { shape: "box", size: [5.0, 0.22, 0.26], pos: [0, 4.2, -0.5], color: "steel" },
+      { shape: "box", size: [4.6, 0.06, 0.28], pos: [0, 4.33, -0.5], color: "dark", fine: true },
       ...[2.0, 1.2].map((x): Part => ({ shape: "box", size: [0.16, 0.3, 0.34], pos: [x, 4.2, -0.5], color: "faction", mirror: true })),
-      ...[-2.3, 2.3].flatMap((x) => cloche(x, 4.08, -0.5, 1.5, "hazard")),
-      ...[-1.6, 1.6].flatMap((x) => cloche(x, 4.08, -0.62, 1.0)),
-      // bandoulière de cuir et cloches sur la poitrine
-      entre([-0.95, 3.9, 0.75], [0.85, 2.5, 1.14], 0.2, 0.08, { shape: "box", color: "red" }),
-      ...cloche(-0.62, 3.5, 1.08, 0.7),
-      ...cloche(0, 3.05, 1.24, 0.8),
-      ...cloche(0.6, 2.62, 1.26, 0.9),
+      ...[-2.3, 2.3].flatMap((x) => antenne(x, 4.55, -0.5, 1.4)),
+      ...[-1.6, 1.6].flatMap((x) => antenne(x, 4.5, -0.62, 0.9)),
     ]),
-    ...porte("si:shepherd_bells#fixe_ceinture", [0, 2.2, 0], [[0.95, 0.5], [1.0, -0.5], [-0.95, 0.5], [-1.0, -0.5]].flatMap(([x, z]) => cloche(x, 2.2, z, 0.8))),
+    ...porte("si:shepherd_relay#fixe_ceinture", [0, 2.2, 0], [[0.95, 0.5], [1.0, -0.5], [-0.95, 0.5], [-1.0, -0.5]].flatMap(([x, z]): Part[] => [
+      { shape: "box", size: [0.3, 0.34, 0.3], pos: [x, 2.12, z], color: "dark" },
+      { shape: "box", size: [0.08, 0.06, 0.03], pos: [x, 2.2, q(z + 0.16 * Math.sign(z))], color: "glow" },
+    ])),
   ];
 }
 
-/** Chenil : grande niche de planches à toit de tôle sur le dos, plancher, portillon et chien qui guette. */
-function chenil(): Part[] {
+/** Baie d'assemblage : conteneur d'acier sur le dos, toit plat, sas arrière rayé où un Mâtin attend, voyants. */
+function baie(): Part[] {
   const Z = -1.75;
-  return porte("si:shepherd_kennel#tourelle", AXE, [
+  return porte("si:shepherd_bay#tourelle", AXE, [
     { shape: "box", size: [1.9, 0.14, 1.8], pos: [0, 2.6, q(Z - 0.1)], color: "rust" },
-    { shape: "box", size: [1.56, 1.1, 1.24], pos: [0, 3.2, Z], color: "wood" },
-    { shape: "extrude", profile: [[-0.78, 0], [0.78, 0], [0, 0.62]], depth: 1.24, pos: [0, 3.74, Z], color: "wood" },
-    // toit à deux pans, faîtière du joueur
-    { shape: "box", size: [1.24, 0.1, 1.6], pos: [0.5, 4.1, Z], rot: [0, 0, -38], color: "metal" },
-    { shape: "box", size: [1.24, 0.1, 1.6], pos: [-0.5, 4.1, Z], rot: [0, 0, 38], color: "rust" },
-    { shape: "box", size: [0.34, 0.14, 1.66], pos: [0, 4.46, Z], color: "faction" },
-    // entrée au dos, portillon rayé, niche d'un second chien sur le flanc
-    { shape: "box", size: [0.76, 0.76, 0.06], pos: [0, 3.06, q(Z - 0.62)], color: "black" },
-    { shape: "box", size: [0.1, 0.8, 0.5], pos: [0.5, 3.06, q(Z - 0.84)], rot: [0, -20, 0], color: "hazard" },
+    { shape: "bevel", size: [1.6, 1.5, 1.3], pos: [0, 3.4, Z], bevel: 0.08, color: "metal" },
+    { shape: "box", size: [1.7, 0.12, 1.4], pos: [0, 4.2, Z], color: "dark" },
+    { shape: "box", size: [0.34, 0.06, 1.42], pos: [0, 4.28, Z], color: "faction" },
+    ...[-0.4, 0, 0.4].map((z): Part => ({ shape: "box", size: [1.64, 0.06, 0.06], pos: [0, 3.9, q(Z + z)], color: "steel", fine: z !== 0 })),
+    // sas au dos, encadré de bandes rayées ; le Mâtin en cours d'assemblage y guette
+    { shape: "box", size: [0.9, 0.9, 0.06], pos: [0, 3.2, q(Z - 0.66)], color: "black" },
+    ...[-0.5, 0.5].map((x): Part => ({ shape: "box", size: [0.1, 1.0, 0.08], pos: [x, 3.2, q(Z - 0.68)], color: "hazard" })),
+    { shape: "box", size: [1.1, 0.1, 0.08], pos: [0, 3.72, q(Z - 0.68)], color: "hazard" },
     { shape: "bevel", size: [0.46, 0.4, 0.5], pos: [0, 3.12, q(Z - 0.84)], bevel: 0.08, color: "metal" },
     { shape: "box", size: [0.3, 0.2, 0.34], pos: [0, 3.04, q(Z - 1.18)], color: "rust" },
     { shape: "box", size: [0.1, 0.09, 0.05], pos: [0.13, 3.2, q(Z - 1.1)], color: "amber", mirror: true },
     { shape: "wedge", size: [0.16, 0.22, 0.2], pos: [0.2, 3.36, q(Z - 0.72)], rot: [0, 180, 24], color: "rust", mirror: true },
-    { shape: "box", size: [0.06, 0.5, 0.5], pos: [0.8, 3.2, Z], color: "black", mirror: true },
-    { shape: "box", size: [0.05, 0.08, 0.34], pos: [0.84, 3.28, Z], color: "amber", mirror: true },
+    // grilles et voyants des flancs
+    { shape: "box", size: [0.06, 0.5, 0.7], pos: [0.81, 3.3, Z], color: "black", mirror: true },
+    { shape: "box", size: [0.05, 0.08, 0.34], pos: [0.84, 3.66, Z], color: "amber", mirror: true },
     // attaches
     entre([0.6, 3.9, -0.6], [0.7, 3.7, -1.3], 0.12, 0.12, { shape: "box", color: "steel", mirror: true }),
     entre([0.7, 2.5, -0.5], [0.8, 2.6, -2.2], 0.14, 0.14, { shape: "box", color: "steel", mirror: true }),
   ]);
 }
 
-/** Parasol : mât au dos, grande toile rapiécée à huit pans, baleines, émetteur de bulle au sommet. */
-function parasol(): Part[] {
+/** Projecteur de bouclier : mât d'acier au dos, anneau émetteur porté par quatre bras, nœuds lumineux, tête au sommet. */
+function bouclier(): Part[] {
   const Y = 6.2;
   const Z = -0.35;
-  const toiles: C[] = ["faction", "dry", "red", "dry", "faction", "hazard", "dry", "wood"];
+  const R = 1.5;
   const p: Part[] = [
-    entre([0, 3.2, -0.95], [0, 6.2, Z], 0.12, 0, { shape: "cylinder", sides: 8, color: "wood" }),
+    entre([0, 3.2, -0.95], [0, Y, Z], 0.12, 0, { shape: "cylinder", sides: 8, color: "steel" }),
     { shape: "box", size: [0.4, 0.5, 0.3], pos: [0, 3.5, -0.95], color: "hazard" },
+    { shape: "cylinder", sides: 8, radius: 0.15, height: 0.3, pos: [0, 4.9, q(Z - 0.25)], color: "faction" },
+    { shape: "cylinder", sides: 10, radius: 0.3, height: 0.24, pos: [0, q(Y - 0.3), Z], color: "dark" },
+    { shape: "torus", radius: R, tube: 0.09, sides: 16, pos: [0, q(Y - 0.3), Z], color: "steel" },
+    { shape: "torus", radius: q(R - 0.12), tube: 0.04, sides: 16, pos: [0, q(Y - 0.26), Z], color: "faction", fine: true },
   ];
-  toiles.forEach((c, i) => p.push({ ...pan(q(Y + 0.2), 0.3, 1.9, 0.72, 0.07, i * 45, 45, c, 2, Z) }));
-  toiles.forEach((c, i) => p.push({ ...pan(q(Y - 0.5), 1.9, 1.92, 0.22, 0.06, i * 45 + 4, 37, c === "faction" ? "dry" : "faction", 1, Z), fine: true }));
-  for (let i = 0; i < 8; i++) {
-    const a = (i * 45 * Math.PI) / 180;
-    p.push({ ...entre([0, q(Y - 0.6), Z], [q(Math.sin(a) * 1.8), q(Y - 0.52), q(Z + Math.cos(a) * 1.8)], 0.05, 0.05, { shape: "box", color: "steel" }), fine: i % 2 === 1 });
+  for (let i = 0; i < 4; i++) {
+    const a = ((i * 90 + 45) * Math.PI) / 180;
+    const P: Vec3 = [q(Math.sin(a) * R), q(Y - 0.3), q(Z + Math.cos(a) * R)];
+    p.push(entre([0, q(Y - 0.3), Z], P, 0.07, 0.07, { shape: "box", color: "dark" }));
+    p.push({ shape: "sphere", radius: 0.15, detail: 1, pos: P, color: "glow" });
   }
   p.push(
     { shape: "cylinder", sides: 8, radius: 0.34, radiusTop: 0.2, height: 0.24, pos: [0, q(Y + 0.28), Z], color: "dark" },
     { shape: "torus", radius: 0.36, tube: 0.08, sides: 12, pos: [0, q(Y + 0.5), Z], color: "copper" },
     { shape: "sphere", radius: 0.28, detail: 1, pos: [0, q(Y + 0.64), Z], color: "glow" },
   );
-  return porte("si:shepherd_parasol#tourelle", AXE, p);
+  return porte("si:shepherd_shield#tourelle", AXE, p);
 }
 
 /** Modèle complet du Berger. */
@@ -400,15 +405,15 @@ export function berger(): Part[] {
     ...bassin(),
     ...torse(),
     ...brasDroit(),
-    ...crosseOrigine(),
+    ...emetteur(),
     ...electrique(),
-    ...fronde(),
-    ...lanterne(),
-    ...jambes("si:shepherd_stilts#", echasse),
-    ...jambes("si:shepherd_boots#", sabot),
-    ...manteau(),
-    ...sonnailles(),
-    ...chenil(),
-    ...parasol(),
+    ...mortier(),
+    ...plasma(),
+    ...jambes("si:shepherd_legs#", telescope),
+    ...jambes("si:shepherd_reactive#", reactif),
+    ...blindage(),
+    ...relais(),
+    ...baie(),
+    ...bouclier(),
   ];
 }

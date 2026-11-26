@@ -109,8 +109,6 @@ export class Entities {
   beamCore: THREE.InstancedMesh;
   beamGlow: THREE.InstancedMesh;
   /** origine des rayons prolongés par arme : hauteur et avancée (vers la cible) du pivot « laser » */
-  /** arme de la fronde du Berger (cherchée une fois) */
-  sling: number | undefined;
   beamFrom = new Map<number, { h: number; fwd: number; air: boolean; big: number }>();
   effects: Effects;
   camera: THREE.Camera | null = null;

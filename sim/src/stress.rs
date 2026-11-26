@@ -1141,15 +1141,15 @@ pub fn robots_demo() -> World {
     }
     let shepherds: [&[u8]; 4] = [
         &[],
-        &[am::M_SHEPHERD_SLING, am::M_SHEPHERD_STILTS, am::M_SHEPHERD_BELLS],
-        &[am::M_SHEPHERD_ARC, am::M_SHEPHERD_CLOAK, am::M_SHEPHERD_PARASOL],
-        &[am::M_SHEPHERD_LANTERN, am::M_SHEPHERD_BOOTS, am::M_SHEPHERD_KENNEL],
+        &[am::M_SHEPHERD_MORTAR, am::M_SHEPHERD_LEGS, am::M_SHEPHERD_RELAY],
+        &[am::M_SHEPHERD_ARC, am::M_SHEPHERD_PLATE, am::M_SHEPHERD_SHIELD],
+        &[am::M_SHEPHERD_PLASMA, am::M_SHEPHERD_REACTIVE, am::M_SHEPHERD_BAY],
     ];
     let mastiffs: [&[u8]; 4] = [
         &[],
-        &[am::M_MASTIFF_CRUSHER, am::M_MASTIFF_SPRING, am::M_MASTIFF_COLLAR],
-        &[am::M_MASTIFF_GUN, am::M_MASTIFF_RAILS, am::M_MASTIFF_NOSE],
-        &[am::M_MASTIFF_HARPOON, am::M_MASTIFF_FUR, am::M_MASTIFF_BARREL],
+        &[am::M_MASTIFF_CRUSHER, am::M_MASTIFF_LEAP, am::M_MASTIFF_SHOCK],
+        &[am::M_MASTIFF_GUN, am::M_MASTIFF_PLATE, am::M_MASTIFF_SENSORS],
+        &[am::M_MASTIFF_GRAPPLE, am::M_MASTIFF_SLAT, am::M_MASTIFF_NANITES],
     ];
     for (kind, sets, x0, dy) in [(U_SHEPHERD, shepherds, cx - 14, 9), (U_MASTIFF, mastiffs, cx - 4, 3)] {
         for (k, set) in sets.iter().enumerate() {

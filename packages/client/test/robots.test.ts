@@ -1,4 +1,4 @@
-// Robots des Transhumants : frappe et échasses des modèles, et équipements visibles (chaque choix d'une unité de combat a
+// Robots des Transhumants : frappe et jambes télescopiques des modèles, et équipements visibles (chaque choix d'une unité de combat a
 // ses pièces sur le modèle).
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -33,10 +33,10 @@ describe("équipements visibles", () => {
       for (const m of d.mods.filter((m, i) => i > 0 && m.host === k)) expect(keys, `${u.key} ${m.key}`).toContain(m.key);
     }
   });
-  it("le Berger est rehaussé par ses échasses, dont les pièces descendent d'autant", () => {
+  it("le Berger est rehaussé par ses jambes télescopiques, dont les pièces descendent d'autant", () => {
     const b = buildModel(UNIT_MODELS.shepherd);
     const [key, h] = b.lift![0];
-    expect(key).toBe("shepherd_stilts");
+    expect(key).toBe("shepherd_legs");
     const low = Math.min(...b.pivots.filter((p) => parseCond(p.name)?.all.some((t) => t.keys.includes(key))).map((p) => {
       p.geometry.computeBoundingBox();
       return p.geometry.boundingBox!.min.y + p.origin.y;

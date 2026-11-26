@@ -718,7 +718,7 @@ export function parseCond(name: string): PivotCond | null {
   return { on, all, base: m[3] };
 }
 /**
- * Frappe (mâchoire, bras, houlette) : pivot « coup|x,DEG#nom ». Modélisée au repos, la pièce tourne de DEG degrés
+ * Frappe ou tir (mâchoire, bras, mât émetteur, recul d'un mortier) : pivot « coup|x,DEG#nom ». Modélisée au repos, la pièce tourne de DEG degrés
  * autour de l'axe donné, par son origine, quand l'unité frappe, puis revient ; elle suit l'orientation du haut du corps.
  */
 export interface Strike { axis: "x" | "y" | "z"; rad: number }

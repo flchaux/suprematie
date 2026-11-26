@@ -189,22 +189,22 @@ pub const M_BASTION_ARMOR: u8 = 98;
 // robots : Mâtin et Berger (voir troupeau.rs)
 pub const M_MASTIFF_CRUSHER: u8 = 99;
 pub const M_MASTIFF_GUN: u8 = 100;
-pub const M_MASTIFF_HARPOON: u8 = 101;
-pub const M_MASTIFF_SPRING: u8 = 102;
-pub const M_MASTIFF_RAILS: u8 = 103;
-pub const M_MASTIFF_FUR: u8 = 104;
-pub const M_MASTIFF_NOSE: u8 = 105;
-pub const M_MASTIFF_COLLAR: u8 = 106;
-pub const M_MASTIFF_BARREL: u8 = 107;
+pub const M_MASTIFF_GRAPPLE: u8 = 101;
+pub const M_MASTIFF_LEAP: u8 = 102;
+pub const M_MASTIFF_PLATE: u8 = 103;
+pub const M_MASTIFF_SLAT: u8 = 104;
+pub const M_MASTIFF_SENSORS: u8 = 105;
+pub const M_MASTIFF_SHOCK: u8 = 106;
+pub const M_MASTIFF_NANITES: u8 = 107;
 pub const M_SHEPHERD_ARC: u8 = 108;
-pub const M_SHEPHERD_SLING: u8 = 109;
-pub const M_SHEPHERD_LANTERN: u8 = 110;
-pub const M_SHEPHERD_STILTS: u8 = 111;
-pub const M_SHEPHERD_CLOAK: u8 = 112;
-pub const M_SHEPHERD_BOOTS: u8 = 113;
-pub const M_SHEPHERD_BELLS: u8 = 114;
-pub const M_SHEPHERD_KENNEL: u8 = 115;
-pub const M_SHEPHERD_PARASOL: u8 = 116;
+pub const M_SHEPHERD_MORTAR: u8 = 109;
+pub const M_SHEPHERD_PLASMA: u8 = 110;
+pub const M_SHEPHERD_LEGS: u8 = 111;
+pub const M_SHEPHERD_PLATE: u8 = 112;
+pub const M_SHEPHERD_REACTIVE: u8 = 113;
+pub const M_SHEPHERD_RELAY: u8 = 114;
+pub const M_SHEPHERD_BAY: u8 = 115;
+pub const M_SHEPHERD_SHIELD: u8 = 116;
 
 /// Valeurs communes à toutes les améliorations (premier palier, sans recherche).
 const MD: ModDef = ModDef {
@@ -313,18 +313,18 @@ pub const MODS: [ModDef; 117] = [
     md!(U_RAM, SLOT_KIT, "ram_hook", "Grappins", "mod_loot", T_T_GEAR, 15, 6, [(STEEL, 4), (GEAR, 4)], "Butin doublé sur ce qu'il détruit, vitesse +20 %."; speed: 20, loot: 100),
     // ----- unités, suite -----
     md!(U_TRACKER, SLOT_ARM, "tracker_gun", "Mitrailleuse lourde", "mod_gun", T_T_GEAR, 10, 4, [(STEEL, 2), (GEAR, 2)], "Dégâts doublés, portée 14 cases au lieu de 12."),
-    md!(U_TRACKER, SLOT_ARM, "tracker_rocket", "Paniers de roquettes", "mod_rockets", T_T_GEAR, 12, 4, [(STEEL, 3), (AMMO, 2)], "Remplace la mitrailleuse : 4 roquettes toutes les 3,5 s, portée 22 cases."),
+    md!(U_TRACKER, SLOT_ARM, "tracker_rocket", "Nacelles de roquettes", "mod_rockets", T_T_GEAR, 12, 4, [(STEEL, 3), (AMMO, 2)], "Remplace la mitrailleuse : 4 roquettes toutes les 3,5 s, portée 22 cases."),
     md!(U_TRACKER, SLOT_FRAME, "tracker_plate", "Caisse blindée", "mod_plate", T_T_GEAR, 10, 4, [(STEEL, 3)], "Dégâts subis −35 %, vitesse −10 %."; armor: 35, speed: -10),
     md!(U_TRACKER, SLOT_KIT, "tracker_net", "Filet de camouflage", "mod_jammer", T_T_RECON, 10, 4, [(COPPER_PLATE, 6), (CIRCUIT, 2)], "Invisible après 3 s à l'arrêt, tant qu'il ne tire pas."; cloak: true),
-    md!(U_TRACKER, SLOT_KIT, "tracker_scope", "Longue-vue", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 6), (GEAR, 2)], "Vision de 55 cases au lieu de 40."; vision: 55),
+    md!(U_TRACKER, SLOT_KIT, "tracker_scope", "Optique longue portée", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 6), (GEAR, 2)], "Vision de 55 cases au lieu de 40."; vision: 55),
     md!(U_RIDER, SLOT_ARM, "rider_long", "Canon long", "mod_gun", T_T_GEAR, 12, 4, [(STEEL, 4), (GEAR, 1)], "Portée 28 cases au lieu de 20, dégâts 70 au lieu de 50, cadence −26 %."),
     md!(U_RIDER, SLOT_ARM, "rider_flame", "Lance-flammes", "mod_flame", T_T_GEAR, 12, 4, [(IRON_PLATE, 12), (COPPER_PLATE, 6)], "Remplace le canon : 80 dégâts/s en zone, portée 8 cases, +50 % contre le vivant."),
-    md!(U_RIDER, SLOT_FRAME, "rider_engine", "Moteur gonflé", "mod_engine", T_T_GEAR, 12, 4, [(GEAR, 4), (IRON_PLATE, 6)], "Vitesse +35 %."; speed: 35),
-    md!(U_RIDER, SLOT_KIT, "rider_repair", "Trousse de campagne", "mod_repair", T_T_GEAR, 10, 4, [(GEAR, 2), (CIRCUIT, 2)], "Regagne 1 % de ses points de vie par seconde."; regen: 10),
-    md!(U_RIDER, SLOT_KIT, "rider_loot", "Filets de pillage", "mod_loot", T_T_GEAR, 10, 4, [(GEAR, 3)], "Butin +50 % sur ce qu'il détruit."; loot: 50),
+    md!(U_RIDER, SLOT_FRAME, "rider_engine", "Moteur surcompressé", "mod_engine", T_T_GEAR, 12, 4, [(GEAR, 4), (IRON_PLATE, 6)], "Vitesse +35 %."; speed: 35),
+    md!(U_RIDER, SLOT_KIT, "rider_repair", "Bras de réparation", "mod_repair", T_T_GEAR, 10, 4, [(GEAR, 2), (CIRCUIT, 2)], "Regagne 1 % de ses points de vie par seconde."; regen: 10),
+    md!(U_RIDER, SLOT_KIT, "rider_loot", "Caissons de récupération", "mod_loot", T_T_GEAR, 10, 4, [(GEAR, 3)], "Butin +50 % sur ce qu'il détruit."; loot: 50),
     md!(U_HARROW, SLOT_ARM, "harrow_missile", "Missiles", "mod_rockets", T_T_GEAR, 12, 4, [(STEEL, 3), (CIRCUIT, 3)], "Salve de 4 missiles toutes les 3 s, portée 34 cases au lieu de 28."),
     md!(U_HARROW, SLOT_FRAME, "harrow_plate", "Blindage d'appoint", "mod_plate", T_T_GEAR, 12, 4, [(STEEL, 4)], "Dégâts subis −30 %."; armor: 30),
-    md!(U_HARROW, SLOT_FRAME, "harrow_engine", "Moteur gonflé", "mod_engine", T_T_GEAR, 12, 4, [(GEAR, 4), (IRON_PLATE, 6)], "Vitesse +35 %."; speed: 35),
+    md!(U_HARROW, SLOT_FRAME, "harrow_engine", "Moteur surcompressé", "mod_engine", T_T_GEAR, 12, 4, [(GEAR, 4), (IRON_PLATE, 6)], "Vitesse +35 %."; speed: 35),
     md!(U_HARROW, SLOT_KIT, "harrow_radar", "Radar de veille", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 8), (CIRCUIT, 3)], "Radar de 40 cases."; radar: 40),
     md!(U_HARROW, SLOT_KIT, "harrow_shield", "Bulle légère", "mod_shield", T_T_BUBBLE, 15, 6, [(STEEL, 4), (CIRCUIT, 6)], "Bulle de 4 cases, 400 points."; shield: (4, 400)),
     md!(U_TOWED_GUN, SLOT_ARM, "gun_fast", "Chargeur", "mod_fast", T_T_GEAR, 15, 6, [(GEAR, 6), (AMMO, 2)], "Cadence +60 %, dégâts 80 au lieu de 90."),
@@ -334,8 +334,8 @@ pub const MODS: [ModDef; 117] = [
     md!(U_TOWED_GUN, SLOT_KIT, "gun_spotter", "Observateur", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 8), (CIRCUIT, 3)], "Vision de 34 cases, radar de 45 cases."; vision: 34, radar: 45),
     md!(U_RAM, SLOT_ARM, "ram_saw", "Scies", "mod_spur", T_T_GEAR, 15, 6, [(STEEL, 6), (GEAR, 4)], "Éperonnage : 420 dégâts au lieu de 300."),
     md!(U_RAM, SLOT_ARM, "ram_flame", "Lance-flammes de proue", "mod_flame", T_T_GEAR, 15, 6, [(IRON_PLATE, 16), (COPPER_PLATE, 8)], "S'ajoute à l'éperon : 80 dégâts/s en zone, portée 7 cases."),
-    md!(U_RAM, SLOT_FRAME, "ram_engine", "Moteur gonflé", "mod_engine", T_T_GEAR, 15, 6, [(GEAR, 6), (IRON_PLATE, 10)], "Vitesse +30 %."; speed: 30),
-    md!(U_RAM, SLOT_KIT, "ram_repair", "Équipe de réparation", "mod_repair", T_T_GEAR, 12, 6, [(GEAR, 4), (CIRCUIT, 3)], "Regagne 1 % de ses points de vie par seconde."; regen: 10),
+    md!(U_RAM, SLOT_FRAME, "ram_engine", "Moteur surcompressé", "mod_engine", T_T_GEAR, 15, 6, [(GEAR, 6), (IRON_PLATE, 10)], "Vitesse +30 %."; speed: 30),
+    md!(U_RAM, SLOT_KIT, "ram_repair", "Bras de réparation", "mod_repair", T_T_GEAR, 12, 6, [(GEAR, 4), (CIRCUIT, 3)], "Regagne 1 % de ses points de vie par seconde."; regen: 10),
     md!(U_RAM, SLOT_KIT, "ram_shield", "Bulle d'assaut", "mod_shield", T_T_BUBBLE, 18, 8, [(STEEL, 6), (CIRCUIT, 8)], "Bulle de 4 cases, 800 points."; shield: (4, 800)),
     // ----- modules, suite : spécialité -----
     md!(U_CH_DRILL, SLOT_SPEC, "drill_quick", "Vérins rapides", "deploy", T_T_FITTINGS2, 20, 8, [(GEAR, 8), (IRON_PLATE, 10)], "Se déploie et se replie deux fois plus vite."; quick: true),
@@ -357,23 +357,23 @@ pub const MODS: [ModDef; 117] = [
     md!(U_CH_BASTION, SLOT_SPEC, "bastion_flak", "Affût antiaérien", "mod_flak", T_T_FITTINGS2, 30, 15, [(STEEL, 12), (CIRCUIT, 8)], "Tire aussi sur les avions."),
     md!(U_CH_BASTION, SLOT_SPEC, "bastion_armor", "Talus", "mod_plate", T_T_FITTINGS2, 30, 12, [(STEEL, 24)], "Dégâts subis −35 %, déployé ou replié."; armor: 35),
     // ----- Mâtin -----
-    md!(U_MASTIFF, SLOT_ARM, "mastiff_crusher", "Mâchoire de broyeur", "mod_jaw", T_T_GEAR, 12, 5, [(STEEL, 5), (GEAR, 3)], "Morsure : 160 dégâts au lieu de 90, un peu plus lente ; vise d'abord les bâtiments."),
-    md!(U_MASTIFF, SLOT_ARM, "mastiff_gun", "Affût dorsal", "mod_gun", T_T_GEAR, 12, 5, [(STEEL, 4), (GEAR, 2), (AMMO, 2)], "S'ajoute à la mâchoire : 50 dégâts/s, portée 20 cases."),
-    md!(U_MASTIFF, SLOT_ARM, "mastiff_harpoon", "Harpon", "mod_hook", T_T_GEAR, 14, 6, [(STEEL, 4), (GEAR, 5)], "S'ajoute à la mâchoire : accroche à 14 cases et tire jusqu'à lui une proie légère ; une proie lourde l'attire à elle."),
-    md!(U_MASTIFF, SLOT_FRAME, "mastiff_spring", "Pattes à ressorts", "mod_spring", T_T_GEAR, 12, 5, [(STEEL, 3), (GEAR, 6)], "Vitesse +25 % ; bondit deux fois plus vite sur sa proie à moins de 8 cases."; speed: 25),
-    md!(U_MASTIFF, SLOT_FRAME, "mastiff_rails", "Cuirasse de rails", "mod_plate", T_T_GEAR, 12, 5, [(STEEL, 8)], "Dégâts subis −35 %, vitesse −10 %."; armor: 35, speed: -10),
-    md!(U_MASTIFF, SLOT_FRAME, "mastiff_fur", "Toison de câbles", "mod_fur", T_T_GEAR, 12, 5, [(COPPER_PLATE, 12), (GEAR, 2)], "Dégâts des obus, missiles et bombes −60 %."),
-    md!(U_MASTIFF, SLOT_KIT, "mastiff_nose", "Truffe à antennes", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 8), (CIRCUIT, 3)], "Radar de 30 cases ; repère à 14 cases ce qui est camouflé ou enterré."; radar: 30),
-    md!(U_MASTIFF, SLOT_KIT, "mastiff_collar", "Collier à clous", "mod_collar", T_T_GEAR, 10, 4, [(STEEL, 4)], "Renvoie la moitié de chaque morsure à celui qui l'a mordu."),
-    md!(U_MASTIFF, SLOT_KIT, "mastiff_barrel", "Tonnelet", "mod_barrel", T_T_GEAR, 12, 6, [(COPPER_PLATE, 6), (CIRCUIT, 4)], "Lui et vos unités à moins de 5 cases regagnent 1 % de leurs points de vie par seconde."),
+    md!(U_MASTIFF, SLOT_ARM, "mastiff_crusher", "Mâchoires hydrauliques", "mod_jaw", T_T_GEAR, 12, 5, [(STEEL, 5), (GEAR, 3)], "Morsure : 160 dégâts au lieu de 90, un peu plus lente ; vise d'abord les bâtiments."),
+    md!(U_MASTIFF, SLOT_ARM, "mastiff_gun", "Tourelle dorsale", "mod_gun", T_T_GEAR, 12, 5, [(STEEL, 4), (GEAR, 2), (AMMO, 2)], "S'ajoute aux mâchoires : 50 dégâts/s, portée 20 cases."),
+    md!(U_MASTIFF, SLOT_ARM, "mastiff_grapple", "Grappin magnétique", "mod_hook", T_T_GEAR, 14, 6, [(STEEL, 4), (GEAR, 5)], "S'ajoute aux mâchoires : accroche à 14 cases et tire à lui une proie légère ; une proie lourde l'attire à elle."),
+    md!(U_MASTIFF, SLOT_FRAME, "mastiff_leap", "Vérins de bond", "mod_piston", T_T_GEAR, 12, 5, [(STEEL, 3), (GEAR, 6)], "Vitesse +25 % ; bondit deux fois plus vite sur sa proie à moins de 8 cases."; speed: 25),
+    md!(U_MASTIFF, SLOT_FRAME, "mastiff_plate", "Blindage lourd", "mod_plate", T_T_GEAR, 12, 5, [(STEEL, 8)], "Dégâts subis −35 %, vitesse −10 %."; armor: 35, speed: -10),
+    md!(U_MASTIFF, SLOT_FRAME, "mastiff_slat", "Blindage-cage", "mod_reactive", T_T_GEAR, 12, 5, [(COPPER_PLATE, 12), (GEAR, 2)], "Dégâts des obus, missiles et bombes −60 %."),
+    md!(U_MASTIFF, SLOT_KIT, "mastiff_sensors", "Capteurs multispectraux", "mod_radar", T_T_GEAR, 10, 4, [(COPPER_PLATE, 8), (CIRCUIT, 3)], "Radar de 30 cases ; repère à 14 cases ce qui est camouflé ou enterré."; radar: 30),
+    md!(U_MASTIFF, SLOT_KIT, "mastiff_shock", "Coque électrifiée", "mod_shock", T_T_GEAR, 10, 4, [(STEEL, 4)], "Renvoie à l'agresseur la moitié des coups reçus au corps à corps."),
+    md!(U_MASTIFF, SLOT_KIT, "mastiff_nanites", "Nanoréparateurs", "mod_repair", T_T_GEAR, 12, 6, [(COPPER_PLATE, 6), (CIRCUIT, 4)], "Lui et vos unités à moins de 5 cases regagnent 1 % de leurs points de vie par seconde."),
     // ----- Berger -----
-    md!(U_SHEPHERD, SLOT_ARM, "shepherd_arc", "Houlette électrique", "mod_arc", T_T_GEAR, 40, 25, [(STEEL, 30), (CIRCUIT, 30), (COPPER_PLATE, 40)], "Remplace la houlette : 1 000 dégâts en zone, et paralyse 1,5 s ce qu'elle touche, géants exceptés."),
-    md!(U_SHEPHERD, SLOT_ARM, "shepherd_sling", "Fronde", "mod_sling", T_T_GEAR, 45, 30, [(STEEL, 50), (GEAR, 30), (ENGINE, 6)], "S'ajoute à la houlette : lance des carcasses, 650 dégâts en zone toutes les 6,5 s, portée 50 cases, pas à moins de 10."),
-    md!(U_SHEPHERD, SLOT_ARM, "shepherd_lantern", "Lanterne ardente", "mod_lantern", T_T_GEAR, 45, 30, [(STEEL, 30), (COPPER_PLATE, 40), (PROCESSOR, 8)], "S'ajoute à la houlette : rayon de 3 s, 480 dégâts/s, portée 26 cases, +50 % contre le vivant."),
-    md!(U_SHEPHERD, SLOT_FRAME, "shepherd_stilts", "Échasses", "mod_stilts", T_T_GEAR, 40, 25, [(STEEL, 40), (GEAR, 40)], "Vitesse +45 %, vision 48 cases au lieu de 36."; speed: 45, vision: 48),
-    md!(U_SHEPHERD, SLOT_FRAME, "shepherd_cloak", "Manteau de tôle", "mod_cloak", T_T_GEAR, 40, 25, [(IRON_PLATE, 120), (STEEL, 40)], "Dégâts subis −35 %, vitesse −10 %."; armor: 35, speed: -10),
-    md!(U_SHEPHERD, SLOT_FRAME, "shepherd_boots", "Sabots", "mod_boots", T_T_GEAR, 35, 20, [(STEEL, 60)], "En marchant, écrase les petites unités qu'il touche : 600 dégâts/s."),
-    md!(U_SHEPHERD, SLOT_KIT, "shepherd_bells", "Sonnailles", "mod_bells", T_T_GEAR, 30, 20, [(COPPER_PLATE, 60), (GEAR, 20)], "Troupeau : vos unités à moins de 18 cases vont 30 % plus vite, au lieu de 15 % à 12 cases."),
-    md!(U_SHEPHERD, SLOT_KIT, "shepherd_kennel", "Chenil", "mod_kennel", T_T_GEAR, 45, 30, [(STEEL, 40), (GEAR, 30), (CIRCUIT, 20)], "Fabrique un Mâtin toutes les 30 s, payé dans les réserves à 30 cases ; quatre à la fois au plus."),
-    md!(U_SHEPHERD, SLOT_KIT, "shepherd_parasol", "Parasol", "mod_parasol", T_T_BUBBLE, 45, 35, [(STEEL, 30), (CIRCUIT, 40), (WAFER, 12)], "Bulle de 8 cases, 5 000 points. Brisée, elle revient après 10 s."; shield: (8, 5000)),
+    md!(U_SHEPHERD, SLOT_ARM, "shepherd_arc", "Arc paralysant", "mod_arc", T_T_GEAR, 40, 25, [(STEEL, 30), (CIRCUIT, 30), (COPPER_PLATE, 40)], "Remplace la décharge : 1 000 dégâts en zone, et paralyse 1,5 s ce qu'elle touche, géants exceptés."),
+    md!(U_SHEPHERD, SLOT_ARM, "shepherd_mortar", "Mortier lourd", "mod_mortar", T_T_GEAR, 45, 30, [(STEEL, 50), (GEAR, 30), (AMMO, 20)], "S'ajoute à la décharge : obus de 650 dégâts en zone toutes les 6,5 s, portée 50 cases, pas à moins de 10."),
+    md!(U_SHEPHERD, SLOT_ARM, "shepherd_plasma", "Lance-plasma", "mod_flame", T_T_GEAR, 45, 30, [(STEEL, 30), (COPPER_PLATE, 40), (PROCESSOR, 8)], "S'ajoute à la décharge : jet de 3 s, 480 dégâts/s, portée 26 cases, +50 % contre le vivant."),
+    md!(U_SHEPHERD, SLOT_FRAME, "shepherd_legs", "Jambes télescopiques", "mod_legs", T_T_GEAR, 40, 25, [(STEEL, 40), (GEAR, 40)], "Vitesse +45 %, vision 48 cases au lieu de 36."; speed: 45, vision: 48),
+    md!(U_SHEPHERD, SLOT_FRAME, "shepherd_plate", "Blindage lourd", "mod_plate", T_T_GEAR, 40, 25, [(IRON_PLATE, 120), (STEEL, 40)], "Dégâts subis −35 %, vitesse −10 %."; armor: 35, speed: -10),
+    md!(U_SHEPHERD, SLOT_FRAME, "shepherd_reactive", "Blindage réactif", "mod_reactive", T_T_GEAR, 35, 20, [(STEEL, 40), (AMMO, 20)], "Dégâts des obus, missiles et bombes −60 %."),
+    md!(U_SHEPHERD, SLOT_KIT, "shepherd_relay", "Relais de commandement", "mod_relay", T_T_GEAR, 30, 20, [(COPPER_PLATE, 60), (CIRCUIT, 20)], "Vos unités à moins de 18 cases vont 30 % plus vite, au lieu de 15 % à 12 cases."),
+    md!(U_SHEPHERD, SLOT_KIT, "shepherd_bay", "Baie d'assemblage", "mod_workshop", T_T_GEAR, 45, 30, [(STEEL, 40), (GEAR, 30), (CIRCUIT, 20)], "Assemble un Mâtin toutes les 30 s, payé dans les réserves à 30 cases ; quatre à la fois au plus."),
+    md!(U_SHEPHERD, SLOT_KIT, "shepherd_shield", "Projecteur de bouclier", "mod_shield", T_T_BUBBLE, 45, 35, [(STEEL, 30), (CIRCUIT, 40), (WAFER, 12)], "Bulle de 8 cases, 5 000 points. Brisée, elle revient après 10 s."; shield: (8, 5000)),
 ];

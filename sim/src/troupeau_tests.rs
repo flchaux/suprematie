@@ -1,5 +1,5 @@
-//! Tests des robots des Transhumants : le Mâtin (meute, chasse, harpon, équipements) et le Berger (troupeau, houlette,
-//! sabots, chenil). Voir troupeau.rs.
+//! Tests des robots des Transhumants : le Mâtin (meute, chasse, grappin, équipements) et le Berger (commandement,
+//! décharge à distance, blindage réactif, baie d'assemblage). Voir troupeau.rs.
 
 use crate::ameliorations::*;
 use crate::data::*;
@@ -101,13 +101,13 @@ fn a_mastiff_chases_what_comes_near() {
     }
 }
 
-/// Le harpon tire une petite unité jusqu'au Mâtin ; une grosse l'attire à elle.
+/// Le grappin tire une petite unité jusqu'au Mâtin ; une grosse l'attire à elle.
 #[test]
-fn the_harpoon_drags_the_lighter_of_the_two() {
+fn the_grapple_drags_the_lighter_of_the_two() {
     for (kind, light) in [(U_LIGHT_TANK, true), (U_COLOSSUS, false)] {
         let (mut w, x, y) = field();
         let s = unit(&mut w, U_MASTIFF, 0, x - 11, y);
-        fit(&mut w, s, M_MASTIFF_HARPOON);
+        fit(&mut w, s, M_MASTIFF_GRAPPLE);
         let t = dummy(&mut w, kind, x, y);
         w.units.hp[t] = 1_000_000;
         // figé sur place : seul le câble bouge l'un ou l'autre
@@ -132,10 +132,10 @@ fn the_harpoon_drags_the_lighter_of_the_two() {
 }
 
 #[test]
-fn a_harpooned_prey_cannot_fire() {
+fn a_grappled_prey_cannot_fire() {
     let (mut w, x, y) = field();
     let s = unit(&mut w, U_MASTIFF, 0, x - 11, y);
-    fit(&mut w, s, M_MASTIFF_HARPOON);
+    fit(&mut w, s, M_MASTIFF_GRAPPLE);
     let t = unit(&mut w, U_LIGHT_TANK, 1, x, y);
     w.units.hp[t] = 100_000;
     for _ in 0..200 {
@@ -148,15 +148,18 @@ fn a_harpooned_prey_cannot_fire() {
     panic!("jamais accrochée");
 }
 
-/// Corps-à-corps avec une arme de plus : il va au contact ; avec la fronde, le Berger garde ses distances.
+/// Chacun se bat à la portée de son arme principale, quoi qu'il porte en plus : le bélier et le Mâtin au contact, le
+/// Berger à celle de sa décharge ; avec le mortier, le Berger garde ses distances.
 #[test]
-fn melee_units_close_in_whatever_they_carry() {
+fn each_closes_in_to_its_main_weapon() {
     let (mut w, x, y) = field();
     let t = dummy(&mut w, U_COLOSSUS, x, y);
     let id = w.unit_id(t);
-    for (kind, m, range) in [(U_MASTIFF, M_MASTIFF_GUN, 2), (U_MASTIFF, M_MASTIFF_HARPOON, 2), (U_RAM, M_RAM_FLAME, 2), (U_SHEPHERD, M_SHEPHERD_LANTERN, 6), (U_SHEPHERD, M_SHEPHERD_SLING, 50)] {
+    for (kind, m, range) in [(U_MASTIFF, M_MASTIFF_GUN, 2), (U_MASTIFF, M_MASTIFF_GRAPPLE, 2), (U_RAM, M_RAM_FLAME, 2), (U_SHEPHERD, 0, 14), (U_SHEPHERD, M_SHEPHERD_PLASMA, 14), (U_SHEPHERD, M_SHEPHERD_MORTAR, 50)] {
         let s = unit(&mut w, kind, 0, x - 30, y);
-        fit(&mut w, s, m);
+        if m != 0 {
+            fit(&mut w, s, m);
+        }
         assert_eq!(attack_range(&w, s, id), range, "{} {}", udef(kind).name, MODS[m as usize].name);
     }
 }
@@ -168,28 +171,28 @@ fn mastiff_frames_change_speed_and_armor() {
         let s = unit(&mut w, U_MASTIFF, 0, x, y);
         speed(&w, s)
     };
-    let spring = unit(&mut w, U_MASTIFF, 0, x, y + 3);
-    fit(&mut w, spring, M_MASTIFF_SPRING);
-    assert_eq!(speed(&w, spring), base * 125 / 100);
+    let leap = unit(&mut w, U_MASTIFF, 0, x, y + 3);
+    fit(&mut w, leap, M_MASTIFF_LEAP);
+    assert_eq!(speed(&w, leap), base * 125 / 100);
     // bond : deux fois plus vite à moins de 8 cases de sa proie
     let t = dummy(&mut w, U_COLOSSUS, x + 6, y + 3);
-    attack(&mut w, spring, t);
-    assert_eq!(speed(&w, spring), base * 250 / 100);
-    let rails = unit(&mut w, U_MASTIFF, 0, x, y + 6);
-    fit(&mut w, rails, M_MASTIFF_RAILS);
-    assert_eq!((speed(&w, rails), unit_armor(&w, rails, 100)), (base * 90 / 100, 65));
-    let fur = unit(&mut w, U_MASTIFF, 0, x, y + 9);
-    fit(&mut w, fur, M_MASTIFF_FUR);
+    attack(&mut w, leap, t);
+    assert_eq!(speed(&w, leap), base * 250 / 100);
+    let plate = unit(&mut w, U_MASTIFF, 0, x, y + 6);
+    fit(&mut w, plate, M_MASTIFF_PLATE);
+    assert_eq!((speed(&w, plate), unit_armor(&w, plate, 100)), (base * 90 / 100, 65));
+    let slat = unit(&mut w, U_MASTIFF, 0, x, y + 9);
+    fit(&mut w, slat, M_MASTIFF_SLAT);
     w.hit_weapon = 5; // obus d'artillerie
-    assert_eq!(unit_armor(&w, fur, 100), 40);
+    assert_eq!(unit_armor(&w, slat, 100), 40);
     w.hit_weapon = 71; // balle
-    assert_eq!(unit_armor(&w, fur, 100), 100);
+    assert_eq!(unit_armor(&w, slat, 100), 100);
 }
 
 #[test]
-fn mastiff_kits_smell_spike_and_heal() {
-    // truffe : un commando camouflé est repéré à 10 cases, pas sans elle
-    for nose in [false, true] {
+fn mastiff_kits_detect_shock_and_repair() {
+    // capteurs : un commando camouflé est repéré à 10 cases, pas sans eux
+    for sensors in [false, true] {
         let (mut w, x, y) = {
             let (mut w, x, y) = field();
             w.fog = true;
@@ -197,27 +200,27 @@ fn mastiff_kits_smell_spike_and_heal() {
         };
         let s = unit(&mut w, U_MASTIFF, 0, x, y);
         w.units.cold[s].stun = u16::MAX;
-        if nose {
-            fit(&mut w, s, M_MASTIFF_NOSE);
+        if sensors {
+            fit(&mut w, s, M_MASTIFF_SENSORS);
         }
         let c = dummy(&mut w, U_COMMANDO, x + 10, y);
         steps(&mut w, 40);
-        assert_eq!(crate::combat::unit_seen(&w, 0, c), nose);
+        assert_eq!(crate::combat::unit_seen(&w, 0, c), sensors);
     }
-    // collier à clous : la moitié de la morsure revient
+    // coque électrifiée : la moitié de la morsure revient
     let (mut w, x, y) = field();
     let s = unit(&mut w, U_MASTIFF, 0, x, y);
-    fit(&mut w, s, M_MASTIFF_COLLAR);
+    fit(&mut w, s, M_MASTIFF_SHOCK);
     w.units.cold[s].stun = u16::MAX;
     let biter = unit(&mut w, U_MASTIFF, 1, x + 2, y);
     let (a, b) = (w.units.hp[s], w.units.hp[biter]);
     steps(&mut w, 30);
     let (lost, back) = (a - w.units.hp[s], b - w.units.hp[biter]);
     assert!(lost > 0 && (back * 2 - lost).abs() <= 2, "subi {lost}, rendu {back}");
-    // tonnelet : soigne les voisins de son joueur, pas les autres
+    // nanoréparateurs : soignent les voisins de son joueur, pas les autres
     let (mut w, x, y) = field();
     let s = unit(&mut w, U_MASTIFF, 0, x, y);
-    fit(&mut w, s, M_MASTIFF_BARREL);
+    fit(&mut w, s, M_MASTIFF_NANITES);
     let (near, far) = (unit(&mut w, U_RIDER, 0, x + 3, y), unit(&mut w, U_RIDER, 0, x + 12, y));
     for u in [s, near, far] {
         w.units.hp[u] = 100;
@@ -229,9 +232,9 @@ fn mastiff_kits_smell_spike_and_heal() {
 
 // ---------- Berger ----------
 
-/// Troupeau : les unités de son joueur autour de lui vont plus vite ; pas l'ennemi, ni un autre Berger.
+/// Commandement : les unités de son joueur autour de lui vont plus vite ; pas l'ennemi, ni un autre Berger.
 #[test]
-fn the_flock_walks_faster_around_a_shepherd() {
+fn units_move_faster_around_a_shepherd() {
     let (mut w, x, y) = field();
     let s = unit(&mut w, U_SHEPHERD, 0, x, y);
     let near = unit(&mut w, U_RIDER, 0, x + 10, y);
@@ -242,75 +245,72 @@ fn the_flock_walks_faster_around_a_shepherd() {
     crate::troupeau::begin_tick(&mut w);
     assert_eq!([speed(&w, near), speed(&w, mid), speed(&w, foe)], [v * 115 / 100, v, v]);
     assert_eq!([speed(&w, s), speed(&w, other)], [unit_speed(U_SHEPHERD); 2]);
-    fit(&mut w, s, M_SHEPHERD_BELLS);
+    fit(&mut w, s, M_SHEPHERD_RELAY);
     crate::troupeau::begin_tick(&mut w);
     assert_eq!([speed(&w, near), speed(&w, mid)], [v * 130 / 100, v * 130 / 100]);
 }
 
-/// La houlette balaie la zone ; électrique, elle paralyse ce qu'elle touche.
+/// La décharge frappe en zone à distance ; l'arc paralysant paralyse ce qu'il touche, sauf un géant.
 #[test]
-fn the_crook_sweeps_and_the_electric_one_stuns() {
+fn the_arc_hits_an_area_at_range_and_the_stun_spares_giants() {
     for arc in [false, true] {
         let (mut w, x, y) = field();
         let s = unit(&mut w, U_SHEPHERD, 0, x, y);
         if arc {
             fit(&mut w, s, M_SHEPHERD_ARC);
         }
-        let (a, b) = (unit(&mut w, U_RAM, 1, x + 4, y), unit(&mut w, U_RAM, 1, x + 4, y + 1));
-        for t in [a, b] {
-            w.units.hp[t] = 100_000;
-            // (sans arme qui morde : ils regardent ailleurs)
+        // à 12 cases : hors d'atteinte d'une arme de contact, et le Berger reste sur place
+        let (a, b) = (unit(&mut w, U_RAM, 1, x + 12, y), unit(&mut w, U_RAM, 1, x + 12, y + 1));
+        let g = unit(&mut w, U_COLOSSUS, 1, x + 13, y - 2);
+        for t in [a, b, g] {
+            w.units.hp[t] = 1_000_000;
+            // (sans ordre ni arme : ils ne bougent pas et ne répondent pas)
             w.units.cold[t].orders = vec![];
+            w.units.cold[t].cooldown = [u16::MAX; 2];
         }
-        let mut stunned = false;
-        for _ in 0..40 {
+        let (mut stunned, mut giant) = (false, false);
+        for _ in 0..80 {
             w.step(&[]);
             stunned |= w.units.cold[a].stun > 0 && w.units.cold[b].stun > 0;
+            giant |= w.units.cold[g].stun > 0;
         }
-        assert!(w.units.hp[a] < 100_000 && w.units.hp[b] < 100_000, "les deux sont touchés");
-        assert_eq!(stunned, arc);
+        assert!(w.units.hp[a] < 1_000_000 && w.units.hp[b] < 1_000_000, "les deux sont touchés");
+        assert_eq!((stunned, giant), (arc, false));
+        assert_eq!(w.units.x[s], x * TILE, "il tire sans approcher");
     }
 }
 
 #[test]
-fn shepherd_frames_and_parasol() {
+fn shepherd_frames_and_shield() {
     let (mut w, x, y) = field();
     let v = unit_speed(U_SHEPHERD);
     let s = unit(&mut w, U_SHEPHERD, 0, x, y);
-    fit(&mut w, s, M_SHEPHERD_STILTS);
+    fit(&mut w, s, M_SHEPHERD_LEGS);
     assert_eq!((speed(&w, s), unit_vision(&w, s)), (v * 145 / 100, 48));
     let s = unit(&mut w, U_SHEPHERD, 0, x, y + 8);
-    fit(&mut w, s, M_SHEPHERD_CLOAK);
-    fit(&mut w, s, M_SHEPHERD_PARASOL);
+    fit(&mut w, s, M_SHEPHERD_PLATE);
+    fit(&mut w, s, M_SHEPHERD_SHIELD);
     assert_eq!((speed(&w, s), unit_armor(&w, s, 100), unit_shield(&w, s)), (v * 90 / 100, 65, (8, 5000)));
 }
 
-/// Sabots : il écrase en marchant, pas à l'arrêt, et pas les gros.
+/// Blindage réactif : obus, missiles et bombes perdent 60 % ; les balles, rien.
 #[test]
-fn clogs_crush_small_units_underfoot() {
-    for boots in [false, true] {
-        let (mut w, x, y) = field();
-        let s = unit(&mut w, U_SHEPHERD, 0, x - 6, y);
-        if boots {
-            fit(&mut w, s, M_SHEPHERD_BOOTS);
-        }
-        // sans arme : seul le pied compte
-        w.units.cold[s].cooldown = [u16::MAX; 2];
-        let t = dummy(&mut w, U_RIDER, x, y);
-        w.units.hp[t] = 5000;
-        let id = w.unit_id(s) as i32;
-        order(&mut w, O_MOVE, &[0, (x + 8) * TILE, y * TILE, 1, id, (x + 8) * TILE, y * TILE]);
-        steps(&mut w, 200);
-        assert_eq!(!w.units.alive[t] || w.units.hp[t] < 5000, boots);
+fn reactive_armor_softens_blasts_only() {
+    let (mut w, x, y) = field();
+    let s = unit(&mut w, U_SHEPHERD, 0, x, y);
+    fit(&mut w, s, M_SHEPHERD_REACTIVE);
+    for (wi, pct) in [(5, 40), (W_SHEPHERD_MORTAR, 40), (71, 100)] {
+        w.hit_weapon = wi;
+        assert_eq!(unit_armor(&w, s, 100), pct, "{}", wi);
     }
 }
 
-/// Chenil : un Mâtin toutes les 30 s, payé, quatre au plus ; ils escortent leur Berger.
+/// Baie d'assemblage : un Mâtin toutes les 30 s, payé, quatre au plus ; ils escortent leur Berger.
 #[test]
-fn the_kennel_breeds_four_mastiffs_at_most() {
+fn the_bay_assembles_four_mastiffs_at_most() {
     let (mut w, x, y) = field();
     let s = unit(&mut w, U_SHEPHERD, 0, x, y);
-    fit(&mut w, s, M_SHEPHERD_KENNEL);
+    fit(&mut w, s, M_SHEPHERD_BAY);
     let dogs = |w: &World| (0..w.units.alive.len()).filter(|&u| w.units.alive[u] && w.units.kind[u] == U_MASTIFF).collect::<Vec<_>>();
     steps(&mut w, 60);
     assert!(dogs(&w).is_empty(), "rien pour payer");

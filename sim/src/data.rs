@@ -438,7 +438,7 @@ pub const WEAPONS: [WeaponDef; 117] = [
     w!(90, 54, 90, Shell, 16, 384, M_SURF, min_range: 10),              // 97 canon tracté à tube allongé
     w!(45, 40, 90, Shell, 14, 384, M_SURF, salvo: 3, spread: 500, min_range: 8), // 98 canon tracté à obus à grappe
     w!(18, 14, 10, Bullet, 40, 0, M_SURF),                              // 99 pisteur à mitrailleuse lourde
-    w!(22, 22, 70, Missile, 18, 160, M_SURF, salvo: 4, spread: 300),    // 100 pisteur à paniers de roquettes
+    w!(22, 22, 70, Missile, 18, 160, M_SURF, salvo: 4, spread: 300),    // 100 pisteur à nacelles de roquettes
     w!(70, 28, 38, Bullet, 48, 0, M_SURF),                              // 101 cavalier à canon long
     w!(6, 8, 50, Fire, 0, 320, M_SURF, sustain: 34),                    // 102 cavalier à lance-flammes
     w!(40, 34, 60, Missile, 30, 200, M_AIR, salvo: 4),                  // 103 herse à missiles
@@ -448,14 +448,14 @@ pub const WEAPONS: [WeaponDef; 117] = [
     w!(160, 30, 36, Bullet, 40, 128, M_SURF | M_AIR),                   // 107 bastion à affût antiaérien
     w!(170, 44, 36, Bullet, 48, 128, M_SURF | M_AIR),                   // 108 bastion à canon long et affût antiaérien
     // Mâtin et Berger (voir troupeau.rs)
-    w!(90, 2, 18, Bite, 0, 0, M_SURF),                                  // 109 mâtin : mâchoire
-    w!(160, 2, 22, Bite, 0, 0, M_SURF, prefer_buildings: true),         // 110 mâtin : mâchoire de broyeur
-    w!(20, 20, 8, Bullet, 45, 0, M_SURF),                               // 111 mâtin : affût dorsal
-    w!(2, 14, 110, Bullet, 0, 0, M_SURF, sustain: 36),                  // 112 mâtin : harpon (câble tendu ; voir troupeau::reel)
-    w!(1300, 6, 45, Bite, 0, 640, M_SURF),                              // 113 berger : houlette (balaie la zone)
-    w!(1000, 6, 45, Bite, 0, 640, M_SURF, stun: 30),                    // 114 berger : houlette électrique
-    w!(650, 50, 130, Shell, 14, 704, M_SURF, min_range: 10),            // 115 berger : fronde
-    w!(24, 26, 110, Fire, 0, 160, M_SURF, sustain: 60),                 // 116 berger : lanterne ardente (3 s)
+    w!(90, 2, 18, Bite, 0, 0, M_SURF),                                  // 109 mâtin : mâchoires
+    w!(160, 2, 22, Bite, 0, 0, M_SURF, prefer_buildings: true),         // 110 mâtin : mâchoires hydrauliques
+    w!(20, 20, 8, Bullet, 45, 0, M_SURF),                               // 111 mâtin : tourelle dorsale
+    w!(2, 14, 110, Bullet, 0, 0, M_SURF, sustain: 36),                  // 112 mâtin : grappin magnétique (câble tendu ; voir troupeau::reel)
+    w!(1100, 14, 45, Ion, 40, 640, M_SURF),                            // 113 berger : décharge d'arc (en zone)
+    w!(1000, 14, 45, Ion, 40, 640, M_SURF, stun: 30),                   // 114 berger : arc paralysant (pas les géants)
+    w!(650, 50, 130, Shell, 14, 704, M_SURF, min_range: 10),            // 115 berger : mortier lourd
+    w!(24, 26, 110, Fire, 0, 160, M_SURF, sustain: 60),                 // 116 berger : lance-plasma (3 s)
 ];
 /// Armes des améliorations des Transhumants (indices dans WEAPONS).
 pub const W_SIEGE: u8 = 85;
@@ -482,11 +482,11 @@ pub const W_BASTION_LONG_DUAL: u8 = 108;
 pub const W_MASTIFF: u8 = 109;
 pub const W_MASTIFF_CRUSHER: u8 = 110;
 pub const W_MASTIFF_GUN: u8 = 111;
-pub const W_MASTIFF_HARPOON: u8 = 112;
+pub const W_MASTIFF_GRAPPLE: u8 = 112;
 pub const W_SHEPHERD: u8 = 113;
 pub const W_SHEPHERD_ARC: u8 = 114;
-pub const W_SHEPHERD_SLING: u8 = 115;
-pub const W_SHEPHERD_LANTERN: u8 = 116;
+pub const W_SHEPHERD_MORTAR: u8 = 115;
+pub const W_SHEPHERD_PLASMA: u8 = 116;
 pub const W_CMD_UP: u8 = 1;
 /// Souche : arme de la vessie (dégâts et rayon de son éclatement) et griffes du béhémoth.
 pub const W_BURST: u8 = 75;
@@ -620,8 +620,8 @@ pub const TECHS: [TechDef; 94] = [
     t!("t_bubble2", "Bulle renforcée", 3, 20, 10, [83], "Arche, coque : bouclier renforcé", race: RACE_TRANSH),
     t!("t_rail", "Canon à rail", 4, 25, 12, [80, 63], "Arche, armement : canon à rail", race: RACE_TRANSH),
     t!("t_crown", "Couronne de tourelles", 4, 30, 12, [82, 89], "Arche : 9 tourelles (pont), grande bulle (coque)", race: RACE_TRANSH),
-    t!("t_mastiff", "Chiens de fer", 2, 14, 8, [58], "Mâtin : chien de garde mécanique, plus fort en meute", race: RACE_TRANSH),
-    t!("t_shepherd", "Le Grand Berger", 5, 40, 14, [92, 62], "Berger : géant à houlette, qui fait presser le pas à tout le troupeau", race: RACE_TRANSH),
+    t!("t_mastiff", "Chiens de fer", 2, 14, 8, [58], "Mâtin : quadrupède d'assaut, plus fort en meute", race: RACE_TRANSH),
+    t!("t_shepherd", "Le Grand Berger", 5, 40, 14, [92, 62], "Berger : marcheur géant de commandement, qui accélère les unités autour de lui", race: RACE_TRANSH),
 ];
 /// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
 pub const T_T_ARMORY: u8 = 80;

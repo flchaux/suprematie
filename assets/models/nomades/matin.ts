@@ -1,4 +1,4 @@
-// Mâtin des Transhumants (mastiff) : chien de garde mécanique bâti de ferraille. Poitrail large de bloc-moteur, dos en
+// Mâtin des Transhumants (mastiff) : quadrupède d'assaut bâti de ferraille. Poitrail large de bloc-moteur, dos en
 // dos d'âne, arrière-train fin, quatre pattes (pivots « jambe… » à la hanche), tête basse à godet de pelleteuse (pivot
 // « tourelle » au cou, mâchoire inférieure en pivot de frappe « coup|… »), oreilles de tôle, queue de chaîne.
 // Équipements : arme, châssis, équipement (voir sim/src/ameliorations/table.rs et docs/spec/races.md) ; grammaire des
@@ -6,7 +6,6 @@
 // Repère : +x à droite, +y en haut, +z vers l'avant. Les pièces « si: » ne comptent pas dans la taille du modèle.
 import type { Part, Vec3 } from "../types.ts";
 import { q, voute } from "./commun.ts";
-import type { C } from "./commun.ts";
 
 /** Pièces d'un pivot : la première porte le pivot (son origine), les autres le suivent. */
 export function porte(pivot: string, axe: Vec3, parts: Part[]): Part[] {
@@ -76,18 +75,18 @@ function patte(avant: boolean): Part[] {
   ];
 }
 
-/** Pattes à ressorts : lames d'acier en arc, gros ressorts de cuivre, sabot large. */
+/** Vérins de bond : lames d'acier en arc, gros vérin hydraulique à tige polie, patin large. */
 function ressort(avant: boolean): Part[] {
   const [x, y, z] = avant ? EPAULE : HANCHE;
   const X = q(x + 0.16);
   const dz = avant ? 0.1 : -0.06;
-  const spires = [0.28, 0.42, 0.56, 0.7, 0.84];
   return [
-    { shape: "cylinder", sides: 10, radius: 0.28, height: 0.3, pos: [x, y, z], rot: [0, 0, 90], color: "copper" },
+    { shape: "cylinder", sides: 10, radius: 0.28, height: 0.3, pos: [x, y, z], rot: [0, 0, 90], color: "steel" },
     entre([x, y, z], [X, 0.98, q(z + dz)], 0.34, 0.4, { shape: "bevel", bevel: 0.05, color: "faction" }),
-    // ressort : anneaux épais empilés autour d'une tige polie
+    // vérin : corps sombre cerclé, tige polie
     { shape: "cylinder", sides: 6, radius: 0.07, height: 0.86, pos: [X, 0.56, q(z + dz)], color: "light" },
-    ...spires.map((h, i): Part => ({ shape: "torus", radius: 0.21, tube: 0.055, sides: 8, pos: [X, h, q(z + dz)], rot: [6, 0, 0], color: "copper", fine: i % 2 === 1 })),
+    { shape: "cylinder", sides: 8, radius: 0.17, height: 0.5, pos: [X, 0.74, q(z + dz)], color: "dark" },
+    ...[0.54, 0.94].map((h, i): Part => ({ shape: "torus", radius: 0.18, tube: 0.04, sides: 8, pos: [X, h, q(z + dz)], color: "hazard", fine: i === 1 })),
     // lame d'acier arquée vers l'arrière
     { shape: "tube", radius: 0.07, sides: 4, path: [[X, 1.08, q(z + dz - 0.1)], [X, 0.74, q(z + dz - 0.5)], [X, 0.3, q(z + dz - 0.42)], [X, 0.08, q(z + dz)]], bend: 0.24, color: "steel" },
     { shape: "cylinder", sides: 8, radius: 0.3, radiusTop: 0.18, height: 0.14, pos: [X, 0.07, q(z + dz)], color: "dark" },
@@ -164,7 +163,8 @@ function tete(): Part[] {
 
 // ——— Équipements ———
 
-/** Broyeur : large godet à crémaillère de dents, joues d'acier, vérins apparents ; remplace la mâchoire d'origine. */
+/** Mâchoires hydrauliques : large godet à crémaillère de dents, joues d'acier, vérins apparents ; remplacent la mâchoire
+ * d'origine. */
 function broyeur(): Part[] {
   return [
     ...porte("si:mastiff_crusher#tourelle", COU, [
@@ -185,7 +185,7 @@ function broyeur(): Part[] {
   ];
 }
 
-/** Affût dorsal : couronne, bouclier d'équipe, deux tubes, tambours. */
+/** Tourelle dorsale : couronne, bouclier d'équipe, deux tubes, tambours. */
 function affut(): Part[] {
   return porte("si:mastiff_gun#tourelle", GARROT, [
     { shape: "cylinder", sides: 10, radius: 0.36, height: 0.12, pos: [0, 1.76, 0.12], color: "steel" },
@@ -199,10 +199,11 @@ function affut(): Part[] {
   ]);
 }
 
-/** Lance-harpon : gros tambour de câble, affût, harpon barbelé ; l'âme du câble part de la bouche (pivot « laser »). */
+/** Grappin magnétique : gros tambour de câble, affût, grappin à tête aimantée ; le câble part de la bouche (pivot
+ * « laser »). */
 function harpon(): Part[] {
   return [
-    ...porte("si:mastiff_harpoon#tourelle", GARROT, [
+    ...porte("si:mastiff_grapple#tourelle", GARROT, [
       { shape: "cylinder", sides: 10, radius: 0.34, height: 0.12, pos: [0, 1.76, 0.12], color: "dark" },
       // tambour : deux flasques jaunes, câble de cuivre
       { shape: "cylinder", sides: 10, radius: 0.28, height: 0.5, pos: [0, 2.06, -0.28], rot: [0, 0, 90], color: "copper" },
@@ -212,63 +213,58 @@ function harpon(): Part[] {
       { shape: "bevel", size: [0.3, 0.28, 0.46], pos: [0, 1.96, 0.24], bevel: 0.05, color: "rust" },
       { shape: "cylinder", sides: 8, radius: 0.15, height: 0.9, pos: [0, 2.02, 0.72], rot: [90, 0, 0], color: "dark" },
       { shape: "torus", radius: 0.15, tube: 0.045, sides: 10, pos: [0, 2.02, 1.14], rot: [90, 0, 0], color: "faction" },
-      // harpon : hampe claire, pointe et barbillons
+      // grappin : hampe claire, tête aimantée (disque à bobine), griffes repliées
       { shape: "cylinder", sides: 6, radius: 0.06, height: 0.7, pos: [0, 2.02, 1.44], rot: [90, 0, 0], color: "light" },
-      { shape: "cone", sides: 4, radius: 0.17, height: 0.42, pos: [0, 2.02, 1.94], rot: [90, 0, 0], color: "steel" },
-      { shape: "box", size: [0.07, 0.07, 0.36], pos: [0.17, 2.02, 1.64], rot: [0, 34, 0], color: "steel", mirror: true },
+      { shape: "cylinder", sides: 10, radius: 0.22, height: 0.16, pos: [0, 2.02, 1.86], rot: [90, 0, 0], color: "dark" },
+      { shape: "torus", radius: 0.16, tube: 0.05, sides: 10, pos: [0, 2.02, 1.95], rot: [90, 0, 0], color: "copper" },
+      { shape: "box", size: [0.07, 0.07, 0.3], pos: [0.2, 2.02, 1.74], rot: [0, -24, 0], color: "steel", mirror: true },
     ]),
-    { shape: "box", size: [0.02, 0.02, 0.02], pos: [0, 2.02, 1.1], color: "dark", pivot: "si:mastiff_harpoon#laser" },
+    { shape: "box", size: [0.02, 0.02, 0.02], pos: [0, 2.02, 1.1], color: "dark", pivot: "si:mastiff_grapple#laser" },
   ];
 }
 
-/** Cuirasse : tronçons de rails boulonnés en long sur les flancs et le dos, traverses de bois. */
+/** Blindage lourd : poutrelles d'acier boulonnées en long sur les flancs et le dos, traverses, attaches rayées. */
 function rails(): Part[] {
   const I: [number, number][] = [[-0.13, -0.11], [0.13, -0.11], [0.13, -0.05], [0.045, -0.02], [0.045, 0.05], [0.1, 0.06], [0.1, 0.13], [-0.1, 0.13], [-0.1, 0.06], [-0.045, 0.05], [-0.045, -0.02], [-0.13, -0.05]];
   const rail = (x: number, y: number, z: number, l: number, rx: number, rz: number): Part => ({ shape: "extrude", profile: I, depth: l, pos: [x, y, z], rot: [rx, 0, rz], color: "steel", mirror: true });
-  return porte("si:mastiff_rails#fixe_rails", [0, 1.3, 0], [
+  return porte("si:mastiff_plate#fixe_rails", [0, 1.3, 0], [
     rail(0.78, 1.46, 0.36, 1.3, 0, -62),
     rail(0.84, 1.16, 0.36, 1.2, 0, -90),
     rail(0.8, 0.86, 0.36, 1.1, 0, -108),
     rail(0.58, 1.4, -0.78, 1.0, -6, -66),
     rail(0.62, 1.1, -0.78, 0.96, -4, -90),
     rail(0.3, 1.86, 0.06, 1.7, -8, -12),
-    // traverses de bois et attaches rayées
-    ...[0.66, -0.28].map((z): Part => ({ shape: "box", size: [1.5, 0.12, 0.2], pos: [0, 1.74, z], color: "wood" })),
+    // traverses et attaches rayées
+    ...[0.66, -0.28].map((z): Part => ({ shape: "box", size: [1.5, 0.12, 0.2], pos: [0, 1.74, z], color: "dark" })),
     { shape: "box", size: [0.08, 0.86, 0.16], pos: [0.92, 1.16, 0.72], color: "hazard", mirror: true },
     { shape: "box", size: [0.08, 0.86, 0.16], pos: [0.92, 1.16, -0.06], color: "hazard", mirror: true },
     { shape: "box", size: [0.5, 0.05, 0.9], pos: [0, 1.9, 0.06], rot: [-8, 0, 0], color: "faction" },
   ]);
 }
 
-/** Toison : gros câbles pendants de part et d'autre de l'échine, deux rangs, et crinière dressée autour du cou. */
-function toison(): Part[] {
+/** Blindage-cage : de chaque côté, un longeron sous l'échine et une grille de barreaux qui pend devant le flanc, à
+ * distance de la caisse ; une grille plus courte devant le poitrail. */
+function cage(): Part[] {
   const p: Part[] = [];
-  const teintes: C[] = ["copper", "dry", "copper", "black"];
-  const zs = [0.8, 0.5, 0.2, -0.1, -0.4, -0.7, -1.0];
-  zs.forEach((z, i) => {
-    const w = z > 0 ? 0.86 : 0.66;
-    const bas = z > 0 ? 0.5 : 0.66;
-    const h = q(1.76 - Math.max(0, -z) * 0.2);
-    const dz = i % 2 ? 0.1 : -0.06;
-    for (const s of [1, -1]) {
-      // rang du dessous, long ; rang du dessus, court et bouffant
-      p.push({ shape: "tube", radius: 0.1, sides: 4, path: [[q(s * 0.2), q(h - 0.06), z], [q(s * w), q(h - 0.2), q(z + dz)], [q(s * (w + 0.24)), q(bas + (i % 3) * 0.12), q(z + dz - 0.14)]], bend: 0.22, color: teintes[(i + (s > 0 ? 0 : 1)) % 4] });
-      p.push({ shape: "tube", radius: 0.12, sides: 4, path: [[q(s * 0.06), q(h + 0.04), q(z - 0.14)], [q(s * 0.46), q(h + 0.08), q(z - 0.16)], [q(s * 0.86), q(h - 0.42), q(z - 0.3)]], bend: 0.2, color: teintes[(i + (s > 0 ? 2 : 3)) % 4], fine: i % 2 === 1 });
-    }
-  });
-  // crinière : gros câbles en couronne autour du cou
-  for (let i = 0; i < 9; i++) {
-    const a = ((i - 4) / 4) * 1.9;
-    const [sx, cy] = [Math.sin(a), Math.cos(a)];
-    p.push({ shape: "tube", radius: 0.12, sides: 4, path: [[q(sx * 0.34), q(1.34 + cy * 0.36), 1.0], [q(sx * 0.74), q(1.36 + cy * 0.7), 0.94], [q(sx * 1.0), q(1.24 + cy * 0.86), 0.56]], bend: 0.14, color: i % 2 ? "copper" : "dry", fine: i % 2 === 1 });
+  const zs = [0.84, 0.6, 0.36, 0.12, -0.12, -0.36, -0.6, -0.84, -1.04];
+  for (const s of [1, -1]) {
+    const X = q(s * 0.98);
+    p.push({ shape: "box", size: [0.1, 0.1, 2.1], pos: [X, 1.62, -0.1], color: "dark" });
+    p.push({ shape: "box", size: [0.08, 0.08, 2.0], pos: [q(s * 1.02), 0.86, -0.1], color: "steel" });
+    zs.forEach((z, i) => p.push({ shape: "box", size: [0.05, 0.86, 0.05], pos: [q(s * 1.0), 1.22, z], color: i % 3 === 1 ? "metal" : "steel", fine: i % 2 === 1 }));
+    // pattes d'attache à la caisse
+    for (const z of [0.6, -0.6]) p.push({ shape: "box", size: [0.3, 0.06, 0.08], pos: [q(s * 0.84), 1.62, z], color: "steel" });
   }
+  // grille du poitrail
+  for (const x of [-0.42, -0.21, 0, 0.21, 0.42]) p.push({ shape: "box", size: [0.05, 0.6, 0.05], pos: [x, 1.0, 1.24], color: "steel", fine: x === 0 });
+  p.push({ shape: "box", size: [1.0, 0.07, 0.07], pos: [0, 1.32, 1.22], color: "dark" }, { shape: "box", size: [1.0, 0.07, 0.07], pos: [0, 0.7, 1.26], color: "dark" });
   p.push({ shape: "box", size: [0.2, 0.07, 1.5], pos: [0, 1.84, -0.1], rot: [-7, 0, 0], color: "faction" });
-  return porte("si:mastiff_fur#fixe_toison", [0, 1.4, 0], p);
+  return porte("si:mastiff_slat#fixe_cage", [0, 1.4, 0], p);
 }
 
-/** Truffe à antennes : deux paraboles de part et d'autre du museau, fouets à pointe ambre, gros nez cyan. */
+/** Capteurs multispectraux : deux paraboles de part et d'autre du museau, fouets à pointe ambre, gros objectif cyan. */
 function truffe(): Part[] {
-  return porte("si:mastiff_nose#tourelle", COU, [
+  return porte("si:mastiff_sensors#tourelle", COU, [
     { shape: "sphere", radius: 0.17, detail: 1, pos: [0, 1.5, 2.04], color: "glow" },
     { shape: "torus", radius: 0.17, tube: 0.045, sides: 10, pos: [0, 1.5, 1.99], rot: [90, 0, 0], color: "copper" },
     { shape: "box", size: [0.9, 0.07, 0.07], pos: [0, 1.6, 1.66], color: "steel" },
@@ -279,35 +275,39 @@ function truffe(): Part[] {
   ]);
 }
 
-/** Collier à clous : large bande rouge au cou, couronne de grandes pointes. */
+/** Coque électrifiée : anneau isolant au cou, couronne d'électrodes de cuivre à pointe lumineuse, bobine sur le poitrail. */
 function collier(): Part[] {
   const p: Part[] = [
-    { shape: "cylinder", sides: 10, radius: 0.5, radiusTop: 0.46, height: 0.26, pos: [0, 1.36, 0.94], rot: [78, 0, 0], color: "red" },
-    { shape: "torus", radius: 0.5, tube: 0.04, sides: 12, pos: [0, 1.39, 1.06], rot: [78, 0, 0], color: "steel", fine: true },
+    { shape: "cylinder", sides: 10, radius: 0.5, radiusTop: 0.46, height: 0.26, pos: [0, 1.36, 0.94], rot: [78, 0, 0], color: "dark" },
+    { shape: "torus", radius: 0.5, tube: 0.04, sides: 12, pos: [0, 1.39, 1.06], rot: [78, 0, 0], color: "copper", fine: true },
   ];
   for (let i = 0; i < 9; i++) {
     const a = (i / 9) * 2 * Math.PI;
     const [sx, cy] = [Math.sin(a), Math.cos(a)];
-    p.push({ shape: "cone", sides: 4, radius: 0.12, height: 0.5, pos: [q(sx * 0.7), q(1.36 + cy * 0.7), q(0.94 - cy * 0.14)], rot: [q(-12 * cy), 0, q((-a * 180) / Math.PI)], color: "light" });
+    p.push({ shape: "cone", sides: 4, radius: 0.09, height: 0.44, pos: [q(sx * 0.68), q(1.36 + cy * 0.68), q(0.94 - cy * 0.14)], rot: [q(-12 * cy), 0, q((-a * 180) / Math.PI)], color: "copper" });
+    p.push({ shape: "sphere", radius: 0.07, pos: [q(sx * 0.92), q(1.36 + cy * 0.92), q(0.94 - cy * 0.19)], color: "glow", fine: i % 2 === 1 });
   }
-  p.push({ shape: "box", size: [0.24, 0.22, 0.05], pos: [0, 0.84, 1.1], color: "faction" });
-  return porte("si:mastiff_collar#fixe_collier", [0, 1.36, 0.94], p);
+  p.push({ shape: "cylinder", sides: 8, radius: 0.14, height: 0.3, pos: [0, 0.9, 1.12], rot: [90, 0, 0], color: "copper" });
+  p.push({ shape: "box", size: [0.24, 0.22, 0.05], pos: [0, 0.84, 1.28], color: "faction" });
+  return porte("si:mastiff_shock#fixe_collier", [0, 1.36, 0.94], p);
 }
 
-/** Tonnelet de saint-bernard : fût de bois cerclé pendu au cou par une sangle, croix rouge sur panneau clair. */
-function tonnelet(): Part[] {
+/** Nanoréparateurs : bidon d'acier cerclé d'une bande lumineuse, pendu sous le cou, croix de soin ; coffres et tuyaux au
+ * dos. */
+function nanites(): Part[] {
   return [
-    ...porte("si:mastiff_barrel#tourelle", COU, [
-      { shape: "lathe", sides: 10, profile: [[0, -0.5], [0.24, -0.5], [0.34, -0.2], [0.36, 0], [0.34, 0.2], [0.24, 0.5], [0, 0.5]], pos: [0, 0.82, 1.42], rot: [0, 0, 90], color: "wood" },
-      { shape: "torus", radius: 0.34, tube: 0.035, sides: 10, pos: [0.22, 0.82, 1.42], rot: [0, 0, 90], color: "copper", mirror: true },
-      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.08, pos: [0.53, 0.82, 1.42], rot: [0, 0, 90], color: "steel", mirror: true },
+    ...porte("si:mastiff_nanites#tourelle", COU, [
+      { shape: "lathe", sides: 10, profile: [[0, -0.5], [0.26, -0.5], [0.33, -0.4], [0.33, 0.4], [0.26, 0.5], [0, 0.5]], pos: [0, 0.82, 1.42], rot: [0, 0, 90], color: "metal" },
+      { shape: "torus", radius: 0.33, tube: 0.04, sides: 10, pos: [0, 0.82, 1.42], rot: [0, 0, 90], color: "glow" },
+      { shape: "torus", radius: 0.33, tube: 0.035, sides: 10, pos: [0.3, 0.82, 1.42], rot: [0, 0, 90], color: "steel", mirror: true },
+      { shape: "cylinder", sides: 8, radius: 0.1, height: 0.08, pos: [0.53, 0.82, 1.42], rot: [0, 0, 90], color: "dark", mirror: true },
       { shape: "box", size: [0.34, 0.34, 0.06], pos: [0, 0.82, 1.77], color: "light" },
       { shape: "box", size: [0.1, 0.28, 0.04], pos: [0, 0.82, 1.805], color: "red" },
       { shape: "box", size: [0.28, 0.1, 0.04], pos: [0, 0.82, 1.805], color: "red" },
-      { shape: "tube", radius: 0.06, sides: 4, path: [[0.34, 0.96, 1.36], [0.46, 1.36, 1.14], [0.2, 1.72, 1.02]], bend: 0.2, color: "dry", mirror: true },
+      { shape: "tube", radius: 0.06, sides: 4, path: [[0.34, 0.96, 1.36], [0.46, 1.36, 1.14], [0.2, 1.72, 1.02]], bend: 0.2, color: "dark", mirror: true },
     ]),
-    // trousse du dos : coffres clairs à croix, tuyaux de soin
-    ...porte("si:mastiff_barrel#fixe_trousse", [0, 1.5, -0.7], [
+    // coffres du dos à croix, tuyaux
+    ...porte("si:mastiff_nanites#fixe_trousse", [0, 1.5, -0.7], [
       { shape: "extrude", profile: voute(0.3, 0.22, 5), depth: 0.6, pos: [0, 1.56, -0.62], rot: [-14, 0, 0], color: "light" },
       { shape: "box", size: [0.34, 0.05, 0.12], pos: [0, 1.8, -0.6], rot: [-14, 0, 0], color: "red" },
       { shape: "box", size: [0.12, 0.05, 0.34], pos: [0, 1.8, -0.6], rot: [-14, 0, 0], color: "red" },
@@ -320,17 +320,17 @@ export function matin(): Part[] {
   return [
     ...corps(),
     ...PATTES.flatMap(([nom, o, s, avant]) => [
-      ...porte(`sauf:mastiff_spring#${nom}`, [q(o[0] * s), o[1], o[2]], patte(avant).map((p) => cote(s, p))),
-      ...porte(`si:mastiff_spring#${nom}`, [q(o[0] * s), o[1], o[2]], ressort(avant).map((p) => cote(s, p))),
+      ...porte(`sauf:mastiff_leap#${nom}`, [q(o[0] * s), o[1], o[2]], patte(avant).map((p) => cote(s, p))),
+      ...porte(`si:mastiff_leap#${nom}`, [q(o[0] * s), o[1], o[2]], ressort(avant).map((p) => cote(s, p))),
     ]),
     ...tete(),
     ...broyeur(),
     ...affut(),
     ...harpon(),
     ...rails(),
-    ...toison(),
+    ...cage(),
     ...truffe(),
     ...collier(),
-    ...tonnelet(),
+    ...nanites(),
   ];
 }

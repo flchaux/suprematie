@@ -72,7 +72,7 @@ export function drawProjectiles(e: Entities, ctx: FrameCtx): void {
       const az = z0 + ((z1 - z0) / d0) * src.fwd;
       const ay = (src.air ? unitHeightAt(e, wi, ax, az) : groundHeight(e.map, ax, az)) + src.h;
       const by = groundHeight(e.map, x1, z1) + 0.4;
-      // harpon : un câble tendu, sans lueur
+      // grappin : un câble tendu, sans lueur
       if (w?.proj === 0) {
         if (nk < 6000) {
           tmpV.set(x1 - ax, by - ay, z1 - az);
@@ -148,15 +148,7 @@ export function drawProjectiles(e: Entities, ctx: FrameCtx): void {
       // projectile matériel : ogive orientée selon la course, et sa lueur (traceur, propulseur, culot chaud)
       const L = look ?? PROJ_LOOKS[2]!;
       const sz = special ? 3.2 : L.grow ? Math.min(big, 1.4) : 1;
-      // fronde du Berger : une carcasse qui tournoie
-      const junk = special === 0 && wi === slingWeapon(e);
-      if (junk && nk < 6000) {
-        tmpQ.setFromAxisAngle(tmpV.set(0.6, 0.5, 0.62).normalize(), tt * 14 + i);
-        tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(0.9, 0.55, 1.3));
-        e.slugs.setMatrixAt(nk, tmpM);
-        e.slugs.setColorAt(nk, tmpC.setHex(0x8a4a2a));
-        nk++;
-      } else if (nk < 6000) {
+      if (nk < 6000) {
         tmpM.compose(tmpV.set(x, y, z), tmpQ, tmpS.set(L.slug![0] * sz, L.slug![0] * sz, L.slug![1] * sz));
         e.slugs.setMatrixAt(nk, tmpM);
         e.slugs.setColorAt(nk, tmpC.setHex(special ? 0xe8e8e8 : L.color));
@@ -233,12 +225,6 @@ function beamSource(e: Entities, wi: number): { h: number; fwd: number; air: boo
   s = { h, fwd, air, big: def && def.tier === 6 ? 1.5 : 1 };
   e.beamFrom.set(wi, s);
   return s;
-}
-
-/** Arme de la fronde du Berger (-1 : pas dans ces données). */
-function slingWeapon(e: Entities): number {
-  if (e.sling === undefined) e.sling = e.data.mods.find((m) => m.key === "shepherd_sling")?.weapon[1] ?? -1;
-  return e.sling;
 }
 
 /** Hauteur de l'unité qui porte l'arme `wi` (rayons tirés depuis les airs, ou par un amphibie). */
