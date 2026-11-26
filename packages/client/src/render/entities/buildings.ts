@@ -413,8 +413,8 @@ export function drawBuildings(e: Entities, ctx: FrameCtx): void {
         bars++;
       }
     }
-    // couveuse de l'équipe : une pastille par portée possible (pleine : elle couve ; toutes ambre : limite atteinte)
-    if (def.key === "brood" && build >= 1 && !enemy && !strategic && e.data.broodLevels && bars < 5900) {
+    // graine-mère (ou couveuse d'une ancienne partie) de l'équipe : une pastille par portée possible (pleine : elle couve ; toutes ambre : limite atteinte)
+    if ((def.key === "seed_heart" || def.key === "brood") && build >= 1 && !enemy && !strategic && e.data.broodLevels && bars < 5900) {
       const br = broodOf(buf, o, e.data.broodLevels);
       const pl = pipLayout(br.max, e.pxWorld);
       const lift = y + km.height + 0.6;

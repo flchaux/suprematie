@@ -116,7 +116,7 @@ describe("démo des chantiers", () => {
   });
 });
 
-describe("pastilles d'une couveuse", () => {
+describe("pastilles d'une graine-mère", () => {
   it("démo : les portées qui couvent, jamais plus que la limite du niveau", async () => {
     const sim = await Sim.load(readFileSync(new URL("../public/sim.wasm", import.meta.url)));
     const data = JSON.parse(sim.dataJson()) as GameData;
@@ -129,7 +129,7 @@ describe("pastilles d'une couveuse", () => {
       if (t % 40) continue;
       const f = parseFrame(sim.render(0, 0, 512, 512, 2, 0, false));
       for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
-        if (data.buildings[f.buf[o + 1] & 0xff].key !== "brood") continue;
+        if (data.buildings[f.buf[o + 1] & 0xff].key !== "seed_heart") continue;
         const b = broodOf(f.buf, o, data.broodLevels!);
         expect(b.max).toBe(3);
         expect(b.n).toBeLessThanOrEqual(3);

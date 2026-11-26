@@ -153,8 +153,12 @@ pub fn on_terreau(w: &World, owner: u8, x: i32, y: i32, bw: i32, bh: i32) -> boo
     ok || crate::soil::can_place(w, owner, x, y, bw, bh)
 }
 
-/// Règles de pose propres à la Souche : terreau (sauf graine-mère), nombre de graines-mères.
+/// Règles de pose propres à la Souche : terreau (sauf graine-mère), nombre de graines-mères ; la couveuse ne se pose
+/// plus (la graine-mère pond).
 pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32, bh: i32) -> bool {
+    if kind == B_BROOD {
+        return false;
+    }
     if kind == B_SEED_HEART {
         let n = w.buildings.iter().filter(|b| b.alive && b.owner == owner && b.kind == B_SEED_HEART).count();
         return n < MAX_HEARTS;
@@ -574,8 +578,9 @@ pub fn tick_root(w: &mut World, b: usize) {
     }
 }
 
-/// Régénération des organes qui ont leur propre tick (couveuse, matrice, épine, floraison, terrier…),
-/// toutes les ORGAN_PERIOD ticks ; les organes simples et les racines se régénèrent dans leur tick.
+/// Régénération des organes qui ont leur propre tick (graine-mère, matrice, épine, floraison, terrier…),
+/// toutes les ORGAN_PERIOD ticks, et sève de la graine-mère (elle pond comme une usine : pas de tick d'organe) ;
+/// les organes simples et les racines se régénèrent dans leur tick.
 pub fn regen_organs(w: &mut World) {
     if !w.tick.is_multiple_of(ORGAN_PERIOD) || !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
         return;
@@ -584,6 +589,10 @@ pub fn regen_organs(w: &mut World) {
         let b = w.active[i] as usize;
         let bb = &w.buildings[b];
         if bb.alive && bb.complete() && bb.def().race == RACE_SOUCHE && !matches!(bb.def().class, BClass::Organ | BClass::Pylon | BClass::Wall) {
+            if bb.kind == B_SEED_HEART {
+                let (owner, net) = (bb.owner, bb.net);
+                feed(w, owner, net, organ_rate(w, b).0 / 100, 0);
+            }
             regen_building(w, b);
         }
     }
@@ -982,7 +991,7 @@ pub fn info(w: &World, b: usize) -> String {
     let (rs, rl) = if bb.complete() { organ_rate(w, b) } else { (0, 0) };
     let adapt = match bb.kind {
         B_MATRIX => crate::essaim::adapt_info(w, bb.owner),
-        B_BROOD => crate::ponte::brood_info(w, b),
+        B_BROOD | B_SEED_HEART => crate::ponte::brood_info(w, b),
         _ => String::new(),
     };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)

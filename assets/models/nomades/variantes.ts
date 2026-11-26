@@ -7,7 +7,7 @@
 // Un pivot par variante (fixe, ou qui suit la tourelle), pour ne pas multiplier les appels de dessin.
 // Repère : +x à droite, +y en haut, +z vers l'avant.
 import type { Part, Vec3 } from "../types.ts";
-import { q, coffre, voute } from "./commun.ts";
+import { q, coffre } from "./commun.ts";
 import type { C } from "./commun.ts";
 
 /** Pièces fixes de la variante `n` (elles ne tournent pas avec la tourelle). */
@@ -318,11 +318,6 @@ export function variantesBerger(axe: Vec3): Part[] {
 
 // ——— Chariot de convoi ———
 
-/** Chargement d'origine (les variantes 1 et 3 en ont un autre). */
-export function chargeConvoi(parts: Part[]): Part[] {
-  return saufVariantes([1, 3], "charge", parts);
-}
-
 /** Ridelles de bois d'origine (la variante 2 a une ridelle droite de tôle). */
 export function ridellesConvoi(): Part[] {
   return saufVariantes([2], "ridelles", [{ shape: "box", size: [0.04, 0.22, 1.0], pos: [0.48, 0.58, -0.22], color: "wood", mirror: true }]);
@@ -330,10 +325,10 @@ export function ridellesConvoi(): Part[] {
 
 export function variantesConvoi(): Part[] {
   return [
-    // 1 : chargement sous bâche sanglée, bidons à l'avant droit
+    // 1 : bâche roulée sanglée sur la ridelle avant, bidons à l'avant droit (la benne reste libre pour le chargement)
     ...variante(1, [
-      { shape: "extrude", profile: voute(0.42, 0.34, 6), depth: 0.9, pos: [0, 0.47, -0.22], color: "dry" },
-      ...[0.05, -0.5].map((z): Part => ({ shape: "extrude", profile: voute(0.435, 0.355, 6), depth: 0.05, pos: [0, 0.47, z], color: "faction" })),
+      { shape: "cylinder", sides: 8, radius: 0.07, height: 0.86, pos: [0, 0.76, 0.3], rot: [0, 0, 90], color: "dry" },
+      ...[-0.3, 0.3].map((x): Part => ({ shape: "torus", radius: 0.075, tube: 0.012, sides: 8, pos: [x, 0.76, 0.3], rot: [0, 90, 0], color: "black", fine: true })),
       ...bidon([0.3, 0.57, 0.52], 1.1),
       ...bidon([0.17, 0.57, 0.52], 1.1, "rust"),
     ]),
@@ -345,12 +340,12 @@ export function variantesConvoi(): Part[] {
       ...phare([-0.46, 1.3, -0.64], 1),
       { use: "roue_d", pos: [0.24, 0.53, 0.52], rot: [0, 0, 90], scale: [0.12, 0.34, 0.34] },
     ]),
-    // 3 : fûts et touret de câble à la place des caisses, antenne fouet
+    // 3 : touret de câble sur le hayon, jerricans pendus à la ridelle gauche, antenne fouet (la benne reste libre)
     ...variante(3, [
-      ...([[0.22, -0.08, "rust"], [-0.2, -0.1, "metal"], [0.2, -0.46, "copper"]] as [number, number, C][]).map(([x, z, c]): Part => ({ shape: "cylinder", sides: 10, radius: 0.15, height: 0.36, pos: [x, 0.65, z], color: c })),
-      ...[0.22, -0.2].map((x): Part => ({ shape: "torus", radius: 0.15, tube: 0.015, sides: 10, pos: [x, 0.74, x > 0 ? -0.08 : -0.1], color: "dark", fine: true })),
-      { shape: "torus", radius: 0.13, tube: 0.05, sides: 10, pos: [-0.22, 0.54, -0.46], rot: [0, 0, 90], color: "copper" },
-      { shape: "cylinder", sides: 8, radius: 0.16, height: 0.04, pos: [-0.22, 0.54, -0.46], rot: [0, 0, 90], color: "wood" },
+      { shape: "torus", radius: 0.13, tube: 0.05, sides: 10, pos: [0.22, 0.6, -0.8], rot: [90, 0, 0], color: "copper" },
+      { shape: "cylinder", sides: 10, radius: 0.16, height: 0.04, pos: [0.22, 0.6, -0.8], rot: [90, 0, 0], color: "wood" },
+      ...bidon([-0.55, 0.56, -0.1], 1, "rust", [0, 90, 0]),
+      ...bidon([-0.55, 0.56, -0.4], 1, "metal", [0, 90, 0]),
       ...fouet([0.44, 0.7, -0.7], 0.8),
     ]),
   ];

@@ -257,7 +257,7 @@ pub const Q_ROOTING: u8 = 3;
 pub const Q_UPROOTING: u8 = 4;
 pub const Q_TIME: u32 = 60;
 /// Sève par seconde qu'une Reine enracinée donne à son réseau ; dégâts qu'elle subit (%) ; dégâts qu'elle
-/// fait (%) ; pousse des organes et ponte des couveuses de son réseau (%).
+/// fait (%) ; pousse des organes et ponte des graines-mères de son réseau (%).
 pub const Q_SEVE: i32 = 5;
 pub const Q_ARMOR: i32 = 60;
 pub const Q_DMG: i32 = 150;

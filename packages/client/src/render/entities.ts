@@ -102,6 +102,12 @@ export class Entities {
   /** objets des tapis : un maillage instancié par type d'objet (créé à la première apparition) */
   itemMeshes: (KindMesh | undefined)[] = [];
   itemColors: THREE.Color[] = [];
+  /** type d'unité du chariot de convoi des Transhumants (-1 : aucun) */
+  cartKind: number;
+  /** chariots de convoi chargés de l'image : matrice du modèle, objet, places remplies, échelle du modèle (relevés
+   * par la passe des unités, leur chargement est dessiné par celle des objets) */
+  cartLoads: { m: THREE.Matrix4; item: number; n: number; scale: number }[] = [];
+  nCartLoads = 0;
   proj: THREE.InstancedMesh;
   /** projectiles cinétiques (balles, obus) : métal éclairé, pas de halo */
   slugs: THREE.InstancedMesh;
@@ -211,6 +217,7 @@ export class Entities {
     map.spots.forEach((sp, i) => this.spotAt.set(sp.y * map.w + sp.x, i));
     this.modIds = new Map((data.mods ?? []).map((m, i) => [m.key, i]));
     this.quickKeys = (data.mods ?? []).filter((m) => m.quick).map((m) => m.key);
+    this.cartKind = data.units.findIndex((u) => u.key === "t_cart");
     // modèles construits à la demande (première apparition), sauf les tapis (variantes à l'échelle du tapis droit)
     for (const u of data.units) {
       // un œuf garde la taille de son rayon (les autres unités : 0,7 case au moins)

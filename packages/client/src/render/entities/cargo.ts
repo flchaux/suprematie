@@ -10,7 +10,7 @@ import { ASCENSEUR_MAT } from "../../../../../assets/models/buildings.ts";
 import { ITEM_MODELS } from "../../../../../assets/models/items.ts";
 import { groundHeight, HSCALE } from "../terrain.ts";
 import type { Entities } from "../entities.ts";
-import { ANG, TILE, UP, dirQuat, tmpM, tmpQ, tmpQ2, tmpS, tmpV, tmpV2, type FrameCtx } from "./common.ts";
+import { ANG, TILE, UP, dirQuat, tmpM, tmpM2, tmpQ, tmpQ2, tmpS, tmpV, tmpV2, type FrameCtx } from "./common.ts";
 import { KindMesh } from "./kindMesh.ts";
 
 /** ascenseur de tapis de l'image : centre de la case, palier bas, orientation du mât, sens, plateau en attente */
@@ -30,6 +30,19 @@ export interface Lift {
 }
 /** le plateau n'a pas de pièce aux couleurs d'une équipe */
 const NO_TEAM = new THREE.Color(1, 1, 1);
+/** Benne du chariot de convoi (repère de son modèle, assets/models/nomades/convoi.ts) : places, de l'arrière vers
+ * l'avant (x, z, rotation), remplies selon sa cale (1 à 6 : chariots::LOAD_SLOTS de la simulation), hauteur du
+ * plancher, taille d'un objet par rapport à celle des tapis. */
+const CART_SLOTS: readonly (readonly [number, number, number])[] = [
+  [-0.21, -0.54, 0.12],
+  [0.21, -0.54, -0.18],
+  [-0.21, -0.22, -0.08],
+  [0.21, -0.22, 0.2],
+  [-0.21, 0.1, 0.16],
+  [0.21, 0.1, -0.1],
+];
+const CART_FLOOR = 0.47;
+const CART_ITEM = 0.85;
 
 /** Trains, drones de fret, robots logistiques et drones de ravitaillement. */
 export function drawCarriers(e: Entities, ctx: FrameCtx): void {
@@ -148,6 +161,22 @@ export function drawItems(e: Entities, ctx: FrameCtx): void {
       setTeamColor(km.body!, km.n, e.itemColors[kind]);
       km.n++;
       ni++;
+    }
+    // chariots de convoi : leur chargement dans la benne (un seul objet, autant de places que leur cale est pleine)
+    for (let i = 0; i < e.nCartLoads; i++) {
+      const r = e.cartLoads[i];
+      const km = itemMesh(e, r.item);
+      if (!km) continue;
+      const s = (km.scale * CART_ITEM) / r.scale;
+      for (let k = 0; k < Math.min(r.n, CART_SLOTS.length); k++) {
+        const [sx, sz, a] = CART_SLOTS[k];
+        km.ensure(km.n + 1);
+        tmpQ2.setFromAxisAngle(UP, a);
+        tmpM.copy(r.m).multiply(tmpM2.compose(tmpV.set(sx, CART_FLOOR, sz), tmpQ2, tmpS.set(s, s, s)));
+        km.body!.mesh.setMatrixAt(km.n, tmpM);
+        setTeamColor(km.body!, km.n, e.itemColors[r.item]);
+        km.n++;
+      }
     }
   }
   for (const km of e.itemMeshes) km?.end();

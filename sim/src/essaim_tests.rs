@@ -177,15 +177,15 @@ fn bramble_tears_what_bites_it_and_regrows() {
 #[test]
 fn every_organ_regenerates() {
     let mut w = game();
-    let (_, hx, hy) = base(&mut w, 12);
+    let (heart, hx, hy) = base(&mut w, 12);
     let thorn = put(&mut w, 0, B_THORN, hx + 3, hy);
-    let brood = put(&mut w, 0, B_BROOD, hx - 4, hy);
+    let brood = heart;
     for b in [thorn, brood] {
         w.buildings[b].hp /= 2;
     }
     let h = [w.buildings[thorn].hp, w.buildings[brood].hp];
     steps(&mut w, 100);
-    assert!(w.buildings[thorn].hp > h[0] && w.buildings[brood].hp > h[1], "épine et couveuse guérissent dans leur réseau");
+    assert!(w.buildings[thorn].hp > h[0] && w.buildings[brood].hp > h[1], "épine et graine-mère guérissent dans leur réseau");
 }
 
 #[test]
@@ -285,7 +285,7 @@ fn cocoon_ripens_and_releases_a_behemoth() {
     assert!(!w.buildings[c].alive, "il s'est ouvert");
     let b = (0..w.units.alive.len()).find(|&s| w.units.alive[s] && w.units.kind[s] == U_BEHEMOTH).expect("Béhémoth");
     assert_eq!(w.units.owner[b], 0);
-    // aucune couveuse ne le pond
+    // aucune graine-mère ne le pond
     assert!(udef(U_BEHEMOTH).factory == FactoryKind::None);
 }
 
@@ -714,7 +714,7 @@ fn cancelled_and_dismantled_organs_give_their_sap_back() {
     let mut w = game();
     let (heart, hx, hy) = base(&mut w, 12);
     fill(&mut w, heart, 400, 200);
-    let b = place_building(&mut w, 0, B_BROOD, hx + 4, hy, 0).expect("couveuse");
+    let b = place_building(&mut w, 0, B_MAW, hx + 4, hy, 0).expect("panse");
     steps(&mut w, 150);
     assert!(w.buildings[b].paid[0] > 20 && !w.buildings[b].complete());
     let paid = w.buildings[b].paid[0] as i32;

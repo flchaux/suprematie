@@ -45,8 +45,8 @@
   // amélioration possible (extracteur : niveau suivant ; assembleur : modèle suivant)
   const upg = $derived.by(() => {
     if (!info || !bdef || !d) return null;
-    // couveuse de la Souche : plus de portées à la fois, payées par son réseau de racines
-    if (bdef.key === "brood" && d.broodLevels) {
+    // graine-mère de la Souche : plus de portées à la fois, payées par son réseau de racines
+    if (layer && d.broodLevels) {
       const l = info.level ?? 0;
       const n = d.broodLevels[l + 1];
       if (!n) return null;
@@ -96,7 +96,9 @@
     have[SELS] = info.souche.net ? info.souche.sels : 0;
     return have;
   });
-  /** couveuse : portées qui couvent ([espèce, œufs, ticks avant l'éclosion, durée, en attente]) et limite de son niveau */
+  /** graine-mère (ou couveuse d'une ancienne partie) : elle pond les organismes */
+  const layer = $derived(bdef?.key === "seed_heart" || bdef?.key === "brood");
+  /** graine-mère ou couveuse : portées qui couvent ([espèce, œufs, ticks avant l'éclosion, durée, en attente]) et limite de son niveau */
   const brood = $derived(info?.brood as { max: number; litters: [number, number, number, number, number][] } | undefined);
   const broodFull = $derived(!!brood && brood.litters.length >= brood.max);
   /** vitesse effective d'un fabricant : niveau de la fonderie compris (comme crafter_speed dans la simulation) */
@@ -127,7 +129,7 @@
     if (info.build >= 65536 && info.souche?.soil?.spent) return { text: bdef.key === "taproot" ? `Épuisée : plus d'herbe autour, ${info.souche.soil.pct} % de sa production` : "Lente : l'herbe est loin, plantez-en au bord du terreau", kind: "warn" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · en attente de matériaux" : ""), kind: info.stalled ? "warn" : "build" };
     if (paused) return { text: "En pause : ni énergie, ni ingrédients, ni production ; il reprendra là où il en était", kind: "paused" };
-    if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : bdef.key === "brood" ? "elle pond toujours" : "arrêté"} pendant le chantier)`, kind: "build" };
+    if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : layer ? "elle pond toujours" : "arrêté"} pendant le chantier)`, kind: "build" };
     // un extracteur sur un gisement d'hydrocarbure n'a pas besoin d'électricité
     const powered = bdef.powerUse > 0 && !(bdef.cls === BClass.Extractor && info.recipe === HYDROCARBON);
     if (powered && !info.net) return { text: "Hors zone électrique : rapprochez-le d'un générateur ou d'un relais", kind: "warn" };
@@ -146,7 +148,7 @@
       const u = d.units[info.queue[0][0]];
       // une entrée de file : une unité, ou la portée entière d'un organisme de la Souche
       const k = Math.max(1, u.litter ?? 0);
-      // couveuse : elle ne paie rien (ses œufs paient), elle attend de la place ou un réseau
+      // graine-mère : elle ne paie rien (ses œufs paient), elle attend de la place ou un réseau
       if (u.litter) return { text: !info.net ? "Hors de tout réseau : elle ne pond pas" : broodFull ? `Limite atteinte : ${brood!.max} portées couvent, elle pondra à la prochaine éclosion` : "En attente : limite d'unités atteinte", kind: "warn" };
       const lack = u.cost.filter(([it, n]) => (info.stash[it] ?? 0) < n * k);
       const miss = lack.map(([it, n]) => `${n * k - (info.stash[it] ?? 0)} ${d.items[it].name}`);
@@ -211,7 +213,7 @@
     const lv = info.level ?? 0;
     if (bdef.key === "furnace" && d.furnaceLevels?.[lv]) return `niveau ${lv + 1} sur ${d.furnaceLevels.length} : vitesse ×${fmtX(d.furnaceLevels[lv].speed / 100)}, ${Math.round((bdef.powerUse * d.furnaceLevels[lv].power) / 100)} kW`;
     if (bdef.cls === BClass.Extractor && d.extractorLevels?.[lv]) return `niveau ${lv + 1} sur ${d.extractorLevels.length} : vitesse ×${fmtX(d.extractorLevels[lv].speed / 100)}, énergie ×${fmtX(d.extractorLevels[lv].power / 100)}`;
-    if (bdef.key === "brood" && d.broodLevels?.[lv]) return `niveau ${lv + 1} sur ${d.broodLevels.length} : ${d.broodLevels[lv].litters} portées à la fois`;
+    if (layer && d.broodLevels?.[lv]) return `niveau ${lv + 1} sur ${d.broodLevels.length} : ${d.broodLevels[lv].litters} portées à la fois`;
     if (bdef.key === "generator" && d.generatorLevels?.[lv]) return `niveau ${lv + 1} sur ${d.generatorLevels.length} : ${d.generatorLevels[lv].prod} kW`;
     return "";
   });
@@ -539,7 +541,7 @@
             <span class="pm good"><Item id={r.output[0]} size={14} />+{fmt1(fmax)}</span><span class="dim"> /min</span>
           </div>
         {/if}
-      {:else if bdef.cls === BClass.Factory}
+      {:else if bdef.cls === BClass.Factory && !(layer && info.build < 65536)}
         {#if brood}
           <!-- limite de portées : une place par portée, remplie à mesure qu'elle couve -->
           <div class="row brood" title="Une portée garde sa place jusqu'à l'éclosion de son dernier œuf"><span class="kicker">Portées en couvaison</span> <b class="num count" class:full={broodFull}>{brood.litters.length} / {brood.max}</b>{#if broodFull}<span class="full small">limite atteinte</span>{/if}</div>
@@ -599,7 +601,7 @@
         {/if}
         {#if (bdef.race ?? 0) !== 1}
           <span class="dim small"><Icon name="logistics" size={12} /> Drones en vol : <span class="num">{info.drones ?? 0} / {d.depot?.factoryDrones ?? 4}</span></span>
-        {:else if bdef.key !== "brood"}
+        {:else if !layer}
           <span class="dim small"><Icon name="logistics" size={12} /> Payé par son réseau.</span>
         {/if}
         <span class="dim small"><Icon name="rally" size={12} /> Clic droit sur le terrain : point de ralliement.</span>
@@ -859,7 +861,7 @@
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 3 ? "S'enracine" : "Se déracine"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span></div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / 60) * 100}%"></span></div>
       {:else if rooted}
-        <div class="status {ui.unitInfo.soil ? 'good' : 'warn'}"><span class="led"></span>{ui.unitInfo.soil ? "Enracinée : +5 sève/s à son réseau, organes et couveuses plus rapides, −40 % de dégâts subis, +50 % infligés" : "Enracinée hors de tout terreau : elle ne nourrit aucun réseau"}</div>
+        <div class="status {ui.unitInfo.soil ? 'good' : 'warn'}"><span class="led"></span>{ui.unitInfo.soil ? "Enracinée : +5 sève/s à son réseau, organes et ponte plus rapides, −40 % de dégâts subis, +50 % infligés" : "Enracinée hors de tout terreau : elle ne nourrit aucun réseau"}</div>
       {:else if queen}
         <span class="dim small">{ui.unitInfo.soil ? "Sur votre terreau : elle peut s'y enraciner" : "Hors du terreau : elle ne peut pas s'enraciner ici"}</span>
       {/if}

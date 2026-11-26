@@ -21,6 +21,7 @@ const BURIED_DEPTH = 0.43;
 export function drawUnits(e: Entities, ctx: FrameCtx): void {
   const { f, buf, alpha, myTeam, selected, strategic, iconScale, dt, seen, teamOf, modOf, cslot, now, simT, camQ, vx0, vz0, vx1, vz1, fx } = ctx;
   let { rings, bars, nr } = ctx;
+  e.nCartLoads = 0;
   // ----- unités -----
   let o = f.unitOff;
   for (let i = 0; i < f.nUnits; i++, o += UNIT_WORDS) {
@@ -58,7 +59,9 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     const km = e.unitMeshes[kind];
     km.ensure(km.n + 1);
     const facing = (buf[o + 6] & 0xffff) * ANG;
-    const turret = ((buf[o + 6] >>> 16) & 0xffff) * ANG;
+    // chariot de convoi : ce que montre sa benne tient la place de l'angle de tourelle (il n'en a pas)
+    const cart = kind === e.cartKind;
+    const turret = cart ? 0 : ((buf[o + 6] >>> 16) & 0xffff) * ANG;
     let bob = 0;
     // en vol, ou flottant sur l'eau
     if (def.layer === Layer.Air || (def.layer === Layer.Hover && (def.altitude > 0 || y < e.map.waterLevel * HSCALE))) bob = Math.sin(performance.now() / 400 + id) * 0.06;
@@ -163,6 +166,7 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     tmpM.compose(tmpV.set(x, y + bob, z), tmpQ, tmpS.set(sc, sc, sc));
     km.body!.mesh.setMatrixAt(km.n, tmpM);
     setTeamColor(km.body!, km.n, emerge < 1 ? tmpC.copy(col).lerp(new THREE.Color(0xa8e8ff), 1 - emerge) : col);
+    if (cart && buf[o + 6] >>> 16 !== 0) cartLoad(e, tmpM, buf[o + 6] >>> 16, sc);
     // haut du corps : il tourne vers sa cible à vitesse limitée (au plus 6 radians par seconde)
     const aim = flags & UF.IDLE && !(flags & UF.FIRING) && turret === 0 ? 0 : facing - turret;
     let dA = Math.atan2(Math.sin(aim - st.torso), Math.cos(aim - st.torso));
@@ -345,4 +349,16 @@ export function drawHusks(e: Entities, ctx: FrameCtx): void {
       km.n++;
     }
   }
+}
+
+/** Relève un chariot de convoi chargé (`load` : objet | places remplies << 8) : la passe des objets dessine son
+ * chargement dans la benne (cargo.ts, drawItems). */
+function cartLoad(e: Entities, m: THREE.Matrix4, load: number, scale: number): void {
+  let r = e.cartLoads[e.nCartLoads];
+  if (!r) e.cartLoads.push((r = { m: new THREE.Matrix4(), item: 0, n: 0, scale: 1 }));
+  r.m.copy(m);
+  r.item = load & 0xff;
+  r.n = (load >> 8) & 0xff;
+  r.scale = scale;
+  e.nCartLoads++;
 }

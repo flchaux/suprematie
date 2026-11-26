@@ -1,6 +1,7 @@
 //! Ponte de la Souche (voir docs/spec/races.md).
 //!
-//! Les couveuses ne font pas naître leurs organismes un par un. Une entrée de file est une **portée**
+//! La graine-mère pond les organismes terrestres (c'est une usine terrestre ; la couveuse des anciennes parties pond
+//! de même mais ne se construit plus). Elle ne les fait pas naître un par un. Une entrée de file est une **portée**
 //! (`UnitDef::litter`, 3 à 6 selon l'espèce) : la couveuse la pond presque aussitôt (`data::LAY_TICKS`), sans
 //! rien payer, tous ses œufs d'un coup devant elle (`lay`), tant qu'elle n'en couve pas déjà autant que son niveau le
 //! permet (`data::BROOD_LEVELS` : 3, 6, puis 12). Une portée occupe sa place jusqu'à son dernier œuf (`litters`).
@@ -82,6 +83,12 @@ fn egg_net(w: &World, s: usize) -> u16 {
     } else {
         mother(w, s).map_or(0, |b| w.buildings[b].net)
     }
+}
+
+/// Bâtiment qui pond les organismes : la graine-mère, ou la couveuse d'une ancienne partie.
+#[inline]
+pub fn lays(kind: u16) -> bool {
+    matches!(kind, B_SEED_HEART | B_BROOD)
 }
 
 /// Portées qu'une couveuse peut couver en même temps, à son niveau.

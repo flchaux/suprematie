@@ -74,7 +74,7 @@ export function startDemo(c: GameClient): void {
   // ?demo=nomades : soute des Transhumants, chariots de convoi en navette, générateur et poteaux (joueur 0)
   if (scene === "logistique" || scene === "ascenseurs" || scene === "chantiers" || scene === "nomades") ui.me = 0;
   // ?demo=anciens : porte de transit traversée en boucle, anneaux de transport, droïdes roulants, réplicateurs
-  // ?demo=ponte : base de la Souche dont les couveuses pondent en boucle ; on y joue le joueur 0
+  // ?demo=ponte : base de la Souche dont les graines-mères pondent en boucle ; on y joue le joueur 0
   // ?demo=apprivoisement : la Reine de la Souche charme un nid de mordeurs (joueur 0)
   // ?demo=essaim : nouveaux organes et organismes de la Souche, Reine enracinée, flaques d'acide (joueur 0)
   // ?demo=gue : Arche, convoi, chenillards et chariots des Transhumants qui traversent un bras de mer (joueur 0)

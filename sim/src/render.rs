@@ -154,8 +154,16 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
         w.units.y[s],
         w.units.px[s],
         w.units.py[s],
-        // œuf de la Souche : les ticks avant l'éclosion tiennent la place de l'angle de tourelle
-        w.units.facing[s] as i32 | (if crate::ponte::is_egg(w.units.kind[s]) { crate::ponte::hatch_left(w, s) as i32 } else { c.turret as i32 }) << 16,
+        // œuf de la Souche : les ticks avant l'éclosion tiennent la place de l'angle de tourelle ; chariot de convoi
+        // des Transhumants : ce que montre sa benne (chariots::load_view)
+        w.units.facing[s] as i32
+            | (if crate::ponte::is_egg(w.units.kind[s]) {
+                crate::ponte::hatch_left(w, s) as i32
+            } else if w.units.kind[s] == U_T_CART {
+                crate::chariots::load_view(w, s)
+            } else {
+                c.turret as i32
+            }) << 16,
         w.units.hp[s],
         aux,
     ]);
@@ -234,7 +242,7 @@ fn building_words(w: &World, b: usize, broods: &[(u32, u32)], out: &mut Vec<i32>
             let front = bb.queue.first().map(|q| q.0 as i32 + 1).unwrap_or(0);
             let total: i32 = bb.queue.iter().map(|q| q.1 as i32).sum();
             // couveuse : niveau (bits 24-25), portées en train de couver (bits 26-29)
-            let brood = if bb.kind == B_BROOD {
+            let brood = if crate::ponte::lays(bb.kind) {
                 let n = broods.binary_search_by_key(&w.building_ref(b), |x| x.0).map_or(0, |k| broods[k].1);
                 (bb.level as i32 & 3) << 24 | (n.min(15) as i32) << 26
             } else {

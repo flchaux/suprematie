@@ -325,6 +325,28 @@ fn unload_but(w: &mut World, s: usize, h: usize, keep: &dyn Fn(u8) -> bool) {
     }
 }
 
+/// Places de la benne d'un chariot que le client remplit (render/entities/cargo.ts, `CART_SLOTS`).
+pub const LOAD_SLOTS: u32 = 6;
+
+/// Ce que montre la benne du chariot `s` (tampon de rendu, à la place de l'angle de tourelle) : l'objet qu'il porte
+/// le plus (le premier à égalité) | places remplies (1 à LOAD_SLOTS, selon sa cale) << 8 ; 0 : vide.
+pub fn load_view(w: &World, s: usize) -> i32 {
+    let h = &w.units.cold[s].hold;
+    let total = crate::drones::total(h);
+    if total == 0 {
+        return 0;
+    }
+    let mut best = 0;
+    for (it, &n) in h.iter().enumerate() {
+        if n > h[best] {
+            best = it;
+        }
+    }
+    let cap = crate::ameliorations::cart_cap(w, s).max(1);
+    let fill = (LOAD_SLOTS * total).div_ceil(cap).clamp(1, LOAD_SLOTS);
+    best as i32 | (fill as i32) << 8
+}
+
 // ---------- repli et déploiement de la soute ----------
 
 /// Chariots rentrés dans une soute repliée : leur nombre, leurs équipements (octets 2 à 7 de `UnitCold::mods` du
