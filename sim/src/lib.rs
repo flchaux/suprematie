@@ -4,6 +4,7 @@
 
 pub mod ameliorations;
 pub mod belts;
+pub mod bouclier;
 pub mod buildings;
 pub mod chariots;
 pub mod combat;
@@ -617,3 +618,5 @@ mod equipement_tests;
 mod transhumants_tests;
 #[cfg(test)]
 mod troupeau_tests;
+#[cfg(test)]
+mod bouclier_tests;

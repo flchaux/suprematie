@@ -110,6 +110,9 @@ fn the_table_of_upgrades_is_sound() {
             assert_eq!(per, [2], "{}", u.key);
         } else if [U_TRACKER, U_RIDER, U_HARROW, U_TOWED_GUN, U_RAM, U_MASTIFF, U_SHEPHERD].contains(&k) {
             assert!(per.len() == 3 && per.iter().all(|n| (2..=3).contains(n)), "{} : {per:?}", u.key);
+        } else if k == U_SHIELD_CART {
+            // émetteur : trois paliers ou la bulle réfléchissante ; accumulateurs : trois paliers ; régénérateurs : deux
+            assert_eq!(per, [4, 3, 2], "{}", u.key);
         }
     }
     // un filet de camouflage seulement sur les types que `net_kind` reconnaît
@@ -628,7 +631,7 @@ fn boost_workshop_dynamo_and_repair_work() {
     let iron = hold(&w, s, IRON_PLATE);
     order(&mut w, 0, O_ARK_QUEUE, &[ark, U_TRACKER as i32, 1]);
     steps(&mut w, 20);
-    assert_eq!(hold(&w, s, IRON_PLATE), iron - 5);
+    assert_eq!(hold(&w, s, IRON_PLATE), iron - udef(U_TRACKER).cost[0].1);
     order(&mut w, 0, O_ARK_QUEUE, &[ark, U_TRACKER as i32, -1]);
     assert_eq!(hold(&w, s, IRON_PLATE), iron);
     steps(&mut w, 700);

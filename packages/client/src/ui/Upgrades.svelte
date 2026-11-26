@@ -130,6 +130,11 @@
         <div class="upbar"><span style:width={100 - (mi.left / Math.max(1, mi.total)) * 100 + "%"}></span></div>
       </div>
     {/if}
+    {#if mi.bubble}
+      {@const [br, bmax, bfull, bdown, bmirror] = mi.bubble}
+      {@const sh = ui.unitInfo?.shield ?? 0}
+      <div class="row small" title={`Arrête les tirs ennemis venus du dehors. Pleine en ${secs(bfull)} s ; brisée, revient au quart après ${secs(bdown)} s.${bmirror ? ` Renvoie ${bmirror} % des coups arrêtés au tireur.` : ""}`}><span class="kicker">Bulle</span><span class="shb"><span style:width={(sh / Math.max(1, bmax)) * 100 + "%"}></span></span><span class="num">{sh} / {bmax}</span><span class="dim">· {br} cases</span></div>
+    {/if}
     {#if pending.length}
       <div class="row small"><Icon name="mod_fit" size={13} /><span class="dim">Gabarit : encore {pending.map((m) => mods[m].name).join(", ")}{mi.job ? "" : " (attend composants, relevés ou recherche)"}</span></div>
     {/if}

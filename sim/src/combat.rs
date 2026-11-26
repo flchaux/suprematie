@@ -379,7 +379,7 @@ fn fire(w: &mut World, owner: u8, wi: usize, x: i32, y: i32, t: u32, dmg_mult: i
         // rayon instantané
         w.ev(EV_BEAM, x, y, tx, ty);
         let team = w.team_of(owner);
-        if !passes_over_shields(w, t, wd) && shield_absorb(w, team, x, y, tx, ty, dmg, from_air(w, src, wd)) {
+        if !passes_over_shields(w, t, wd) && shield_absorb(w, team, x, y, tx, ty, dmg, from_air(w, src, wd), src) {
             return;
         }
         w.shooter = src;
@@ -655,8 +655,10 @@ pub fn collect_shields(w: &mut World) {
 }
 
 /// Un bouclier ennemi entre la source et l'impact absorbe le coup : impact dans la bulle, tiré du dehors
-/// ou venu du ciel (`from_air` : un avion ou une bombe au-dessus de la bulle la heurte aussi).
-fn shield_absorb(w: &mut World, team: u8, x0: i32, y0: i32, tx: i32, ty: i32, dmg: i32, from_air: bool) -> bool {
+/// ou venu du ciel (`from_air` : un avion ou une bombe au-dessus de la bulle la heurte aussi). `src` : le tireur
+/// (une bulle réfléchissante lui renvoie une part du coup, voir bouclier::reflect).
+#[allow(clippy::too_many_arguments)]
+fn shield_absorb(w: &mut World, team: u8, x0: i32, y0: i32, tx: i32, ty: i32, dmg: i32, from_air: bool, src: u32) -> bool {
     for i in 0..w.shields.len() {
         let (sx, sy, r, st, rf) = w.shields[i];
         if st == team {
@@ -665,15 +667,19 @@ fn shield_absorb(w: &mut World, team: u8, x0: i32, y0: i32, tx: i32, ty: i32, dm
         let r2 = (r as i64) * (r as i64);
         if dist2(sx, sy, tx, ty) <= r2 && (from_air || dist2(sx, sy, x0, y0) > r2) {
             let down = if let Some(u) = w.unit(rf) {
+                let pause = crate::bouclier::unit_recharge(w.units.kind[u], w.units.cold[u].mods).1;
                 let c = &mut w.units.cold[u];
+                let taken = dmg.min(c.shield.max(0));
                 c.shield -= dmg;
-                if c.shield <= 0 {
+                let broke = if c.shield <= 0 {
                     c.shield = 0;
-                    c.shield_down = 200;
+                    c.shield_down = pause;
                     true
                 } else {
                     false
-                }
+                };
+                crate::bouclier::reflect(w, u, src, taken);
+                broke
             } else if let Some(b) = w.building(rf) {
                 let bb = &mut w.buildings[b];
                 bb.shield -= dmg;
@@ -962,7 +968,7 @@ fn beam_tick(w: &mut World, p: &mut Projectile) -> bool {
     };
     p.tx = pos.0;
     p.ty = pos.1;
-    if !passes_over_shields(w, p.target, wd) && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg, from_air(w, p.src, wd)) {
+    if !passes_over_shields(w, p.target, wd) && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg, from_air(w, p.src, wd), p.src) {
         return true;
     }
     w.shooter = p.src;
@@ -1032,7 +1038,7 @@ fn impact(w: &mut World, p: &Projectile) {
         _ => {}
     }
     let wd = &WEAPONS[p.weapon as usize];
-    if !passes_over_shields(w, p.target, wd) && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg, from_air(w, p.src, wd)) {
+    if !passes_over_shields(w, p.target, wd) && shield_absorb(w, team, p.x0, p.y0, p.tx, p.ty, p.dmg, from_air(w, p.src, wd), p.src) {
         return;
     }
     let size = if p.aoe > 0 { p.aoe } else { 64 };

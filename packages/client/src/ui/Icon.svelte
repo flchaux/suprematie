@@ -98,6 +98,8 @@
     mod_jaw: '<path d="M3 6h13l5 4-5 2H3z"/><path d="M6 12v2M10 12v2M14 12v2"/><path d="M3 18h11l4-3"/>',
     mod_hook: '<path d="M3 3l8 8"/><path d="M11 11l8-3M11 11l-3 8"/><path d="M15 15a5 5 0 0 0 6 4"/>',
     mod_piston: '<rect x="8" y="2" width="8" height="10"/><path d="M12 12v8M7 21h10M8 6h8"/><path d="M4 4v6M20 4v6"/>',
+    mod_cells: '<rect x="4" y="6" width="7" height="14"/><rect x="13" y="6" width="7" height="14"/><path d="M6.500 3h2M15.500 3h2M7.500 10v6M16.500 10v6M5 13h5M14 13h5"/>',
+    mod_mirror: '<path d="M3 18a9 9 0 0 1 18 0M2 21h20"/><path d="M12 3v6M9 6l3 3 3-3M17 9l3-3M7 9 4 6"/>',
     mod_shock: '<path d="M13 2 6 13h5l-2 9 9-12h-5z"/><path d="M3 8l2 1M3 16l2-1M21 8l-2 1"/>',
     mod_arc: '<path d="M8 21V8a4 4 0 0 1 8 0v2"/><path d="M19 3l-4 5h4l-4 5"/>',
     mod_mortar: '<path d="M8 15 15 4l4 2.500-7 11z"/><path d="M4 21h16M7 21l3-5M17 21l-3-5"/>',

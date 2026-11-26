@@ -59,6 +59,8 @@ export interface ModInfo {
   /** gabarits du joueur : [type d'unité, gabarit de production (1 à 3, 0 : aucun), gabarits (un octet par emplacement)] ;
    * équipement voulu de l'unité ; équipement payé de l'unité en fabrication (atelier) */
   kits: [number, number, number, number, number][]; want: number; kit: number;
+  /** chariot bouclier : [rayon (cases), points, ticks pour se remplir, ticks avant le retour après une rupture, part renvoyée (%)] */
+  bubble?: [number, number, number, number, number] | null;
 }
 /** État d'une Arche : tourelles [type, type voulu, état, ticks, PV ‰, déployée, unité], file de l'atelier embarqué… */
 export interface ArkInfo {
@@ -79,6 +81,8 @@ export interface GameData {
   items: ItemDef[]; recipes: RecipeDef[]; weapons: WeaponDef[]; techs: TechDef[]; buildings: BuildingDef[]; units: UnitDef[];
   /** améliorations des Transhumants (indice 0 : rien), emplacements de l'Arche et des autres, types de tourelles (indices d'unités) */
   mods: ModDef[]; arkSlots: ModSlot[]; unitSlots: ModSlot[]; moduleSlots: ModSlot[]; oneSlot: ModSlot; turretKinds: number[];
+  /** emplacements du chariot bouclier (émetteur, accumulateurs, régénérateurs) */
+  shieldSlots?: ModSlot[];
   /** rayon de l'Arche selon ses tronçons (0 à 3) */
   arkRadii: number[];
   missileCost: [number, number][]; interceptorCost: [number, number][];

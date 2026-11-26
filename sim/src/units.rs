@@ -679,6 +679,7 @@ pub fn update_units(w: &mut World) {
         // boucliers
         {
             let shield_max = crate::ameliorations::unit_shield(w, s).1;
+            let full = crate::bouclier::unit_recharge(kind, w.units.cold[s].mods).0;
             let c = &mut w.units.cold[s];
             let max = if kind == U_COMMANDER { if w.players[w.units.owner[s] as usize].has_tech(T_CMD_SHIELD) { 4000 } else { 0 } } else { shield_max };
             if max > 0 {
@@ -688,7 +689,7 @@ pub fn update_units(w: &mut World) {
                         c.shield = max / 4;
                     }
                 } else {
-                    c.shield = (c.shield + (max / 600).max(1)).min(max);
+                    c.shield = (c.shield + (max / full).max(1)).min(max);
                 }
             }
         }

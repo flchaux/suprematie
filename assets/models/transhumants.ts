@@ -18,6 +18,7 @@ import { atelierNomade } from "./nomades/atelier.ts";
 import { bastionNomade } from "./nomades/bastion.ts";
 import { poteauNomade } from "./nomades/poteau.ts";
 import { chariotConvoi } from "./nomades/convoi.ts";
+import { chariotBouclier } from "./nomades/bouclier.ts";
 import { annexesAssembleur, annexesFonderie, annexesForeuse, annexesRaffinerie } from "./nomades/annexes-production.ts";
 import { annexesAtelier, annexesBastion, annexesGenerateur, annexesLaboratoire, annexesSoute } from "./nomades/annexes-service.ts";
 import { ameliorationsArche, CANON, FLAK, groupeArche, tourelleArche } from "./nomades/arche.ts";
@@ -148,6 +149,8 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
   ch_bastion: chenillard([...bastionNomade(true), ...annexesBastion(true)]),
   // t_cart : chariot de convoi attelé à une soute (voir nomades/convoi.ts)
   t_cart: { parts: chariotConvoi() },
+  // t_shield_cart : chariot bouclier, projecteur de bulle (voir nomades/bouclier.ts)
+  t_shield_cart: { parts: chariotBouclier() },
   // tourelles déployables de l'Arche (voir nomades/arche.ts)
   turret_gun: { parts: tourelleArche(0) },
   turret_aa: { parts: tourelleArche(1) },

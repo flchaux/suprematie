@@ -321,7 +321,7 @@ fn the_bay_assembles_four_mastiffs_at_most() {
     }
     steps(&mut w, 20);
     assert_eq!(dogs(&w).len(), 1);
-    assert_eq!(crate::drones::has(&w.units.cold[ark].hold, STEEL), 72, "payé dans la soute de l'Arche");
+    assert_eq!(crate::drones::has(&w.units.cold[ark].hold, STEEL), udef(U_MASTIFF).cost[0].1 * 9, "payé dans la soute de l'Arche");
     steps(&mut w, 560);
     assert_eq!(dogs(&w).len(), 1, "un toutes les 30 s");
     steps(&mut w, 4000);

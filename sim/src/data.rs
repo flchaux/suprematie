@@ -330,7 +330,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 117] = [
+pub const WEAPONS: [WeaponDef; 118] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -407,10 +407,10 @@ pub const WEAPONS: [WeaponDef; 117] = [
     w!(90, 4, 60, Spit, 10, 512, M_SURF),                               // 68 planeur à membranes (spores)
     // ----- Transhumants (voir transhumants.rs) : canons cinétiques -----
     w!(120, 24, 20, Bullet, 40, 128, M_SURF),                           // 69 canon de l'Arche
-    w!(9, 12, 10, Bullet, 40, 0, M_SURF),                               // 70 pisteur
-    w!(50, 20, 28, Bullet, 40, 0, M_SURF),                              // 71 cavalier
-    w!(90, 40, 90, Shell, 14, 384, M_SURF, min_range: 8),               // 72 canon tracté
-    w!(300, 2, 40, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 73 bélier : éperonne
+    w!(14, 12, 7, Bullet, 40, 0, M_SURF),                               // 70 pisteur
+    w!(80, 20, 20, Bullet, 40, 0, M_SURF),                              // 71 cavalier
+    w!(144, 40, 65, Shell, 14, 384, M_SURF, min_range: 8),              // 72 canon tracté
+    w!(480, 2, 29, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 73 bélier : éperonne
     w!(160, 30, 36, Bullet, 40, 128, M_SURF),                           // 74 bastion déployé
     // ----- Souche, suite -----
     w!(170, 1, 20, Bite, 0, 576, M_LAND),                               // 75 vessie (elle éclate : voir souche::burst)
@@ -433,30 +433,31 @@ pub const WEAPONS: [WeaponDef; 117] = [
     w!(24, 28, 8, Bullet, 60, 192, M_AIR),                              // 91 tourelle antiaérienne
     w!(110, 32, 80, Shell, 16, 384, M_SURF, min_range: 7),              // 92 tourelle mortier
     w!(170, 44, 36, Bullet, 48, 128, M_SURF),                           // 93 bastion à canon long
-    w!(50, 20, 18, Bullet, 40, 0, M_SURF),                              // 94 cavalier à canons jumelés
-    w!(22, 38, 10, Bullet, 60, 200, M_AIR),                             // 95 herse à viseur longue portée
-    w!(18, 24, 10, Bullet, 50, 128, M_SURF | M_AIR),                    // 96 herse à affût mixte
-    w!(90, 54, 90, Shell, 16, 384, M_SURF, min_range: 10),              // 97 canon tracté à tube allongé
-    w!(45, 40, 90, Shell, 14, 384, M_SURF, salvo: 3, spread: 500, min_range: 8), // 98 canon tracté à obus à grappe
-    w!(18, 14, 10, Bullet, 40, 0, M_SURF),                              // 99 pisteur à mitrailleuse lourde
-    w!(22, 22, 70, Missile, 18, 160, M_SURF, salvo: 4, spread: 300),    // 100 pisteur à nacelles de roquettes
-    w!(70, 28, 38, Bullet, 48, 0, M_SURF),                              // 101 cavalier à canon long
-    w!(6, 8, 50, Fire, 0, 320, M_SURF, sustain: 34),                    // 102 cavalier à lance-flammes
-    w!(40, 34, 60, Missile, 30, 200, M_AIR, salvo: 4),                  // 103 herse à missiles
-    w!(80, 40, 56, Shell, 14, 320, M_SURF, min_range: 8),               // 104 canon tracté à chargeur
-    w!(420, 2, 40, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 105 bélier à scies
-    w!(6, 7, 50, Fire, 0, 320, M_SURF, sustain: 34),                    // 106 bélier : lance-flammes de proue
+    w!(80, 20, 13, Bullet, 40, 0, M_SURF),                              // 94 cavalier à canons jumelés
+    w!(35, 38, 7, Bullet, 60, 200, M_AIR),                              // 95 herse à viseur longue portée
+    w!(28, 24, 7, Bullet, 50, 128, M_SURF | M_AIR),                     // 96 herse à affût mixte
+    w!(144, 54, 65, Shell, 16, 384, M_SURF, min_range: 10),             // 97 canon tracté à tube allongé
+    w!(72, 40, 65, Shell, 14, 384, M_SURF, salvo: 3, spread: 500, min_range: 8), // 98 canon tracté à obus à grappe
+    w!(28, 14, 7, Bullet, 40, 0, M_SURF),                               // 99 pisteur à mitrailleuse lourde
+    w!(35, 22, 50, Missile, 18, 160, M_SURF, salvo: 4, spread: 300),    // 100 pisteur à nacelles de roquettes
+    w!(112, 28, 28, Bullet, 48, 0, M_SURF),                             // 101 cavalier à canon long
+    w!(13, 8, 50, Fire, 0, 320, M_SURF, sustain: 34),                   // 102 cavalier à lance-flammes
+    w!(64, 34, 44, Missile, 30, 200, M_AIR, salvo: 4),                  // 103 herse à missiles
+    w!(128, 40, 41, Shell, 14, 320, M_SURF, min_range: 8),              // 104 canon tracté à chargeur
+    w!(672, 2, 29, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 105 bélier à scies
+    w!(13, 7, 50, Fire, 0, 320, M_SURF, sustain: 34),                   // 106 bélier : lance-flammes de proue
     w!(160, 30, 36, Bullet, 40, 128, M_SURF | M_AIR),                   // 107 bastion à affût antiaérien
     w!(170, 44, 36, Bullet, 48, 128, M_SURF | M_AIR),                   // 108 bastion à canon long et affût antiaérien
     // Mâtin et Berger (voir troupeau.rs)
-    w!(90, 2, 18, Bite, 0, 0, M_SURF),                                  // 109 mâtin : mâchoires
-    w!(160, 2, 22, Bite, 0, 0, M_SURF, prefer_buildings: true),         // 110 mâtin : mâchoires hydrauliques
-    w!(20, 20, 8, Bullet, 45, 0, M_SURF),                               // 111 mâtin : tourelle dorsale
+    w!(144, 2, 13, Bite, 0, 0, M_SURF),                                 // 109 mâtin : mâchoires
+    w!(256, 2, 16, Bite, 0, 0, M_SURF, prefer_buildings: true),         // 110 mâtin : mâchoires hydrauliques
+    w!(32, 20, 6, Bullet, 45, 0, M_SURF),                               // 111 mâtin : tourelle dorsale
     w!(2, 14, 110, Bullet, 0, 0, M_SURF, sustain: 36),                  // 112 mâtin : grappin magnétique (câble tendu ; voir troupeau::reel)
-    w!(1100, 14, 45, Ion, 40, 640, M_SURF),                            // 113 berger : décharge d'arc (en zone)
-    w!(1000, 14, 45, Ion, 40, 640, M_SURF, stun: 30),                   // 114 berger : arc paralysant (pas les géants)
-    w!(650, 50, 130, Shell, 14, 704, M_SURF, min_range: 10),            // 115 berger : mortier lourd
-    w!(24, 26, 110, Fire, 0, 160, M_SURF, sustain: 60),                 // 116 berger : lance-plasma (3 s)
+    w!(1760, 14, 33, Ion, 40, 640, M_SURF),                             // 113 berger : décharge d'arc (en zone)
+    w!(1600, 14, 33, Ion, 40, 640, M_SURF, stun: 30),                   // 114 berger : arc paralysant (pas les géants)
+    w!(1040, 50, 95, Shell, 14, 704, M_SURF, min_range: 10),            // 115 berger : mortier lourd
+    w!(53, 26, 110, Fire, 0, 160, M_SURF, sustain: 60),                 // 116 berger : lance-plasma (3 s)
+    w!(35, 28, 7, Bullet, 50, 200, M_AIR),                              // 117 herse (canon antiaérien)
 ];
 /// Armes des améliorations des Transhumants (indices dans WEAPONS).
 pub const W_SIEGE: u8 = 85;
@@ -488,6 +489,7 @@ pub const W_SHEPHERD: u8 = 113;
 pub const W_SHEPHERD_ARC: u8 = 114;
 pub const W_SHEPHERD_MORTAR: u8 = 115;
 pub const W_SHEPHERD_PLASMA: u8 = 116;
+pub const W_HARROW: u8 = 117;
 pub const W_CMD_UP: u8 = 1;
 /// Souche : arme de la vessie (dégâts et rayon de son éclatement) et griffes du béhémoth.
 pub const W_BURST: u8 = 75;
@@ -524,7 +526,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 94] = [
+pub const TECHS: [TechDef; 95] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -623,6 +625,7 @@ pub const TECHS: [TechDef; 94] = [
     t!("t_crown", "Couronne de tourelles", 4, 30, 12, [82, 89], "Arche : 9 tourelles (pont), grande bulle (coque)", race: RACE_TRANSH),
     t!("t_mastiff", "Chiens de fer", 2, 14, 8, [58], "Mâtin : quadrupède d'assaut, plus fort en meute", race: RACE_TRANSH),
     t!("t_shepherd", "Le Grand Berger", 5, 40, 14, [92, 62], "Berger : marcheur géant de commandement, qui accélère les unités autour de lui", race: RACE_TRANSH),
+    t!("t_shield_cart", "Projecteurs de convoi", 3, 18, 10, [83], "Chariot bouclier : une bulle qui couvre le convoi ; émetteur, accumulateurs et recharge à améliorer", race: RACE_TRANSH),
 ];
 /// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
 pub const T_T_ARMORY: u8 = 80;
@@ -639,6 +642,7 @@ pub const T_T_RAIL: u8 = 90;
 pub const T_T_CROWN: u8 = 91;
 pub const T_T_MASTIFF: u8 = 92;
 pub const T_T_SHEPHERD: u8 = 93;
+pub const T_T_SHIELD_CART: u8 = 94;
 /// Recherches de la Souche et des Transhumants (indices dans TECHS).
 pub const T_S_SPITTERS: u8 = 48;
 pub const T_S_SHELLS: u8 = 49;
@@ -1188,12 +1192,14 @@ pub const U_ARK_CAR: u16 = 92;
 /// robots des Transhumants (voir troupeau.rs)
 pub const U_MASTIFF: u16 = 93;
 pub const U_SHEPHERD: u16 = 94;
+/// chariot bouclier des Transhumants (voir bouclier.rs)
+pub const U_SHIELD_CART: u16 = 95;
 /// rayon (cases) de la bulle du brouilleur : les unités alliées dedans n'apparaissent pas au radar ennemi
 pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 95] = [
+pub const UNITS: [UnitDef; 96] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1272,11 +1278,11 @@ pub const UNITS: [UnitDef; 95] = [
     UnitDef { key: "ch_lab", name: "Chenillard laboratoire", layer: Layer::Hover, hp: 1000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 14), (GEAR, 4)], build: 10, race: RACE_TRANSH, deploys: B_T_LAB, ..UD },
     UnitDef { key: "ch_workshop", name: "Chenillard atelier", layer: Layer::Hover, hp: 6000, speed: 16, radius: 314, cost: &[(IRON_PLATE, 40), (GEAR, 16), (COPPER_PLATE, 12)], build: 24, race: RACE_TRANSH, deploys: B_T_WORKSHOP, ..UD },
     UnitDef { key: "ch_bastion", name: "Chenillard bastion", layer: Layer::Hover, hp: 3000, speed: 18, radius: 209, cost: &[(STEEL, 24), (AMMO, 10), (CIRCUIT, 6)], build: 16, tech: T_T_BASTION, tier: 2, race: RACE_TRANSH, deploys: B_T_BASTION, ..UD },
-    UnitDef { key: "tracker", name: "Pisteur", layer: Layer::Hover, hp: 220, speed: 70, radius: 100, weapons: &[70], vision: 40, cost: &[(IRON_PLATE, 5), (GEAR, 2)], build: 3, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "rider", name: "Cavalier", layer: Layer::Hover, hp: 800, speed: 40, radius: 140, weapons: &[71], cost: &[(STEEL, 4), (GEAR, 3), (CIRCUIT, 2)], build: 7, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "harrow", name: "Herse", layer: Layer::Hover, hp: 400, speed: 32, radius: 130, weapons: &[6], cost: &[(STEEL, 3), (GEAR, 3), (CIRCUIT, 2), (AMMO, 2)], build: 7, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "towed_gun", name: "Canon tracté", layer: Layer::Hover, hp: 420, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 5), (GEAR, 3), (AMMO, 3)], build: 9, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "ram", name: "Bélier", layer: Layer::Hover, hp: 2800, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 10), (GEAR, 6), (CIRCUIT, 2)], build: 12, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "tracker", name: "Pisteur", layer: Layer::Hover, hp: 480, speed: 70, radius: 100, weapons: &[70], vision: 40, cost: &[(IRON_PLATE, 10), (GEAR, 3)], build: 5, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "rider", name: "Cavalier", layer: Layer::Hover, hp: 1760, speed: 40, radius: 140, weapons: &[71], cost: &[(STEEL, 7), (GEAR, 5), (CIRCUIT, 4)], build: 12, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "harrow", name: "Herse", layer: Layer::Hover, hp: 880, speed: 32, radius: 130, weapons: &[W_HARROW], cost: &[(STEEL, 5), (GEAR, 5), (CIRCUIT, 4), (AMMO, 4)], build: 12, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "towed_gun", name: "Canon tracté", layer: Layer::Hover, hp: 920, speed: 24, radius: 150, weapons: &[72], cost: &[(STEEL, 9), (GEAR, 5), (AMMO, 5)], build: 16, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ram", name: "Bélier", layer: Layer::Hover, hp: 6200, speed: 28, radius: 200, weapons: &[73], cost: &[(STEEL, 18), (GEAR, 10), (CIRCUIT, 4)], build: 21, tech: T_T_HEAVY_SHOP, tier: 2, race: RACE_TRANSH, ..UD },
     // ----- Souche : œufs pondus par les graines-mères (voir ponte.rs). Immobiles, sans arme, ils éclosent
     // en l'organisme qu'ils portent ; l'œuf d'une espèce est choisi d'après sa taille (ponte::egg_of) -----
     UnitDef { key: "egg_s", name: "Œuf", hp: 100, speed: 0, radius: 60, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
@@ -1305,8 +1311,10 @@ pub const UNITS: [UnitDef; 95] = [
     // celui de sa reconstruction (voir convoi.rs) -----
     UnitDef { key: "ark_car", name: "Remorque d'Arche", layer: Layer::Hover, hp: 2600, speed: 16, radius: 194, vision: 10, cost: &[(IRON_PLATE, 30), (GEAR, 8)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Transhumants : robots (voir troupeau.rs) -----
-    UnitDef { key: "mastiff", name: "Mâtin", layer: Layer::Hover, hp: 1500, speed: 44, radius: 190, weapons: &[W_MASTIFF], vision: 24, cost: &[(STEEL, 8), (GEAR, 6), (CIRCUIT, 3)], build: 10, tech: T_T_MASTIFF, tier: 2, race: RACE_TRANSH, ..UD },
-    UnitDef { key: "shepherd", name: "Berger", layer: Layer::Hover, hp: 42000, speed: 20, radius: 600, weapons: &[W_SHEPHERD], vision: 36, cost: &[(STEEL, 220), (GEAR, 100), (ENGINE, 40), (PROCESSOR, 24)], build: 120, tech: T_T_SHEPHERD, tier: 6, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "mastiff", name: "Mâtin", layer: Layer::Hover, hp: 3300, speed: 44, radius: 190, weapons: &[W_MASTIFF], vision: 24, cost: &[(STEEL, 14), (GEAR, 10), (CIRCUIT, 5)], build: 18, tech: T_T_MASTIFF, tier: 2, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "shepherd", name: "Berger", layer: Layer::Hover, hp: 92000, speed: 20, radius: 600, weapons: &[W_SHEPHERD], vision: 36, cost: &[(STEEL, 385), (GEAR, 175), (ENGINE, 70), (PROCESSOR, 42)], build: 210, tech: T_T_SHEPHERD, tier: 6, race: RACE_TRANSH, ..UD },
+    // ----- Transhumants : chariot bouclier, sa bulle couvre le convoi (voir bouclier.rs) -----
+    UnitDef { key: "t_shield_cart", name: "Chariot bouclier", layer: Layer::Hover, hp: 1800, speed: 24, radius: 160, vision: 16, cost: &[(STEEL, 10), (CIRCUIT, 10), (COPPER_PLATE, 16)], build: 25, tech: T_T_SHIELD_CART, tier: 3, shield_r: 6, shield_hp: 3000, race: RACE_TRANSH, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

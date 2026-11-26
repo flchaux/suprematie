@@ -69,7 +69,7 @@ describe("modèles", () => {
     expect(variantOf(1234, 4)).toBe(variantOf(1234, 4));
     expect(variantOf(77, 1)).toBe(0);
     // assez de variantes, chacune différente de la variante 0 par au moins une pièce
-    const want: Record<string, number> = { tracker: 4, rider: 4, harrow: 4, towed_gun: 4, ram: 4, mastiff: 4, shepherd: 4, t_cart: 4, ch_drill: 2, ch_hold: 2, ch_generator: 2, ch_workshop: 2 };
+    const want: Record<string, number> = { tracker: 4, rider: 4, harrow: 4, towed_gun: 4, ram: 4, mastiff: 4, shepherd: 4, t_cart: 4, ch_drill: 2, ch_hold: 2, ch_generator: 2, ch_workshop: 2, t_shield_cart: 4 };
     for (const [key, min] of Object.entries(want)) {
       const b = buildModel(UNIT_MODELS[key]);
       expect(b.variants, key).toBeGreaterThanOrEqual(min);

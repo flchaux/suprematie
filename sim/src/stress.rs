@@ -1023,7 +1023,8 @@ pub fn chantiers_demo() -> World {
 /// Démonstration des améliorations des Transhumants (`?demo=arche`, joueur 0) : une Arche à grande bulle, canon lourd
 /// et couronne de neuf tourelles déployées (convoi de quatre remorques), une Arche nue à équiper, une Arche et son convoi
 /// en patrouille, les modules équipés (rendement et spécialité), les unités sous plusieurs équipements, un atelier et un
-/// gabarit de production, et un siège de chars.
+/// gabarit de production, quatre chariots bouclier (nu, élargi, couronne, réfléchissant) et quatre cavaliers nus aux
+/// variantes différentes sur la route d'un siège de chars.
 pub fn arche_demo() -> World {
     use crate::ameliorations as am;
     let mut w = World::new(&[29, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100, 0, 0, RACE_TRANSH as i32, RACE_INDUS as i32]);
@@ -1098,6 +1099,22 @@ pub fn arche_demo() -> World {
     }
     crate::gabarits::record(&mut w, 0, U_RIDER as i32, 0, am::M_RIDER_LONG as u32 | (am::M_RIDER_PLATE as u32) << 8 | (am::M_RIDER_LOOT as u32) << 16);
     crate::gabarits::activate(&mut w, 0, U_RIDER as i32, 1);
+    // sur la route de l'ennemi : quatre chariots bouclier (nu, élargi, couronne, réfléchissant), bulle pleine, et
+    // quatre cavaliers nus côte à côte (chacun sa variante de pièces dépareillées, d'après son identifiant)
+    let shields: [&[u8]; 4] = [&[], &[am::M_SC_WIDE2, am::M_SC_CELLS2, am::M_SC_REGEN1], &[am::M_SC_WIDE3, am::M_SC_CELLS3, am::M_SC_REGEN2], &[am::M_SC_MIRROR, am::M_SC_CELLS1]];
+    for (j, fit) in shields.iter().enumerate() {
+        let id = w.spawn_unit(U_SHIELD_CART, 0, (cx + 12 + 5 * j as i32) * TILE, (cy - 6) * TILE);
+        let Some(s) = w.unit(id) else { continue };
+        w.units.facing[s] = 0;
+        w.units.cold[s].mods = fit.iter().fold(0u64, |m, &k| m | (k as u64) << (8 * am::MODS[k as usize].slot));
+        w.units.cold[s].shield = am::unit_shield(&w, s).1;
+    }
+    for j in 0..4 {
+        let id = w.spawn_unit(U_RIDER, 0, (cx + 12 + 3 * j) * TILE, (cy - 2) * TILE);
+        if let Some(s) = w.unit(id) {
+            w.units.facing[s] = 0;
+        }
+    }
     for k in 0..10 {
         w.spawn_unit(U_LIGHT_TANK, 1, (cx + 40 + (k % 2) * 2) * TILE, (cy - 10 + 2 * k) * TILE);
     }

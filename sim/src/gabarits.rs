@@ -39,7 +39,7 @@ pub fn valid(kind: u16, set: u32) -> u32 {
 
 /// Ce type d'unité a-t-il des gabarits ? (une unité de combat : trois emplacements)
 pub fn has_kits(kind: u16) -> bool {
-    (kind as usize) < UNITS.len() && host_has_mods(kind) && slots(kind).len() == UNIT_SLOTS.len()
+    (kind as usize) < UNITS.len() && host_has_mods(kind) && std::ptr::eq(slots(kind).as_ptr(), UNIT_SLOTS.as_ptr())
 }
 
 fn kits_of(w: &World, p: u8, kind: u16) -> Option<&Kit> {

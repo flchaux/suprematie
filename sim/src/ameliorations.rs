@@ -246,6 +246,9 @@ pub fn unit_shield(w: &World, s: usize) -> (i32, i32) {
         };
     }
     let mods = w.units.cold[s].mods;
+    if w.units.kind[s] == U_SHIELD_CART {
+        return crate::bouclier::bubble(mods);
+    }
     if mods != 0 && w.units.kind[s] != U_CH_HOLD {
         if let Some(d) = fitted(mods).find(|d| d.shield.1 > 0) {
             return d.shield;
@@ -1458,12 +1461,13 @@ pub fn mods_json() -> String {
     let rs: Vec<String> = ARK_RADII.iter().map(|r| r.to_string()).collect();
     let tk: Vec<String> = TURRET_KINDS.iter().map(|k| k.to_string()).collect();
     format!(
-        "\"mods\":[{}],\"arkSlots\":[{}],\"unitSlots\":[{}],\"moduleSlots\":[{}],\"oneSlot\":{},\"turretKinds\":[{}],\"arkRadii\":[{}]",
+        "\"mods\":[{}],\"arkSlots\":[{}],\"unitSlots\":[{}],\"moduleSlots\":[{}],\"oneSlot\":{},\"shieldSlots\":[{}],\"turretKinds\":[{}],\"arkRadii\":[{}]",
         list.join(","),
         all(&ARK_SLOTS),
         all(&UNIT_SLOTS),
         all(&MODULE_SLOTS),
         slot(&ONE_SLOT),
+        all(&SHIELD_SLOTS),
         tk.join(","),
         rs.join(",")
     )
@@ -1502,8 +1506,17 @@ pub fn info(w: &World, h: Host) -> String {
         Host::U(s) => (w.units.cold[s].want, 0),
         Host::B(b) => (0, w.buildings[b].kit),
     };
+    // bulle d'une unité autre que l'Arche (chariot bouclier) : [rayon en cases, points, plein en ticks, retour en ticks]
+    let bubble = match h {
+        Host::U(s) if kind == U_SHIELD_CART => {
+            let (r, max) = unit_shield(w, s);
+            let (full, down) = crate::bouclier::recharge(w.units.cold[s].mods);
+            format!("[{r},{max},{full},{down},{}]", crate::bouclier::mirror_pct(w, s))
+        }
+        _ => "null".into(),
+    };
     format!(
-        "{{\"host\":{},\"mods\":[{}],\"job\":{},\"left\":{},\"total\":{},\"reach\":[{}],\"ark\":{},\"kits\":{},\"want\":{},\"kit\":{}}}",
+        "{{\"host\":{},\"mods\":[{}],\"job\":{},\"left\":{},\"total\":{},\"reach\":[{}],\"ark\":{},\"kits\":{},\"want\":{},\"kit\":{},\"bubble\":{}}}",
         kind,
         list.join(","),
         job,
@@ -1513,7 +1526,8 @@ pub fn info(w: &World, h: Host) -> String {
         ark,
         crate::gabarits::json(w, p),
         want,
-        kit
+        kit,
+        bubble
     )
 }
 
