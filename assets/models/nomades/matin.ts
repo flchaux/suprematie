@@ -6,6 +6,7 @@
 // Repère : +x à droite, +y en haut, +z vers l'avant. Les pièces « si: » ne comptent pas dans la taille du modèle.
 import type { Part, Vec3 } from "../types.ts";
 import { q, voute } from "./commun.ts";
+import { flancsMatin, variantesMatin } from "./variantes.ts";
 
 /** Pièces d'un pivot : la première porte le pivot (son origine), les autres le suivent. */
 export function porte(pivot: string, axe: Vec3, parts: Part[]): Part[] {
@@ -112,7 +113,7 @@ function corps(): Part[] {
     { shape: "box", size: [0.36, 0.06, 0.66], pos: [0, 1.66, -0.2], rot: [-13, 0, 0], color: "faction" },
     { shape: "box", size: [0.34, 0.06, 0.72], pos: [0, 1.48, -0.84], rot: [-16, 0, 0], color: "faction" },
     // plaques rapiécées des flancs
-    { shape: "box", size: [0.06, 0.42, 0.5], pos: [0.64, 1.28, 0.42], rot: [0, 0, 6], color: "light", mirror: true },
+    ...flancsMatin(),
     { shape: "box", size: [0.06, 0.3, 0.4], pos: [-0.46, 1.3, -0.24], rot: [0, 0, 9], color: "hazard", fine: true },
     { shape: "box", size: [0.06, 0.34, 0.36], pos: [0.46, 1.26, -0.2], rot: [0, 0, -5], color: "dry", fine: true },
     { shape: "box", size: [0.06, 0.3, 0.34], pos: [0.4, 1.24, -0.94], rot: [0, 0, 4], color: "metal", mirror: true },
@@ -332,5 +333,6 @@ export function matin(): Part[] {
     ...truffe(),
     ...collier(),
     ...nanites(),
+    ...variantesMatin(),
   ];
 }

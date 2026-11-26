@@ -10,6 +10,7 @@ import type { Part, Vec3 } from "../types.ts";
 import { q, coffre } from "./commun.ts";
 import type { C } from "./commun.ts";
 import { cote, entre, porte } from "./matin.ts";
+import { couvertureBerger, variantesBerger } from "./variantes.ts";
 
 const fin = (p: Part): Part => ({ ...p, fine: true });
 
@@ -97,9 +98,7 @@ function torse(): Part[] {
     // houppelande de bâche (dos et épaules), galon d'équipe
     pan(4.02, 0.62, 1.4, 0.84, 0.08, 62, 236, "dry", 8, -0.05),
     pan(3.34, 1.28, 1.47, 0.2, 0.1, 62, 236, "faction", 8, -0.05),
-    // couverture roulée et sac au dos, cheminée
-    { shape: "cylinder", sides: 8, radius: 0.27, height: 1.5, pos: [0, 2.74, -1.14], rot: [0, 0, 90], color: "dry" },
-    { shape: "cylinder", sides: 8, radius: 0.29, height: 0.16, pos: [0.44, 2.74, -1.14], rot: [0, 0, 90], color: "faction", mirror: true, fine: true },
+    // cheminée (la couverture roulée au dos : voir couvertureBerger, variantes.ts)
     { shape: "cylinder", sides: 8, radius: 0.17, height: 1.5, pos: [0.5, 4.0, -0.78], color: "dark" },
     { shape: "cylinder", sides: 8, radius: 0.26, radiusTop: 0.2, height: 0.2, pos: [0.5, 4.78, -0.78], color: "rust" },
     { shape: "cylinder", sides: 5, radius: 0.16, height: 0.05, pos: [0.5, 4.89, -0.78], color: "amber" },
@@ -415,5 +414,7 @@ export function berger(): Part[] {
     ...relais(),
     ...baie(),
     ...bouclier(),
+    ...couvertureBerger(AXE),
+    ...variantesBerger(AXE),
   ];
 }

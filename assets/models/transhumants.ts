@@ -28,6 +28,10 @@ import {
   ARME_CANON, ARME_CAVALIER, ARME_HERSE, ARME_PISTEUR, BOUCLIER_CANON, COFFRE_HERSE, DENTS_BELIER, PLAGE_CAVALIER, POUPE_BELIER,
   equipementBelier, equipementCanon, equipementCavalier, equipementHerse, equipementPisteur, groupe, noyau,
 } from "./nomades/equipement.ts";
+import {
+  bacheCanon, gardesBelier, jupesCavalier, jupesHerse, toitPisteur, variantesBelier, variantesCanon, variantesCavalier, variantesChenillard,
+  variantesHerse, variantesPisteur,
+} from "./nomades/variantes.ts";
 
 /**
  * Marque des modèles comme bâtis de récupération (`skin: "nomade"`, types.ts) : le générateur remplace pour eux les
@@ -65,6 +69,14 @@ export const TRANSH_BUILDING_MODELS: Record<string, Model> = nomades({
 });
 
 // ——— Unités ———
+
+/**
+ * Chenillard replié : gréement du module sur le châssis commun (`chariotNomade`, longueur `l`, largeur `w`), plus deux
+ * variantes de pièces dépareillées (variante 0 : châssis d'origine ; voir nomades/variantes.ts).
+ */
+function chenillard(parts: Part[], l = 2.5, w = 1.0): Model {
+  return { parts: [...parts, ...variantesChenillard(l / 2, w / 2, q(-(w / 2 - 0.17)))], variants: 3 };
+}
 
 export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
   // ark : l'Arche, chenillard-ville ; quatre trains de chenilles larges sous une caisse longue à jupes d'équipe,
@@ -123,16 +135,17 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
   },
   // ark_car : remorque du convoi de l'Arche, qui porte une amélioration de pont ou de soutien (voir nomades/remorque.ts)
   ark_car: { parts: remorqueArche() },
-  // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade)
-  ch_drill: { parts: [...foreuseNomade(true), ...annexesForeuse(true)] },
-  ch_furnace: { parts: [...fonderieNomade(true), ...annexesFonderie(true)] },
-  ch_assembler: { parts: [...assembleurNomade(true), ...annexesAssembleur(true)] },
-  ch_refinery: { parts: [...raffinerieNomade(true), ...annexesRaffinerie(true)] },
-  ch_generator: { parts: [...generateurNomade(true), ...annexesGenerateur(true)] },
-  ch_hold: { parts: [...souteNomade(true), ...annexesSoute(true)] },
-  ch_lab: { parts: [...laboratoireNomade(true), ...annexesLaboratoire(true)] },
-  ch_workshop: { parts: [...atelierNomade(true), ...annexesAtelier(true)] },
-  ch_bastion: { parts: [...bastionNomade(true), ...annexesBastion(true)] },
+  // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade).
+  // Chenillards : trois variantes du châssis (voir chenillard), le module déployé n'en a pas
+  ch_drill: chenillard([...foreuseNomade(true), ...annexesForeuse(true)]),
+  ch_furnace: chenillard([...fonderieNomade(true), ...annexesFonderie(true)]),
+  ch_assembler: chenillard([...assembleurNomade(true), ...annexesAssembleur(true)]),
+  ch_refinery: chenillard([...raffinerieNomade(true), ...annexesRaffinerie(true)]),
+  ch_generator: chenillard([...generateurNomade(true), ...annexesGenerateur(true)]),
+  ch_hold: chenillard([...souteNomade(true), ...annexesSoute(true)]),
+  ch_lab: chenillard([...laboratoireNomade(true), ...annexesLaboratoire(true)]),
+  ch_workshop: chenillard([...atelierNomade(true), ...annexesAtelier(true)], 3.3, 1.5),
+  ch_bastion: chenillard([...bastionNomade(true), ...annexesBastion(true)]),
   // t_cart : chariot de convoi attelé à une soute (voir nomades/convoi.ts)
   t_cart: { parts: chariotConvoi() },
   // tourelles déployables de l'Arche (voir nomades/arche.ts)
@@ -153,8 +166,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       { shape: "box", size: [0.6, 0.12, 0.03], pos: [0, 0.68, 0.55], rot: [-30, 0, 0], color: "glass" },
       // arceau de sécurité, pare-soleil
       { shape: "tube", radius: 0.025, sides: 5, path: [[0.36, 0.58, 0.45], [0.33, 1.0, 0.25], [0.33, 1.0, -0.3], [0.36, 0.58, -0.5]], bend: 0.1, color: "steel", mirror: true },
-      { shape: "box", size: [0.76, 0.025, 0.6], pos: [0, 1.02, -0.02], color: "dry" },
-      { shape: "box", size: [0.76, 0.028, 0.1], pos: [0, 1.025, -0.02], color: "faction" },
+      ...toitPisteur(),
       // phares, bidons et roue de secours
       { shape: "box", size: [0.08, 0.06, 0.03], pos: [0.3, 0.5, 1.03], color: "amber", mirror: true },
       ...[0.22, -0.22].map((x): Part => ({ shape: "bevel", size: [0.14, 0.2, 0.12], pos: [x, 0.66, -0.88], bevel: 0.02, color: "rust" })),
@@ -170,6 +182,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       { shape: "box", size: [0.1, 0.1, 0.24], pos: [0, 0.78, -0.25], color: "dark", parent: ARME_PISTEUR },
       { shape: "cylinder", sides: 6, radius: 0.025, height: 0.5, pos: [0, 0.8, 0.1], rot: [90, 0, 0], color: "steel", parent: ARME_PISTEUR },
       ...equipementPisteur(),
+      ...variantesPisteur(),
     ],
   },
   // rider : cavalier, char rapide à chenilles larges ; caisse basse à glacis, jupes d'équipe, tourelle plate à pans
@@ -178,7 +191,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
     parts: [
       ...chenille(0.62, 2.2, 0.42, 0.36, 0, 0, 0.25, true),
       { shape: "bevel", size: [0.1, 0.04, 2.1], pos: [0.43, 0.45, 0], bevel: 0.015, color: "metal", mirror: true },
-      { shape: "box", size: [0.03, 0.14, 1.6], pos: [0.83, 0.38, 0], color: "faction", mirror: true },
+      ...jupesCavalier(),
       { shape: "extrude", profile: [[-1.1, 0.16], [0.8, 0.16], [1.15, 0.36], [0.9, 0.56], [-1.0, 0.58], [-1.12, 0.42]], depth: 0.86, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
       { shape: "bevel", size: [1.2, 0.05, 0.6], pos: [0, 0.58, 0.55], bevel: 0.015, color: "metal" },
       { shape: "box", size: [0.1, 0.06, 0.03], pos: [0.35, 0.45, 1.06], color: "amber", mirror: true },
@@ -198,6 +211,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       { shape: "cylinder", sides: 8, radius: 0.09, height: 0.06, pos: [-0.15, 0.89, -0.2], color: "dark", parent: "tourelle" },
       { shape: "tube", radius: 0.01, sides: 4, path: [[0.22, 0.85, -0.35], [0.22, 1.35, -0.42]], color: "steel", parent: "tourelle", fine: true },
       ...equipementCavalier(),
+      ...variantesCavalier(),
     ],
   },
   // harrow : herse, défense antiaérienne mobile ; chenillard léger, tourelle (pivot « tourelle ») portant quatre
@@ -206,7 +220,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
     parts: [
       ...chenille(0.6, 2.0, 0.42, 0.34, 0, 0, 0.25, true),
       { shape: "bevel", size: [0.1, 0.04, 1.9], pos: [0.42, 0.45, 0], bevel: 0.015, color: "metal", mirror: true },
-      { shape: "box", size: [0.03, 0.14, 1.5], pos: [0.8, 0.38, 0], color: "faction", mirror: true },
+      ...jupesHerse(),
       { shape: "extrude", profile: [[-1.0, 0.16], [0.75, 0.16], [1.05, 0.36], [0.85, 0.56], [-0.9, 0.58], [-1.02, 0.42]], depth: 0.82, bevel: 0.03, rot: [0, -90, 0], color: "dark" },
       { shape: "bevel", size: [0.9, 0.24, 0.42], pos: [0, 0.66, 0.6], bevel: 0.03, color: "metal" },
       { shape: "box", size: [0.6, 0.06, 0.03], pos: [0, 0.72, 0.815], color: "glass" },
@@ -228,6 +242,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       incl([0.45, 0.92, -0.3], 52, 1.33, 0, { shape: "cylinder", sides: 6, radius: 0.045, height: 0.1, rot: [90, 0, 0], color: "dark", mirror: true, parent: ARME_HERSE, fine: true }),
       incl([0.4, 0.92, -0.3], 52, 0.62, 0, { shape: "box", size: [0.18, 0.06, 0.06], color: "dark", mirror: true, parent: ARME_HERSE, fine: true }),
       ...equipementHerse(),
+      ...variantesHerse(),
     ],
   },
   // towed_gun : canon tracté ; petit tracteur à chenilles et cabine bâchée à l'avant, affût à deux roues et flèches
@@ -240,7 +255,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       { shape: "bevel", size: [0.66, 0.3, 1.0], pos: [0, 0.4, 0.75], bevel: 0.04, color: "dark" },
       { shape: "bevel", size: [0.66, 0.24, 0.42], pos: [0, 0.66, 0.92], bevel: 0.03, color: "metal" },
       { shape: "box", size: [0.5, 0.06, 0.03], pos: [0, 0.7, 1.135], color: "glass" },
-      ...bache(0, 0.78, 0.92, 0.35, 0.12, 0.44, "dry", 1),
+      ...bacheCanon(bache(0, 0.78, 0.92, 0.35, 0.12, 0.44, "dry", 1)),
       { shape: "box", size: [0.08, 0.05, 0.03], pos: [0.24, 0.5, 1.255], color: "amber", mirror: true },
       ...coffre([0, 0.62, 0.42], [0.56, 0.16, 0.3], "rust"),
       // timon
@@ -266,6 +281,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
       { shape: "cylinder", sides: 8, radius: 0.1, height: 0.04, pos: [0.5, 0.02, -0.25], color: "dark", mirror: true, parent: "deplie" },
       { shape: "cylinder", sides: 6, radius: 0.03, height: 0.26, pos: [0.5, 0.15, -0.25], color: "steel", mirror: true, parent: "deplie" },
       ...equipementCanon(),
+      ...variantesCanon(),
     ],
   },
   // ram : bélier, chenillard d'assaut blindé ; chenilles larges sous garde-chenilles épais, caisse à plaques
@@ -274,7 +290,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
   ram: {
     parts: [
       ...chenille(0.7, 2.3, 0.5, 0.42, 0, 0, 0.25, true),
-      { shape: "bevel", size: [0.48, 0.06, 1.5], pos: [0.7, 0.55, -0.25], bevel: 0.02, color: "rust", mirror: true },
+      ...gardesBelier(),
       { shape: "box", size: [0.04, 0.22, 1.4], pos: [0.94, 0.42, -0.25], color: "faction", mirror: true },
       // caisse : flancs inclinés, dos bombé
       { shape: "extrude", profile: [[-1.2, 0.2], [0.9, 0.2], [1.1, 0.4], [0.9, 0.82], [-1.0, 0.86], [-1.2, 0.6]], depth: 0.96, bevel: 0.04, rot: [0, -90, 0], color: "dark" },
@@ -297,6 +313,7 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
         ...coffre([0, 0.95, -1.08], [0.4, 0.16, 0.2], "wood"),
       ]),
       ...equipementBelier(),
+      ...variantesBelier(),
     ],
   },
   // mastiff : Mâtin, quadrupède d'assaut (voir nomades/matin.ts)

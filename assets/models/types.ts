@@ -81,4 +81,9 @@ export interface Model {
    * elle est installée. Ses pièces « si:clé#… » descendent sous y = 0 de cette hauteur.
    */
   lift?: Record<string, number>;
+  /**
+   * Nombre de variantes (pièces dépareillées : pivots « si:vN#… », « sauf:vN#… », « var:N#… ») ; chaque unité reçoit
+   * la sienne d'après son identifiant (variantOf, generator.ts). Absent : 4 si le modèle a des pièces de variante, 1 sinon.
+   */
+  variants?: number;
 }

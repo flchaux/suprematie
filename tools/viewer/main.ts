@@ -1,7 +1,8 @@
 // Visualiseur : toutes les unités (ou tous les bâtiments) côte à côte, avec l'angle de caméra du jeu.
 // ?set=units|buildings|items|decor|vehicles  &only=clé1,clé2  &zoom=2 (plus près)  &lo (niveau de détail réduit)
+// &var=2 (variante 2 de chaque modèle : pièces « si:vN ») ou &var=all (chaque modèle une fois par variante, côte à côte)
 import * as THREE from "three/webgpu";
-import { buildModel, depMatrix, fallbackModel, condShown, parseCond, parseDep, PLAYER_COLORS, withHatches } from "../../packages/client/src/models/generator.ts";
+import { buildModel, depMatrix, fallbackModel, condShown, parseCond, parseDep, PLAYER_COLORS, withHatches, withVariant } from "../../packages/client/src/models/generator.ts";
 import { RECEIVER_CLASSES } from "../../packages/shared/src/data.ts";
 import { teamInstancedMesh, setTeamColor, TEX_PER_TILE_UNIT, TEX_PER_TILE_BUILDING } from "../../packages/client/src/render/materials.ts";
 import { loadModelTextures, setTexturesEnabled } from "../../packages/client/src/render/textures.ts";
@@ -36,7 +37,14 @@ const variants = (only ?? [])
     const base = defs.find((d) => d.key === k.replace(/_n\d+$/, ""));
     return base ? { ...base, key: k, name: `${base.name} ${k.slice(-1)}` } : { key: k, name: k, size: 1, w: 1, h: 1 };
   });
-const list = only ? [...defs.filter((d) => only.includes(d.key)), ...variants] : defs;
+const listed: { key: string; name: string; size: number; w: number; h: number; cls?: number; v?: number }[] = only ? [...defs.filter((d) => only.includes(d.key)), ...variants] : defs;
+// ?var=all : chaque modèle à variantes répété pour chacune (nom suivi de « vN »)
+const list = params.get("var") === "all" && set !== "decor"
+  ? listed.flatMap((d) => {
+      const n = models[d.key] ? buildModel(models[d.key]).variants : 1;
+      return n > 1 ? Array.from({ length: n }, (_, v) => ({ ...d, v, name: `${d.name} v${v}` })) : [d];
+    })
+  : listed;
 // les objets sont teintés de leur propre couleur (et non de celle d'un joueur)
 const itemColor = (key: string) => (data.items as { key: string; color: number }[]).find((it) => it.key === key)?.color ?? 0xffffff;
 
@@ -125,9 +133,10 @@ if (set !== "decor") list.forEach((d, i) => {
   setTeamColor(body, 0, color);
   scene.add(body.mesh);
   for (const p of built.pivots) {
-    // ?mods=ark_w_rail,ark_shield2 : améliorations installées (pivots « si:… » et « sauf:… »)
+    // ?mods=ark_w_rail,ark_shield2 : améliorations installées (pivots « si:… » et « sauf:… ») ; ?var=2 : variante
     const cond = parseCond(p.name);
-    if (!condShown(cond, (k) => (params.get("mods") ?? "").split(",").includes(k))) continue;
+    const v = d.v ?? Math.min(built.variants - 1, Math.max(0, Number(params.get("var") ?? 0) || 0));
+    if (!condShown(cond, withVariant((k) => (params.get("mods") ?? "").split(",").includes(k), v))) continue;
     const pm = teamInstancedMesh((lo && p.geometryLo) || p.geometry, 1, texScale);
     pm.mesh.count = 1;
     // ?dep=0.5 : pivots de déploiement (« dep|… ») à cet avancement (0 replié, 1 déployé ; par défaut : replié ;

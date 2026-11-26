@@ -86,6 +86,8 @@ export interface BuiltModel {
   triangles: number;
   /** triangles sans les pièces fines */
   trianglesLo: number;
+  /** nombre de variantes du modèle (pièces « si:vN », voir variantOf) ; 1 : une seule allure */
+  variants: number;
   /**
    * Bâtiments à trappes (voir withHatches) : pour chaque côté du modèle (+x, +z, -x, -z) et chaque case
    * de bord (`w` par côté), retrait de la paroi depuis la face nominale (cases ; NaN : pas de trappe),
@@ -695,7 +697,10 @@ export function buildModel(model: Model): BuiltModel {
     pivots.push(p);
   }
   const box = hi.box.isEmpty() ? new THREE.Box3(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5)) : hi.box;
-  const built: BuiltModel = { body: hi.body, pivots, box, triangles: hi.triangles, trianglesLo: useLo ? lo!.triangles : hi.triangles };
+  // variantes : nombre donné par le modèle, sinon 4 dès qu'un pivot dépend de la variante
+  const varied = pivots.some((p) => parseCond(p.name)?.all.some((t) => t.keys.some(isVariantKey)));
+  const variants = Math.max(1, Math.floor(model.variants ?? (varied ? DEFAULT_VARIANTS : 1)));
+  const built: BuiltModel = { body: hi.body, pivots, box, triangles: hi.triangles, trianglesLo: useLo ? lo!.triangles : hi.triangles, variants };
   if (model.skin) built.skin = model.skin;
   if (model.lift) built.lift = Object.entries(model.lift);
   if (useLo) built.bodyLo = lo!.body;
@@ -708,14 +713,45 @@ export function buildModel(model: Model): BuiltModel {
  * améliorations est installée, « sauf:clé+clé#nom » que si aucune ne l'est. Plusieurs conditions à la fois :
  * « si:a+b&c#nom » (a ou b, et c), « si:a&!c+d#nom » (a, et ni c ni d). `base` : le nom qui suit (« fixe… » : la pièce
  * ne tourne pas ; « dep|… » : elle suit un déploiement, voir parseDep ; « chenille_p… » : elle glisse).
+ * Variantes (pièces dépareillées, voir variantOf) : la clé « vN » est vraie pour la variante N de l'unité
+ * (« si:v1+v3#nom », « sauf:v2#nom », « si:v1&tracker_gun#nom ») ; « var:1+3#nom » abrège « si:v1+v3#nom ».
  */
 export interface PivotCond { on: boolean; all: { on: boolean; keys: string[] }[]; base: string }
 export function parseCond(name: string): PivotCond | null {
-  const m = /^(si|sauf):([^#]+)#(.*)$/.exec(name);
+  const m = /^(si|sauf|var):([^#]+)#(.*)$/.exec(name);
   if (!m) return null;
-  const on = m[1] === "si";
-  const all = m[2].split("&").map((t) => (t.startsWith("!") ? { on: !on, keys: t.slice(1).split("+") } : { on, keys: t.split("+") }));
+  const on = m[1] !== "sauf";
+  const key = (k: string) => (m[1] === "var" && /^\d+$/.test(k) ? "v" + k : k);
+  const all = m[2].split("&").map((t) => (t.startsWith("!") ? { on: !on, keys: t.slice(1).split("+").map(key) } : { on, keys: t.split("+").map(key) }));
   return { on, all, base: m[3] };
+}
+
+/** Nombre de variantes d'un modèle qui a des pièces de variante mais n'en dit pas le nombre (`Model.variants`). */
+export const DEFAULT_VARIANTS = 4;
+/** Clé de condition d'une variante (« v0 », « v1 »…) : ce n'est pas une amélioration. */
+export function isVariantKey(k: string): boolean {
+  const c = k.charCodeAt(1);
+  return k.length >= 2 && k.length <= 3 && k.charCodeAt(0) === 118 && c >= 48 && c <= 57;
+}
+/** Clés « v0 » à « v15 », sans allocation à chaque image. */
+export const VARIANT_KEYS = Array.from({ length: 16 }, (_, i) => "v" + i);
+/**
+ * Variante d'une unité (0 à n - 1) : hachage entier de son identifiant d'entité (case et génération), stable d'une
+ * image à l'autre et identique chez tous les joueurs, sans rien demander à la simulation ni au hasard.
+ */
+export function variantOf(id: number, n: number): number {
+  if (n <= 1) return 0;
+  let h = Math.imul((id >>> 0) ^ (id >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return ((h ^ (h >>> 16)) >>> 0) % n;
+}
+/**
+ * Test « installée ? » d'une unité, variante comprise : les clés « vN » répondent par sa variante `v`, les autres par
+ * ses améliorations (`has`).
+ */
+export function withVariant(has: (key: string) => boolean, v: number): (key: string) => boolean {
+  const vk = VARIANT_KEYS[v] ?? "v" + v;
+  return (k) => (isVariantKey(k) ? k === vk : has(k));
 }
 /**
  * Frappe ou tir (mâchoire, bras, mât émetteur, recul d'un mortier) : pivot « coup|x,DEG#nom ». Modélisée au repos, la pièce tourne de DEG degrés

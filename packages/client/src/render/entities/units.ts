@@ -5,7 +5,7 @@
 // les coques vides des œufs éclos.
 import * as THREE from "three/webgpu";
 import { UNIT_WORDS, UF, Layer } from "@supreme/shared";
-import { condShown, depMatrix, strikePhase } from "../../models/generator.ts";
+import { condShown, depMatrix, strikePhase, variantOf, withVariant } from "../../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "../eggAnim.ts";
 import { setTeamColor } from "../materials.ts";
 import { groundHeight, HSCALE } from "../terrain.ts";
@@ -101,8 +101,10 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     }
     // (tourelle d'une Arche : 2 s et 1,5 s)
     const queen = def.key === "queen";
+    // améliorations installées, et variante de l'unité (pièces dépareillées « si:vN », d'après son identifiant)
+    const nVar = km.built.variants;
+    const has = nVar > 1 ? withVariant(modOf(id), variantOf(id, nVar)) : modOf(id);
     // (vérins rapides : deux fois moins long)
-    const has = modOf(id);
     const packLen = queen ? 60 : def.turret ? (packing === 1 ? 40 : 30) : (packing === 1 ? 300 : 200) / (packing && e.quickKeys.some(has) ? 2 : 1);
     const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / packLen) : 0;
     // animations décrites dans le modèle (pivots « dep|… ») : avancement 0 replié, 1 déployé
