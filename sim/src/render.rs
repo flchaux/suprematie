@@ -261,11 +261,14 @@ fn building_words(w: &World, b: usize, broods: &[(u32, u32)], out: &mut Vec<i32>
         BClass::Gate => (bb.link as i32, bb.charge as i32),
         // cocon de la Souche : maturation (‰)
         BClass::Organ if bb.kind == B_COCOON => ((bb.charge * 1000 / crate::souche::COCOON_TICKS) as i32, 0),
+        // frondaison, racine-puits : avancement de la prochaine unité de sève ou de sels (‰)
+        BClass::Organ if matches!(bb.kind, B_LEAVES | B_TAPROOT) => ((bb.progress as u64 * 1000 / crate::soil::YIELD_UNIT) as i32, 0),
         // anneaux de transport : montée (ticks restants), recharge
         BClass::Transfer => (bb.charge as i32, bb.cooldown as i32),
         // générateur : niveau (bits 24-25), production actuelle (kW)
         BClass::Power => ((bb.level as i32) << 24, crate::buildings::gen_prod(w, bb)),
-        BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress / 1024) as i32),
+        // extracteur : avancement de l'objet en cours (‰)
+        BClass::Extractor => (bb.recipe as i32 | (bb.out as i32 & 0xffff) << 8 | (bb.level as i32) << 24, (bb.progress as u64 * 1000 / (30 * crate::buildings::RECIPE_SCALE) as u64) as i32),
         // dépôt : trois premiers objets filtrés (bits 0-23), niveau (bits 24-25) ; quatrième filtre dans aux2
         BClass::Depot => {
             let f = |k: usize| bb.filters.get(k).copied().unwrap_or(0) as i32;

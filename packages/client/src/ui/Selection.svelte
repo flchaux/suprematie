@@ -26,6 +26,8 @@
   const sb = $derived(ui.selBuilding);
   const bdef = $derived(sb && d ? d.buildings[sb.kind] : null);
   const info = $derived(ui.buildingInfo as Record<string, any> | null);
+  /** avancement de ce que produit le bâtiment sélectionné (0 à 1 ; -1 : rien), lu dans l'image à chaque tick */
+  const prod = $derived(ui.selBuilding?.prod ?? -1);
   const mine = $derived(!!sb && sb.owner === ui.me);
   const kinds = $derived(ui.selUnits.map((g) => g.kind));
   const has = (key: string) => !!d && kinds.some((k) => d.units[k].key === key);
@@ -381,6 +383,7 @@
         {#if sv.rateSeve || sv.rateSels}
           <div class="row small"><span class="kicker">Production</span>{#if sv.rateSeve}<Item id={27} size={16} /> <span class="num">{(sv.rateSeve / 100).toLocaleString("fr-FR")}</span>/s{/if}{#if sv.rateSels} <Item id={28} size={16} /> <span class="num">{(sv.rateSels / 100).toLocaleString("fr-FR")}</span>/s{/if}</div>
         {/if}
+        {#if prod >= 0 && (bdef.key === "leaves" || bdef.key === "taproot")}<div class="prodbar" class:off={!info.working} title="Prochaine unité de {bdef.key === 'leaves' ? 'sève' : 'sève ou de sels'} : {Math.floor(prod * 100)} %"><span style:width={prod * 100 + "%"}></span></div>{/if}
       {/if}
       {#if info.transh?.mods}<Upgrades mi={info.transh.mods} refs={[sb.ref]} />{/if}
       {#if info.transh?.cartsMax}
@@ -527,6 +530,7 @@
             <span class="arrow">▸▸</span>
             <span class="tip slot out"><Item id={r.output[0]} n={info.out} size={26} /><span class="tt">Sortie : {d.items[r.output[0]].name}, {info.out} prêt{info.out > 1 ? "s" : ""} à partir</span></span>
           </div>
+          {#if prod >= 0}<div class="prodbar" class:off={!info.working} title="Cycle en cours : {Math.floor(prod * 100)} %"><span style:width={prod * 100 + "%"}></span></div>{/if}
           <div class="row small" title="Dernière minute, par rapport au maximum"><span class="kicker">Débit</span> <Item id={r.output[0]} size={16} /> <b class="num">{fmt1(fnow)}</b> /min sur la dernière minute · <span class="num pct" class:good={pct >= 90} class:warn={pct < 50}>{pct} %</span> <span class="dim">du max</span></div>
           <div class="perfbar"><span style:width={pct + "%"}></span></div>
           <div class="row small" title={m ? `${fmt1((1200 / r.time) * r.output[1] * ((bdef.speed ?? 100) / 100))} /min de base${m.lv ? ` × ${fmtX(m.speed)} (niveau ${m.lv})` : ""} × ${fmtX(m.clock)} (cadence)` : ""}><span class="kicker">Au maximum</span>
@@ -562,6 +566,7 @@
               <button class="ub" class:locked={!ok} disabled={!ok} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
                 {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
+                {#if prod >= 0 && info.queue[0]?.[0] === i}<span class="uprog" style:width={prod * 100 + "%"}></span>{/if}
                 {#if u.litter}<span class="lit num">×{u.litter}</span>{/if}
                 {#if info.transh?.mods?.kits && kitsOf(info.transh.mods.kits, i).active}<span class="lit num" title="Sort équipé selon ce gabarit">{["I", "II", "III"][kitsOf(info.transh.mods.kits, i).active - 1]}</span>{/if}
                 {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
@@ -586,7 +591,8 @@
         </div>
         {#if info.queue.length}
           {@const cur = d.units[info.queue[0][0]]}
-          <div class="row"><span class="kicker">En cours · {cur.name}{cur.litter ? ` (portée de ${cur.litter})` : ""}</span>{#if !cur.litter}{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}{/if}</div>
+          <div class="row"><span class="kicker">En cours · {cur.name}{cur.litter ? ` (portée de ${cur.litter})` : ""}</span>{#if !cur.litter}{#each cur.cost as [it, n]}<Item id={it} n={info.stash[it] ?? 0} need={n} size={16} />{/each}{/if}{#if prod >= 0}<span class="num small prodpct">{Math.floor(prod * 100)} %</span>{/if}</div>
+          {#if prod >= 0}<div class="prodbar" class:off={!info.working}><span style:width={prod * 100 + "%"}></span></div>{/if}
         {/if}
         {#if (info.missing ?? []).length}
           <div class="row wrap"><span class="kicker">Manque</span>{#each info.missing as [it, n, near]}<span class="miss"><Item id={it} n={n} size={16} /><span class="small num" class:bad={near < n} class:dim={near >= n}>{near} à portée</span></span>{/each}</div>
@@ -640,6 +646,7 @@
         {@const levels = d.extractorLevels ?? []}
         {@const lvl = info.level ?? 0}
         <div class="row"><span class="kicker">Extrait</span> <Item id={info.recipe} size={20} /> {d.items[info.recipe]?.name}</div>
+        {#if prod >= 0}<div class="prodbar" class:off={!info.working} title="Objet en cours : {Math.floor(prod * 100)} %"><span style:width={prod * 100 + "%"}></span></div>{/if}
         {@const fmax = (info.flowMax ?? 0) / 10}
         {@const fnow = (info.flow ?? 0) / 10}
         {@const pct = fmax > 0 ? Math.min(100, Math.round((fnow / fmax) * 100)) : 0}
@@ -1116,6 +1123,11 @@
   .cmd:hover:not(:disabled) { color: #fff; }
   .tamebar { height: 7px; background: rgba(217, 92, 255, 0.14); border: 1px solid rgba(217, 92, 255, 0.35); }
   .tamebar > span { display: block; height: 100%; background: linear-gradient(90deg, #8e3cff, #e07cff); box-shadow: 0 0 6px rgba(217, 92, 255, 0.6); transition: width 0.3s linear; }
+  .prodbar { height: 6px; background: rgba(62, 240, 255, 0.1); border: 1px solid rgba(62, 240, 255, 0.3); }
+  .prodbar > span { display: block; height: 100%; background: linear-gradient(90deg, #1fa8d8, #63f0ff); box-shadow: 0 0 6px rgba(62, 240, 255, 0.45); }
+  .prodbar.off > span { background: #6b7782; box-shadow: none; }
+  .prodpct { margin-left: auto; color: var(--accent); }
+  .uprog { position: absolute; left: 0; bottom: 0; height: 3px; background: #63f0ff; box-shadow: 0 0 5px rgba(62, 240, 255, 0.7); pointer-events: none; }
   .cmd.off { opacity: 0.45; }
   .cmd.on { color: var(--accent-ink, #04121a); }
   .cmd .key { position: absolute; right: 2px; top: 1px; font-size: 8.5px; border: none; padding: 0; opacity: 0.7; }

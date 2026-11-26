@@ -69,7 +69,8 @@ export const ui = $state({
   players: [] as { name: string; alive: boolean; team: number; units: number; kills: number; losses: number; bot: boolean; power: number }[],
   // sélection
   selUnits: [] as SelUnitGroup[],
-  selBuilding: null as null | { ref: number; kind: number; owner: number },
+  /** `prod` : avancement de ce qu'il produit (0 à 1 ; -1 : rien), d'après l'image */
+  selBuilding: null as null | { ref: number; kind: number; owner: number; prod?: number },
   /** tous les bâtiments sélectionnés (plusieurs : seule la démolition est possible) */
   /** bâtiments sélectionnés ; `paused` : en pause (bâtiment de production), `built` : chantier terminé */
   selBuildings: [] as { ref: number; kind: number; owner: number; paused?: boolean; built?: boolean }[],

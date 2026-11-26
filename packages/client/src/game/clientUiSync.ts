@@ -12,6 +12,7 @@ import { ui, type HarvestInfo, type PickupInfo, type DeliverInfo } from "./state
 import { kb } from "./keys.svelte.ts";
 import type { GameClient } from "./client.ts";
 import { TILE } from "./clientConsts.ts";
+import { prodOf } from "../render/siteBars.ts";
 
 /** Barre des ressources : économie de la zone électrique au centre de l'écran (4 fois par seconde au plus,
  * une requête à la fois). */
@@ -110,10 +111,10 @@ export function updateUi(c: GameClient): void {
     lvls.set(k, Math.max(lvls.get(k) ?? 0, (f.buf[o + 1] >>> 24) & 7));
   }
   // bâtiments sélectionnés : un seul passage sur l'image quand il y en a beaucoup
-  const selBs: { ref: number; kind: number; owner: number; paused: boolean; built: boolean }[] = [];
+  const selBs: { ref: number; kind: number; owner: number; paused: boolean; built: boolean; prod: number }[] = [];
   let nb = 0;
   for (const id of c.selected) if (Ord.isBuildingRef(id)) nb++;
-  const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number; paused: boolean; built: boolean }>() : null;
+  const byRef = nb > 4 ? new Map<number, { ref: number; kind: number; owner: number; paused: boolean; built: boolean; prod: number }>() : null;
   if (byRef) {
     for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
       const ref = f.buf[o] >>> 0;
@@ -154,12 +155,12 @@ export function updateUi(c: GameClient): void {
 }
 
 /** Bâtiment de l'image au mot `o` : type, joueur, en pause (bâtiment de production, BF.ENABLED éteint), terminé. */
-function buildingState(c: GameClient, buf: Int32Array, o: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean } {
+function buildingState(c: GameClient, buf: Int32Array, o: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean; prod: number } {
   const kind = buf[o + 1] & 0xff;
   const cls = c.data?.buildings[kind]?.cls ?? -1;
-  return { ref: buf[o] >>> 0, kind, owner: (buf[o + 1] >> 8) & 0xff, paused: pausableClass(cls) && !(((buf[o + 1] >> 20) & 0xff) & BF.ENABLED), built: buf[o + 4] >= 65536 };
+  return { ref: buf[o] >>> 0, kind, owner: (buf[o + 1] >> 8) & 0xff, paused: pausableClass(cls) && !(((buf[o + 1] >> 20) & 0xff) & BF.ENABLED), built: buf[o + 4] >= 65536, prod: prodOf(buf, o, cls, c.data?.buildings[kind]?.key ?? "") ?? -1 };
 }
-function findBuildingState(c: GameClient, ref: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean } | null {
+function findBuildingState(c: GameClient, ref: number): { ref: number; kind: number; owner: number; paused: boolean; built: boolean; prod: number } | null {
   const f = c.frame;
   if (!f) return null;
   for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) if (f.buf[o] >>> 0 === ref) return buildingState(c, f.buf, o);

@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim, parseFrame, BClass, BUILDING_WORDS, BUILD_FULL } from "@supreme/shared";
 import type { GameData } from "@supreme/shared";
-import { BAR_MIN_PX, barInView, broodOf, pipLayout, siteBarOf, siteBarSize, tameOf, worldPerPixel } from "../src/render/siteBars.ts";
+import { BAR_MIN_PX, barInView, broodOf, pipLayout, siteBarOf, siteBarSize, tameOf, prodOf, worldPerPixel } from "../src/render/siteBars.ts";
 
 /** Mots d'un bâtiment : points de vie, avancement du chantier, mot 7 (amélioration ou ligne d'un tapis). */
 const words = (hp: number, build: number, w7 = 0) => Int32Array.from([1, 0, 0, hp, build, 0, 0, w7]);
@@ -181,5 +181,45 @@ describe("barre d'un nid qu'une Reine apprivoise", () => {
     for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
     expect(owner).toBe(0);
     expect(tameOf(Int32Array.from([1, 0, 0, 1, 1, 3, 500, 0]), 0, false)).toBeNull();
+  });
+});
+
+describe("avancement de la production", () => {
+  const w = (build: number, w5: number, w6: number) => Int32Array.from([1, 0, 0, 100, build, w5, w6, 0]);
+  it("fabricant, usine, extracteur, frondaison ; rien pour un chantier ou sans recette ni file", () => {
+    expect(prodOf(w(BUILD_FULL, 3, 250), 0, BClass.Crafter, "furnace")).toBe(0.25);
+    expect(prodOf(w(BUILD_FULL, 255, 250), 0, BClass.Crafter, "furnace")).toBeNull();
+    expect(prodOf(w(BUILD_FULL, 5 | (3 << 8), 600), 0, BClass.Factory, "land_factory")).toBe(0.6);
+    expect(prodOf(w(BUILD_FULL, 0, 0), 0, BClass.Factory, "land_factory")).toBeNull();
+    expect(prodOf(w(BUILD_FULL, 1, 999), 0, BClass.Extractor, "extractor")).toBe(0.999);
+    expect(prodOf(w(BUILD_FULL, 400, 0), 0, BClass.Organ, "leaves")).toBe(0.4);
+    expect(prodOf(w(BUILD_FULL, 400, 0), 0, BClass.Organ, "maw")).toBeNull();
+    expect(prodOf(w(BUILD_FULL / 2, 3, 250), 0, BClass.Crafter, "furnace")).toBeNull();
+  });
+  it("images réelles : extracteurs et assembleurs (démo logistique), usine (démo des relais)", async () => {
+    const sim = await Sim.load(readFileSync(new URL("../public/sim.wasm", import.meta.url)));
+    const data = JSON.parse(sim.dataJson()) as GameData;
+    const seen = new Map<string, number[]>();
+    for (const demo of ["logisticsDemo", "relaisDemo"] as const) {
+      sim.init([1, 1024, 0, 8, 0, 0, 100, 100, 1, 0, 100, 100, 2, 0, 100, 100, 3, 0, 100, 100, 4, 0, 100, 100, 5, 0, 100, 100, 6, 0, 100, 100, 7, 0, 100, 100]);
+      sim[demo]();
+      for (let t = 0; t < 1200; t++) {
+        sim.step([]);
+        if (t % 7) continue;
+        const f = parseFrame(sim.render(0, 0, 1024, 1024, 1, 0, false));
+        for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += BUILDING_WORDS) {
+          const def = data.buildings[f.buf[o + 1] & 0xff];
+          const p = prodOf(f.buf, o, def.cls, def.key);
+          if (p !== null) seen.set(def.key, [...(seen.get(def.key) ?? []), p]);
+        }
+      }
+    }
+    for (const k of ["extractor", "assembler1", "land_factory"]) {
+      const v = seen.get(k) ?? [];
+      expect(v.length, k).toBeGreaterThan(0);
+      expect(v.every((x) => x >= 0 && x <= 1), k).toBe(true);
+      // l'avancement prend des valeurs variées (il monte, retombe à chaque objet)
+      expect(new Set(v.map((x) => Math.round(x * 20))).size, k).toBeGreaterThan(3);
+    }
   });
 });
