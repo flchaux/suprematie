@@ -452,8 +452,11 @@ pub fn graze(w: &mut World, b: usize, period: u32) {
 /// Sève ou sels que l'herbe donne à une frondaison ou à une racine-puits pendant un passage, au prorata de la case
 /// qu'elle mange (racine-puits épuisée : SPENT_PCT % de sa production nominale). Le reste, en cent-millièmes, est
 /// gardé dans `progress`.
+/// Une unité de sève ou de sels, en cent-millièmes (reste gardé dans `Building::progress`).
+pub const YIELD_UNIT: u64 = 100_000;
+
 fn yield_sap(w: &mut World, b: usize, m: &Meal, period: u32) {
-    const UNIT: u64 = 100_000;
+    const UNIT: u64 = YIELD_UNIT;
     let kind = w.buildings[b].kind;
     let full = crate::souche::full_rate(w, b);
     let cell = per_cell(kind, full);

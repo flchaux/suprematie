@@ -1,7 +1,7 @@
 // Barres de progression des chantiers et des améliorations : logique pure (décodage de l'image, taille
 // selon le zoom), testée sous Node (`test/siteBars.test.ts`). Le dessin (un seul maillage instancié) est
 // dans `entities/markers.ts` (`pushSiteBar`).
-import { BUILD_FULL } from "@supreme/shared";
+import { BClass, BUILD_FULL, RECIPE_NONE } from "@supreme/shared";
 
 /** Barre d'un bâtiment : avancement (0 à 1), part saine et part perdue (dégâts) de l'avancement. */
 export interface SiteBar {
@@ -91,4 +91,19 @@ export function pipLayout(max: number, pxWorld: number): { step: number; size: n
 export function tameOf(buf: Int32Array, o: number, nest: boolean): { tamer: number; progress: number } | null {
   if (!nest || buf[o + 5] <= 0) return null;
   return { tamer: buf[o + 5] - 1, progress: Math.max(0, Math.min(1, buf[o + 6] / 1000)) };
+}
+
+/**
+ * Avancement (0 à 1) de ce que produit un bâtiment terminé, d'après ses mots : fabricant avec une recette et usine
+ * avec une file (mot 6, ‰), extracteur (mot 6, ‰ de l'objet en cours), frondaison et racine-puits (mot 5, ‰ de la
+ * prochaine unité de sève ou de sels). Null pour un bâtiment qui ne produit rien.
+ */
+export function prodOf(buf: Int32Array, o: number, cls: number, key: string): number | null {
+  if (buf[o + 4] < BUILD_FULL) return null;
+  const pm = (v: number) => Math.max(0, Math.min(1, v / 1000));
+  if (cls === BClass.Crafter) return (buf[o + 5] & 0xff) !== RECIPE_NONE ? pm(buf[o + 6]) : null;
+  if (cls === BClass.Factory) return (buf[o + 5] & 0xff) > 0 ? pm(buf[o + 6]) : null;
+  if (cls === BClass.Extractor) return pm(buf[o + 6]);
+  if (cls === BClass.Organ && (key === "leaves" || key === "taproot")) return pm(buf[o + 5]);
+  return null;
 }

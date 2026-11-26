@@ -8,7 +8,7 @@ import type { GameData } from "@supreme/shared";
 import { BUILDING_WORDS, BF, BClass, NATURE_TEAM, pausableClass } from "@supreme/shared";
 import { condShown } from "../../models/generator.ts";
 import { FLOOR_H, liftDash } from "../liftAnim.ts";
-import { barInView, broodOf, pipLayout, PIPS_PER_ROW, siteBarOf, tameOf } from "../siteBars.ts";
+import { barInView, broodOf, pipLayout, PIPS_PER_ROW, prodOf, siteBarOf, tameOf } from "../siteBars.ts";
 import { setTeamColor, setAccentColor } from "../materials.ts";
 import { ASCENSEUR_MAT } from "../../../../../assets/models/buildings.ts";
 import { groundHeight, HSCALE } from "../terrain.ts";
@@ -394,6 +394,22 @@ export function drawBuildings(e: Entities, ctx: FrameCtx): void {
         tmpM.compose(tmpV.set(cx - (wdt * 0.97 * (1 - tk)) / 2, y + 2.22, tz), tmpQ, tmpS.set(wdt * 0.97 * tk, 1, (thick * 0.7) / 0.12));
         e.bars.setMatrixAt(bars, tmpM);
         e.bars.setColorAt(bars, tmpC.setRGB(0.85, 0.35 + 0.1 * Math.sin(simT * 6), 1));
+        bars++;
+      }
+      // bâtiment sélectionné qui produit (unité, objet, sève) : avancement sous sa barre de vie
+      const prod = selected.has(ref) && (!enemy || seen(cx, cz, 1)) ? prodOf(buf, o, def.cls, def.key) : null;
+      if (prod !== null && bars < 5898) {
+        const thick = Math.max(0.2, 4 * e.pxWorld);
+        const pz = cz + def.h / 2 + 0.1 + thick / 2 + (shownTame ? thick + 0.08 : 0);
+        tmpM.compose(tmpV.set(cx, y + 2.2, pz), tmpQ.identity(), tmpS.set(wdt, 1, thick / 0.12));
+        e.bars.setMatrixAt(bars, tmpM);
+        e.bars.setColorAt(bars, tmpC.setRGB(0.04, 0.09, 0.12));
+        bars++;
+        const pk = Math.max(0.015, prod);
+        const paused = pausableClass(def.cls) && !(bflags & BF.ENABLED);
+        tmpM.compose(tmpV.set(cx - (wdt * 0.97 * (1 - pk)) / 2, y + 2.22, pz), tmpQ, tmpS.set(wdt * 0.97 * pk, 1, (thick * 0.7) / 0.12));
+        e.bars.setMatrixAt(bars, tmpM);
+        e.bars.setColorAt(bars, paused ? tmpC.setRGB(0.45, 0.5, 0.55) : tmpC.setRGB(0.25, 0.85, 1));
         bars++;
       }
     }
