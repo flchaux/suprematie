@@ -23,7 +23,8 @@ try {
   });
   // téléchargements des morceaux : début de la requête, fin de la réponse
   const net = {};
-  const trackOf = (url) => /\/theme2[-.][^/]*\.mp3/.test(url) ? "theme2" : /\/theme[-.][^/]*\.mp3/.test(url) ? "theme" : null;
+  // morceaux communs seulement (ceux des races, theme-industriels…, ne passent pas dans le salon)
+  const trackOf = (url) => /\/theme-(industriels|souche|transhumants)/.test(url) ? null : /\/theme2[-.][^/]*\.mp3/.test(url) ? "theme2" : /\/theme[-.][^/]*\.mp3/.test(url) ? "theme" : null;
   page.on("request", (r) => {
     const t = trackOf(r.url());
     if (t) net[t] = { ...net[t], requested: Date.now() };
@@ -55,7 +56,7 @@ try {
   check(await page.evaluate(() => window.__game.musicPlaying()), "musicPlaying");
 
   // le second morceau est demandé après la fin du téléchargement du premier
-  await page.waitForFunction(() => window.__game.musicState().requested === window.__game.musicState().tracks, null, { timeout: 10000 });
+  await page.waitForFunction(() => window.__game.musicState().requested >= window.__game.musicState().queue, null, { timeout: 10000 });
   await page.waitForTimeout(3000);
   check(!!net.theme2?.requested && net.theme2.requested >= net.theme.finished, "le second morceau est téléchargé après le premier",
     JSON.stringify(net));

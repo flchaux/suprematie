@@ -38,11 +38,24 @@ export function hitchCart(c: GameClient): void {
   sfx.confirm();
 }
 
-/** Transhumants : replier les modules sélectionnés (ils redeviennent des chenillards). */
+/** Transhumants : nos modules parmi les bâtiments sélectionnés, ceux qui se replient (pas les poteaux ni le quai de l'Arche). */
+export function foldableSelection(c: GameClient): number[] {
+  const d = c.data;
+  if (!d) return [];
+  return ui.selBuildings.filter((b) => b.owner === ui.me && foldable(d.buildings[b.kind])).map((b) => b.ref);
+}
+
+function foldable(bd: { race?: number; key: string }): boolean {
+  return (bd.race ?? 0) === 2 && bd.key !== "t_pole" && bd.key !== "ark_dock";
+}
+
+/** Transhumants : replier les modules sélectionnés, un ou plusieurs à la fois (ils redeviennent des chenillards). */
 export function packSelected(c: GameClient): void {
-  if (!c.data) return;
-  const refs = ui.selBuildings.filter((b) => b.owner === ui.me && (c.data!.buildings[b.kind].race ?? 0) === 2 && !["t_pole", "ark_dock"].includes(c.data!.buildings[b.kind].key)).map((b) => b.ref);
-  if (refs.length) c.cmd(Ord.fold(refs));
+  const refs = foldableSelection(c);
+  if (refs.length) {
+    c.cmd(Ord.fold(refs));
+    sfx.confirm();
+  } else sfx.error();
 }
 
 /** Nos tapis, bras et tapis de contrôle terminés parmi la sélection (ordre ROTATE). */
@@ -184,7 +197,16 @@ export function demolishSelected(c: GameClient): void {
     return;
   }
   if (ui.selBuildings.length > 1) {
-    demolishMany(c, ui.selBuildings.filter((b) => b.owner === ui.me).map((b) => b.ref));
+    // modules des Transhumants : repliés (ils ne se démolissent pas) ; le reste est démoli
+    const fold = foldableSelection(c);
+    if (fold.length) c.cmd(Ord.fold(fold));
+    const rest = ui.selBuildings.filter((b) => b.owner === ui.me && !fold.includes(b.ref)).map((b) => b.ref);
+    if (rest.length) demolishMany(c, rest);
+    else if (fold.length) sfx.confirm();
+    return;
+  }
+  if (ui.selBuilding && ui.selBuilding.owner === ui.me && c.data && foldable(c.data.buildings[ui.selBuilding.kind])) {
+    packSelected(c);
     return;
   }
   const sb = ui.selBuilding;

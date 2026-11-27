@@ -267,6 +267,7 @@ export class GameClient {
   togglePauseSelected(): void { Buildings.togglePauseSelected(this); }
   hitchCart(): void { Buildings.hitchCart(this); }
   packSelected(): void { Buildings.packSelected(this); }
+  foldableSelection(): number[] { return Buildings.foldableSelection(this); }
   queueUnit(kind: number, delta: number): void { Buildings.queueUnit(this, kind, delta); }
   toggleRepeat(on: boolean): void { Buildings.toggleRepeat(this, on); }
   setRecipe(r: number): void { Buildings.setRecipe(this, r); }

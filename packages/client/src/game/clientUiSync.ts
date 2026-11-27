@@ -13,6 +13,7 @@ import { kb } from "./keys.svelte.ts";
 import type { GameClient } from "./client.ts";
 import { TILE } from "./clientConsts.ts";
 import { prodOf } from "../render/siteBars.ts";
+import { setMusicRace } from "../audio/music.ts";
 
 /** Barre des ressources : économie de la zone électrique au centre de l'écran (4 fois par seconde au plus,
  * une requête à la fois). */
@@ -86,6 +87,7 @@ export function updateUi(c: GameClient): void {
     ui.researched2Lo = me.researched2Lo;
     ui.researched2Hi = me.researched2Hi;
     ui.race = me.race;
+    setMusicRace(me.race);
     ui.seve = me.seve;
     ui.sels = me.sels;
     ui.store = me.store;
