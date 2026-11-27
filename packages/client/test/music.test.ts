@@ -69,7 +69,7 @@ async function until(t: number) {
   await vi.advanceTimersByTimeAsync(Math.max(0, t * 1000 - (Date.now() - t0)));
 }
 
-const track = (s: Started) => (/theme2/.test(s.name) ? 2 : 1);
+const track = (s: Started) => (/theme-transhumants/.test(s.name) ? "T" : /theme-souche/.test(s.name) ? "S" : /theme-industriels/.test(s.name) ? "I" : /theme2/.test(s.name) ? 2 : 1);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -151,6 +151,31 @@ describe("musique de fond", () => {
     expect(started.map(track)).toEqual([1, 2]);
     expect(started[1].at).toBeCloseTo(10.05, 1);
     expect(music.musicState()).toMatchObject({ track: 1, passes: 2 });
+  });
+
+  it("la race connue fait entrer son morceau tout de suite, puis il alterne avec les morceaux communs", async () => {
+    const { music } = await load();
+    await music.startMusic();
+    await until(10);
+    music.setMusicRace(2);
+    await until(10.1);
+    expect(started.map(track)).toEqual([1, "T"]);
+    expect(started[1].at).toBeCloseTo(10.05, 1);
+    // la même race redonnée ne relance rien
+    music.setMusicRace(2);
+    await until(10.2);
+    expect(started.length).toBe(2);
+    for (let i = 2; i < 5; i++) await until(started[i - 1].at + DURATION - 6 - 19);
+    expect(started.map(track)).toEqual([1, "T", 1, 2, "T"]);
+  });
+
+  it("race connue avant le démarrage : son morceau ouvre la musique", async () => {
+    const { music } = await load();
+    music.setMusicRace(1);
+    await music.startMusic();
+    expect(started.map(track)).toEqual(["S"]);
+    await until(started[0].at + DURATION - 6 - 19);
+    expect(started.map(track)).toEqual(["S", 1]);
   });
 
   it("ne démarre pas à volume nul", async () => {
