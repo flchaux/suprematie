@@ -1250,7 +1250,8 @@ pub fn gue_demo() -> World {
 
 /// Démo des Transhumants (`?demo=nomades`) : une soute déployée et garnie, trois chariots de convoi (deux
 /// rapportent la sortie d'une fonderie éloignée, un livre des plaques à un assembleur éloigné), un
-/// générateur nomade et une file de poteaux relais. Réseau partout.
+/// générateur nomade et une file de poteaux relais ; au-dessus, un campement de modules collés (réseau de transfert,
+/// passerelles). Réseau partout.
 pub fn nomades_demo() -> World {
     let mut w = World::new(&[23, 512, 0, 2, 0, 0, 100, 100, 1, 0, 100, 100]);
     w.infinite_grid = true;
@@ -1293,6 +1294,18 @@ pub fn nomades_demo() -> World {
             crate::transhumants::plant_pole(&mut w, g, hx + 1 + 11 * k, hy + 8);
         }
     }
+    // campement collé (réseau de transfert, passerelles) : soute de minerai, fonderie automatique, bastion,
+    // assembleur d'engrenages en file ; laboratoire à cheval sur la fonderie et le bastion (contacts partiels)
+    let (cx, cy) = (x0 + 4, y0 - 4);
+    if let Some(c) = put(&mut w, B_T_HOLD, cx, cy) {
+        crate::drones::put(&mut w.buildings[c].stash, IRON_ORE, 200);
+    }
+    put(&mut w, B_T_FURNACE, cx + 2, cy);
+    put(&mut w, B_T_BASTION, cx + 4, cy);
+    if let Some(a) = put(&mut w, B_T_ASSEMBLER, cx + 6, cy) {
+        w.buildings[a].recipe = recipe("gear");
+    }
+    put(&mut w, B_T_LAB, cx + 3, cy + 2);
     w.power_dirty = true;
     w
 }
