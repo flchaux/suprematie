@@ -41,10 +41,6 @@ const camp = await page.evaluate(() => {
   return { furnace, list };
 });
 const fu = camp.furnace;
-await page.evaluate(() => new Promise((r) => { let n = 0; const f = () => (++n >= 4 ? r() : requestAnimationFrame(f)); f(); }));
-const drawn = await page.evaluate(() => window.__game.client.scene.entities.walkways.mesh.count);
-// file soute - fonderie - bastion - assembleur (3), laboratoire contre la fonderie et le bastion (2)
-check(drawn >= 5, "passerelles dessinées (au moins les cinq du campement)", String(drawn));
 
 const look = async (x, z, distance, tilt) => {
   await page.evaluate(([x, z, distance, tilt]) => {
@@ -64,12 +60,16 @@ const shot = async (name) => {
 
 // fiche de la fonderie : taille du réseau (soute, fonderie, bastion, assembleur, laboratoire)
 await page.evaluate((ref) => window.__game.client.selectIds([ref]), fu.ref);
-await page.waitForFunction(() => /Réseau\s*5\s*bâtiments/.test(document.body.innerText), null, { timeout: 240000 }).catch(() => {});
-const sheet = await page.evaluate(() => (document.body.innerText.match(/Réseau\s*\d+\s*bâtiments?/) ?? [""])[0]);
-check(/Réseau\s*5\s*bâtiments/.test(sheet), "fiche : réseau de 5 bâtiments", sheet);
+await page.waitForFunction(() => /Réseau\s*5\s*bâtiments/i.test(document.body.innerText), null, { timeout: 240000 }).catch(() => {});
+const sheet = await page.evaluate(() => (document.body.innerText.match(/Réseau\s*\d+\s*bâtiments?/i) ?? [""])[0]);
+check(/Réseau\s*5\s*bâtiments/i.test(sheet), "fiche : réseau de 5 bâtiments", sheet);
 await page.evaluate(() => window.__game.client.selectIds([]));
 
 await look(fu.x + 2, fu.z + 2, 16, 1.5);
+// (la trame ne porte que les bâtiments de la zone vue : compter une fois la caméra sur le campement)
+const drawn = await page.evaluate(() => window.__game.client.scene.entities.walkways.mesh.count);
+// file soute - fonderie - bastion - assembleur (3), laboratoire contre la fonderie et le bastion (2)
+check(drawn >= 5, "passerelles dessinées (au moins les cinq du campement)", String(drawn));
 await shot("dessus");
 await look(fu.x + 2, fu.z + 2.5, 6, 0.75);
 await shot("pres");

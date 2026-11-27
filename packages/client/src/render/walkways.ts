@@ -2,7 +2,8 @@
 // un côté (réseau de transfert, voir docs/spec/races.md) sont reliés par une courte passerelle en métal à
 // caillebotis et garde-corps, posée à cheval sur la jonction, centrée sur la partie commune des deux côtés, à
 // hauteur du plancher des modules. Calculées d'après les bâtiments de la trame, refaites seulement quand ils
-// changent (version des bâtiments) ; un seul maillage instancié (géométrie fusionnée : position, normale).
+// changent (version des bâtiments, ou bâtiments de la zone vue que porte la trame) ; un seul maillage instancié
+// (géométrie fusionnée : position, normale).
 // Celles d'un ennemi suivent le brouillard comme ses bâtiments.
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -92,6 +93,15 @@ export function walkBuildings(f: Frame, data: GameData): WalkBuilding[] {
   return v;
 }
 
+/** Empreinte des bâtiments d'une trame (références et cases) : change quand la zone vue en montre d'autres. */
+export function frameSignature(f: Frame): number {
+  const buf = f.buf;
+  let h = f.nBuildings | 0;
+  let o = f.buildingOff;
+  for (let i = 0; i < f.nBuildings; i++, o += BUILDING_WORDS) h = (Math.imul(h, 31) + (buf[o] ^ Math.imul(buf[o + 2], 0x9e3779b1))) | 0;
+  return h;
+}
+
 /** Passerelle de longueur 1 selon x, largeur WALK_WIDTH selon z, plancher à y = 0 : caillebotis, garde-corps. */
 function walkwayGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -131,6 +141,8 @@ export class Walkways {
   private at = new Float32Array(WALKWAYS_MAX * 2);
   private owners = new Uint8Array(WALKWAYS_MAX);
   private n = 0;
+  /** empreinte des bâtiments de la trame des passerelles calculées */
+  private sig = 0;
 
   constructor() {
     const mat = new THREE.MeshStandardNodeMaterial({ color: 0x8c949c, roughness: 0.42, metalness: 0.75 });
@@ -179,7 +191,12 @@ export class Walkways {
     }
     if (f === this.frame) return;
     this.frame = f;
-    if (f.buildingsVersion !== this.version) this.rebuild(f, data, map);
+    // la trame ne porte que les bâtiments autour de la zone vue : la liste change aussi quand la caméra bouge
+    const sig = frameSignature(f);
+    if (f.buildingsVersion !== this.version || sig !== this.sig) {
+      this.rebuild(f, data, map);
+      this.sig = sig;
+    }
     const dst = this.mesh.instanceMatrix.array as Float32Array;
     let k = 0;
     for (let i = 0; i < this.n; i++) {
