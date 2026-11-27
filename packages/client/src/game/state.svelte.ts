@@ -71,7 +71,7 @@ export const ui = $state({
   selUnits: [] as SelUnitGroup[],
   /** `prod` : avancement de ce qu'il produit (0 à 1 ; -1 : rien), d'après l'image */
   selBuilding: null as null | { ref: number; kind: number; owner: number; prod?: number },
-  /** tous les bâtiments sélectionnés (plusieurs : seule la démolition est possible) */
+  /** tous les bâtiments sélectionnés (plusieurs : pause, repli des modules des Transhumants, démolition) */
   /** bâtiments sélectionnés ; `paused` : en pause (bâtiment de production), `built` : chantier terminé */
   selBuildings: [] as { ref: number; kind: number; owner: number; paused?: boolean; built?: boolean }[],
   /** unités sélectionnées appartenant à un autre joueur : fiche de statistiques, sans ordres */
