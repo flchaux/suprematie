@@ -1091,6 +1091,16 @@ pub fn arche_demo() -> World {
         let fitted = [am::M_W_RAIL, am::M_PLATE2, am::M_HOLDS, am::M_BOOST, am::M_RADAR];
         w.units.cold[b].mods = fitted.iter().fold(0u64, |m, &k| m | (k as u64) << (8 * am::MODS[k as usize].slot));
         w.units.cold[b].orders.push(Order::Patrol { x: (cx + 24) * TILE, y: (cy + 24) * TILE, ox: (cx - 20) * TILE, oy: (cy + 20) * TILE });
+        // trois chenillards attelés derrière ses remorques (voir convoi.rs)
+        if let Some(i) = am::ark_of(&w, b) {
+            for (k, kind) in [U_CH_HOLD, U_CH_FURNACE, U_CH_WORKSHOP].into_iter().enumerate() {
+                let c = w.spawn_unit(kind, 0, (cx - 26 - 3 * k as i32) * TILE, (cy + 20) * TILE);
+                let Some(s) = w.unit(c) else { continue };
+                w.units.facing[s] = 0;
+                w.units.cold[s].orders.push(Order::Tow { ark: id });
+                w.arks[i].tow.push(c);
+            }
+        }
     }
     // un atelier et un gabarit de production
     if let Some(b) = place_building(&mut w, 0, B_T_WORKSHOP, cx - 10, cy - 18, 0) {

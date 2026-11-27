@@ -30,6 +30,7 @@
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     close: '<path d="M6 6l12 12M18 6 6 18"/>',
     link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7L12 6.3"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    unlink: '<path d="M13 6.3l1-1a4 4 0 0 1 5.7 5.7l-2 2"/><path d="M11 17.7l-1 1a4 4 0 0 1-5.7-5.7l2-2"/><path d="M4 4l3 3M20 20l-3-3M9 3v3M15 21v-3"/>',
     play: '<path d="M7 4v16l13-8z"/>',
     pause: '<path d="M8 5v14M16 5v14"/>',
     production: '<circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',

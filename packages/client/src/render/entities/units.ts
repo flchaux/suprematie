@@ -5,7 +5,7 @@
 // les coques vides des œufs éclos.
 import * as THREE from "three/webgpu";
 import { UNIT_WORDS, UF, Layer } from "@supreme/shared";
-import { condShown, depMatrix, strikePhase, variantOf, withVariant } from "../../models/generator.ts";
+import { condShown, depMatrix, strikePhase, variantOf, withTow, withVariant } from "../../models/generator.ts";
 import { BIRTH_TIME, birthScale, eggPose, HUSK_LIFE, huskPose } from "../eggAnim.ts";
 import { setTeamColor } from "../materials.ts";
 import { groundHeight, HSCALE } from "../terrain.ts";
@@ -106,7 +106,9 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     const queen = def.key === "queen";
     // améliorations installées, et variante de l'unité (pièces dépareillées « si:vN », d'après son identifiant)
     const nVar = km.built.variants;
-    const has = nVar > 1 ? withVariant(modOf(id), variantOf(id, nVar)) : modOf(id);
+    const hasMod = nVar > 1 ? withVariant(modOf(id), variantOf(id, nVar)) : modOf(id);
+    // chenillard attelé à l'Arche (bit 31) : son timon (pièces « si:attele »)
+    const has = buf[o + 1] < 0 ? withTow(hasMod) : hasMod;
     // (vérins rapides : deux fois moins long)
     const packLen = queen ? 60 : def.turret ? (packing === 1 ? 40 : 30) : (packing === 1 ? 300 : 200) / (packing && e.quickKeys.some(has) ? 2 : 1);
     const packT = packing ? Math.min(1, (f.tick - (st.packTick ?? f.tick) + alpha) / packLen) : 0;

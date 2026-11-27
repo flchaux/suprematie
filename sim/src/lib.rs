@@ -623,3 +623,5 @@ mod transfert_tests;
 mod troupeau_tests;
 #[cfg(test)]
 mod bouclier_tests;
+#[cfg(test)]
+mod convoi_tests;

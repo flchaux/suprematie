@@ -73,10 +73,31 @@ export const TRANSH_BUILDING_MODELS: Record<string, Model> = nomades({
 
 /**
  * Chenillard replié : gréement du module sur le châssis commun (`chariotNomade`, longueur `l`, largeur `w`), plus deux
- * variantes de pièces dépareillées (variante 0 : châssis d'origine ; voir nomades/variantes.ts).
+ * variantes de pièces dépareillées (variante 0 : châssis d'origine ; voir nomades/variantes.ts), et le timon qu'il
+ * sort quand il est attelé à l'Arche, jusqu'à `bout` (z de l'anneau, voir timonChenillard).
  */
-function chenillard(parts: Part[], l = 2.5, w = 1.0): Model {
-  return { parts: [...parts, ...variantesChenillard(l / 2, w / 2, q(-(w / 2 - 0.17)))], variants: 3 };
+function chenillard(parts: Part[], l = 2.5, w = 1.0, bout = 1.74): Model {
+  return { parts: [...parts, ...variantesChenillard(l / 2, w / 2, q(-(w / 2 - 0.17))), ...timonChenillard(l / 2, w / 2, bout)], variants: 3 };
+}
+
+/**
+ * Timon d'attelage d'un chenillard attelé à l'Arche (pivot « si:attele », dessiné seulement quand il l'est) : fourche de
+ * tubes de l'avant du châssis à un anneau posé sur le crochet du véhicule qui le précède. L'anneau est au bout du timon
+ * de la simulation (son rayon plus 120, `convoi::TOW_GAP`) ramené à l'échelle du modèle : z ≈ 329 × étendue / 480 pour
+ * un chenillard de rayon 209 (1,74 ; foreuse 2,03 ; bastion 1,9), 2,34 pour l'atelier.
+ */
+function timonChenillard(hl: number, hw: number, bout: number): Part[] {
+  const p = "si:attele#fixe_timon";
+  return [
+    // fourche, traverse sur l'avant du châssis
+    { shape: "box", size: [q(hw * 1.3), 0.08, 0.08], pos: [0, 0.4, q(hl + 0.02)], color: "dark", pivot: p },
+    { shape: "tube", radius: 0.045, sides: 5, path: [[q(hw * 0.6), 0.4, q(hl + 0.02)], [0.06, 0.42, q(bout - 0.22)]], color: "rust", mirror: true, pivot: p },
+    // tête de timon et anneau
+    { shape: "box", size: [0.16, 0.12, 0.26], pos: [0, 0.42, q(bout - 0.2)], color: "steel", pivot: p },
+    { shape: "box", size: [0.22, 0.08, 0.14], pos: [0, 0.42, q(bout - 0.07)], color: "dark", pivot: p },
+    // chaîne de sûreté
+    { shape: "tube", radius: 0.02, sides: 4, path: [[0.12, 0.36, q(hl + 0.02)], [0.1, 0.3, q((hl + bout) / 2)], [0.08, 0.38, q(bout - 0.1)]], color: "steel", fine: true, pivot: p },
+  ];
 }
 
 export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
@@ -138,15 +159,15 @@ export const TRANSH_UNIT_MODELS: Record<string, Model> = nomades({
   ark_car: { parts: remorqueArche() },
   // ch_drill : chariot foreuse, la foreuse repliée sur son chariot ; il se déploie en foreuse nomade (voir foreuseNomade).
   // Chenillards : trois variantes du châssis (voir chenillard), le module déployé n'en a pas
-  ch_drill: chenillard([...foreuseNomade(true), ...annexesForeuse(true)]),
+  ch_drill: chenillard([...foreuseNomade(true), ...annexesForeuse(true)], 2.5, 1.0, 2.03),
   ch_furnace: chenillard([...fonderieNomade(true), ...annexesFonderie(true)]),
   ch_assembler: chenillard([...assembleurNomade(true), ...annexesAssembleur(true)]),
   ch_refinery: chenillard([...raffinerieNomade(true), ...annexesRaffinerie(true)]),
   ch_generator: chenillard([...generateurNomade(true), ...annexesGenerateur(true)]),
   ch_hold: chenillard([...souteNomade(true), ...annexesSoute(true)]),
   ch_lab: chenillard([...laboratoireNomade(true), ...annexesLaboratoire(true)]),
-  ch_workshop: chenillard([...atelierNomade(true), ...annexesAtelier(true)], 3.3, 1.5),
-  ch_bastion: chenillard([...bastionNomade(true), ...annexesBastion(true)]),
+  ch_workshop: chenillard([...atelierNomade(true), ...annexesAtelier(true)], 3.3, 1.5, 2.34),
+  ch_bastion: chenillard([...bastionNomade(true), ...annexesBastion(true)], 2.5, 1.0, 1.9),
   // t_cart : chariot de convoi attelé à une soute (voir nomades/convoi.ts)
   t_cart: { parts: chariotConvoi() },
   // t_shield_cart : chariot bouclier, projecteur de bulle (voir nomades/bouclier.ts)

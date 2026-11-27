@@ -183,6 +183,8 @@ pub fn speed(w: &World, s: usize) -> i32 {
     let mods = w.units.cold[s].mods;
     // commandement d'un Berger
     let base = base * (100 + crate::troupeau::flock_speed(w, s)) / 100;
+    // Arche : chaque chenillard attelé la ralentit (voir convoi.rs)
+    let base = if w.units.kind[s] == U_ARK { base * crate::convoi::tow_pct(w, s) / 100 } else { base };
     if mods == 0 {
         return base;
     }
@@ -842,8 +844,10 @@ pub struct Ark {
     /// remorques attelées et trace de l'Arche (voir convoi.rs)
     pub cars: Vec<crate::convoi::ArkCar>,
     pub trail: Vec<(i32, i32)>,
+    /// chenillards attelés derrière les remorques, dans l'ordre d'attelage (identifiants ; voir convoi.rs)
+    pub tow: Vec<u32>,
 }
-crate::ser_struct!(Ark { unit, out, hold, ax, ay, rest, turrets, queue, prog, paid, boost_until, boost_ready, dock; since 11: kit, cars, trail });
+crate::ser_struct!(Ark { unit, out, hold, ax, ay, rest, turrets, queue, prog, paid, boost_until, boost_ready, dock; since 11: kit, cars, trail; since 13: tow });
 
 /// Indice de l'état de l'Arche `s` dans World::arks.
 pub fn ark_of(w: &World, s: usize) -> Option<usize> {

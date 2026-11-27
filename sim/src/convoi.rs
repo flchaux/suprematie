@@ -10,6 +10,12 @@
 //! - Remorque détruite : son amélioration est hors service (`in_service`) jusqu'à sa reconstruction, payée dans les
 //!   réserves à portée, en CAR_REBUILD ticks, une à la fois. Ses tourelles à bord sont perdues avec elle.
 //! - Arche embarquée (transport, anneaux) : ses remorques rentrent avec elle et ressortent derrière elle.
+//! - Chenillards attelés (`Ark::tow`, ordre `Order::Tow`) : un chenillard replié rejoint la queue du convoi et s'y
+//!   accroche, derrière les remorques, dans l'ordre d'attelage (TOW_MAX au plus). Il suit comme une remorque
+//!   (timon, trace de l'Arche) et l'Arche ralentit de TOW_SLOW % par chenillard attelé. Il reste une unité comme
+//!   les autres (ciblable, réparable) et garde son ordre `Tow` tant qu'il est attelé : un ordre qui le remplace
+//!   (déplacement, déploiement, arrêt) ou qui s'y ajoute en file le dételle. Détruit, il libère sa place ; Arche
+//!   détruite ou embarquée : tous dételés.
 
 use crate::ameliorations::*;
 use crate::data::*;
@@ -35,9 +41,19 @@ pub const HITCH: [i32; 2] = [390, 560];
 /// Longueur du timon (de l'attelage au centre de la remorque), et de ce centre à l'attelage arrière.
 pub const DRAWBAR: i32 = 260;
 pub const CAR_BACK: i32 = 200;
-/// Pas et longueur de la trace de l'Arche.
+/// Pas et longueur de la trace de l'Arche (plus longue quand des chenillards sont attelés).
 const TRAIL_STEP: i32 = 64;
 const TRAIL_MAX: usize = 96;
+const TRAIL_MAX_TOW: usize = 192;
+/// Chenillards attelés à une Arche, au plus.
+pub const TOW_MAX: usize = 9;
+/// Ralentissement de l'Arche par chenillard attelé (%).
+pub const TOW_SLOW: i32 = 3;
+/// Timon d'un chenillard attelé : de son centre à l'attelage du véhicule qui le précède, son rayon plus TOW_GAP ;
+/// de son centre à son propre crochet, son rayon plus TOW_HOOK (le timon des modèles, `chenillard` dans
+/// assets/models/transhumants.ts, est à cette longueur).
+pub const TOW_GAP: i32 = 120;
+pub const TOW_HOOK: i32 = 30;
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct ArkCar {
@@ -118,10 +134,11 @@ pub fn update(w: &mut World, i: usize, s: usize) {
     let mods = w.units.cold[s].mods;
     let want = wanted(mods);
     let n = want.iter().take_while(|&&m| m != 0).count();
-    if n == 0 && w.arks[i].cars.is_empty() && w.arks[i].trail.is_empty() {
+    if n == 0 && w.arks[i].cars.is_empty() && w.arks[i].trail.is_empty() && w.arks[i].tow.is_empty() {
         return;
     }
     record_trail(w, i, s);
+    prune_tow(w, i, s);
     // branche abandonnée : les remorques en trop disparaissent avec elle
     while w.arks[i].cars.len() > n {
         let c = w.arks[i].cars.pop().unwrap_or_default();
@@ -223,6 +240,7 @@ fn lose_turrets(w: &mut World, i: usize, s: usize, c: usize) {
 /// Trace de l'Arche : un point tous les TRAIL_STEP, le plus récent à la fin ; effacée par un saut (porte, anneaux).
 fn record_trail(w: &mut World, i: usize, s: usize) {
     let (x, y) = (w.units.x[s], w.units.y[s]);
+    let max = if w.arks[i].tow.is_empty() { TRAIL_MAX } else { TRAIL_MAX_TOW };
     let t = &mut w.arks[i].trail;
     match t.last() {
         Some(&(lx, ly)) if dist(x, y, lx, ly) > 3 * TILE => t.clear(),
@@ -230,8 +248,8 @@ fn record_trail(w: &mut World, i: usize, s: usize) {
         _ => {}
     }
     t.push((x, y));
-    if t.len() > TRAIL_MAX {
-        t.remove(0);
+    if t.len() > max {
+        t.drain(..t.len() - max);
     }
 }
 
@@ -272,19 +290,32 @@ fn start_place(w: &World, i: usize, s: usize, k: usize) -> (i32, i32) {
     on_trail(w, i, s, d).filter(|&(x, y)| pass_ok(w, x, y)).unwrap_or((w.units.x[s], w.units.y[s]))
 }
 
-/// Chaque remorque attelée prend sa place derrière le véhicule qui la précède.
+/// Chaque remorque attelée, puis chaque chenillard attelé, prend sa place derrière le véhicule qui le précède.
 fn follow(w: &mut World, i: usize, s: usize) {
     let mods = w.units.cold[s].mods;
     let (ax, ay) = (w.units.x[s], w.units.y[s]);
-    let back = HITCH[(at(mods, SLOT_DRIVE) != 0) as usize] as i64;
+    let hitch = HITCH[(at(mods, SLOT_DRIVE) != 0) as usize];
     let f = w.units.facing[s];
-    let (mut hx, mut hy) = (ax - (w.trig.cos(f) as i64 * back / 16384) as i32, ay - (w.trig.sin(f) as i64 * back / 16384) as i32);
-    // l'Arche écarte une remorque qu'elle approche de trop près
-    let clear = (ark_radius(mods) * 4 / 5 + udef(U_ARK_CAR).radius) as i64;
+    let (mut hx, mut hy) = (ax - (w.trig.cos(f) as i64 * hitch as i64 / 16384) as i32, ay - (w.trig.sin(f) as i64 * hitch as i64 / 16384) as i32);
+    // l'Arche écarte un véhicule qu'elle approche de trop près
+    let ark_r = (ark_radius(mods) * 4 / 5) as i64;
+    // le convoi : (unité, timon, crochet, distance de son centre à l'Arche sur la trace, convoi tendu)
+    let mut chain: Vec<(usize, i32, i32, i32)> = Vec::with_capacity(w.arks[i].cars.len() + w.arks[i].tow.len());
     for k in 0..w.arks[i].cars.len() {
-        let Some(u) = car_unit(w, i, k) else { continue };
+        if let Some(u) = car_unit(w, i, k) {
+            chain.push((u, DRAWBAR, CAR_BACK, reach_back(mods, k)));
+        }
+    }
+    let mut reach = hitch + chain.len() as i32 * (DRAWBAR + CAR_BACK);
+    for k in 0..w.arks[i].tow.len() {
+        let Some(u) = w.unit(w.arks[i].tow[k]) else { continue };
+        let (bar, hook) = tow_lengths(w.units.kind[u]);
+        chain.push((u, bar, hook, reach + bar));
+        reach += bar + hook;
+    }
+    for (u, bar, hook, reach) in chain {
         let (cx, cy) = (w.units.x[u], w.units.y[u]);
-        // timon : la remorque reste à DRAWBAR de l'attelage, dans la direction où elle est
+        // timon : le véhicule reste à `bar` de l'attelage, dans la direction où il est
         let (mut dx, mut dy) = ((cx - hx) as i64, (cy - hy) as i64);
         let mut d = isqrt((dx * dx + dy * dy) as u64) as i64;
         if d == 0 {
@@ -292,20 +323,21 @@ fn follow(w: &mut World, i: usize, s: usize) {
             (dx, dy) = (w.trig.cos(g) as i64, w.trig.sin(g) as i64);
             d = 16384;
         }
-        let (mut nx, mut ny) = (hx + (dx * DRAWBAR as i64 / d) as i32, hy + (dy * DRAWBAR as i64 / d) as i32);
+        let (mut nx, mut ny) = (hx + (dx * bar as i64 / d) as i32, hy + (dy * bar as i64 / d) as i32);
         let (ox, oy) = ((nx - ax) as i64, (ny - ay) as i64);
         let o = isqrt((ox * ox + oy * oy) as u64) as i64;
+        let clear = ark_r + udef(w.units.kind[u]).radius as i64;
         if o < clear && o > 0 {
             nx = ax + (ox * clear / o) as i32;
             ny = ay + (oy * clear / o) as i32;
         }
         if !pass_ok(w, nx, ny) {
-            // obstacle : elle passe par où l'Arche est passée, ou reste où elle est
-            match on_trail(w, i, s, reach_back(mods, k)).filter(|&(x, y)| pass_ok(w, x, y)) {
+            // obstacle : il passe par où l'Arche est passée, ou reste où il est
+            match on_trail(w, i, s, reach).filter(|&(x, y)| pass_ok(w, x, y)) {
                 Some((tx, ty)) => {
                     let step = 96;
                     let (mx, my) = (cx + (tx - cx).clamp(-step, step), cy + (ty - cy).clamp(-step, step));
-                    // trop loin de sa place (obstacle contourné) : elle la rejoint d'un coup
+                    // trop loin de sa place (obstacle contourné) : il la rejoint d'un coup
                     (nx, ny) = if pass_ok(w, mx, my) && dist(mx, my, tx, ty) < 4 * TILE { (mx, my) } else { (tx, ty) };
                 }
                 None => (nx, ny) = (cx, cy),
@@ -320,14 +352,108 @@ fn follow(w: &mut World, i: usize, s: usize) {
             w.units.facing[u] = w.units.facing[u].wrapping_add(turn.clamp(-1600, 1600) as u16);
         }
         let g = w.units.facing[u];
-        hx = nx - (w.trig.cos(g) as i64 * CAR_BACK as i64 / 16384) as i32;
-        hy = ny - (w.trig.sin(g) as i64 * CAR_BACK as i64 / 16384) as i32;
+        hx = nx - (w.trig.cos(g) as i64 * hook as i64 / 16384) as i32;
+        hy = ny - (w.trig.sin(g) as i64 * hook as i64 / 16384) as i32;
+    }
+}
+
+// ---------- chenillards attelés ----------
+
+/// Timon et crochet d'un chenillard de ce type (voir TOW_GAP).
+pub fn tow_lengths(kind: u16) -> (i32, i32) {
+    let r = udef(kind).radius;
+    (r + TOW_GAP, r + TOW_HOOK)
+}
+
+/// Peut-il s'atteler ? (chenillard replié, qui n'est pas en train de se replier)
+pub fn can_tow(w: &World, s: usize) -> bool {
+    udef(w.units.kind[s]).deploys != NO_KIND && w.units.cold[s].pack != crate::transhumants::PACK_FOLDING
+}
+
+/// Le chenillard `s` est-il attelé ? Indice de son Arche dans `World::arks` et son rang (0 : le premier).
+pub fn towed_by(w: &World, s: usize) -> Option<(usize, usize)> {
+    let Some(&Order::Tow { ark }) = w.units.cold[s].orders.first() else { return None };
+    let i = w.arks.iter().position(|a| a.unit == ark)?;
+    let id = w.unit_id(s);
+    w.arks[i].tow.iter().position(|&t| t == id).map(|k| (i, k))
+}
+
+/// Vitesse de l'Arche `s`, en % : TOW_SLOW de moins par chenillard attelé.
+pub fn tow_pct(w: &World, s: usize) -> i32 {
+    let id = w.unit_id(s);
+    let n = w.arks.iter().find(|a| a.unit == id).map_or(0, |a| a.tow.len()) as i32;
+    100 - TOW_SLOW * n
+}
+
+/// Attelage à la queue du convoi de l'Arche `s` (état `i`) : derrière le dernier véhicule attelé.
+fn tail(w: &World, i: usize, s: usize) -> (i32, i32) {
+    let last = w.arks[i].tow.iter().rev().find_map(|&t| w.unit(t)).map(|u| (u, tow_lengths(w.units.kind[u]).1));
+    let last = last.or_else(|| (0..w.arks[i].cars.len()).rev().find_map(|k| car_unit(w, i, k)).map(|u| (u, CAR_BACK)));
+    let (u, back) = last.unwrap_or((s, HITCH[(at(w.units.cold[s].mods, SLOT_DRIVE) != 0) as usize]));
+    let f = w.units.facing[u];
+    (w.units.x[u] - (w.trig.cos(f) as i64 * back as i64 / 16384) as i32, w.units.y[u] - (w.trig.sin(f) as i64 * back as i64 / 16384) as i32)
+}
+
+/// Ordre `Tow` du chenillard `s`, pas encore attelé : il roule jusqu'à la queue du convoi et s'y accroche. Renvoie
+/// faux si l'ordre est caduc (Arche disparue, embarquée, à un autre joueur ; convoi complet).
+pub fn tow_step(w: &mut World, s: usize, ark: u32) -> bool {
+    let Some(a) = w.unit(ark).filter(|&a| w.units.kind[a] == U_ARK && w.units.owner[a] == w.units.owner[s] && w.units.cold[a].carried_by == NONE) else { return false };
+    let Some(i) = ark_of(w, a) else { return false };
+    if !can_tow(w, s) || w.arks[i].tow.len() >= TOW_MAX {
+        return false;
+    }
+    let (hx, hy) = tail(w, i, a);
+    let bar = tow_lengths(w.units.kind[s]).0;
+    if dist(w.units.x[s], w.units.y[s], hx, hy) <= bar + TILE / 2 {
+        crate::units::clear_goal(w, s);
+        let id = w.unit_id(s);
+        w.arks[i].tow.push(id);
+        return true;
+    }
+    crate::units::steer(w, s, hx, hy, hx, hy, bar);
+    // il ne renonce pas : la queue du convoi bouge
+    w.units.cold[s].stuck = 0;
+    true
+}
+
+/// Dételle les chenillards qui ne le sont plus : détruits, à un autre joueur, embarqués, sans leur ordre `Tow` (un
+/// autre l'a remplacé) ou avec un ordre en file derrière (il s'en va) ; tous quand l'Arche est embarquée.
+fn prune_tow(w: &mut World, i: usize, s: usize) {
+    if w.arks[i].tow.is_empty() {
+        return;
+    }
+    let ark = w.arks[i].unit;
+    let (owner, aboard) = (w.units.owner[s], w.units.cold[s].carried_by != NONE);
+    let mut k = 0;
+    while k < w.arks[i].tow.len() {
+        let keep = match w.unit(w.arks[i].tow[k]) {
+            Some(u) if w.units.owner[u] == owner && w.units.cold[u].carried_by == NONE && matches!(w.units.cold[u].orders.first(), Some(&Order::Tow { ark: a }) if a == ark) => {
+                if aboard {
+                    crate::units::clear_orders(w, u);
+                    false
+                } else if w.units.cold[u].orders.len() > 1 {
+                    crate::units::pop_order(w, u);
+                    false
+                } else {
+                    true
+                }
+            }
+            _ => false,
+        };
+        if keep {
+            k += 1;
+        } else {
+            w.arks[i].tow.remove(k);
+        }
     }
 }
 
 pub fn hash_into(a: &Ark, h: &mut crate::ser::Hasher) {
     for c in &a.cars {
         h.add(c.m as u64 | (c.state as u64) << 8 | (c.timer as u64) << 16 | (c.hp as u64) << 32);
+    }
+    for &t in &a.tow {
+        h.add(t as u64 | 1 << 40);
     }
     if let Some(&(x, y)) = a.trail.first() {
         h.add((x as u32 as u64) | (y as u32 as u64) << 32);

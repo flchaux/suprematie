@@ -18,6 +18,7 @@ import { teamInstancedMesh, setTeamColor } from "./materials.ts";
 import { CommandOverlay } from "./overlay.ts";
 import { PowerCoverage } from "./power.ts";
 import { TerreauCover } from "./terreau.ts";
+import { Cables } from "./cables.ts";
 import { worldPerPixel } from "./siteBars.ts";
 import { RangeRings, type Circle, type RangeKind } from "./ranges.ts";
 import { Pings } from "./pings.ts";
@@ -64,6 +65,8 @@ export class GameScene {
   power: PowerCoverage | null = null;
   /** terreau de la Souche au sol */
   terreau: TerreauCover | null = null;
+  /** câbles des Transhumants, des modules à leur générateur ou poteau */
+  cables: Cables | null = null;
   /** constructions prévues et ordres affichés avec Maj */
   overlay: CommandOverlay | null = null;
   showOrders = false;
@@ -244,6 +247,9 @@ export class GameScene {
     this.entities.effects.quality = this.gfx.effects;
     this.entities.setShieldFx(this.gfx.shieldFx !== false);
     this.scene.add(this.entities.group);
+    this.cables?.dispose();
+    this.cables = new Cables(map, data, this.entities.teamColors);
+    this.scene.add(this.cables.mesh);
     this.camera.far = map.w * 4;
   }
 
@@ -662,6 +668,8 @@ export class GameScene {
       this.entities.update(frame, alpha, me, myTeam, selected, this.strategic, iconScale, simDt, spectator, view);
       // (temps réel : en pause aussi, le terreau suit la caméra)
       if (this.data) this.terreau?.update(frame, this.data, dt, view, !this.strategic);
+      // câbles des Transhumants : relevé périodique, géométrie refaite quand les bâtiments changent (réglage « décor »)
+      this.cables?.update(frame, dt, view, !this.strategic, this.gfx.decor !== false, myTeam, spectator, this.entities.modViews);
       // les roches hautes d'un gisement disparaissent sous le bâtiment qui le recouvre
       this.terrain.deposits.setCovered(this.entities.coveredSpots);
     }

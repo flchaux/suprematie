@@ -186,6 +186,8 @@ function cursorIntent(gc: GameClient, x: number, y: number): CursorKind {
   if (tb && wildNest(gc, tb) && units.some((u) => gc.data!.units[u.kind].key === "queen")) return "load";
   if (tb && enemy(tb.owner)) return "attack";
   const engs = units.some((u) => gc.data!.units[u.kind].buildPower > 0);
+  // chenillards sur notre Arche : ils s'y attellent
+  if (unit && mine(unit.owner) && !ids.includes(unit.id) && gc.data.units[unit.kind].key === "ark" && units.some((u) => (gc.data!.units[u.kind].deploys ?? -1) >= 0)) return "load";
   if (unit && mine(unit.owner) && !ids.includes(unit.id)) return gc.data.units[unit.kind].carry > 0 ? "load" : "assist";
   if (tb && hungryHeart(gc, tb) && units.some((u) => sacrificeValue(gc, u.kind) > 0)) return "load";
   if (tb && mine(tb.owner)) {
@@ -269,6 +271,12 @@ export function contextCommand(c: GameClient, x: number, y: number, queue: boole
   }
   if (target && target.owner === ui.me && !ids.includes(target.id)) {
     const td = c.data.units[target.kind];
+    // chenillards sur notre Arche : ils s'attellent à son convoi (les autres unités l'escortent)
+    if (td.key === "ark" && towSelected(c, target.id, queue)) {
+      const rest = units.filter((u) => (c.data!.units[u.kind].deploys ?? -1) < 0).map((u) => u.id);
+      if (rest.length) c.cmd(Ord.target(O.ASSIST, rest, target.id, queue));
+      return;
+    }
     if (td.carry > 0) {
       c.cmd(Ord.load(target.id, ids));
       sfx.confirm();
@@ -617,6 +625,29 @@ export async function modeClick(c: GameClient, x: number, y: number, queue: bool
   if (!queue) c.cancelMode();
 }
 
+/** Chenillards (repliés) de la sélection. */
+function chenillardsOf(c: GameClient, units: { id: number; kind: number }[]): number[] {
+  return units.filter((u) => (c.data!.units[u.kind].deploys ?? -1) >= 0).map((u) => u.id);
+}
+/**
+ * « Atteler à l'Arche » : les chenillards sélectionnés rejoignent la queue du convoi de notre Arche (le commandant des
+ * Transhumants) et s'y accrochent ; neuf au plus. `ark` : une Arche précise (clic droit dessus).
+ */
+export function towSelected(c: GameClient, ark?: number, queue = false): boolean {
+  const ids = chenillardsOf(c, c.selectedUnits());
+  const a = ark ?? c.frame?.players[ui.me]?.commander;
+  if (!ids.length || a === undefined || ui.race !== 2) return false;
+  c.cmd(Ord.tow(ids, a, queue));
+  pushMessage(`${ids.length > 1 ? `${ids.length} chenillards s'attellent` : "Le chenillard s'attelle"} à l'Arche, derrière ses remorques (neuf au plus ; −3 % de vitesse chacun). Un ordre de déplacement ou « Déployer » les dételle.`, "info");
+  sfx.confirm();
+  return true;
+}
+/** « Dételer » : les chenillards sélectionnés quittent le convoi et s'arrêtent là où ils sont. */
+export function untowSelected(c: GameClient): void {
+  const ids = chenillardsOf(c, c.selectedUnits());
+  if (ids.length) c.cmd(Ord.stop(ids));
+  sfx.click();
+}
 export function stopSelected(c: GameClient): void {
   const ids = c.selectedUnits().map((u) => u.id);
   if (ids.length) c.cmd(Ord.stop(ids));
