@@ -149,6 +149,9 @@ pub enum Order {
     /// transport volant : navette sans fin entre A (embarquement des unités de combat qui y attendent) et B
     /// (débarquement ; voir units::ferry_step)
     Ferry { ax: i32, ay: i32, bx: i32, by: i32 },
+    /// chenillard des Transhumants : rejoindre la queue du convoi de l'Arche `ark` et s'y atteler ; attelé, il
+    /// garde cet ordre (voir convoi.rs, « Chenillards attelés »)
+    Tow { ark: u32 },
 }
 
 impl Order {
@@ -178,6 +181,7 @@ impl Order {
             Order::Haul { .. } => 22,
             Order::Ferry { .. } => 23,
             Order::Sacrifice { .. } => 24,
+            Order::Tow { .. } => 25,
         }
     }
 }
@@ -210,7 +214,7 @@ impl Ser for Order {
                 ox.ser(w);
                 oy.ser(w);
             }
-            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } => target.ser(w),
+            Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Tow { ark: target } => target.ser(w),
             Order::Deliver { item } => item.ser(w),
             Order::Haul { site, feed } => {
                 site.ser(w);
@@ -273,6 +277,7 @@ impl Ser for Order {
             22 => Order::Haul { site: u(r), feed: u8::de(r) != 0 },
             23 => Order::Ferry { ax: i(r), ay: i(r), bx: i(r), by: i(r) },
             24 => Order::Sacrifice { target: u(r) },
+            25 => Order::Tow { ark: u(r) },
             _ => Order::Enter { target: u(r) },
         }
     }

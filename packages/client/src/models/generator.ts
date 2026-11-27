@@ -733,6 +733,18 @@ export function isVariantKey(k: string): boolean {
   const c = k.charCodeAt(1);
   return k.length >= 2 && k.length <= 3 && k.charCodeAt(0) === 118 && c >= 48 && c <= 57;
 }
+/**
+ * Clé d'état « attele » (« si:attele#… ») : vraie pour un chenillard des Transhumants attelé à l'Arche (bit 31 de son
+ * mot d'unité) ; ce n'est pas une amélioration.
+ */
+export const TOW_KEY = "attele";
+export function isStateKey(k: string): boolean {
+  return k === TOW_KEY;
+}
+/** Test « installée ? » d'une unité attelée : la clé « attele » répond oui, les autres comme `has`. */
+export function withTow(has: (key: string) => boolean): (key: string) => boolean {
+  return (k) => k === TOW_KEY || has(k);
+}
 /** Clés « v0 » à « v15 », sans allocation à chaque image. */
 export const VARIANT_KEYS = Array.from({ length: 16 }, (_, i) => "v" + i);
 /**

@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { Sim } from "../../shared/src/sim.ts";
 import type { GameData } from "../../shared/src/data.ts";
-import { buildModel, condShown, isVariantKey, parseCond, variantOf, withVariant } from "../src/models/generator.ts";
+import { buildModel, condShown, isStateKey, isVariantKey, parseCond, variantOf, withVariant } from "../src/models/generator.ts";
 import { UNIT_MODELS } from "../../../assets/models/units.ts";
 import { BUILDING_MODELS } from "../../../assets/models/buildings.ts";
 
@@ -33,8 +33,8 @@ describe("modèles", () => {
         const c = parseCond(p.name);
         for (const t of c?.all ?? []) {
           for (const k of t.keys) {
-            // (« vN » : variante de l'unité, pas une amélioration)
-            expect(keys.has(k) || isVariantKey(k), `${key} : ${k}`).toBe(true);
+            // (« vN » : variante de l'unité, « attele » : chenillard attelé ; pas des améliorations)
+            expect(keys.has(k) || isVariantKey(k) || isStateKey(k), `${key} : ${k}`).toBe(true);
             if (c!.on && t.on) shown.add(k);
           }
         }

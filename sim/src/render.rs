@@ -121,11 +121,13 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
         flags |= 128;
     }
     // bit 27 du mot : camouflé (commando) ; bit 28 : absent des radars ennemis (furtif, brouillé) ;
-    // bits 29 et 30 : chenillard des Transhumants qui se déploie, qui se replie (animation des stabilisateurs)
+    // bits 29 et 30 : chenillard des Transhumants qui se déploie, qui se replie (animation des stabilisateurs) ;
+    // bit 31 : chenillard attelé à une Arche (son timon est dessiné)
     let stealth = (crate::combat::cloaked(w, s) as i32) << 27
         | (crate::combat::radar_stealth(w, s) as i32) << 28
         | (matches!(c.pack, crate::transhumants::PACK_DEPLOYING | crate::essaim::Q_ROOTING) as i32) << 29
-        | (matches!(c.pack, crate::transhumants::PACK_FOLDING | crate::essaim::Q_UPROOTING) as i32) << 30;
+        | (matches!(c.pack, crate::transhumants::PACK_FOLDING | crate::essaim::Q_UPROOTING) as i32) << 30
+        | (crate::convoi::towed_by(w, s).is_some() as i32) << 31;
     let aux = match c.orders.first() {
         Some(o) => {
             let (tx, ty) = match *o {
@@ -134,7 +136,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     let (bw, bh) = crate::buildings::dims(kind, dir);
                     (x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2)
                 }
-                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } | Order::Jump { beacon: target } => {
+                Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } | Order::Jump { beacon: target } | Order::Tow { ark: target } => {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
@@ -727,7 +729,7 @@ pub fn info_unit(w: &World, id: u32) -> String {
     let reach = if d.drones > 0 { js_list(crate::drones::in_reach(w, w.units.owner[s], w.units.x[s], w.units.y[s], d.supply * TILE, Some(crate::drones::Store::U(s))).iter()) } else { "[]".into() };
     let drones = w.carriers.iter().filter(|k| k.alive && k.kind == crate::drones::DRONE && k.a == id && k.relay == 0).count();
     format!(
-        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"mods\":{},\"egg\":{},\"soil\":{},\"tame\":{}}}",
+        "{{\"kind\":{},\"owner\":{},\"hp\":{},\"shield\":{},\"orders\":{},\"cargo\":{},\"deployed\":{},\"ready\":{},\"children\":{},\"xp\":{},\"lvl\":{},\"maxHp\":{},\"cloaked\":{},\"radarStealth\":{},\"harvest\":{},\"hold\":{},\"reach\":{},\"drones\":{},\"loading\":{},\"pack\":{},\"packLeft\":{},\"pickup\":{},\"deliver\":{},\"mods\":{},\"egg\":{},\"soil\":{},\"tame\":{},\"tow\":{}}}",
         w.units.kind[s],
         w.units.owner[s],
         w.units.hp[s],
@@ -757,8 +759,19 @@ pub fn info_unit(w: &World, id: u32) -> String {
         // Reine de la Souche : elle se tient sur son terreau (elle peut s'y enraciner)
         w.units.kind[s] == U_QUEEN && crate::essaim::soil(w, s) != 0,
         // apprivoisement d'un nid (‰ ; -1 : aucun)
-        crate::nature::queen_tame(w, s)
+        crate::nature::queen_tame(w, s),
+        // chenillard des Transhumants : rang dans le convoi de son Arche (1 : le premier), -1 en route pour s'y atteler, 0 : rien
+        tow_rank(w, s)
     )
+}
+
+/// Chenillard attelé : son rang dans le convoi (1 : derrière les remorques) ; -1 : en route pour s'atteler ; 0 : rien.
+fn tow_rank(w: &World, s: usize) -> i32 {
+    match crate::convoi::towed_by(w, s) {
+        Some((_, k)) => k as i32 + 1,
+        None if matches!(w.units.cold[s].orders.first(), Some(Order::Tow { .. })) => -1,
+        None => 0,
+    }
 }
 
 /// Ramassage (ordre Pickup en tête de file) : {kind (bâtiment), item (objet de sa sortie, 0 : rien), out
@@ -834,7 +847,7 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
             let (bw, bh) = crate::buildings::dims(kind, dir);
             Some((x * TILE + bw * TILE / 2, y * TILE + bh * TILE / 2))
         }
-        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } => w.ref_pos(target),
+        Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } | Order::Tow { ark: target } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
         Order::Ferry { ax, ay, .. } => Some((ax, ay)),
