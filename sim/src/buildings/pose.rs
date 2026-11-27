@@ -470,6 +470,8 @@ pub fn complete_building(w: &mut World, b: usize) {
     crate::drones::store_added(w, b);
     // fabricant sans recette collé à une machine identique : il prend sa recette (machines jumelles)
     crate::twins::adopt_twin_recipe(w, b);
+    // Transhumants : les réseaux de transfert sont à recalculer
+    crate::transfert::mark(w, kind);
     w.buildings_version = w.buildings_version.wrapping_add(1);
     w.ev(EV_BUILT, owner as i32, kind as i32, x, y);
 }
@@ -523,6 +525,7 @@ pub fn remove_building(w: &mut World, b: usize, with_wreck: bool) {
     }
     w.buildings[b].watchers.clear();
     w.buildings[b].queue.clear();
+    crate::transfert::mark(w, kind);
     w.bfree.push(b as u32);
     w.buildings_version = w.buildings_version.wrapping_add(1);
 }

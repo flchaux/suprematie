@@ -5,7 +5,8 @@
 use super::*;
 
 // ---------- Entrées / sorties d'objets ----------
-fn recipe_for(w: &World, b: &Building, item: u8) -> u8 {
+/// Recette du fabricant `b` qui se sert de `item` (la première recherchée de son type), RECIPE_NONE : aucune.
+pub fn recipe_for(w: &World, b: &Building, item: u8) -> u8 {
     let cr = b.def().crafter;
     let p = &w.players[b.owner as usize];
     for (i, r) in RECIPES.iter().enumerate() {

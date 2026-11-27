@@ -29,6 +29,7 @@ pub mod save;
 pub mod ser;
 pub mod soil;
 pub mod souche;
+pub mod transfert;
 pub mod transhumants;
 pub mod troupeau;
 pub mod twins;
@@ -616,6 +617,8 @@ mod ameliorations_tests;
 mod equipement_tests;
 #[cfg(test)]
 mod transhumants_tests;
+#[cfg(test)]
+mod transfert_tests;
 #[cfg(test)]
 mod troupeau_tests;
 #[cfg(test)]

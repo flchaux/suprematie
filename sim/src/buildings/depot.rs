@@ -7,7 +7,8 @@ use super::*;
 /// ticks (1 par seconde).
 pub const DEPOT_FEED_PERIOD: u32 = 20;
 
-/// Dépôts terminés du même joueur collés à une face du bâtiment `b`, par indice croissant.
+/// Dépôts terminés du même joueur collés à une face du bâtiment `b`, par indice croissant ; pour un Transhumant,
+/// les soutes de son réseau de transfert, de la plus proche (bâtiments traversés) à la plus loin.
 pub fn touching_depots(w: &World, b: usize) -> Vec<usize> {
     let bb = &w.buildings[b];
     let (bw, bh) = bb.size();
@@ -27,6 +28,14 @@ pub fn touching_depots(w: &World, b: usize) -> Vec<usize> {
                 v.push(c);
             }
         }
+    }
+    // Transhumants : les soutes de tout le réseau de transfert, les plus proches d'abord
+    if crate::transfert::members(w, b).len() > 1 {
+        v.extend(crate::transfert::members(w, b).iter().map(|&c| c as usize).filter(|&c| c != b && w.buildings[c].def().class == BClass::Depot));
+        v.sort_unstable();
+        v.dedup();
+        crate::transfert::sort_by_hops(w, b, &mut v);
+        return v;
     }
     v.sort_unstable();
     v.dedup();

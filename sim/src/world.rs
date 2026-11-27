@@ -675,6 +675,9 @@ pub struct World {
     pub arks: Vec<crate::ameliorations::Ark>,
     /// Transhumants : Bergers en jeu et leur troupeau (dérivé, refait à chaque tick ; voir troupeau.rs)
     pub flock: Vec<crate::troupeau::Flock>,
+    /// Transhumants : réseaux de transfert (dérivés, recalculés quand un de leurs bâtiments apparaît ou disparaît ;
+    /// voir transfert.rs)
+    pub tnets: crate::transfert::TNets,
 }
 
 impl World {
@@ -785,6 +788,7 @@ impl World {
             royal: Vec::new(),
             arks: Vec::new(),
             flock: Vec::new(),
+            tnets: crate::transfert::TNets { dirty: true, ..Default::default() },
         };
         w.wear = vec![0; w.map.spots.len()];
         for p in 0..np {
@@ -1053,7 +1057,9 @@ impl World {
         crate::combat::collect_shields(self);
         crate::soil::ensure(self);
         crate::essaim::refresh_royal(self);
+        crate::transfert::ensure(self);
         crate::buildings::update_buildings(self);
+        crate::transfert::ensure(self);
         crate::drones::plan(self);
         crate::belts::update_belts(self);
         crate::nature::update(self);
@@ -1067,6 +1073,7 @@ impl World {
         crate::logistics::update_carriers(self);
         crate::combat::cleanup_dead(self);
         crate::flow::process_dirty(self);
+        crate::transfert::ensure(self);
         if self.tick.is_multiple_of(10) {
             self.update_vis_all();
         }

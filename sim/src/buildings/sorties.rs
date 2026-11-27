@@ -144,6 +144,19 @@ pub fn outlets_of(w: &World, sb: usize) -> Vec<usize> {
             }
         }
     }
+    // Transhumants : tout le réseau de transfert reçoit, comme s'il était collé ; du plus proche au plus loin
+    if direct && crate::transfert::members(w, sb).len() > 1 {
+        for &c in crate::transfert::members(w, sb) {
+            let c = c as usize;
+            if c != sb && direct_receiver(w.buildings[c].def().class) {
+                v.push(c);
+            }
+        }
+        v.sort_unstable();
+        v.dedup();
+        crate::transfert::sort_by_hops(w, sb, &mut v);
+        return v;
+    }
     v.sort_unstable();
     v.dedup();
     v
@@ -173,7 +186,10 @@ fn has_direct_outlet(w: &World, b: usize) -> bool {
         let tc = tb.def().class;
         (tc == BClass::Belt && class == BClass::Crafter && belts::takes_from_face(w, (o - 1) as usize, d)) || (direct_receiver(tc) && tb.owner == bb.owner)
     };
-    (bb.x..bb.x + bw).any(|x| probe(x, bb.y - 1, 3) || probe(x, bb.y + bh, 1)) || (bb.y..bb.y + bh).any(|y| probe(bb.x - 1, y, 2) || probe(bb.x + bw, y, 0))
+    (bb.x..bb.x + bw).any(|x| probe(x, bb.y - 1, 3) || probe(x, bb.y + bh, 1))
+        || (bb.y..bb.y + bh).any(|y| probe(bb.x - 1, y, 2) || probe(bb.x + bw, y, 0))
+        // Transhumants : un destinataire n'importe où dans le réseau de transfert
+        || crate::transfert::members(w, b).iter().any(|&c| c as usize != b && direct_receiver(w.buildings[c as usize].def().class))
 }
 
 /// Poids des sorties (millièmes de %) : les parts réglées des bras, puis le reste à égalité entre les

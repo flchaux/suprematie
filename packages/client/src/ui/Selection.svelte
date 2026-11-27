@@ -402,6 +402,9 @@
           {#if tp.poles.length < tp.polesMax}<button class="icon-btn" onclick={() => client.startPole()} title="Planter un poteau à {tp.poleReach} cases au plus ; Maj : plusieurs"><Icon name="power" size={14} /> Planter un poteau</button>{/if}
         </div>
       {/if}
+      {#if info.transh?.net}
+        <div class="row small" title="Les bâtiments qui se touchent se passent tous les objets, de proche en proche"><span class="kicker">Réseau</span> <b class="num">{info.transh.net}</b> <span class="dim">{info.transh.net > 1 ? "bâtiments" : "bâtiment"}</span></div>
+      {/if}
       {#if info.transh && info.transh.wear >= 0}
         <div class="row small" title="L'usure baisse le débit ; le gisement se reconstitue seul"><span class="kicker">Usure du gisement</span> <b class="num" class:bad={info.transh.wear >= 400}>{Math.round(info.transh.wear / 10)} %</b><span class="dim"> · débit ×<span class="num">{((2000 - 2 * info.transh.wear) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</span></span></div>
       {/if}

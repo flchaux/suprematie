@@ -77,7 +77,7 @@ pub(super) fn feed_generator_from_depot(w: &mut World, b: usize) {
         if e <= 0 || w.buildings[b].fuel + e > tank_of(&w.buildings[b]) {
             continue;
         }
-        // le premier dépôt collé (plus petit indice) qui en a
+        // le premier dépôt collé (plus petit indice ; Transhumants : la soute du réseau la plus proche) qui en a
         if let Some(&d) = depots.iter().find(|&&d| crate::drones::has(&w.buildings[d].stash, it) > 0) {
             crate::drones::take(&mut w.buildings[d].stash, it, 1);
             if w.buildings[b].fuel <= 0 {

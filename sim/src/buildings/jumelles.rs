@@ -51,6 +51,21 @@ pub(super) fn twins_into(w: &World, b: usize, v: &mut [usize; MAX_TWINS]) -> usi
             }
         }
     }
+    // Transhumants : les jumelles de tout le réseau de transfert, les plus proches d'abord (MAX_TWINS au plus)
+    if crate::transfert::members(w, b).len() > 1 {
+        let mut all: Vec<usize> = crate::transfert::members(w, b)
+            .iter()
+            .map(|&c| c as usize)
+            .filter(|&c| c != b && crate::twins::twin_with(&w.buildings[c], bb.kind, bb.owner, key) && !paused(&w.buildings[c]))
+            .chain(v[..n].iter().copied())
+            .collect();
+        all.sort_unstable();
+        all.dedup();
+        crate::transfert::sort_by_hops(w, b, &mut all);
+        n = all.len().min(MAX_TWINS);
+        v[..n].copy_from_slice(&all[..n]);
+        return n;
+    }
     v[..n].sort_unstable();
     n
 }
@@ -163,7 +178,17 @@ pub(crate) fn own_feed(w: &World, b: usize) -> bool {
             }
         }
     }
-    false
+    // Transhumants : un fournisseur n'importe où dans le réseau de transfert (soute, foreuse, fabricant)
+    crate::transfert::members(w, b).iter().any(|&c| {
+        let cb = &w.buildings[c as usize];
+        c as usize != b
+            && match cb.def().class {
+                BClass::Depot => matches!(bb.def().class, BClass::Factory | BClass::Power),
+                BClass::Crafter => cb.recipe != RECIPE_NONE && uses_item(bb, RECIPES[cb.recipe as usize].output.0),
+                BClass::Extractor => uses_item(bb, cb.recipe),
+                _ => false,
+            }
+    })
 }
 
 /**

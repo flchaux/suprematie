@@ -37,6 +37,7 @@ import { drawWrecks } from "./entities/wrecks.ts";
 import { drawShields, shieldMaterial, vortexMaterial } from "./entities/energyFx.ts";
 import { diagAtlas, DIAG_ICONS, SITE_BARS_MAX, updateLogistics, updateLogos } from "./entities/markers.ts";
 import { RECEIVERS, updateHatches } from "./entities/hatches.ts";
+import { Walkways } from "./walkways.ts";
 
 export { FLOOR_H };
 
@@ -201,6 +202,8 @@ export class Entities {
   /** conduites entre machines jumelles (ingrédients et produits partagés) : gaine et liseré lumineux */
   twinPipe: THREE.InstancedMesh;
   twinGlow: THREE.InstancedMesh;
+  /** passerelles des Transhumants entre bâtiments qui se touchent (render/walkways.ts) */
+  walkways = new Walkways();
   /** icônes de production sur les toits : un maillage instancié par icône, et les pastilles de fond */
   logoMeshes = new Map<string, THREE.InstancedMesh>();
   logoDiscs: THREE.InstancedMesh;
@@ -390,6 +393,7 @@ export class Entities {
     this.logoDiscs.frustumCulled = false;
     this.logoDiscs.renderOrder = 2;
     this.group.add(this.logoDiscs);
+    this.group.add(this.walkways.mesh);
     this.wrecks.receiveShadow = true;
     this.group.add(this.wrecks);
     const ring = new THREE.RingGeometry(0.85, 1, 24).rotateX(-Math.PI / 2);

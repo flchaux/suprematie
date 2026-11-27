@@ -2,7 +2,8 @@
 // rail, mât et quais d'un ascenseur) et pièces mobiles, teintes (chantier, amélioration, sans énergie,
 // minerai, apprivoisement), porte de transit et anneaux de transport, piliers des tapis surélevés, pans de
 // mur, tronçons de racine, goulottes des extracteurs, et les repères posés au-dessus : cercle de
-// sélection, icône de diagnostic, barres de vie, de chantier, d'apprivoisement et de combustible.
+// sélection, icône de diagnostic, barres de vie, de chantier, d'apprivoisement et de combustible ; passerelles des
+// Transhumants (render/walkways.ts).
 import * as THREE from "three/webgpu";
 import type { GameData } from "@supreme/shared";
 import { BUILDING_WORDS, BF, BClass, NATURE_TEAM, pausableClass } from "@supreme/shared";
@@ -465,6 +466,8 @@ export function drawBuildings(e: Entities, ctx: FrameCtx): void {
   ctx.nring = nring;
   ctx.nbeam = nbeam;
   ctx.gates = gates;
+  // passerelles entre les bâtiments des Transhumants qui se touchent (refaites quand les bâtiments changent)
+  e.walkways.update(ctx, e.data, e.map);
 }
 
 /** Avancement affiché d'un nid qu'une Reine apprivoise : la simulation l'avance d'une seconde à la fois. */

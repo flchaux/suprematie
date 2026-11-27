@@ -215,6 +215,77 @@ fn a_cart_leaves_the_drill_with_a_full_hold() {
     }
 }
 
+/// En navette de ramassage, le chariot porte à une fonderie éloignée (automatique) le minerai de sa soute, et en
+/// rapporte les plaques.
+#[test]
+fn a_cart_brings_ore_to_a_far_furnace_and_its_plates_back() {
+    let (mut w, x, y) = base();
+    let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
+    let f = put(&mut w, B_T_FURNACE, x + 24, y + 20, RECIPE_NONE);
+    stock(&mut w, h, IRON_ORE, 100);
+    let c = cart(&mut w, h);
+    haul(&mut w, c, f, false);
+    let mut most = 0;
+    for _ in 0..3600 {
+        w.step(&[]);
+        most = most.max(crate::drones::has(&w.units.cold[c].hold, IRON_ORE));
+    }
+    assert_eq!(w.buildings[f].recipe, rec("iron_plate"));
+    assert!(w.players[0].produced[IRON_PLATE as usize] >= 5, "plaques : {}", w.players[0].produced[IRON_PLATE as usize]);
+    assert!(has(&w, h, IRON_PLATE) >= 5, "rapportées à la soute : {}", has(&w, h, IRON_PLATE));
+    // pas plus que le tampon d'entrée de la fonderie (deux fabrications et une)
+    assert!((1..=3).contains(&most), "minerai à bord : {most}");
+}
+
+/// Le chariot n'emporte que ce que la soute a : rien pour une fonderie de cuivre tant qu'elle n'a que du fer ; du
+/// minerai de cuivre arrivé, il en porte.
+#[test]
+fn a_cart_takes_nothing_its_hold_lacks() {
+    let (mut w, x, y) = base();
+    let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
+    let f = put(&mut w, B_T_FURNACE, x + 24, y + 20, rec("copper_plate"));
+    stock(&mut w, h, IRON_ORE, 100);
+    let c = cart(&mut w, h);
+    haul(&mut w, c, f, false);
+    for _ in 0..1800 {
+        w.step(&[]);
+        assert_eq!(crate::drones::total(&w.units.cold[c].hold), 0, "rien à porter");
+    }
+    assert_eq!(has(&w, h, IRON_ORE), 100);
+    stock(&mut w, h, COPPER_ORE, 50);
+    steps(&mut w, 2400);
+    assert!(w.players[0].produced[COPPER_PLATE as usize] > 0, "le cuivre arrive");
+    assert_eq!(w.players[0].produced[IRON_PLATE as usize], 0);
+}
+
+/// Le chariot laisse à la soute ce qu'elle garde pour l'atelier embarqué de l'Arche (`reserved`).
+#[test]
+fn a_cart_leaves_what_the_hold_keeps_for_the_workshops() {
+    let (mut w, x, y) = base();
+    let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
+    let a = put(&mut w, B_T_ASSEMBLER, x + 24, y + 20, rec("gear"));
+    let c = cart(&mut w, h);
+    haul(&mut w, c, a, false);
+    // l'Arche attend une soute (16 plaques, 4 engrenages) qu'elle ne peut pas lancer : plus de place pour une unité
+    let ark = all(&w, U_ARK)[0];
+    let i = crate::ameliorations::ark_of(&w, ark).unwrap();
+    w.arks[i].queue = vec![(U_CH_HOLD, 1)];
+    w.players[0].unit_count = UNIT_CAP;
+    stock(&mut w, h, IRON_PLATE, 16);
+    for _ in 0..1800 {
+        w.step(&[]);
+        assert_eq!(crate::drones::total(&w.units.cold[c].hold), 0, "les plaques gardées restent");
+    }
+    assert_eq!(has(&w, h, IRON_PLATE), 16);
+    // dix de plus : elles partent, pas les seize gardées
+    stock(&mut w, h, IRON_PLATE, 10);
+    for _ in 0..2400 {
+        w.step(&[]);
+        assert!(has(&w, h, IRON_PLATE) >= 16);
+    }
+    assert!(w.players[0].produced[GEAR as usize] > 0, "l'assembleur a reçu le surplus");
+}
+
 /// Réaffecté avec un chargement à bord, un chariot le rend à sa soute avant de livrer un fabricant.
 #[test]
 fn a_reassigned_cart_returns_its_old_cargo() {

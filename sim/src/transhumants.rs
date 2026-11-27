@@ -6,9 +6,10 @@
 //!   3 cases au plus). Ordre « Replier » (O_PACK) sur le bâtiment : il redevient un chenillard, immobile
 //!   pendant FOLD_TICKS ; le contenu du module retourne à la réserve, sa recette et le combustible du
 //!   générateur restent dans le chenillard.
-//! - Pas de tapis ni de bras : les modules collés se passent les objets (transfert direct, machines
-//!   jumelles) ; la soute (un dépôt, avec son propre stock) alimente aussi les fabricants collés. Repliée,
-//!   la soute garde son stock à bord (`UnitCold::hold` du chenillard).
+//! - Pas de tapis ni de bras : les bâtiments qui se touchent forment un réseau de transfert (transfert.rs) ; un
+//!   objet va à n'importe quel destinataire du réseau, comme s'ils étaient collés (transfert direct, machines
+//!   jumelles) ; la soute (un dépôt, avec son propre stock) alimente les fabricants du réseau. Repliée, la soute
+//!   garde son stock à bord (`UnitCold::hold` du chenillard).
 //! - Raclage : la foreuse nomade extrait deux fois plus vite qu'un extracteur, mais use le gisement
 //!   (`World::wear`, ‰) : +2 ‰ toutes les 5 s de forage, jusqu'à 600 ‰ ; il se reconstitue au même
 //!   rythme quand aucune foreuse nomade n'y travaille.
@@ -762,7 +763,8 @@ pub fn hp_mult(w: &World, owner: u8, kind: u16) -> i32 {
     }
 }
 
-/// Fiche d'un module : chenillard correspondant, usure du gisement (JSON, champs ajoutés à la fiche).
+/// Fiche d'un module : chenillard correspondant, usure du gisement, taille de son réseau de transfert (JSON, champs
+/// ajoutés à la fiche).
 pub fn info(w: &World, b: usize) -> String {
     let bb = &w.buildings[b];
     let wear = if bb.kind == B_T_DRILL && bb.link != NONE { w.wear.get(bb.link as usize).copied().unwrap_or(0) as i32 } else { -1 };
@@ -779,5 +781,16 @@ pub fn info(w: &World, b: usize) -> String {
     // (pas de chenillard : poteau, groupe de l'Arche)
     let ch = chenillard_of(bb.kind);
     let mods = crate::ameliorations::info(w, crate::ameliorations::Host::B(b));
-    format!(",\"transh\":{{\"unit\":{},\"wear\":{},\"speed\":{},\"kw\":{},\"mods\":{}{}}}", if ch == NO_KIND { -1 } else { ch as i32 }, wear, crate::ameliorations::module_speed(bb), crate::buildings::power_prod_of(bb), mods, poles)
+    // réseau de transfert : nombre de bâtiments (1 : seul)
+    let net = crate::transfert::size(w, b).max(1);
+    format!(
+        ",\"transh\":{{\"unit\":{},\"wear\":{},\"speed\":{},\"kw\":{},\"net\":{},\"mods\":{}{}}}",
+        if ch == NO_KIND { -1 } else { ch as i32 },
+        wear,
+        crate::ameliorations::module_speed(bb),
+        crate::buildings::power_prod_of(bb),
+        net,
+        mods,
+        poles
+    )
 }

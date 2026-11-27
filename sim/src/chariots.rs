@@ -1,6 +1,6 @@
 //! Soute et chariots de convoi des Transhumants (voir docs/spec/races.md).
 //!
-//! - Soute : elle alimente depuis son stock les fabricants collés à ses faces (`feed_crafters`), et garde pour les
+//! - Soute : elle alimente depuis son stock les fabricants de son réseau de transfert (`feed_crafters`), et garde pour les
 //!   ateliers à portée ce qui manque à leur prochaine unité (`reserved`).
 //! - Chariots : six au plus par soute, ils font la navette entre elle et un module (ramassage, livraison) ou une autre
 //!   soute (livraison jusqu'à égalité des stocks).
@@ -8,7 +8,7 @@
 use crate::buildings;
 use crate::data::*;
 use crate::fixed::{dist, dist2, TILE};
-use crate::transhumants::{glued, vanish};
+use crate::transhumants::vanish;
 use crate::world::*;
 
 /// Chariots de convoi qu'une soute peut avoir attelés en même temps.
@@ -165,7 +165,9 @@ fn set_phase(w: &mut World, s: usize, phase: u16) {
 }
 
 /// Un pas de la navette d'un chariot de convoi (ordre Haul). Ramassage : il charge ce qui sort du module, repart
-/// cale pleine ou quand rien n'en sort depuis HAUL_WAIT ticks, et décharge tout dans sa soute ; puis recommence.
+/// cale pleine ou quand rien n'en sort depuis HAUL_WAIT ticks (fabricant à l'arrêt compris), et décharge tout dans sa
+/// soute ; puis il y prend ce que le module demande (`load_demand`), le lui porte et l'y met à mesure qu'il l'accepte
+/// (`drop_demand`), et recommence.
 /// Livraison (`feed`) : il rend d'abord à sa soute ce que le fabricant ne prend pas, y prend les ingrédients de sa
 /// recette (part égale de sa cale pour chacun), les y porte et les y met à mesure qu'il les accepte ; il rentre quand
 /// sa cale est vide, ou après HAUL_WAIT ticks sans que rien ne passe. Vers une autre soute : voir `load_surplus`.
@@ -190,6 +192,7 @@ pub fn haul_step(w: &mut World, s: usize, site: u32, feed: bool) {
     match (feed, out) {
         (false, true) => {
             if cart_at(w, s, b) {
+                drop_demand(w, s, b);
                 collect(w, s, b);
             }
         }
@@ -197,6 +200,8 @@ pub fn haul_step(w: &mut World, s: usize, site: u32, feed: bool) {
             if cart_at(w, s, h) {
                 unload(w, s, h);
                 if crate::drones::total(&w.units.cold[s].hold) == 0 {
+                    // à l'aller, il emporte ce que le module demande, si la soute l'a
+                    load_demand(w, s, h, b);
                     set_phase(w, s, HAUL_OUT);
                 }
             }
@@ -236,8 +241,99 @@ fn collect(w: &mut World, s: usize, b: usize) {
         moved(w, s);
     }
     let now = carried + k as u32;
-    if now >= cap || (k == 0 && now > 0 && waited(w, s)) {
+    // un fabricant à l'arrêt, sans rien à rendre : le chariot rentre lui chercher de quoi travailler
+    let bb = &w.buildings[b];
+    let starved = bb.def().class == BClass::Crafter && !bb.working && bb.out == 0;
+    if now >= cap || (k == 0 && (now > 0 || starved) && waited(w, s)) {
         set_phase(w, s, HAUL_BACK);
+    }
+}
+
+/// Ce que le fabricant `b` demande à la soute `h` pour la navette de ramassage du chariot `s` : (objet, quantité au
+/// plus). Ingrédients de sa recette, la cale partagée au prorata de la recette, sans dépasser la place de son tampon
+/// d'entrée (2 fabrications et 1) ; en recette automatique, le minerai que la soute a en plus grand nombre parmi ceux
+/// qu'il peut traiter. Une foreuse ne demande rien.
+fn demand(w: &World, s: usize, h: usize, b: usize) -> Vec<(u8, u16)> {
+    let bb = &w.buildings[b];
+    if bb.def().class != BClass::Crafter {
+        return Vec::new();
+    }
+    let cap = crate::ameliorations::cart_cap(w, s);
+    if bb.recipe != RECIPE_NONE {
+        let inputs = RECIPES[bb.recipe as usize].inputs;
+        let sum: u32 = inputs.iter().map(|x| x.1 as u32).sum::<u32>().max(1);
+        return inputs
+            .iter()
+            .enumerate()
+            .map(|(j, &(it, n))| {
+                let share = (cap * n as u32 / sum).max(1);
+                let room = (2 * n as u32 + 1).saturating_sub(bb.inv[j] as u32);
+                (it, share.min(room) as u16)
+            })
+            .collect();
+    }
+    if bb.def().crafter == Crafter::Assembler {
+        return Vec::new();
+    }
+    let have = |it: u8| crate::drones::has(&w.buildings[h].stash, it);
+    let Some(it) = RAW.into_iter().filter(|&it| have(it) > 0 && buildings::accepts(w, b, it)).max_by_key(|&it| (have(it), std::cmp::Reverse(it))) else { return Vec::new() };
+    let r = buildings::recipe_for(w, bb, it);
+    let n = RECIPES[r as usize].inputs.iter().find(|x| x.0 == it).map_or(1, |x| x.1 as u32);
+    vec![(it, (2 * n + 1).min(cap) as u16)]
+}
+
+/// Recette que sert la demande du fabricant `b` en objet `it` (la sienne, ou celle que ce minerai lui donnera).
+fn demand_recipe(w: &World, b: usize, it: u8) -> u8 {
+    let bb = &w.buildings[b];
+    if bb.recipe != RECIPE_NONE {
+        bb.recipe
+    } else {
+        buildings::recipe_for(w, bb, it)
+    }
+}
+
+/// À la soute `h`, avant une navette de ramassage vers `b` : le chariot emporte ce que le module demande, si la soute
+/// l'a, sans toucher à ce qu'elle garde (`reserved`, `last_kept`).
+fn load_demand(w: &mut World, s: usize, h: usize, b: usize) {
+    let want = demand(w, s, h, b);
+    if want.is_empty() {
+        return;
+    }
+    let keep = reserved(w, h);
+    for (it, n) in want {
+        let r = demand_recipe(w, b, it);
+        let last = if r == RECIPE_NONE { 0 } else { last_kept(w, h, r) };
+        let k = n.min(crate::drones::has(&w.buildings[h].stash, it).saturating_sub(keep[it as usize].max(last)));
+        if k > 0 {
+            crate::drones::take(&mut w.buildings[h].stash, it, k);
+            crate::drones::put(&mut w.units.cold[s].hold, it, k);
+        }
+    }
+}
+
+/// Au module `b`, en navette de ramassage : le chariot y met, à mesure qu'il les accepte, les objets qu'il a emportés
+/// pour lui (ingrédients de sa recette, minerai brut en recette automatique ; jamais son produit).
+fn drop_demand(w: &mut World, s: usize, b: usize) {
+    let bb = &w.buildings[b];
+    if bb.def().class != BClass::Crafter || crate::drones::total(&w.units.cold[s].hold) == 0 {
+        return;
+    }
+    let out = buildings::output_of(bb);
+    let mut any = false;
+    for it in 1..NUM_ITEMS as u8 {
+        let bb = &w.buildings[b];
+        let wanted = if bb.recipe != RECIPE_NONE { RECIPES[bb.recipe as usize].inputs.iter().any(|x| x.0 == it) } else { RAW.contains(&it) };
+        if !wanted || it == out {
+            continue;
+        }
+        while crate::drones::has(&w.units.cold[s].hold, it) > 0 && buildings::accepts(w, b, it) {
+            crate::drones::take(&mut w.units.cold[s].hold, it, 1);
+            buildings::insert_item(w, b, it);
+            any = true;
+        }
+    }
+    if any {
+        moved(w, s);
     }
 }
 
@@ -395,10 +491,10 @@ pub fn unstow_carts(w: &mut World, h: usize, n: i32, mods: u64, routes: &[(u32, 
     }
 }
 
-// ---------- soute : modules collés ----------
+// ---------- soute : réseau de transfert ----------
 
 /// Ce que la soute `h` garde pour les ateliers qui s'y servent : ce qui manque à leur prochaine unité (atelier déployé à
-/// FACTORY_SUPPLY cases au plus, atelier de l'Arche à NEAR_SUPPLY cases). Une fois servis, ils ne gardent plus rien :
+/// FACTORY_SUPPLY cases au plus ou dans son réseau de transfert, atelier de l'Arche à NEAR_SUPPLY cases). Une fois servis, ils ne gardent plus rien :
 /// les fabricants qui font les composants attendus reprennent.
 pub fn reserved(w: &World, h: usize) -> [u16; NUM_ITEMS] {
     let mut keep = [0u16; NUM_ITEMS];
@@ -406,20 +502,20 @@ pub fn reserved(w: &World, h: usize) -> [u16; NUM_ITEMS] {
     let (cx, cy) = w.buildings[h].center();
     let r = FACTORY_SUPPLY * TILE;
     let mut shops: Vec<usize> = Vec::new();
+    let shop = |ob: &Building| ob.alive && ob.owner == owner && ob.complete() && ob.def().class == BClass::Factory && !ob.queue.is_empty() && !buildings::paused(ob);
     w.grid.query_buildings(cx, cy, r, |o| {
         let ob = &w.buildings[o];
-        if ob.alive && ob.owner == owner && ob.complete() && ob.def().class == BClass::Factory && !ob.queue.is_empty() && !buildings::paused(ob) {
+        let (ox, oy) = ob.center();
+        if shop(ob) && dist2(cx, cy, ox, oy) <= r as i64 * r as i64 {
             shops.push(o);
         }
     });
+    // les ateliers de son réseau de transfert, même plus loin
+    shops.extend(crate::transfert::members(w, h).iter().map(|&o| o as usize).filter(|&o| shop(&w.buildings[o])));
     shops.sort_unstable();
     shops.dedup();
     for o in shops {
         let ob = &w.buildings[o];
-        let (ox, oy) = ob.center();
-        if dist2(cx, cy, ox, oy) > r as i64 * r as i64 {
-            continue;
-        }
         // l'unité en cours est déjà payée : la suivante est la même, ou l'entrée d'après
         let last = ob.working && ob.queue[0].1 <= 1;
         let next = if !last || ob.repeat && ob.queue.len() == 1 { ob.queue.first() } else { ob.queue.get(1) };
@@ -449,37 +545,22 @@ fn last_kept(w: &World, h: usize, r: u8) -> u16 {
     }
 }
 
-/// Soute d'un Transhumant : elle alimente depuis son stock les fabricants collés à ses faces (un objet par fabricant
-/// et par passage), une fois les ateliers servis (`reserved`) et sans s'épuiser pour un produit qu'elle a en nombre
+/// Soute d'un Transhumant : elle alimente depuis son stock les fabricants de son réseau de transfert (collés ou
+/// reliés par d'autres bâtiments, du plus proche au plus loin ; un objet par fabricant et par passage), une fois les ateliers servis (`reserved`) et sans s'épuiser pour un produit qu'elle a en nombre
 /// (`last_kept`). Un fabricant en recette automatique reçoit du minerai
 /// (`auto_ore`).
 pub fn feed_crafters(w: &mut World, b: usize) {
-    let bb = &w.buildings[b];
-    let owner = bb.owner;
-    let (x, y) = (bb.x, bb.y);
-    let (bw, bh) = bb.size();
-    let (cx, cy) = bb.center();
-    let mut near: Vec<usize> = Vec::new();
-    w.grid.query_buildings(cx, cy, 4 * TILE, |o| {
-        if o == b {
-            return;
-        }
-        let ob = &w.buildings[o];
-        if !ob.alive || ob.owner != owner || !ob.complete() || ob.def().class != BClass::Crafter || (ob.recipe == RECIPE_NONE && ob.def().crafter == Crafter::Assembler) {
-            return;
-        }
-        let (ow, oh) = ob.size();
-        // collés par une face (pas seulement par un coin)
-        let touch_x = (ob.x + ow == x || x + bw == ob.x) && ob.y < y + bh && y < ob.y + oh;
-        let touch_y = (ob.y + oh == y || y + bh == ob.y) && ob.x < x + bw && x < ob.x + ow;
-        if touch_x || touch_y {
-            near.push(o);
-        }
-    });
+    // les fabricants de son réseau de transfert (collés, ou reliés par d'autres bâtiments), les plus proches d'abord
+    let near: Vec<usize> = crate::transfert::linked(w, b)
+        .into_iter()
+        .filter(|&o| {
+            let ob = &w.buildings[o];
+            ob.def().class == BClass::Crafter && !(ob.recipe == RECIPE_NONE && ob.def().crafter == Crafter::Assembler)
+        })
+        .collect();
     if near.is_empty() {
         return;
     }
-    near.sort_unstable();
     let keep = reserved(w, b);
     // palan : deux objets au lieu d'un
     let rounds = if crate::ameliorations::spec(&w.buildings[b]) == crate::ameliorations::M_HOLD_CRANE { 2 } else { 1 };
@@ -505,7 +586,7 @@ pub fn feed_crafters(w: &mut World, b: usize) {
 
 /// Minerai que la soute `b` donne au fabricant collé `o` en recette automatique : celui qu'elle a en plus grand nombre
 /// parmi ceux qu'il peut traiter. Rien tant qu'il a de quoi travailler : sa recette est servie par la soute ou par une
-/// foreuse collée.
+/// foreuse de son réseau de transfert.
 fn auto_ore(w: &World, b: usize, o: usize) -> Option<u8> {
     let ob = &w.buildings[o];
     if ob.repeat || ob.def().crafter == Crafter::Assembler {
@@ -517,7 +598,7 @@ fn auto_ore(w: &World, b: usize, o: usize) -> Option<u8> {
         }
         let uses = |it: u8| RECIPES[ob.recipe as usize].inputs.iter().any(|x| x.0 == it);
         let stash = &w.buildings[b].stash;
-        if RECIPES[ob.recipe as usize].inputs.iter().any(|x| crate::drones::has(stash, x.0) > 0) || glued(w, o).into_iter().any(|g| w.buildings[g].def().class == BClass::Extractor && uses(w.buildings[g].recipe)) {
+        if RECIPES[ob.recipe as usize].inputs.iter().any(|x| crate::drones::has(stash, x.0) > 0) || crate::transfert::linked(w, o).into_iter().any(|g| w.buildings[g].def().class == BClass::Extractor && uses(w.buildings[g].recipe)) {
             return None;
         }
     }

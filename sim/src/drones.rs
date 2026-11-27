@@ -927,7 +927,8 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights, rb: &mut RelayBusy) {
     }
 }
 
-/// Usine d'unités : ses drones vont chercher les composants de sa file (réserve d'avance de 2 unités) ;
+/// Usine d'unités : ses drones vont chercher les composants de sa file (réserve d'avance de 2 unités), dans les
+/// stocks à FACTORY_SUPPLY cases et, pour un atelier des Transhumants, dans les soutes de son réseau de transfert ;
 /// les relais qui la couvrent apportent ce qui manque encore.
 fn plan_factory(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     let home = w.building_ref(b);
@@ -948,7 +949,16 @@ fn plan_factory(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     }
     let owner = w.buildings[b].owner;
     let (x, y) = w.buildings[b].center();
-    let near = stores_near(w, owner, x, y, FACTORY_SUPPLY * TILE);
+    let mut near = stores_near(w, owner, x, y, FACTORY_SUPPLY * TILE);
+    // atelier des Transhumants : aussi les soutes de son réseau de transfert, même plus loin
+    for &c in crate::transfert::members(w, b) {
+        let c = c as usize;
+        if is_store(&w.buildings[c]) && usable(w, owner, c) && !near.iter().any(|e| e.1 == Store::B(c)) {
+            let (sx, sy) = w.buildings[c].center();
+            near.push((dist2(x, y, sx, sy), Store::B(c)));
+        }
+    }
+    near.sort_unstable();
     fetch(w, owner, home, x, y, &near, &mut want, &mut free);
     if relays {
         relay_fetch(w, owner, home, x, y, None, rb, &mut want);
