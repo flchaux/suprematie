@@ -18,6 +18,7 @@ Le jeu cible Chrome uniquement. Le rendu utilise Three.js avec son moteur WebGPU
     - `energyFx.ts` : bulles des boucliers (`drawShields`, `shieldMaterial`), matière de l'horizon d'une porte (`vortexMaterial`) ;
     - `markers.ts` : barres de chantier (`pushSiteBar`), atlas des icônes de diagnostic (`diagAtlas`), vue logistique (`updateLogistics`), icônes de production sur les toits (`updateLogos`) ;
     - `hatches.ts` : trappes ouvertes et conduites des machines jumelles (`updateHatches`).
+  - Hors des passes, d'autres éléments posés au sol ont leur propre module de `render/`, appelé par `GameScene.render` : terreau de la Souche (`terreau.ts`), câbles des Transhumants (`cables.ts`, voir [races.md](races.md)), zones électriques (`power.ts`), gisements (`deposits.ts`), décor (`decor.ts`), cercles de portée (`ranges.ts`), pings (`pings.ts`).
 - La caméra est en vue de dessus inclinable, avec un zoom continu de l'unité à la carte entière. Au-delà d'une distance réglable, les modèles sont remplacés par des icônes stratégiques.
 - L'affichage tourne à 60 images par seconde et interpole les positions entre les deux derniers ticks reçus du Worker.
 - Le Worker envoie le tampon de rendu à chaque tick en transfert sans copie (ArrayBuffer transférable). Le thread principal ne fait aucun calcul de simulation.
