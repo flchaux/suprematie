@@ -121,6 +121,8 @@
   const canPause = $derived(!!info && !!bdef && mine && info.build >= 65536 && pausableClass(bdef.cls));
   /** sélection de plusieurs bâtiments : nos machines et usines terminées, et leur état de pause */
   const pausables = $derived(client.pausableSelection());
+  // Transhumants : nos modules sélectionnés qui se replient (dépend de ui.selBuildings)
+  const foldables = $derived(ui.selBuildings.length ? client.foldableSelection() : []);
   const paused = $derived(!!info && !!bdef && pausableClass(bdef.cls) && info.enabled === false);
   // diagnostic : ce qui bloque le bâtiment, en clair
   const status = $derived.by(() => {
@@ -327,7 +329,7 @@
       {:else if bdef.key === "ark_dock"}
         <span class="dim small">L'Arche le rembarque en partant.</span>
       {:else if (bdef.race ?? 0) === 2 && bdef.key !== "t_pole"}
-        <button class="icon-btn" title="Redevient un chenillard en 10 s" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier</button>
+        <button class="icon-btn" title="Redevient un chenillard en 10 s" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {:else}
         <button class="icon-btn danger" title="Démonté par les constructeurs proches, matériaux rendus" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
       {/if}
@@ -778,7 +780,7 @@
     {/if}
   </div>
 {:else if ui.selBuildings.length > 1 && d}
-  <!-- plusieurs bâtiments : un aperçu par type, et seulement la démolition -->
+  <!-- plusieurs bâtiments : un aperçu par type, pause, repli des modules des Transhumants et démolition -->
   {@const own = ui.selBuildings.filter((b) => b.owner === ui.me)}
   {@const bgroups = groupByKind(ui.selBuildings)}
   <div class="panel sel">
@@ -806,9 +808,15 @@
         <button class="icon-btn pausebtn" class:resume={all} title={all ? "Tout relancer" : "Tout mettre en pause, contenu gardé"} onclick={() => client.togglePauseSelected()}><Icon name={all ? "play" : "pause"} size={13} /> {all ? "Tout reprendre" : "Tout mettre en pause"} {#if keyOf("pauseBuilding")}<span class="key">{keyOf("pauseBuilding")}</span>{/if}</button>
       </div>
     {/if}
-    {#if own.length}
+    {#if foldables.length || own.length > foldables.length}
+      {@const nd = own.length - foldables.length}
       <div class="row">
-        <button class="icon-btn danger" title="Démonter, matériaux rendus ; chantiers annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {own.length > 1 ? `les ${own.length} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        {#if foldables.length}
+          <button class="icon-btn" title="Redeviennent des chenillards en 10 s" onclick={() => client.packSelected()}><Icon name="deploy" size={14} /> Replier {foldables.length > 1 ? `les ${foldables.length} modules` : "le module"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        {/if}
+        {#if nd > 0}
+          <button class="icon-btn danger" title="Démonter, matériaux rendus ; chantiers annulés" onclick={() => client.demolishSelected()}><Icon name="reclaim" size={14} /> Démolir {nd > 1 ? `les ${nd} bâtiments` : "le bâtiment"} {#if keyOf("cancelBuilding")}<span class="key">{keyOf("cancelBuilding")}</span>{/if}</button>
+        {/if}
       </div>
     {/if}
   </div>

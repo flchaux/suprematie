@@ -261,7 +261,7 @@ export function boxSelect(c: GameClient, x0: number, y0: number, x1: number, y1:
   if (n) {
     for (const id of [...c.selected]) if (Ord.isBuildingRef(id)) c.selected.delete(id);
   } else if (![...c.selected].some((id) => !Ord.isBuildingRef(id))) {
-    // aucune unité dans le cadre : nos bâtiments (seule la démolition sera possible s'il y en a plusieurs)
+    // aucune unité dans le cadre : nos bâtiments (plusieurs : pause, repli des modules des Transhumants, démolition)
     for (const ref of ownBuildingsInRect(c, ax, ay, bx, by)) {
       c.selected.add(ref);
       n++;
