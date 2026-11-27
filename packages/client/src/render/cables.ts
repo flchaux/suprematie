@@ -342,7 +342,8 @@ export class Cables {
     const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.82, metalness: 0 });
     mat.colorNode = applyFog(attribute("color", "vec3") as unknown as Parameters<typeof applyFog>[0], fogFactor());
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
-    this.mesh.receiveShadow = true;
+    // sans ombres reçues : avec, le rendu logiciel (WebGPU sous SwiftShader) perdait le périphérique 4 fois sur 6
+    this.mesh.receiveShadow = false;
     this.mesh.castShadow = false;
     this.mesh.visible = false;
     this.genLean = (data.mods ?? []).findIndex((m) => m.key === "gen_lean");
