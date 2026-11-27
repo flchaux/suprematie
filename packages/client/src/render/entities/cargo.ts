@@ -34,12 +34,12 @@ const NO_TEAM = new THREE.Color(1, 1, 1);
  * l'avant (x, z, rotation), remplies selon sa cale (1 à 6 : chariots::LOAD_SLOTS de la simulation), hauteur du
  * plancher, taille d'un objet par rapport à celle des tapis. */
 const CART_SLOTS: readonly (readonly [number, number, number])[] = [
-  [-0.21, -0.54, 0.12],
-  [0.21, -0.54, -0.18],
-  [-0.21, -0.22, -0.08],
-  [0.21, -0.22, 0.2],
-  [-0.21, 0.1, 0.16],
-  [0.21, 0.1, -0.1],
+  [-0.17, -0.54, 0.12],
+  [0.17, -0.54, -0.18],
+  [-0.17, -0.22, -0.08],
+  [0.17, -0.22, 0.2],
+  [-0.17, 0.1, 0.16],
+  [0.17, 0.1, -0.1],
 ];
 const CART_FLOOR = 0.47;
 const CART_ITEM = 0.85;

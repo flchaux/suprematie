@@ -320,33 +320,33 @@ export function variantesBerger(axe: Vec3): Part[] {
 
 /** Ridelles de bois d'origine (la variante 2 a une ridelle droite de tôle). */
 export function ridellesConvoi(): Part[] {
-  return saufVariantes([2], "ridelles", [{ shape: "box", size: [0.04, 0.22, 1.0], pos: [0.48, 0.58, -0.22], color: "wood", mirror: true }]);
+  return saufVariantes([2], "ridelles", [{ shape: "box", size: [0.04, 0.22, 1.0], pos: [0.38, 0.58, -0.22], color: "wood", mirror: true }]);
 }
 
 export function variantesConvoi(): Part[] {
   return [
     // 1 : bâche roulée sanglée sur la ridelle avant, bidons à l'avant droit (la benne reste libre pour le chargement)
     ...variante(1, [
-      { shape: "cylinder", sides: 8, radius: 0.07, height: 0.86, pos: [0, 0.76, 0.3], rot: [0, 0, 90], color: "dry" },
-      ...[-0.3, 0.3].map((x): Part => ({ shape: "torus", radius: 0.075, tube: 0.012, sides: 8, pos: [x, 0.76, 0.3], rot: [0, 90, 0], color: "black", fine: true })),
-      ...bidon([0.3, 0.57, 0.52], 1.1),
-      ...bidon([0.17, 0.57, 0.52], 1.1, "rust"),
+      { shape: "cylinder", sides: 8, radius: 0.07, height: 0.7, pos: [0, 0.76, 0.3], rot: [0, 0, 90], color: "dry" },
+      ...[-0.24, 0.24].map((x): Part => ({ shape: "torus", radius: 0.075, tube: 0.012, sides: 8, pos: [x, 0.76, 0.3], rot: [0, 90, 0], color: "black", fine: true })),
+      ...bidon([0.24, 0.57, 0.52], 1.1),
+      ...bidon([0.12, 0.57, 0.52], 1.1, "rust"),
     ]),
     // 2 : ridelle droite de tôle rouillée, perche à phare de travail, roue de rechange à plat à l'avant
     ...variante(2, [
-      { shape: "box", size: [0.04, 0.22, 1.0], pos: [-0.48, 0.58, -0.22], color: "wood" },
-      ...tole([0.49, 0.59, -0.22], [0.045, 0.25, 1.0], "rust"),
-      { shape: "cylinder", sides: 5, radius: 0.015, height: 0.6, pos: [-0.46, 0.98, -0.68], color: "steel" },
-      ...phare([-0.46, 1.3, -0.64], 1),
-      { use: "roue_d", pos: [0.24, 0.53, 0.52], rot: [0, 0, 90], scale: [0.12, 0.34, 0.34] },
+      { shape: "box", size: [0.04, 0.22, 1.0], pos: [-0.38, 0.58, -0.22], color: "wood" },
+      ...tole([0.39, 0.59, -0.22], [0.045, 0.25, 1.0], "rust"),
+      { shape: "cylinder", sides: 5, radius: 0.015, height: 0.6, pos: [-0.37, 0.98, -0.68], color: "steel" },
+      ...phare([-0.37, 1.3, -0.64], 1),
+      { use: "roue_d", pos: [0.2, 0.53, 0.52], rot: [0, 0, 90], scale: [0.12, 0.34, 0.34] },
     ]),
     // 3 : touret de câble sur le hayon, jerricans pendus à la ridelle gauche, antenne fouet (la benne reste libre)
     ...variante(3, [
-      { shape: "torus", radius: 0.13, tube: 0.05, sides: 10, pos: [0.22, 0.6, -0.8], rot: [90, 0, 0], color: "copper" },
-      { shape: "cylinder", sides: 10, radius: 0.16, height: 0.04, pos: [0.22, 0.6, -0.8], rot: [90, 0, 0], color: "wood" },
-      ...bidon([-0.55, 0.56, -0.1], 1, "rust", [0, 90, 0]),
-      ...bidon([-0.55, 0.56, -0.4], 1, "metal", [0, 90, 0]),
-      ...fouet([0.44, 0.7, -0.7], 0.8),
+      { shape: "torus", radius: 0.13, tube: 0.05, sides: 10, pos: [0.18, 0.6, -0.8], rot: [90, 0, 0], color: "copper" },
+      { shape: "cylinder", sides: 10, radius: 0.16, height: 0.04, pos: [0.18, 0.6, -0.8], rot: [90, 0, 0], color: "wood" },
+      ...bidon([-0.46, 0.56, -0.1], 1, "rust", [0, 90, 0]),
+      ...bidon([-0.46, 0.56, -0.4], 1, "metal", [0, 90, 0]),
+      ...fouet([0.36, 0.7, -0.7], 0.8),
     ]),
   ];
 }
