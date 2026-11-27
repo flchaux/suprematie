@@ -880,6 +880,12 @@
         <div class="row small"><span class="kicker">{ui.unitInfo.pack === 1 ? "Déploiement" : "Repli"}</span> <span class="num">{Math.ceil((ui.unitInfo.packLeft ?? 0) / 20)} s</span>{#if ui.unitInfo.pack === 1}<span class="dim"> · un ordre de déplacement l'annule</span>{/if}</div>
         <div class="upbar"><span style="width: {100 - ((ui.unitInfo.packLeft ?? 0) / total) * 100}%"></span></div>
       {/if}
+      {#if (ui.unitInfo.tow ?? 0) > 0}
+        <!-- chenillard attelé au convoi de l'Arche (rang derrière ses remorques) -->
+        <div class="status good"><span class="led"></span>Attelé à l'Arche (n° {ui.unitInfo.tow}) · un ordre de déplacement ou « Déployer » le dételle</div>
+      {:else if ui.unitInfo.tow === -1}
+        <div class="status build"><span class="led"></span>Rejoint la queue du convoi de l'Arche pour s'y atteler</div>
+      {/if}
       <!-- l'Arche a son propre panneau (Game.svelte) -->
       {#if ui.unitInfo.mods && !ui.unitInfo.mods.ark && ui.me >= 0}<Upgrades mi={ui.unitInfo.mods} refs={ui.selUnits[0].ids} />{/if}
       {#if ui.unitInfo.egg}
@@ -977,6 +983,11 @@
         <button class="cmd" onclick={() => client.setMode("attackGround")} title="Tir au sol"><Icon name="ground" size={17} /></button>
         {#if anyEng}<button class="cmd" onclick={() => client.setMode("reclaim")} title="Recycler"><Icon name="reclaim" size={17} /><span class="key">{keyOf("reclaim")}</span></button>{/if}
         {#if deployable}<button class="cmd" class:on={rooted} onclick={() => client.deploySelected()} title={queen ? (rooted ? "Déraciner la Reine (3 s)" : "Enraciner (3 s) : immobile, nourrit son réseau, résiste et frappe mieux") : chenillards ? "Déployer : cliquez l'emplacement (R : tourner)" : "Déployer"}><Icon name="deploy" size={17} /><span class="key">{keyOf("deploy")}</span></button>{/if}
+        {#if chenillards && ui.race === 2}
+          <!-- chenillards des Transhumants : s'atteler au convoi de l'Arche (aussi clic droit sur l'Arche), ou le quitter -->
+          <button class="cmd" onclick={() => client.towSelected()} title="Atteler à l'Arche : derrière ses remorques, neuf au plus, −3 % de vitesse de l'Arche chacun (aussi : clic droit sur l'Arche)"><Icon name="link" size={17} /><span class="key">{keyOf("tow")}</span></button>
+          {#if (ui.unitInfo?.tow ?? 0) !== 0 || total > 1}<button class="cmd" onclick={() => client.untowSelected()} title="Dételer : quitte le convoi et s'arrête (ceux qui suivaient remontent d'un cran)"><Icon name="unlink" size={17} /></button>{/if}
+        {/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
         {#if queen}
           {@const dens = client.denLimit()}

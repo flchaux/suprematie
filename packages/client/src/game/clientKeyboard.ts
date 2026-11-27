@@ -127,6 +127,9 @@ export function runAction(c: GameClient, id: string, shift = false): void {
     case "deploy":
       c.deploySelected();
       break;
+    case "tow":
+      c.towSelected();
+      break;
     case "unload":
       c.setMode("unload");
       break;

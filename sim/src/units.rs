@@ -530,7 +530,7 @@ fn marching(units: &Units, s: usize) -> bool {
     match c.orders.first() {
         Some(Order::Move { attack, .. }) => !attack || c.wtarget[0] == NONE,
         Some(Order::Patrol { .. } | Order::Attack { .. }) => c.wtarget[0] == NONE,
-        Some(Order::Enter { .. } | Order::DeployAt { .. } | Order::Haul { .. }) => true,
+        Some(Order::Enter { .. } | Order::DeployAt { .. } | Order::Haul { .. } | Order::Tow { .. }) => true,
         _ => false,
     }
 }
@@ -548,7 +548,7 @@ pub fn update_units(w: &mut World) {
         // séparation un tick sur deux (poussée doublée), jamais pour les avions à voilure fixe ni les œufs
         // (immobiles : ce sont les autres qui s'en écartent)
         // (ni une tourelle d'Arche déployée, ni une remorque d'Arche, ni un fouisseur enterré : on lui marche dessus)
-        let fixed = crate::ponte::is_egg(k) || crate::convoi::is_car(k) || crate::essaim::buried(w, s) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k));
+        let fixed = crate::ponte::is_egg(k) || crate::convoi::is_car(k) || crate::essaim::buried(w, s) || (w.units.cold[s].deployed && crate::ameliorations::is_turret(k)) || crate::convoi::towed_by(w, s).is_some();
         if fixed_wing(k) || fixed || (w.tick + s as u32) & 1 == 1 {
             continue;
         }
@@ -567,8 +567,8 @@ pub fn update_units(w: &mut World) {
             if o == s || (units.kind[o] == U_BURROWER && units.cold[o].deployed) {
                 return;
             }
-            // l'Arche et ses remorques : c'est elle qui les place (voir convoi.rs)
-            if k == U_ARK && units.kind[o] == U_ARK_CAR && units.cold[o].parent == id {
+            // l'Arche et ses remorques, et les chenillards qui s'y attellent : c'est elle qui les place (voir convoi.rs)
+            if k == U_ARK && ((units.kind[o] == U_ARK_CAR && units.cold[o].parent == id) || matches!(units.cold[o].orders.first(), Some(&Order::Tow { ark }) if ark == id)) {
                 return;
             }
             let od = udef(units.kind[o]);
@@ -696,6 +696,14 @@ pub fn update_units(w: &mut World) {
         // chenillard des Transhumants : déploiement ou repli en cours
         // (Reine de la Souche : elle s'enracine ou se déracine)
         if w.units.cold[s].pack != 0 && if kind == U_QUEEN { crate::essaim::tick_queen(w, s) } else { crate::transhumants::tick_unit(w, s) } {
+            continue;
+        }
+        // chenillard attelé à une Arche : c'est elle qui le mène (convoi.rs) ; il reste une unité comme les autres
+        if crate::convoi::towed_by(w, s).is_some() {
+            crate::combat::unit_weapons(w, s, NONE);
+            if w.units.cold[s].mods != 0 {
+                crate::ameliorations::tick_unit(w, s);
+            }
             continue;
         }
         let t_ord = prof_now();
@@ -1205,6 +1213,13 @@ fn run_order(w: &mut World, s: usize) -> u32 {
         }
         Order::Ferry { ax, ay, bx, by } => {
             ferry_step(w, s, ax, ay, bx, by);
+            NONE
+        }
+        Order::Tow { ark } => {
+            // attelé, il ne passe pas ici (c'est l'Arche qui le mène, voir update_units)
+            if !crate::convoi::tow_step(w, s, ark) {
+                pop_order(w, s);
+            }
             NONE
         }
         Order::Teleport { x, y } => {

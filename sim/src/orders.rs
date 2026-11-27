@@ -112,6 +112,9 @@ pub const O_KIT_SET: i32 = 67;
 pub const O_KIT_ACTIVE: i32 = 68;
 /// Équiper des unités : [arme, châssis, équipement, n, unités…] (0 : emplacement laissé comme il est).
 pub const O_KIT_APPLY: i32 = 69;
+/// Chenillards des Transhumants : s'atteler au convoi de l'Arche : [drapeaux (bit 0 en file), réf. de l'Arche, n,
+/// unités…] (voir convoi.rs, « Chenillards attelés » ; un ordre qui remplace celui-ci les dételle).
+pub const O_TOW: i32 = 70;
 
 /// Gabarit lu dans un ordre : trois améliorations, une par emplacement.
 fn kit_set(c: &mut Cur) -> u32 {
@@ -753,6 +756,22 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
         O_KIT_ACTIVE => {
             let (kind, k) = (c.next(), c.next());
             crate::gabarits::activate(w, p, kind, k);
+        }
+        O_TOW => {
+            let q = c.next() & 1 != 0;
+            let ark = c.next() as u32;
+            let ok = w.unit(ark).and_then(|a| (w.units.kind[a] == U_ARK && w.units.owner[a] == p).then(|| crate::ameliorations::ark_of(w, a)).flatten());
+            for id in units_list(&mut c) {
+                let Some(i) = ok else { break };
+                if let Some(s) = own_unit(w, p, id) {
+                    // déjà attelé à cette Arche, ou convoi complet : rien
+                    let already = matches!(w.units.cold[s].orders.first(), Some(&Order::Tow { ark: a }) if a == ark) && !q;
+                    if crate::convoi::can_tow(w, s) && !already && w.arks[i].tow.len() < crate::convoi::TOW_MAX {
+                        w.units.cold[s].pack = 0;
+                        give(w, s, q, Order::Tow { ark });
+                    }
+                }
+            }
         }
         O_KIT_APPLY => {
             let set = kit_set(&mut c);

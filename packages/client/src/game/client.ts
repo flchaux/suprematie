@@ -253,6 +253,8 @@ export class GameClient {
   deliverSelected(item: number, queue = false): void { Orders.deliverSelected(this, item, queue); }
   stopSelected(): void { Orders.stopSelected(this); }
   deploySelected(): void { Orders.deploySelected(this); }
+  towSelected(): boolean { return Orders.towSelected(this); }
+  untowSelected(): void { Orders.untowSelected(this); }
 
   // ---------- clientPlacement.ts : mode construction et pose ----------
   startPole(): void { Placement.startPole(this); }
