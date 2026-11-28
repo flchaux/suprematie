@@ -162,6 +162,38 @@ fn a_sower_digs_a_borehole_that_becomes_a_well() {
     assert_eq!(w.buildings[far].upgrade, 0, "pas de réseau pour le payer");
 }
 
+/// Un puits se pose aussi sur un forage depuis le menu de construction : le semeur l'y plante, le forage devient un
+/// puits (payé par le réseau, comme le bouton de sa fiche) ; pas sur un forage hors du terreau ni pas encore creusé.
+#[test]
+fn a_well_can_be_placed_on_a_borehole() {
+    let mut w = game();
+    let (h, hx, hy) = base(&mut w, 30);
+    let bore = place_building(&mut w, 0, B_BOREHOLE, hx + 3, hy, 0).unwrap();
+    let far = place_building(&mut w, 0, B_BOREHOLE, hx + 20, hy, 0).unwrap();
+    assert!(!crate::buildings::can_place(&w, 0, B_WELL, hx + 3, hy, 0), "pas encore creusé");
+    complete_building(&mut w, bore);
+    complete_building(&mut w, far);
+    crate::buildings::rebuild_power(&mut w);
+    assert!(crate::buildings::can_place(&w, 0, B_WELL, hx + 3, hy, 0), "sur le forage creusé, dans le réseau");
+    assert!(!crate::buildings::can_place(&w, 0, B_WELL, hx + 4, hy, 0), "à cheval sur le forage : non");
+    assert!(!crate::buildings::can_place(&w, 0, B_WELL, hx + 20, hy, 0), "hors du terreau : non");
+    assert!(!crate::buildings::can_place(&w, 1, B_WELL, hx + 3, hy, 0), "pas sur le forage d'un autre");
+    // le semeur va le planter
+    let net = w.buildings[h].net as usize;
+    w.nets[net].seve = 500;
+    let s = w.spawn_unit(U_SOWER, 0, (hx + 8) * TILE, (hy + 6) * TILE);
+    order(&mut w, O_BUILD, &[0, B_WELL as i32, hx + 3, hy, 0, 1, s as i32]);
+    let mut t = 0;
+    while w.buildings[bore].upgrade == 0 && t < 600 {
+        w.step(&[]);
+        t += 1;
+    }
+    assert!(w.buildings[bore].upgrade > 0 && w.nets[net].seve <= 425, "construction lancée et payée ({t} ticks, {} sève)", w.nets[net].seve);
+    steps(&mut w, eau::WELL_TIME * 20 + 5);
+    assert_eq!(w.buildings[bore].kind, B_WELL);
+    assert!(w.unit(s).is_some_and(|k| w.units.cold[k].orders.is_empty()), "le semeur a fini");
+}
+
 /// Un puits se pose au bord de l'eau (sur le terreau), pas ailleurs sans forage.
 #[test]
 fn wells_stand_on_the_shore_or_on_a_borehole() {

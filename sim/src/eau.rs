@@ -5,7 +5,8 @@
 //!   sèches. Les étendues d'eau en ajoutent : PER_WATER_TILE par case d'eau de la maille.
 //! - Forage (B_BOREHOLE) : un semeur (ou la Reine) le creuse n'importe où à terre ; il ne pousse pas seul, il faut le
 //!   creuser (chantier de BOREHOLE_BUILD s). Creusé, c'est un point d'eau : sa fiche dit ce qu'un puits y tirerait, et
-//!   on y construit un puits (amélioration du forage, payée par son réseau : il doit être sur le terreau).
+//!   on y construit un puits (amélioration du forage, payée par son réseau : il doit être sur le terreau), par le
+//!   bouton de sa fiche ou en posant un puits dessus depuis le menu de construction (`borehole_at`, `well_on`).
 //! - Puits (B_WELL) : sur un forage, ou posé directement au bord de l'eau (`near_water`), sur le terreau comme tout
 //!   organe. Il tire l'eau des mailles à WELL_R mailles au plus : un centième d'eau par seconde pour WELL_DIV d'eau
 //!   alentour, WELL_MAX au plus, aide des semeurs comprise. Ce qu'il tire est pris aux mailles les plus riches de son
@@ -119,6 +120,21 @@ pub fn available(w: &World, x: i32, y: i32) -> u32 {
 /// Débit (centièmes d'eau par seconde) d'un puits centré en (x, y), sans l'aide des semeurs.
 pub fn rate_at(w: &World, x: i32, y: i32) -> u32 {
     (available(w, x, y) / WELL_DIV).min(WELL_MAX)
+}
+
+/// Forage creusé du joueur, d'emprise posée en (x, y), sans construction de puits en cours : là où l'on pose un puits.
+pub fn borehole_at(w: &World, owner: u8, x: i32, y: i32) -> Option<usize> {
+    if !w.map.inside(x, y) {
+        return None;
+    }
+    let b = (w.map.occ[w.map.idx(x, y)] as usize).checked_sub(1)?;
+    let bb = &w.buildings[b];
+    (bb.alive && bb.kind == B_BOREHOLE && bb.owner == owner && bb.x == x && bb.y == y && bb.complete() && bb.upgrade == 0).then_some(b)
+}
+
+/// Peut-on construire un puits sur le forage d'emprise (x, y) : creusé, dans un réseau (sur le terreau) ?
+pub fn well_on(w: &World, owner: u8, x: i32, y: i32) -> bool {
+    borehole_at(w, owner, x, y).is_some_and(|b| w.buildings[b].net != 0)
 }
 
 /// Une case d'eau libre touche-t-elle l'emprise (x, y, bw, bh) ou sa bordure ?

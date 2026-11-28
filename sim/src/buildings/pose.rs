@@ -279,6 +279,10 @@ fn can_place_with(w: &World, owner: u8, kind: u16, x: i32, y: i32, dir: u8, terr
     if kind as usize >= BUILDINGS.len() || owner as usize >= w.players.len() {
         return false;
     }
+    // puits de la Souche posé sur un de ses forages (même emprise) : il y sera construit (voir eau::well_on)
+    if kind == B_WELL && crate::eau::borehole_at(w, owner, x, y).is_some() {
+        return crate::eau::well_on(w, owner, x, y);
+    }
     let def = bdef(kind);
     // race : sauf dans les démos et les tests (réseau partout), qui posent tout pour le même joueur
     if !w.players[owner as usize].has_tech(def.tech) || (!w.infinite_grid && !crate::races::building_ok(w, owner, kind)) {
@@ -348,6 +352,12 @@ pub fn site_hp_gain(max_hp: i32, from: u32, to: u32) -> i32 {
 pub fn place_building(w: &mut World, owner: u8, kind: u16, x: i32, y: i32, dir: u8) -> Option<usize> {
     if !can_place(w, owner, kind, x, y, dir) {
         return None;
+    }
+    // puits posé sur un forage : le forage devient un puits (amélioration payée par son réseau, comme son bouton)
+    if kind == B_WELL {
+        if let Some(b) = crate::eau::borehole_at(w, owner, x, y) {
+            return upgrade(w, b).then_some(b);
+        }
     }
     // le socle reçoit un EPPZ du joueur (rendu si le chantier est annulé ou le socle démonté)
     if kind == B_EPPZ_SOCKET {

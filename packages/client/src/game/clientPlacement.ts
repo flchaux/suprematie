@@ -119,6 +119,11 @@ export function snapBuild(c: GameClient, g: THREE.Vector3): { x: number; y: numb
   const def = c.data!.buildings[ui.buildKind];
   let x = Math.round(g.x - def.w / 2);
   let y = Math.round(g.z - def.h / 2);
+  if (def.key === "well") {
+    // un puits se pose aussi sur un de nos forages : se caler dessus quand on le survole
+    const b = c.buildingAtTile(Math.floor(g.x), Math.floor(g.z));
+    if (b && b.owner === ui.me && c.data!.buildings[b.kind]?.key === "borehole") return { x: b.x, y: b.y };
+  }
   if (def.deposit !== 0 && c.map) {
     // aligner sur le gisement le plus proche
     let best = null;
