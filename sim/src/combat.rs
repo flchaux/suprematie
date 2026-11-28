@@ -1026,12 +1026,12 @@ fn impact(w: &mut World, p: &Projectile) {
     let team = w.team_of(p.owner);
     match p.special {
         1 => {
-            w.ev(EV_EXPLOSION, p.tx, p.ty, 25 * TILE, 3);
+            w.ev(EV_EXPLOSION, p.tx, p.ty, 25 * TILE, boom(3, 20_000));
             area_damage(w, p.tx, p.ty, 25 * TILE, 20000, p.owner, M_SURF | M_AIR | M_SUB, true);
             return;
         }
         2 => {
-            w.ev(EV_EXPLOSION, p.tx, p.ty, 6 * TILE, 2);
+            w.ev(EV_EXPLOSION, p.tx, p.ty, 6 * TILE, boom(2, 3000));
             area_damage(w, p.tx, p.ty, 6 * TILE, 6000, p.owner, M_SURF, true);
             return;
         }
@@ -1042,7 +1042,7 @@ fn impact(w: &mut World, p: &Projectile) {
         return;
     }
     let size = if p.aoe > 0 { p.aoe } else { 64 };
-    w.ev(EV_EXPLOSION, p.tx, p.ty, size, if p.aoe > 600 { 1 } else { 0 });
+    w.ev(EV_EXPLOSION, p.tx, p.ty, size, boom(if p.aoe > 600 { 1 } else { 0 }, p.dmg));
     if p.aoe > 0 {
         // acide de la Souche : flaque
         if wd.proj == Proj::Spit {
@@ -1119,7 +1119,7 @@ pub fn cleanup_dead(w: &mut World) {
             w.ev(EV_BUILDING_DIED, cx, cy, kind as i32, owner as i32);
             // Transhumants : butin pour le pillard le plus proche
             crate::transhumants::loot_building(w, b);
-            w.ev(EV_EXPLOSION, cx, cy, bw.max(bh) * TILE / 2, 0);
+            w.ev(EV_EXPLOSION, cx, cy, bw.max(bh) * TILE / 2, boom(0, bdef(kind).hp / 10));
             // bâtiment terminé d'un joueur encore en jeu : fantôme à reconstruire par ses ingénieurs
             // (un nid de la faune ne se reconstruit pas et ne laisse pas d'épave)
             let fauna = w.team_of(owner) == crate::nature::NATURE_TEAM;
@@ -1129,7 +1129,7 @@ pub fn cleanup_dead(w: &mut World) {
             // chantier rendu au joueur à moitié ? non : perdu
             buildings::remove_building(w, b, !fauna);
             if kind == B_CRYSTAL_REACTOR {
-                w.ev(EV_EXPLOSION, cx, cy, 15 * TILE, 3);
+                w.ev(EV_EXPLOSION, cx, cy, 15 * TILE, boom(3, 20_000));
                 area_damage(w, cx, cy, 15 * TILE, 8000, owner, M_SURF | M_AIR, true);
             }
         }
@@ -1175,7 +1175,7 @@ fn kill_unit(w: &mut World, s: usize) {
     w.ev(EV_UNIT_DIED, x, y, kind as i32, owner as i32);
     // un œuf de la Souche crève sans exploser
     if !crate::ponte::is_egg(kind) {
-        w.ev(EV_EXPLOSION, x, y, def.radius * 2, if def.tier == 6 { 2 } else { 0 });
+        w.ev(EV_EXPLOSION, x, y, def.radius * 2, boom(if def.tier == 6 { 2 } else { 0 }, def.hp / 10));
     }
     // passagers
     let cargo = std::mem::take(&mut w.units.cold[s].cargo);
@@ -1207,7 +1207,7 @@ fn kill_unit(w: &mut World, s: usize) {
         crate::souche::digest(w, x, y, owner, def.tier);
     }
     if def.commander {
-        w.ev(EV_EXPLOSION, x, y, 12 * TILE, 3);
+        w.ev(EV_EXPLOSION, x, y, 12 * TILE, boom(3, 5000));
         area_damage(w, x, y, 12 * TILE, 6000, owner, M_SURF, true);
         eliminate(w, owner);
     }

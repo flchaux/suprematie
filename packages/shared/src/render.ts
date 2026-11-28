@@ -17,6 +17,7 @@ export const CARRIER_WORDS = 5;
 export const MOD_WORDS = 3;
 
 export const EV = {
+  /** EXPLOSION : x, y, rayon, genre (bits 0-7) | puissance (bits 8 et suivants : dégâts ou points de vie détruits) */
   BEAM: 2, EXPLOSION: 3, UNIT_DIED: 4, BUILDING_DIED: 5, BUILT: 6, RESEARCH: 7, NUKE: 8, ELIMINATED: 9,
   UNIT_CREATED: 10, SHIELD_HIT: 11, TELEPORT: 12, FIRE: 13, INTERCEPT: 14, ORBITAL: 15, GAME_OVER: 16, PROMOTED: 17, GIFT: 18, ATTACKED: 19, FACTORY_STARVED: 20, FUEL_LOW: 41, FUEL_DRY: 42, SHARDS: 43, EPPZ: 44, DEPLOY_FAILED: 45, NO_DEPOT: 46, TAMED: 47,
   /** éclosion d'un œuf de la Souche : x, y, type de l'œuf | type de l'organisme << 8, joueur | orientation << 8 */

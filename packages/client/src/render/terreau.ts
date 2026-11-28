@@ -5,6 +5,9 @@
 // définition que le reste du sol. La couverture est une carte à deux texels par case, adoucie (coins
 // arrondis), lue avec un décalage bruité ; le bord suit en plus le relief de la texture, au pixel près.
 // Tenue à jour là où un poteau pousse ou meurt, et case par case là où l'herbe est mangée.
+// Terreau irrigué (à IRRIGATION cases au plus d'une racine, d'un rhizome ou d'une graine-mère : là où il sert,
+// voir soil::REACH) : veines de sève et mousse ; au-delà, herbe mangée mais sèche : ni veines ni mousse, humus
+// plus gris (seconde carte, `irr`).
 import * as THREE from "three/webgpu";
 import { texture, positionWorld, vec2, vec3, mix, uniform, float, smoothstep, mx_noise_float, abs, clamp, fwidth } from "three/tsl";
 import { BUILDING_WORDS } from "@supreme/shared";
@@ -18,10 +21,13 @@ type N = ReturnType<typeof float>;
 const RES = 2;
 /** Rayon de l'adoucissement de la couverture, en texels (arrondit les coins d'environ une case et demie). */
 const BLUR = 3;
+/** Portée (cases) d'un poteau qui irrigue le terreau autour de lui (comme soil::REACH dans la simulation). */
+export const IRRIGATION = 14;
 
 const placeholder = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType);
 placeholder.needsUpdate = true;
 const coverNode = texture(placeholder);
+const irrNode = texture(placeholder);
 const mapSize = uniform(new THREE.Vector2(1, 1));
 /** 0 tant qu'aucune case n'est couverte. */
 const terreauShow = uniform(0);
@@ -68,13 +74,18 @@ export function applyTerreau<T>(input: T, textured = false): T {
   const off = vec2(big.mul(0.9).add(mid.mul(0.45)).add(fine.mul(0.16)), mid.mul(0.7).sub(big.mul(0.6)).sub(fine.mul(0.14)));
   const cov = coverNode.sample(p2.add(off).div(mapSize)).r;
   const k = smoothstep(0.42, 0.58, cov.add(d.mul(0.3))).mul(terreauShow);
+  // irrigué (à portée d'une racine) : 1 ; terreau sec au-delà : 0
+  const wet = smoothstep(0.4, 0.6, irrNode.sample(p2.add(off).div(mapSize)).r);
   // humus brun-violet (marbré à grande échelle), mousse par taches au bord déchiqueté par le grain
   const tone = mix(vec3(0.055, 0.033, 0.047), vec3(0.105, 0.062, 0.095), smoothstep(-0.6, 0.6, big.add(fine.mul(0.3))));
   const humus = mix(tone, dirt.mul(vec3(0.22, 0.15, 0.26)), 0.3).mul(r);
   const mossW = smoothstep(0.12, 0.55, mid.mul(0.6).add(big.mul(0.5)));
   const mossK = smoothstep(0, 1, clamp(mossW.sub(0.5).mul(2.2).add(mossRel.sub(1).mul(3)).add(0.5), 0, 1));
   const moss = vec3(0.045, 0.115, 0.028).mul(clamp(mossRel.sub(1).mul(2.2).add(1), 0.4, 1.8));
-  const soil = mix(humus, moss, mossK.mul(0.85));
+  // terreau sec : humus délavé, plus gris et un peu plus clair, sans mousse
+  const lum = humus.x.mul(0.3).add(humus.y.mul(0.5)).add(humus.z.mul(0.2));
+  const dryHumus = mix(humus, vec3(lum, lum, lum).mul(1.3).add(vec3(0.014, 0.013, 0.012)), 0.55);
+  const soil = mix(mix(dryHumus, humus, wet), moss, mossK.mul(0.85).mul(wet));
   // veines de sève : passages à zéro d'un bruit déformé, d'un ou deux pixels, par tronçons (elles
   // plongent dans l'humus et en ressortent), avec un léger halo ; capillaires plus fins ailleurs
   const warp = vec2(big.mul(1.6), mid.mul(0.9));
@@ -83,9 +94,9 @@ export function applyTerreau<T>(input: T, textured = false): T {
   const inside = smoothstep(0.6, 0.85, cov);
   const patchN = mx_noise_float(p2.mul(0.13).add(vec2(3.7, 9.1)));
   const broken = smoothstep(-0.35, 0.1, mid);
-  const veinMask = smoothstep(0.05, 0.4, patchN).mul(inside).mul(broken);
+  const veinMask = smoothstep(0.05, 0.4, patchN).mul(inside).mul(broken).mul(wet);
   const cn = mx_noise_float(q.mul(1.9).add(vec2(4.1, 4.4)));
-  const capMask = smoothstep(0.15, 0.5, patchN.negate()).mul(inside).mul(broken);
+  const capMask = smoothstep(0.15, 0.5, patchN.negate()).mul(inside).mul(broken).mul(wet);
   // de loin, les veines s'estompent et perdent leur halo (une case ne fait plus que quelques pixels)
   const far = smoothstep(0.02, 0.07, fwidth(p2.x).add(fwidth(p2.y)));
   const halo = float(1).sub(smoothstep(0, fwidth(vn).mul(5).add(0.012), abs(vn))).mul(veinMask).mul(float(1).sub(far));
@@ -111,6 +122,10 @@ const STEP = 0.2;
 export class TerreauCover {
   tex: THREE.DataTexture;
   data: Uint8Array;
+  /** irrigation (255 : à portée d'un poteau), adoucie comme la couverture */
+  irrTex: THREE.DataTexture;
+  irr: Uint8Array;
+  private irrRaw: Uint8Array;
   /** texels par case */
   readonly res = RES;
   /** augmente quand du terreau apparaît ou disparaît (plantes du décor à masquer) */
@@ -147,9 +162,22 @@ export class TerreauCover {
     this.tex.magFilter = THREE.LinearFilter;
     this.tex.minFilter = THREE.LinearFilter;
     this.tex.needsUpdate = true;
+    this.irr = new Uint8Array(this.w * this.h);
+    this.irrRaw = new Uint8Array(this.w * this.h);
+    this.irrTex = new THREE.DataTexture(this.irr, this.w, this.h, THREE.RedFormat, THREE.UnsignedByteType);
+    this.irrTex.magFilter = THREE.LinearFilter;
+    this.irrTex.minFilter = THREE.LinearFilter;
+    this.irrTex.needsUpdate = true;
     coverNode.value = this.tex;
+    irrNode.value = this.irrTex;
     mapSize.value.set(w, h);
     terreauShow.value = 0;
+  }
+
+  /** Terreau irrigué (à portée d'un poteau) sur la case (x, z) ? */
+  wetAt(x: number, z: number): boolean {
+    if (!this.at(x, z)) return false;
+    return this.irr[(z * RES + (RES >> 1)) * this.w + x * RES + (RES >> 1)] > 120;
   }
 
   /** Terreau sur la case (x, z) ? */
@@ -210,7 +238,7 @@ export class TerreauCover {
       else {
         const q = { x: buf[o + 2] & 0xffff, z: (buf[o + 2] >>> 16) & 0xffff, w: d.w, h: d.h, s: d.supply, miss: 0 };
         this.known.set(ref, q);
-        this.rebuild(q.x - q.s, q.z - q.s, q.x + q.w + q.s, q.z + q.h + q.s);
+        this.rebuild(q.x - IRRIGATION, q.z - IRRIGATION, q.x + q.w + IRRIGATION, q.z + q.h + IRRIGATION);
       }
     }
     for (const [ref, p] of this.known) {
@@ -220,7 +248,7 @@ export class TerreauCover {
       if (p.miss > 0 && !inView) p.miss = 0;
       else if (p.miss >= 3) {
         this.known.delete(ref);
-        this.rebuild(p.x - p.s, p.z - p.s, p.x + p.w + p.s, p.z + p.h + p.s);
+        this.rebuild(p.x - IRRIGATION, p.z - IRRIGATION, p.x + p.w + IRRIGATION, p.z + p.h + IRRIGATION);
       }
     }
   }
@@ -238,7 +266,7 @@ export class TerreauCover {
       // sous la zone d'un poteau, la case est déjà du terreau
       if (this.raw[z * RES * this.w + x * RES] < nv) {
         for (let dz = 0; dz < RES; dz++) this.raw.fill(nv, (z * RES + dz) * this.w + x * RES, (z * RES + dz) * this.w + (x + 1) * RES);
-        this.blur(x * RES, z * RES, (x + 1) * RES, (z + 1) * RES);
+        this.blur(this.raw, this.data, x * RES, z * RES, (x + 1) * RES, (z + 1) * RES);
       }
       if (v < 128 && nv >= 128) this.changes++;
     }
@@ -263,26 +291,33 @@ export class TerreauCover {
         }
       }
     }
+    const irr = this.irrRaw;
+    for (let z = z0 * RES; z < z1 * RES; z++) irr.fill(0, z * W + x0 * RES, z * W + x1 * RES);
     for (const p of this.known.values()) {
       const ax = Math.max(x0, p.x - p.s), bx = Math.min(x1, p.x + p.w + p.s);
       const az = Math.max(z0, p.z - p.s), bz = Math.min(z1, p.z + p.h + p.s);
-      if (ax >= bx) continue;
-      for (let z = az * RES; z < bz * RES; z++) raw.fill(255, z * W + ax * RES, z * W + bx * RES);
+      if (ax < bx && az < bz) for (let z = az * RES; z < bz * RES; z++) raw.fill(255, z * W + ax * RES, z * W + bx * RES);
+      // irrigation : le carré de portée du poteau (comme soil::nearest_pole)
+      const ix = Math.max(x0, p.x - IRRIGATION), jx = Math.min(x1, p.x + p.w + IRRIGATION);
+      const iz = Math.max(z0, p.z - IRRIGATION), jz = Math.min(z1, p.z + p.h + IRRIGATION);
+      if (ix < jx && iz < jz) for (let z = iz * RES; z < jz * RES; z++) irr.fill(255, z * W + ix * RES, z * W + jx * RES);
     }
-    this.blur(x0 * RES, z0 * RES, x1 * RES, z1 * RES);
+    this.blur(raw, this.data, x0 * RES, z0 * RES, x1 * RES, z1 * RES);
+    this.blur(irr, this.irr, x0 * RES, z0 * RES, x1 * RES, z1 * RES);
     this.tex.needsUpdate = true;
+    this.irrTex.needsUpdate = true;
     this.changes++;
     terreauShow.value = this.known.size > 0 || this.soil?.includes(1) ? 1 : 0;
   }
 
   /**
-   * Adoucissement du rectangle de texels [x0, x1[ × [z0, z1[ et de son bord : moyenne glissante horizontale puis
-   * verticale (le bord droit d'une zone reste à 0,5 sur sa limite).
+   * Adoucissement de `raw` dans `out`, sur le rectangle de texels [x0, x1[ × [z0, z1[ et son bord : moyenne glissante
+   * horizontale puis verticale (le bord droit d'une zone reste à 0,5 sur sa limite).
    */
-  private blur(x0: number, z0: number, x1: number, z1: number): void {
+  private blur(raw: Uint8Array, out: Uint8Array, x0: number, z0: number, x1: number, z1: number): void {
     const W = this.w;
     const H = this.h;
-    const raw = this.raw, tmp = this.tmp, out = this.data;
+    const tmp = this.tmp;
     const span = 2 * BLUR + 1;
     const ax = Math.max(0, x0 - BLUR), bx = Math.min(W, x1 + BLUR);
     const az = Math.max(0, z0 - BLUR), bz = Math.min(H, z1 + BLUR);

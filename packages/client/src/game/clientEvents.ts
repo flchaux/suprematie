@@ -72,9 +72,11 @@ export function handleEvents(gc: GameClient, f: Frame): void {
       case EV.EXPLOSION: {
         const x = a / TILE;
         const z = c / TILE;
-        if (seen(x, z) || e === 3) {
-          sc.entities?.addExplosion(x, z, d / TILE, e);
-          sfx.explosion(d / TILE, e, near(x, z), pan(x, z));
+        // genre (bits 0-7) et puissance (dégâts ou points de vie détruits, bits 8 et suivants)
+        const kind = e & 0xff;
+        if (seen(x, z) || kind === 3) {
+          sc.entities?.addExplosion(x, z, d / TILE, kind);
+          sfx.explosion(d / TILE, kind, near(x, z), pan(x, z), e >>> 8);
         }
         break;
       }

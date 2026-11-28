@@ -437,7 +437,8 @@ fn burster_explodes_on_its_prey_and_leaves_acid() {
     }
     assert!(w.unit(id).is_none(), "elle a éclaté");
     let full = udef(U_LIGHT_TANK).hp;
-    assert!(w.units.hp[foe] <= full - 170 && w.units.hp[near] <= full - 170, "zone : {} {}", w.units.hp[foe], w.units.hp[near]);
+    let burst = WEAPONS[W_BURST as usize].dmg;
+    assert!(w.units.hp[foe] <= full - burst && w.units.hp[near] <= full - burst, "zone : {} {}", w.units.hp[foe], w.units.hp[near]);
     assert_eq!(w.units.hp[friend], udef(U_GNAWER).hp, "les siens sont épargnés");
     assert_eq!(w.acid.len(), 1);
     // tuée à distance, elle éclate aussi
@@ -445,7 +446,7 @@ fn burster_explodes_on_its_prey_and_leaves_acid() {
     let hp = w.units.hp[foe];
     damage_unit(&mut w, b2, 1000, 1);
     w.step(&[]);
-    assert!(w.units.hp[foe] <= hp - 170);
+    assert!(w.units.hp[foe] <= hp - WEAPONS[W_BURST as usize].dmg);
     // les deux flaques au même endroit n'en font qu'une
     assert_eq!(w.acid.len(), 1);
 }
@@ -472,10 +473,10 @@ fn burrower_hides_and_strikes_first() {
         w.step(&[]);
         k += 1;
     }
-    assert_eq!(full - w.units.hp[prey], 180, "60 × 3");
+    assert_eq!(full - w.units.hp[prey], 3 * WEAPONS[udef(U_BURROWER).weapons[0] as usize].dmg, "premier coup triple");
     assert!(!essaim::buried(&w, b));
     steps(&mut w, 20);
-    assert_eq!(full - w.units.hp[prey], 240, "puis des coups ordinaires");
+    assert_eq!(full - w.units.hp[prey], 4 * WEAPONS[udef(U_BURROWER).weapons[0] as usize].dmg, "puis des coups ordinaires");
     // un ordre de marche le déterre
     let c = unit(&mut w, U_BURROWER, 0, hx + 20, hy - 10);
     steps(&mut w, 70);
@@ -497,7 +498,8 @@ fn nurse_heals_far_from_home() {
         w.units.hp[s] = 1000;
     }
     steps(&mut w, 100);
-    assert!(w.units.hp[a] >= 1000 + 4 * 44, "près de la nourrice : {}", w.units.hp[a]);
+    // 2 % de ses points de vie par seconde, comme sur le terreau
+    assert!(w.units.hp[a] >= 1000 + 4 * (udef(U_SHELL).hp / 50), "près de la nourrice : {}", w.units.hp[a]);
     assert_eq!(w.units.hp[b], 1000, "loin d'elle, hors du terreau : rien");
 }
 

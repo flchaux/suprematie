@@ -1077,19 +1077,21 @@ fn a_seed_heart_grows_from_sacrificed_organisms() {
     assert_eq!(w.players[0].unit_count, count - 11);
     assert_eq!(w.players[0].losses, 0, "un sacrifice n'est pas une perte");
     assert!(w.unit(w.players[0].commander).is_some() && w.unit(beast).is_some());
-    assert_eq!(crate::souche::heart_fed(&w.buildings[h2]), 10 * 120 + 25);
+    let fed = 10 * crate::souche::sacrifice_value(U_SHELL) + crate::souche::sacrifice_value(U_GNAWER);
+    assert_eq!(crate::souche::heart_fed(&w.buildings[h2]), fed);
     let part = w.buildings[h2].build;
-    assert!((8000..=8100).contains(&part), "avancement : {part}");
+    let want = fed * BUILD_FULL / crate::souche::HEART_SEVE;
+    assert!((want - 50..=want + 50).contains(&part), "avancement : {part} (attendu {want})");
     assert!(w.buildings[h2].hp > bdef(B_SEED_HEART).hp / 10 + 400, "points de vie : {}", w.buildings[h2].hp);
     // une sauvegarde garde l'avancement
     let back = crate::save::restore(&crate::save::snapshot(&w)).expect("relue");
-    assert_eq!(crate::souche::heart_fed(&back.buildings[h2]), 1225);
-    // un Béhémoth vaut 2 400, un léviathan 900 ; le dernier la termine
-    for kind in [U_BEHEMOTH, U_BEHEMOTH, U_BEHEMOTH, U_LEVIATHAN, U_LEVIATHAN] {
+    assert_eq!(crate::souche::heart_fed(&back.buildings[h2]), fed);
+    // un Béhémoth vaut 1 680, un léviathan 630 ; le dernier la termine
+    for kind in [U_BEHEMOTH, U_BEHEMOTH, U_BEHEMOTH, U_BEHEMOTH, U_BEHEMOTH, U_LEVIATHAN, U_LEVIATHAN] {
         let s = slot_of(w.spawn_unit(kind, 0, (hx + 18) * TILE, (hy + 1) * TILE));
         crate::souche::sacrifice(&mut w, s, h2);
     }
-    assert!(w.buildings[h2].complete(), "10 225 sève : elle a poussé");
+    assert!(w.buildings[h2].complete(), "plus de 10 000 sève : elle a poussé");
     assert_eq!(w.buildings[h2].hp, bdef(B_SEED_HEART).hp);
     // poussée, elle ne prend plus personne
     let g = w.spawn_unit(U_GNAWER, 0, (hx + 18) * TILE, (hy + 5) * TILE);
@@ -1112,6 +1114,6 @@ fn a_brood_rallied_on_a_growing_heart_feeds_it() {
     let br = w.building_ref(b) as i32;
     order(&mut w, 0, O_FACTORY_QUEUE, &[br, U_GNAWER as i32, 1]);
     steps(&mut w, 900);
-    assert_eq!(crate::souche::heart_fed(&w.buildings[h2]), 6 * 25);
+    assert_eq!(crate::souche::heart_fed(&w.buildings[h2]), 6 * crate::souche::sacrifice_value(U_GNAWER));
     assert!(find_unit(&w, 0, U_GNAWER).is_none());
 }

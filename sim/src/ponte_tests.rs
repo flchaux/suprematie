@@ -166,7 +166,8 @@ fn a_brood_lays_a_whole_litter_that_pays_for_itself_and_hatches() {
     let inc = ponte::incubation(U_GNAWER);
     steps(&mut w, inc / 2);
     let half = w.players[0].consumed[SEVE as usize];
-    assert!((70..=84).contains(&half), "sève puisée à mi-chemin : {half}");
+    let price = 6 * udef(U_GNAWER).cost[0].1 as u32;
+    assert!((price / 2 - 6..=price / 2 + 6).contains(&half), "sève puisée à mi-chemin : {half} sur {price}");
     assert!((inc / 2 - 3..=inc / 2 + 3).contains(&ponte::hatch_left(&w, laid[0])));
     steps(&mut w, inc / 2 - 3);
     assert_eq!(eggs(&w).len(), 6);
@@ -179,9 +180,10 @@ fn a_brood_lays_a_whole_litter_that_pays_for_itself_and_hatches() {
     }
     assert_eq!(hatched, 6, "six éclosions");
     assert!(eggs(&w).is_empty());
-    assert_eq!(w.players[0].consumed[SEVE as usize], 6 * 25);
-    assert_eq!(w.players[0].consumed[SELS as usize], 6 * 4);
-    assert!(w.nets[net].sels == crate::souche::START_SELS - 24, "puisé dans le réseau");
+    let (seve, sels) = (udef(U_GNAWER).cost[0].1 as i32, udef(U_GNAWER).cost[1].1 as i32);
+    assert_eq!(w.players[0].consumed[SEVE as usize] as i32, 6 * seve);
+    assert_eq!(w.players[0].consumed[SELS as usize] as i32, 6 * sels);
+    assert!(w.nets[net].sels == crate::souche::START_SELS - 6 * sels, "puisé dans le réseau");
     let born = units_of(&w, U_GNAWER);
     assert_eq!(born.len(), 6);
     assert_eq!(w.players[0].unit_count, count + 6);

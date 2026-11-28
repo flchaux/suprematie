@@ -399,12 +399,12 @@ pub const WEAPONS: [WeaponDef; 118] = [
     w!(90, 16, 20, Ion, 30, 64, M_SURF),                                // 61 disrupteur
     // ----- Souche (voir souche.rs) : morsures et crachats -----
     w!(120, 18, 30, Spit, 18, 128, M_SURF | M_AIR),                     // 62 crachat de la Reine
-    w!(22, 1, 14, Bite, 0, 0, M_LAND),                                  // 63 rongeur
-    w!(60, 26, 50, Spit, 16, 320, M_SURF, min_range: 4),                // 64 cracheur (acide en cloche)
-    w!(120, 2, 24, Bite, 0, 0, M_LAND),                                 // 65 carapace
-    w!(8, 7, 80, Spit, 30, 0, M_LAND, stun: 50),                        // 66 liane : enlace et immobilise
+    w!(15, 1, 14, Bite, 0, 0, M_LAND),                                  // 63 rongeur
+    w!(42, 26, 50, Spit, 16, 320, M_SURF, min_range: 4),                // 64 cracheur (acide en cloche)
+    w!(84, 2, 24, Bite, 0, 0, M_LAND),                                 // 65 carapace
+    w!(6, 7, 80, Spit, 30, 0, M_LAND, stun: 50),                        // 66 liane : enlace et immobilise
     w!(40, 22, 18, Spit, 30, 0, M_SURF | M_AIR),                        // 67 épine (défense)
-    w!(90, 4, 60, Spit, 10, 512, M_SURF),                               // 68 planeur à membranes (spores)
+    w!(63, 4, 60, Spit, 10, 512, M_SURF),                               // 68 planeur à membranes (spores)
     // ----- Transhumants (voir transhumants.rs) : canons cinétiques -----
     w!(120, 24, 20, Bullet, 40, 128, M_SURF),                           // 69 canon de l'Arche
     w!(14, 12, 7, Bullet, 40, 0, M_SURF),                               // 70 pisteur
@@ -413,16 +413,16 @@ pub const WEAPONS: [WeaponDef; 118] = [
     w!(480, 2, 29, Bite, 0, 0, M_LAND, prefer_buildings: true),         // 73 bélier : éperonne
     w!(160, 30, 36, Bullet, 40, 128, M_SURF),                           // 74 bastion déployé
     // ----- Souche, suite -----
-    w!(170, 1, 20, Bite, 0, 576, M_LAND),                               // 75 vessie (elle éclate : voir souche::burst)
-    w!(30, 26, 12, Spit, 45, 0, M_AIR),                                 // 76 dard (antiaérien)
-    w!(60, 1, 20, Bite, 0, 0, M_LAND),                                  // 77 fouisseur
-    w!(24, 10, 10, Spit, 45, 0, M_AIR),                                 // 78 frelon
-    w!(55, 12, 24, Spit, 25, 128, M_SURF | M_SUB),                      // 79 murène
-    w!(480, 3, 36, Bite, 0, 0, M_SURF),                                 // 80 mâchoires du léviathan
-    w!(140, 28, 50, Spit, 18, 384, M_SURF | M_AIR),                     // 81 crachat du léviathan
+    w!(119, 1, 20, Bite, 0, 576, M_LAND),                               // 75 vessie (elle éclate : voir souche::burst)
+    w!(21, 26, 12, Spit, 45, 0, M_AIR),                                 // 76 dard (antiaérien)
+    w!(42, 1, 20, Bite, 0, 0, M_LAND),                                  // 77 fouisseur
+    w!(17, 10, 10, Spit, 45, 0, M_AIR),                                 // 78 frelon
+    w!(39, 12, 24, Spit, 25, 128, M_SURF | M_SUB),                      // 79 murène
+    w!(336, 3, 36, Bite, 0, 0, M_SURF),                                 // 80 mâchoires du léviathan
+    w!(98, 28, 50, Spit, 18, 384, M_SURF | M_AIR),                     // 81 crachat du léviathan
     w!(260, 75, 170, Spit, 16, 640, M_SURF, min_range: 12),             // 82 sporange (mortier à spores)
-    w!(1100, 5, 40, Bite, 0, 640, M_LAND),                              // 83 griffes du béhémoth (balaient la zone)
-    w!(55, 28, 8, Spit, 50, 0, M_AIR),                                  // 84 dards du béhémoth
+    w!(770, 5, 40, Bite, 0, 640, M_LAND),                              // 83 griffes du béhémoth (balaient la zone)
+    w!(39, 28, 8, Spit, 50, 0, M_AIR),                                  // 84 dards du béhémoth
     // améliorations des Transhumants (voir ameliorations.rs)
     w!(360, 42, 44, Shell, 24, 320, M_SURF, min_range: 5),              // 85 Arche : canon lourd
     w!(14, 13, 60, Fire, 0, 448, M_SURF, sustain: 40),                  // 86 Arche : lance-flammes (2 s)
@@ -994,7 +994,7 @@ pub const BUILDINGS: [BuildingDef; 80] = [
     BuildingDef { key: "maw", name: "Panse", size: (2, 2), hp: 1200, cost: &[(SEVE, 90), (SELS, 20)], build: 12, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "sporangium", name: "Sporange", size: (2, 2), hp: 1600, cost: &[(SEVE, 220), (SELS, 110)], build: 18, tech: T_S_SPORANGIA, class: BClass::Turret, weapon: 82, vision: 20, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "spawnery", name: "Frayère", size: (3, 3), hp: 3500, cost: &[(SEVE, 220), (SELS, 90)], build: 22, tech: T_S_TIDES, class: BClass::Factory, factory: FactoryKind::Naval, water: true, vision: 14, race: RACE_SOUCHE, ..BD },
-    BuildingDef { key: "cocoon", name: "Cocon", size: (4, 4), hp: 9000, cost: &[(SEVE, 2400), (SELS, 1100)], build: 120, tech: T_S_BEHEMOTH, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "cocoon", name: "Cocon", size: (4, 4), hp: 9000, cost: &[(SEVE, 1680), (SELS, 770)], build: 120, tech: T_S_BEHEMOTH, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
     // Transhumants : groupe électrogène posé par l'Arche à l'arrêt (amélioration « groupe électrogène »)
     BuildingDef { key: "ark_dock", name: "Groupe de l'Arche", hp: 800, power_prod: 500, cost: &[], build: 1, class: BClass::Power, supply: 8, connect: 20, race: RACE_TRANSH, ..BD },
 ];
@@ -1261,12 +1261,12 @@ pub const UNITS: [UnitDef; 96] = [
     UnitDef { key: "disruptor", name: "Disrupteur", hp: 450, speed: 32, radius: 120, weapons: &[61], cost: &[(IRON_PLATE, 8), (GEAR, 2), (CIRCUIT, 3)], build: 6, tech: 2, tier: 1, ..UD },
     // ----- Souche : organismes vivants, pondus par les graines-mères (voir ponte.rs) -----
     UnitDef { key: "queen", name: "Reine", hp: 10000, speed: 18, radius: 220, weapons: &[62], vision: 26, factory: FactoryKind::None, build_power: 15, tier: 0, commander: true, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "sower", name: "Semeur", hp: 250, speed: 34, radius: 90, cost: &[(SEVE, 30), (SELS, 5)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
-    UnitDef { key: "gnawer", name: "Rongeur", hp: 260, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 25), (SELS, 4)], build: 4, bio: true, race: RACE_SOUCHE, litter: 6, ..UD },
-    UnitDef { key: "spitter", name: "Cracheur", hp: 320, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 50), (SELS, 20)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "shell", name: "Carapace", hp: 2200, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 120), (SELS, 40)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
-    UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "sower", name: "Semeur", hp: 175, speed: 34, radius: 90, cost: &[(SEVE, 21), (SELS, 4)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "gnawer", name: "Rongeur", hp: 182, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 18), (SELS, 3)], build: 4, bio: true, race: RACE_SOUCHE, litter: 6, ..UD },
+    UnitDef { key: "spitter", name: "Cracheur", hp: 224, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 35), (SELS, 14)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "shell", name: "Carapace", hp: 1540, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 84), (SELS, 28)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "vine", name: "Liane", hp: 315, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 42), (SELS, 11)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 280, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 49), (SELS, 18)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
     UnitDef { key: "ark", name: "Arche", layer: Layer::Hover, hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ch_drill", name: "Chariot foreuse", layer: Layer::Hover, hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
@@ -1292,16 +1292,16 @@ pub const UNITS: [UnitDef; 96] = [
     // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
     UnitDef { key: "t_cart", name: "Chariot de convoi", layer: Layer::Hover, hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Souche, suite -----
-    UnitDef { key: "burster", name: "Vessie", hp: 140, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 30), (SELS, 8)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
-    UnitDef { key: "dart", name: "Dard", hp: 360, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 45), (SELS, 18)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "burrower", name: "Fouisseur", hp: 520, speed: 38, radius: 130, weapons: &[77], vision: 16, cost: &[(SEVE, 55), (SELS, 14)], build: 7, tech: T_S_BURROWERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "nurse", name: "Nourrice", hp: 700, speed: 30, radius: 160, vision: 20, cost: &[(SEVE, 65), (SELS, 24)], build: 9, tech: T_S_NURSES, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
-    UnitDef { key: "hornet", name: "Frelon", layer: Layer::Air, hp: 300, speed: 130, radius: 110, weapons: &[78], vision: 26, cost: &[(SEVE, 45), (SELS, 18)], build: 7, tech: T_S_HORNETS, tier: 4, altitude: 2048, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "burster", name: "Vessie", hp: 98, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 21), (SELS, 6)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
+    UnitDef { key: "dart", name: "Dard", hp: 252, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 32), (SELS, 13)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "burrower", name: "Fouisseur", hp: 364, speed: 38, radius: 130, weapons: &[77], vision: 16, cost: &[(SEVE, 39), (SELS, 10)], build: 7, tech: T_S_BURROWERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "nurse", name: "Nourrice", hp: 490, speed: 30, radius: 160, vision: 20, cost: &[(SEVE, 46), (SELS, 17)], build: 9, tech: T_S_NURSES, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "hornet", name: "Frelon", layer: Layer::Air, hp: 210, speed: 130, radius: 110, weapons: &[78], vision: 26, cost: &[(SEVE, 32), (SELS, 13)], build: 7, tech: T_S_HORNETS, tier: 4, altitude: 2048, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
     // la Frayère met bas des petits déjà formés, un par un (pas d'œufs sur l'eau)
-    UnitDef { key: "moray", name: "Murène", layer: Layer::Naval, hp: 1600, speed: 44, radius: 260, weapons: &[79], vision: 26, cost: &[(SEVE, 160), (SELS, 60)], build: 16, tech: T_S_TIDES, factory: FactoryKind::Naval, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "leviathan", name: "Léviathan", layer: Layer::Hover, hp: 14000, speed: 26, radius: 480, weapons: &[80, 81], vision: 32, cost: &[(SEVE, 900), (SELS, 420)], build: 70, tech: T_S_LEVIATHAN, factory: FactoryKind::Naval, tier: 5, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "moray", name: "Murène", layer: Layer::Naval, hp: 1120, speed: 44, radius: 260, weapons: &[79], vision: 26, cost: &[(SEVE, 112), (SELS, 42)], build: 16, tech: T_S_TIDES, factory: FactoryKind::Naval, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "leviathan", name: "Léviathan", layer: Layer::Hover, hp: 9800, speed: 26, radius: 480, weapons: &[80, 81], vision: 32, cost: &[(SEVE, 630), (SELS, 294)], build: 70, tech: T_S_LEVIATHAN, factory: FactoryKind::Naval, tier: 5, bio: true, race: RACE_SOUCHE, ..UD },
     // il sort d'un Cocon, aucune graine-mère ne le pond (voir souche::tick_cocoon)
-    UnitDef { key: "behemoth", name: "Béhémoth", hp: 52000, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 2400), (SELS, 1100)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "behemoth", name: "Béhémoth", hp: 36400, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 1680), (SELS, 770)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : tourelles de l'Arche. Elles roulent jusqu'à leur poste, s'y déploient, et rentrent à
     // bord ; le coût est celui de la reconstruction d'une tourelle détruite (voir ameliorations.rs) -----
     UnitDef { key: "turret_gun", name: "Tourelle mitrailleuse", layer: Layer::Hover, hp: 700, speed: 42, radius: 130, weapons: &[90], vision: 20, cost: &[(IRON_PLATE, 12), (GEAR, 4)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },

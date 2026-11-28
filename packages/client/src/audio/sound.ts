@@ -349,6 +349,12 @@ function voice(buf: AudioBuffer, near: number, pan: number, level: number, wet: 
 const HATCH_SOUND: WeaponSound = { proj: 13, dmg: 20, aoe: 0, cooldown: 30, salvo: 1, sustain: 0 };
 let hatchVoice = 0;
 
+/** Volume relatif d'une explosion de puissance `power` (dégâts ou points de vie détruits) : une base, plus la puissance
+ * fois un coefficient, plafonné (0,55 pour un petit projectile, 1 vers 400 de dégâts, 1,3 au plus). */
+export function boomLoudness(power: number): number {
+  return Math.min(1.3, 0.55 + 0.0011 * Math.max(0, power));
+}
+
 export const sfx = {
   /**
    * Tir d'une arme. near = 0..1 (proximité de la caméra), pan = -1..1 (gauche-droite à l'écran). Une
@@ -382,15 +388,18 @@ export const sfx = {
     if (!r) return;
     voice(r.buf, near * 0.8, pan, r.gain * 0.6, m.wet, Math.random() * 0.2, 1.25 + 0.3 * Math.random());
   },
-  /** Explosion de rayon `radius` (cases) ; kind : 2 pour une unité expérimentale, 3 pour une arme nucléaire. */
-  explosion(radius: number, kind: number, near: number, pan = 0): void {
+  /**
+   * Explosion de rayon `radius` (cases) ; kind : 2 pour une unité expérimentale, 3 pour une arme nucléaire ; `power` :
+   * dégâts de l'arme ou points de vie détruits. Le volume en suit un peu la puissance (`boomLoudness`).
+   */
+  explosion(radius: number, kind: number, near: number, pan = 0, power = 400): void {
     const cls = boomClass(radius, kind);
     // une explosion nucléaire s'entend de partout
     if (cls >= BOOM_NUKE) near = Math.max(near, 0.45);
     if (near <= 0.04 || volume <= 0 || !throttle("b" + cls, cls === 0 ? 45 : 80)) return;
     const m = BOOM_MIX[cls];
     const r = take("b" + cls, m, { kind: "boom", cls });
-    if (r) voice(r.buf, near, pan, r.gain, m.wet, 0, 0.94 + 0.12 * Math.random());
+    if (r) voice(r.buf, near, pan, r.gain * boomLoudness(power), m.wet, 0, 0.94 + 0.12 * Math.random());
   },
   /** Frappe d'un rayon instantané (canon orbital). */
   strike(near: number, pan = 0): void {

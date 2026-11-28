@@ -572,7 +572,15 @@ crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap, unlim
 
 // Événements pour le rendu (non hachés, non sérialisés)
 pub const EV_BEAM: i32 = 2;
+/// Explosion : x, y, rayon (sous-unités), genre (bits 0-7 : 0 ordinaire, 1 grande, 2 unité expérimentale, 3 nucléaire)
+/// | puissance (dégâts ou points de vie détruits, plafonnée à 2²² ; bits 8 et suivants), voir `boom`.
 pub const EV_EXPLOSION: i32 = 3;
+
+/// Genre et puissance d'une explosion, pour l'événement EV_EXPLOSION.
+#[inline]
+pub fn boom(kind: i32, power: i32) -> i32 {
+    kind | power.clamp(0, 1 << 22) << 8
+}
 pub const EV_UNIT_DIED: i32 = 4;
 pub const EV_BUILDING_DIED: i32 = 5;
 pub const EV_BUILT: i32 = 6;

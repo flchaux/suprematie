@@ -174,10 +174,15 @@ await select(null);
 
 // ---------- semeur qui aide une frondaison ; coût d'une portée dans la réserve du réseau ----------
 {
+  // vue large : la trame ne contient que la zone vue
+  await look(heart.x, heart.z, 90);
   const [sower] = await find("sower", true);
   const [leaf] = await find("leaves");
-  await look(leaf.x, leaf.z, 30);
-  await select(sower?.ref ?? null);
+  check(!!sower && !!leaf, "un semeur et une frondaison");
+  // le semeur et la frondaison dans le champ
+  await look((leaf.x + sower.x) / 2, (leaf.z + sower.z) / 2, 40);
+  await select(sower.ref);
+  await page.waitForFunction(() => window.__game.client.selectedUnits().length === 1, null, { timeout: 30000 }).catch(() => {});
   const lp = await page.evaluate(([x, z]) => {
     const p = { x: 0, y: 0 };
     const { client } = window.__game;
@@ -201,7 +206,15 @@ await select(null);
   const aid = await page.evaluate(() => [...document.querySelectorAll(".sel .row")].map((e) => e.textContent).find((t) => t.includes("Semeurs")) ?? "");
   check(/Semeurs\s*1\s*\/\s*12.*\+25 %/.test(aid), "fiche de la frondaison : un semeur, +25 %", aid);
   await shot("semeur");
-  await select(heart.ref);
+  // la graine-mère poussée (l'autre pousse encore, sans réseau)
+  const grown = await page.evaluate(() => {
+    const { client, ui } = window.__game;
+    const f = client.frame;
+    const k = ui.data.buildings.findIndex((b) => b.key === "seed_heart");
+    for (let i = 0, o = f.buildingOff; i < f.nBuildings; i++, o += 8) if ((f.buf[o + 1] & 0xff) === k && ((f.buf[o + 1] >> 8) & 0xff) === 0 && f.buf[o + 4] >= 65536) return f.buf[o] >>> 0;
+    return null;
+  });
+  await select(grown);
   await page.waitForFunction(() => document.querySelectorAll(".sel .units .tt .cost").length > 0, null, { timeout: 60000 }).catch(() => {});
   const red = await page.evaluate(() => ({ costs: document.querySelectorAll(".sel .units .tt .cost").length, bad: document.querySelectorAll(".sel .units .tt .cost .bad").length, net: window.__game.ui.buildingInfo?.souche?.seve }));
   check(red.costs > 0 && red.bad === 0, "coût d'une portée : pas rouge quand le réseau a de quoi", JSON.stringify(red));
