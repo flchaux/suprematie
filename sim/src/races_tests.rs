@@ -762,7 +762,7 @@ fn poles_extend_the_generator_zone_from_pole_to_pole() {
 }
 
 #[test]
-fn a_generator_plants_ten_poles_at_most_and_takes_them_back_when_it_folds() {
+fn a_generator_plants_three_poles_at_most_and_takes_them_back_when_it_folds() {
     let (mut w, g, _) = camp();
     let (gx, gy) = (w.buildings[g].x, w.buildings[g].y);
     let r = w.building_ref(g) as i32;
@@ -770,10 +770,10 @@ fn a_generator_plants_ten_poles_at_most_and_takes_them_back_when_it_folds() {
     for &(x, y) in &spots {
         order(&mut w, 0, O_PLANT_POLE, &[r, x, y]);
     }
-    assert_eq!(poles(&w), crate::transhumants::POLES_PER_GEN, "une dizaine de poteaux par générateur");
+    assert_eq!(poles(&w), 3, "trois poteaux par générateur sans lignes");
     assert_eq!(crate::transhumants::poles_of(&w, g).len(), crate::transhumants::POLES_PER_GEN);
     // un poteau détruit libère sa place
-    let p = crate::transhumants::poles_of(&w, g)[3];
+    let p = crate::transhumants::poles_of(&w, g)[1];
     remove_building(&mut w, p, true);
     let (x, y) = spots[11];
     order(&mut w, 0, O_PLANT_POLE, &[r, x, y]);

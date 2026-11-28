@@ -56,7 +56,7 @@ pub const LOOT_RANGE: i32 = 15;
 /// Hydrocarbures de réserve au départ, à bord de la soute (le réservoir du générateur est plein en plus).
 pub const START_FUEL_RESERVE: u16 = 40;
 /// Poteaux relais qu'un générateur nomade peut avoir plantés en même temps.
-pub const POLES_PER_GEN: usize = 10;
+pub const POLES_PER_GEN: usize = 3;
 
 #[inline]
 pub fn is_transh(w: &World, p: u8) -> bool {
@@ -257,8 +257,9 @@ fn deploy(w: &mut World, s: usize) {
     buildings::complete_building(w, b);
     let def = bdef(bkind);
     let bb = &mut w.buildings[b];
-    // (au-delà du deuxième octet : équipements des chariots rentrés, voir stow_carts)
-    bb.mods = mods & 0xffff;
+    // (au-delà de ses emplacements, pour une soute : équipements des chariots rentrés, voir stow_carts)
+    let own = crate::ameliorations::own_mods(kind, mods);
+    bb.mods = own;
     bb.mod_job = mod_job;
     bb.mod_left = mod_left;
     bb.hp = ((def.hp as i64 * hp as i64 / max as i64) as i32).clamp(1, def.hp);
@@ -279,7 +280,7 @@ fn deploy(w: &mut World, s: usize) {
     if def.class == BClass::Depot {
         bb.stash = stock;
     }
-    if mods & 0xffff != 0 {
+    if own != 0 {
         crate::ameliorations::applied(w, crate::ameliorations::Host::B(b));
     }
     if bkind == B_T_HOLD {
@@ -585,7 +586,7 @@ pub fn pole_in_reach(w: &World, g: usize, x: i32, y: i32) -> bool {
 }
 
 /// Le générateur nomade `g` plante un poteau relais sur la case (x, y) : tout de suite, sans coût, s'il en a
-/// moins de POLES_PER_GEN, si la case est libre et à portée de lui ou d'un de ses poteaux.
+/// moins que sa limite (`ameliorations::poles_max` : POLES_PER_GEN, plus avec les lignes), si la case est libre et à portée de lui ou d'un de ses poteaux.
 pub fn plant_pole(w: &mut World, g: usize, x: i32, y: i32) -> bool {
     let gb = &w.buildings[g];
     if !gb.alive || gb.kind != B_T_GENERATOR || !gb.complete() {

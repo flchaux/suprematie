@@ -10,13 +10,15 @@ export type KitSet = [number, number, number];
 export const unpackKit = (v: number): KitSet => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255];
 export const emptyKit = (s: KitSet): boolean => s.every((m) => !m);
 
-/** Emplacements d'un porteur : l'Arche, un module, une unité de combat, un chariot de convoi, le chariot bouclier. */
+/** Emplacements d'un porteur : l'Arche, un module (le générateur en a trois), une unité de combat, un chariot de convoi, le
+ * chariot bouclier. */
 export function slotsOf(d: GameData, host: number): ModSlot[] {
   const u = d.units[host];
   if (!u) return [];
   if (u.key === "ark") return d.arkSlots;
   if (u.key === "t_cart") return [d.oneSlot];
   if (u.key === "t_shield_cart" && d.shieldSlots) return d.shieldSlots;
+  if (u.key === "ch_generator" && d.generatorSlots) return d.generatorSlots;
   return u.deploys >= 0 ? d.moduleSlots : d.unitSlots;
 }
 

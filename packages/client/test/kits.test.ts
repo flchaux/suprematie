@@ -16,8 +16,8 @@ beforeAll(async () => {
 });
 
 describe("gabarits d'équipement", () => {
-  it("emplacements : cinq pour l'Arche, trois pour une unité de combat, deux pour un module, un pour un chariot", () => {
-    expect(["ark", "rider", "ch_drill", "t_cart"].map((k) => slotsOf(d, unit(k)).length)).toEqual([5, 3, 2, 1]);
+  it("emplacements : cinq pour l'Arche, trois pour une unité de combat, deux pour un module (trois pour le générateur), un pour un chariot", () => {
+    expect(["ark", "rider", "ch_drill", "ch_generator", "t_cart"].map((k) => slotsOf(d, unit(k)).length)).toEqual([5, 3, 2, 3, 1]);
     expect(["tracker", "rider", "harrow", "towed_gun", "ram"].every((k) => hasKits(d, unit(k)))).toBe(true);
     expect(["ark", "ch_drill", "t_cart", "ark_car", "turret_gun", "light_tank"].some((k) => hasKits(d, unit(k)))).toBe(false);
   });

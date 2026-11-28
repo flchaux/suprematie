@@ -205,8 +205,8 @@ fn module_specialities_change_tanks_wear_weapons_and_armor() {
     let tank = crate::buildings::tank_of(&w.buildings[gen]);
     w.buildings[gen].mods = (M_GEN_TANK as u64) << 8;
     assert_eq!(crate::buildings::tank_of(&w.buildings[gen]), 3 * tank);
-    w.buildings[gen].mods = (M_GEN_POLES as u64) << 8;
-    assert_eq!(poles_max(&w.buildings[gen]), 16);
+    w.buildings[gen].mods = (M_GEN_TANK as u64) << 8 | (M_GEN_LINES2 as u64) << 16;
+    assert_eq!((crate::buildings::tank_of(&w.buildings[gen]), poles_max(&w.buildings[gen])), (3 * tank, 12));
     for (mods, weapon) in [(0, bdef(B_T_BASTION).weapon), (M_BASTION_LONG as u64, W_BASTION_LONG as i8), ((M_BASTION_FLAK as u64) << 8, W_BASTION_DUAL as i8), (M_BASTION_LONG as u64 | (M_BASTION_FLAK as u64) << 8, W_BASTION_LONG_DUAL as i8)] {
         w.buildings[bas].mods = mods;
         assert_eq!(building_weapon(&w.buildings[bas]), weapon);

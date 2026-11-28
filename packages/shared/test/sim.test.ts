@@ -37,13 +37,17 @@ describe("données", () => {
     expect(data.units.filter((u) => u.car).map((u) => [u.key, u.factory])).toEqual([["ark_car", 0]]);
     expect(data.arkRadii).toEqual([360, 395, 430, 465]);
     expect(data.turretKinds.map((k) => data.units[k].key)).toEqual(["turret_gun", "turret_aa", "turret_mortar"]);
-    // améliorations : cinq emplacements pour l'Arche, trois pour une unité de combat, deux (à deux choix) par module ;
-    // le coût compte les relevés (objet 30)
+    // améliorations : cinq emplacements pour l'Arche, trois pour une unité de combat, deux (à deux choix) par module,
+    // trois pour le générateur (lignes : deux paliers, à la place des câbles longs de sa spécialité) ; le coût compte
+    // les relevés (objet 30)
     expect(data.arkSlots.map((s) => s.key)).toEqual(["arm", "hull", "deck", "drive", "support"]);
     const ark = data.units.findIndex((u) => u.key === "ark");
     expect(data.mods.filter((m) => m.host === ark).length).toBe(25);
     expect([data.unitSlots.map((s) => s.key), data.moduleSlots.map((s) => s.key)]).toEqual([["arm", "frame", "kit"], ["yield", "spec"]]);
-    for (const u of data.units.filter((u) => u.deploys >= 0)) expect(data.mods.filter((m) => data.units[m.host] === u).length, u.key).toBe(4);
+    for (const u of data.units.filter((u) => u.deploys >= 0)) expect(data.mods.filter((m) => data.units[m.host] === u).length, u.key).toBe(u.key === "ch_generator" ? 5 : 4);
+    expect(data.generatorSlots?.map((s) => s.key)).toEqual(["yield", "spec", "lines"]);
+    const gen = data.units.findIndex((u) => u.key === "ch_generator");
+    expect(data.mods.filter((m) => m.host === gen).map((m) => [m.key, m.slot, m.rank])).toEqual([["gen_big", 0, 1], ["gen_lean", 0, 1], ["gen_tank", 1, 1], ["gen_lines1", 2, 1], ["gen_lines2", 2, 2]]);
     expect(data.shieldSlots?.map((s) => s.key)).toEqual(["emitter", "cells", "regen"]);
     const cart = data.units.findIndex((u) => u.key === "t_shield_cart");
     expect(data.mods.filter((m) => m.host === cart).map((m) => [m.slot, m.rank])).toEqual([[0, 1], [0, 2], [0, 3], [0, 1], [1, 1], [1, 2], [1, 3], [2, 1], [2, 2]]);
