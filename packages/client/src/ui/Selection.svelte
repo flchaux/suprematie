@@ -347,7 +347,7 @@
           <span class="kicker">Réseau</span>
           {#if sv.net}
             <Item id={SEVE} size={16} /> <span class="num">{sv.seve}</span> <Item id={SELS} size={16} /> <span class="num">{sv.sels}</span> <Item id={EAU} size={16} /> <span class="num">{sv.eau ?? 0}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
-          {:else if !sv.heart}<b class="bad">hors du terreau : rien ne pousse</b>{:else}<span class="dim">le sien, une fois poussée</span>{/if}
+          {:else if bdef.key === "borehole"}<b class="bad">hors du terreau : amenez-y une racine pour construire le puits</b>{:else if !sv.heart}<b class="bad">hors du terreau : rien ne pousse</b>{:else}<span class="dim">le sien, une fois poussée</span>{/if}
         </div>
         {#if sv.heart}
           <div class="row small" title="Pousse grâce aux organismes sacrifiés"><span class="kicker">Sacrifices</span> <Item id={SEVE} size={16} /> <b class="num">{sv.heart.fed.toLocaleString("fr-FR")}</b><span class="dim"> / <span class="num">{sv.heart.need.toLocaleString("fr-FR")}</span> sève</span></div>
