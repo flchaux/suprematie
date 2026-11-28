@@ -45,10 +45,11 @@ fn grid(w: &World) -> (i32, i32) {
     ((w.map.w + CELL - 1) / CELL, (w.map.h + CELL - 1) / CELL)
 }
 
-/// Calcule la réserve d'eau de chaque maille s'il ne l'est pas encore (première utilisation, partie relue).
+/// Calcule la réserve d'eau de chaque maille s'il ne l'est pas encore (premier tick d'une partie avec la Souche,
+/// partie relue) : la fiche d'un forage la lit.
 pub fn ensure(w: &mut World) {
     let (gw, gh) = grid(w);
-    if w.aquifer.len() == (gw * gh) as usize {
+    if w.aquifer.len() == (gw * gh) as usize || !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
         return;
     }
     let seed = w.params.first().copied().unwrap_or(1) as u32 ^ 0x4EA0_5EED;

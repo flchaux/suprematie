@@ -66,6 +66,25 @@ fn net_eau(w: &World, b: usize) -> i32 {
     w.nets[w.buildings[b].net as usize].eau
 }
 
+/// La fiche d'un forage dit l'eau de la nappe dès qu'il est creusé, même sans aucun puits dans la partie.
+#[test]
+fn a_borehole_reads_its_aquifer_before_any_well() {
+    let mut w = game();
+    let (_, hx, hy) = base(&mut w, 30);
+    let b = place_building(&mut w, 0, B_BOREHOLE, hx + 20, hy, 0).unwrap();
+    complete_building(&mut w, b);
+    w.step(&[]);
+    assert!(!w.aquifer.is_empty(), "calculées dès le premier tick");
+    let gw = (w.map.w + eau::CELL - 1) / eau::CELL;
+    for gy in hy / eau::CELL - 4..=hy / eau::CELL + 4 {
+        for gx in (hx + 20) / eau::CELL - 4..=(hx + 20) / eau::CELL + 4 {
+            w.aquifer[(gy * gw + gx) as usize] = 1000;
+        }
+    }
+    let info = crate::render::info_building(&w, w.building_ref(b));
+    assert!(info.contains("\"well\":{\"rate\":250"), "{info}");
+}
+
 #[test]
 fn aquifers_are_hidden_patches_drawn_from_the_seed() {
     let mut w = game();

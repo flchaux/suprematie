@@ -1087,6 +1087,7 @@ impl World {
         self.grid.rebuild_units(&self.units, &teams);
         crate::combat::collect_shields(self);
         crate::soil::ensure(self);
+        crate::eau::ensure(self);
         crate::essaim::refresh_royal(self);
         crate::transfert::ensure(self);
         crate::buildings::update_buildings(self);
