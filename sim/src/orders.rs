@@ -73,11 +73,12 @@ pub const O_TAME: i32 = 52;
 /// Générateur nomade des Transhumants : planter un poteau relais : [réf. du générateur, x, y (cases, case du
 /// poteau)] (voir transhumants::plant_pole).
 pub const O_PLANT_POLE: i32 = 53;
-/// Soute des Transhumants : atteler un chariot de convoi (coût pris dans son stock) : [réf. de la soute]
-/// (voir transhumants::hitch).
+/// Soute des Transhumants, ou Arche : atteler un chariot de convoi (coût pris dans son stock) : [réf. de la soute
+/// ou identifiant de l'Arche] (voir chariots::hitch_at).
 pub const O_HITCH: i32 = 54;
-/// Chariots de convoi : navette entre leur soute et un module : [drapeaux (bit 0 en file, bit 1 livrer : de la
-/// soute vers le fabricant), réf. du module, n, unités…] (voir transhumants::haul_step).
+/// Chariots de convoi : navette entre leur foyer (soute ou Arche) et un module : [drapeaux (bit 0 en file, bit 1
+/// livrer : du foyer vers le fabricant), réf. du module (identifiant d'une de nos Arches : s'y rattacher et y
+/// décharger), n, unités…] (voir chariots::haul_step).
 pub const O_HAUL: i32 = 55;
 /// Mettre en pause (1) ou relancer (0) des bâtiments de production : [pause, n, réf. de bâtiment…]
 /// (extracteurs, fabricants, usines d'unités terminés ; voir buildings::paused).
@@ -115,8 +116,11 @@ pub const O_KIT_APPLY: i32 = 69;
 /// Chenillards des Transhumants : s'atteler au convoi de l'Arche : [drapeaux (bit 0 en file), réf. de l'Arche, n,
 /// unités…] (voir convoi.rs, « Chenillards attelés » ; un ordre qui remplace celui-ci les dételle).
 pub const O_TOW: i32 = 70;
+/// Chariots de convoi : collecte autour de leur foyer (soute ou Arche) : [drapeaux (bit 0 en file), n, unités…]
+/// (voir chariots::gather_step).
+pub const O_GATHER: i32 = 71;
 /// Souche : consommation d'eau des frondaisons : [pourcentage (0 à 200), n, réf. de bâtiment…] (voir eau::leaf_water).
-pub const O_WATER: i32 = 71;
+pub const O_WATER: i32 = 72;
 
 /// Gabarit lu dans un ordre : trois améliorations, une par emplacement.
 fn kit_set(c: &mut Cur) -> u32 {
@@ -341,6 +345,11 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 return;
             }
             let front_before = bb.queue.first().map(|q| q.0);
+            // Arches : ARKS_MAX au plus par joueur, celles en jeu et celles en file comprises
+            let delta = if kind as u16 == crate::data::U_ARK && delta > 0 { delta.min(crate::transhumants::ARKS_MAX as i32 - crate::transhumants::arks_planned(w, p) as i32).max(0) } else { delta };
+            if delta == 0 {
+                return;
+            }
             let bb = &mut w.buildings[b];
             if delta > 0 {
                 if let Some(last) = bb.queue.last_mut() {
@@ -696,8 +705,12 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             }
         }
         O_HITCH => {
-            if let Some(b) = own_building(w, p, c.next()) {
+            // une soute déployée, ou une Arche (référence d'unité)
+            let r = c.next();
+            if let Some(b) = own_building(w, p, r) {
                 crate::transhumants::hitch(w, b);
+            } else if let Some(a) = own_unit(w, p, r).filter(|&a| w.units.kind[a] == crate::data::U_ARK) {
+                crate::chariots::hitch_at(w, crate::drones::Store::U(a));
             }
         }
         O_HAUL => {
@@ -705,10 +718,18 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             let (q, feed) = (flags & 1 != 0, flags & 2 != 0);
             let site = c.next() as u32;
             let ok = w.building(site).is_some_and(|b| crate::transhumants::haul_ok(w, p, b, feed));
+            // sur une de nos Arches : les chariots s'y rattachent (s'il y a une place), y rentrent et déchargent
+            let ark = w.unit(site).filter(|&a| w.units.kind[a] == crate::data::U_ARK && w.units.owner[a] == p);
             for id in units_list(&mut c) {
                 if let Some(s) = own_unit(w, p, id) {
-                    if ok && w.units.kind[s] == U_T_CART {
+                    if w.units.kind[s] != U_T_CART {
+                        continue;
+                    }
+                    if ok {
                         give(w, s, q, Order::Haul { site, feed });
+                    } else if let Some(a) = ark {
+                        crate::chariots::rehome(w, s, crate::drones::Store::U(a));
+                        give(w, s, q, Order::Haul { site, feed: false });
                     }
                 }
             }
@@ -758,6 +779,17 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
         O_KIT_ACTIVE => {
             let (kind, k) = (c.next(), c.next());
             crate::gabarits::activate(w, p, kind, k);
+        }
+        O_GATHER => {
+            let q = c.next() & 1 != 0;
+            for id in units_list(&mut c) {
+                if let Some(s) = own_unit(w, p, id).filter(|&s| w.units.kind[s] == U_T_CART) {
+                    give(w, s, q, Order::Gather);
+                    if !q {
+                        w.units.cold[s].work = NONE;
+                    }
+                }
+            }
         }
         O_TOW => {
             let q = c.next() & 1 != 0;
@@ -935,11 +967,16 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
             }
         }
         O_SURRENDER => {
-            let c = w.players[p as usize].commander;
-            if let Some(s) = w.unit(c) {
-                w.units.hp[s] = 0;
-                w.dead_units.push(s as u32);
-            } else {
+            // tous ses commandants tombent (plusieurs Arches : chacune explose), puis le joueur
+            let mut any = false;
+            for s in 0..w.units.alive.len() {
+                if w.units.alive[s] && w.units.owner[s] == p && w.units.hp[s] > 0 && udef(w.units.kind[s]).commander {
+                    w.units.hp[s] = 0;
+                    w.dead_units.push(s as u32);
+                    any = true;
+                }
+            }
+            if !any {
                 crate::combat::eliminate(w, p);
             }
         }

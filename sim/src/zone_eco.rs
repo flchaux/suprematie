@@ -297,14 +297,14 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         }
         // soutes des unités du joueur (commandant, ingénieurs) qui se trouvent dans la zone ; celle du
         // commandant est un dépôt mobile (plafond COMMANDER_CAP)
-        let store = crate::drones::commander_store(w, p);
+        let stores = crate::drones::commander_stores(w, p);
         for s in 0..w.units.alive.len() {
             let h = &w.units.cold[s].hold;
-            if !w.units.alive[s] || w.units.owner[s] != p || (h.iter().all(|&n| n == 0) && store != Some(s)) {
+            if !w.units.alive[s] || w.units.owner[s] != p || (h.iter().all(|&n| n == 0) && !stores.contains(&s)) {
                 continue;
             }
             if zone_of(w, p, w.units.x[s].div_euclid(TILE), w.units.y[s].div_euclid(TILE), 1, 1, None) == z {
-                if store == Some(s) {
+                if stores.contains(&s) {
                     cap += crate::ameliorations::store_cap(w, s) as i64;
                 }
                 for (i, &n) in h.iter().enumerate().take(N) {

@@ -1209,8 +1209,22 @@ fn kill_unit(w: &mut World, s: usize) {
     if def.commander {
         w.ev(EV_EXPLOSION, x, y, 12 * TILE, boom(3, 5000));
         area_damage(w, x, y, 12 * TILE, 6000, owner, M_SURF, true);
-        eliminate(w, owner);
+        // un joueur ne tombe qu'avec son dernier commandant (Transhumants : plusieurs Arches) ; sinon le suivant
+        // (plus petite case d'unité) devient son commandant
+        match next_commander(w, owner, s) {
+            Some(n) => {
+                if w.unit(w.players[owner as usize].commander).is_none_or(|c| c == s) {
+                    w.players[owner as usize].commander = w.unit_id(n);
+                }
+            }
+            None => eliminate(w, owner),
+        }
     }
+}
+
+/// Un autre commandant vivant du joueur `p` que l'unité `dead` (plus petite case d'unité), s'il en a un.
+pub fn next_commander(w: &World, p: u8, dead: usize) -> Option<usize> {
+    (0..w.units.alive.len()).find(|&o| o != dead && w.units.alive[o] && w.units.owner[o] == p && w.units.hp[o] > 0 && udef(w.units.kind[o]).commander)
 }
 
 pub fn eliminate(w: &mut World, p: u8) {

@@ -104,10 +104,12 @@ export function loop(gc: GameClient, now: number): void {
   // ordres affichés avec Maj (unités sélectionnées) ; constructions prévues de nos bâtisseurs
   const shift = gc.keys.has("ShiftLeft") || gc.keys.has("ShiftRight");
   // ordres des seules unités qui nous appartiennent (jamais ceux d'un ennemi sélectionné)
-  sc.showOrders = shift && gc.selOwn.size > 0;
+  // chariots de convoi sélectionnés : leur navette ou leur collecte est toujours tracée (du foyer au bâtiment desservi)
+  const cartGroup = !shift && gc.selOwn.size > 0 && ui.me >= 0 ? ui.selUnits.find((g) => gc.data?.units[g.kind]?.key === "t_cart") : undefined;
+  sc.showOrders = (shift && gc.selOwn.size > 0) || !!cartGroup;
   if (sc.showOrders && now - gc.lastOrdersQuery > 250) {
     gc.lastOrdersQuery = now;
-    const ids = [...gc.selOwn].slice(0, 400);
+    const ids = (shift ? [...gc.selOwn] : cartGroup!.ids).slice(0, 400);
     void gc.query<Int32Array | null>("orders", ids).then((r) => sc.overlay?.setOrders(r));
   }
   if (ui.me >= 0 && !ui.spectator && now - gc.lastPlannedQuery > 500) {

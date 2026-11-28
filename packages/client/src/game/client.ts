@@ -255,6 +255,7 @@ export class GameClient {
   deploySelected(): void { Orders.deploySelected(this); }
   towSelected(): boolean { return Orders.towSelected(this); }
   untowSelected(): void { Orders.untowSelected(this); }
+  gatherSelected(): void { Orders.gatherSelected(this); }
 
   // ---------- clientPlacement.ts : mode construction et pose ----------
   startPole(): void { Placement.startPole(this); }

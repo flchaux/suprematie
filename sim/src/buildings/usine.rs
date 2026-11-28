@@ -85,7 +85,9 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
             return;
         }
         let missing = if litter { None } else { def.cost.iter().find(|c| factory_has(&w.buildings[b], c.0) < c.1 * n).map(|c| c.0) };
-        if missing.is_some() || w.players[owner].unit_count + n as u32 > UNIT_CAP {
+        // Arche : pas plus de ARKS_MAX en jeu (la suivante attend qu'une disparaisse)
+        let ark_full = kind == U_ARK && crate::transhumants::arks_of(w, owner as u8) >= crate::transhumants::ARKS_MAX;
+        if missing.is_some() || ark_full || w.players[owner].unit_count + n as u32 > UNIT_CAP {
             // en panne de composants depuis FACTORY_ALERT_DELAY : une alerte pour son joueur (une seule par attente)
             let bb = &mut w.buildings[b];
             // `target` : NONE hors attente, tick du début de l'attente, puis FACTORY_ALERTED une fois l'alerte donnée
@@ -111,8 +113,8 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
         w.buildings[b].target = NONE;
         w.buildings[b].working = true;
         w.buildings[b].progress = 0;
-        // Transhumants : l'unité sortira équipée selon son gabarit, s'il peut être payé
-        if def.race == RACE_TRANSH {
+        // Transhumants : l'unité sortira équipée selon son gabarit, s'il peut être payé (pas une Arche : elle sort nue)
+        if def.race == RACE_TRANSH && kind != U_ARK {
             let (cx, cy) = w.buildings[b].center();
             w.buildings[b].kit = crate::gabarits::begin(w, owner as u8, cx, cy, kind);
         }

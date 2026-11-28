@@ -36,6 +36,7 @@
   const anyEng = $derived(!!d && kinds.some((k) => d.units[k].buildPower > 0));
   // déploiement : sonde, artillerie lourde, canon tracté, chenillards des Transhumants (ils deviennent leur module)
   const chenillards = $derived(!!d && kinds.some((k) => (d.units[k].deploys ?? -1) >= 0));
+  const carts = $derived(!!d && kinds.some((k) => d.units[k].key === "t_cart"));
   // Reine de la Souche : « Enraciner » (sur son terreau) ou « Déraciner »
   const queen = $derived(has("queen"));
   const rooted = $derived(queen && !!ui.unitInfo?.deployed);
@@ -588,11 +589,12 @@
         {/if}
         <div class="units">
           {#each factoryUnits as { u, i }, slot}
-            {@const ok = hasTechUI(u.tech)}
+            {@const arkFull = u.key === "ark" && !!info.transh?.arks && info.transh.arks[1] >= info.transh.arks[2]}
+            {@const ok = hasTechUI(u.tech) && !arkFull}
             {@const q = info.queue.find((e: [number, number]) => e[0] === i)}
             {@const hk = keyOf(`factory${slot + 1}`)}
             <div class="tip">
-              <button class="ub" class:locked={!ok} disabled={!ok} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
+              <button class="ub" class:locked={!ok} disabled={!hasTechUI(u.tech) || (arkFull && !q)} onclick={(e) => client.queueUnit(i, e.shiftKey ? 5 : 1)} oncontextmenu={(e) => { e.preventDefault(); client.queueUnit(i, e.shiftKey ? -5 : -1); }}>
                 {#if sprite("units", u.key)}<img src={sprite("units", u.key)} alt="" />{:else}<span class="ab">{abbrev(u.name)}</span>{/if}
                 {#if q}<span class="qn num">{q[1]}</span>{/if}
                 {#if prod >= 0 && info.queue[0]?.[0] === i}<span class="uprog" style:width={prod * 100 + "%"}></span>{/if}
@@ -601,7 +603,7 @@
                 {#if !ok}<span class="lk"><Icon name="lock" size={12} /></span>{/if}
                 {#if hk}<span class="hk key">{hk}</span>{/if}
               </button>
-              <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
+              <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !hasTechUI(u.tech)}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{:else if arkFull}<span class="bad"><Icon name="lock" size={12} /> {info.transh.arks[2]} Arches au plus : {info.transh.arks[0]} en jeu, {info.transh.arks[1] - info.transh.arks[0]} en file</span><br />{/if}
                 <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `éclosion en ${10 + 2 * u.build} s` : `${u.build} s`}</span><br />
                 {#if u.litter}<span class="good">Portée de {u.litter} œufs{brood ? `, ${brood.max} portées à la fois` : ""}</span><br /><span class="dim">La portée, en tout :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} have={info.souche ? upgHave : undefined} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
             </div>
@@ -1013,6 +1015,7 @@
           <button class="cmd" onclick={() => client.towSelected()} title="Atteler à l'Arche : derrière ses remorques, neuf au plus, −3 % de vitesse de l'Arche chacun (aussi : clic droit sur l'Arche)"><Icon name="link" size={17} /><span class="key">{keyOf("tow")}</span></button>
           {#if (ui.unitInfo?.tow ?? 0) !== 0 || total > 1}<button class="cmd" onclick={() => client.untowSelected()} title="Dételer : quitte le convoi et s'arrête (ceux qui suivaient remontent d'un cran)"><Icon name="unlink" size={17} /></button>{/if}
         {/if}
+        {#if carts}<button class="cmd" class:on={ui.unitInfo?.orders?.[0] === 26} onclick={() => client.gatherSelected()} title="Collecte : tournée des bâtiments de production autour de sa soute ou de son Arche ; il rapporte ce qui attend en sortie (clic droit sur un module : navette)"><Icon name="harvest" size={17} /></button>{/if}
         {#if anyCarrier}<button class="cmd" onclick={() => client.setMode("unload")} title="Décharger"><Icon name="unload" size={17} /><span class="key">{keyOf("unload")}</span></button>{/if}
         {#if queen}
           {@const dens = client.denLimit()}

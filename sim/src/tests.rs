@@ -587,6 +587,10 @@ fn implied_techs(t: u8, out: &mut Vec<u8>) {
     for &p in d.prereq {
         implied_techs(p, out);
     }
+    // recherche des Industriels acquise en même temps (TechDef::also : électronique nomade)
+    if d.also != 0 {
+        implied_techs(d.also, out);
+    }
     for k in 0..d.tier {
         let pack = PACK1 + k;
         if let Some(r) = RECIPES.iter().find(|r| r.output.0 == pack) {

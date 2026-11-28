@@ -21,7 +21,12 @@ export const ORDER_COLORS: Record<number, number> = {
   15: 0xffd060, 16: 0xff9a3c, 17: 0xff9a3c, 18: 0xffd060, 19: 0xffd060,
   // navette de transport
   23: 0xc07dff,
+  // chariots de convoi : navette (du foyer au module), collecte (du foyer au bâtiment visé)
+  22: 0xffc83c, 26: 0x6fe8b0,
 };
+
+/** Étape d'ordre marquée « point de départ » (code + 128) : pas de trait depuis l'étape précédente. */
+export const ORDER_FROM = 128;
 
 export class CommandOverlay {
   group = new THREE.Group();
@@ -148,15 +153,20 @@ export class CommandOverlay {
       let px = p ? p.x : u.x / TILE;
       let pz = p ? p.z : u.y / TILE;
       let py = groundHeight(this.map, px, pz) + 0.3;
-      for (const [code, sx, sy] of u.steps) {
+      for (const [raw, sx, sy] of u.steps) {
         if (seg >= MAX_SEG) break;
         const x = sx / TILE;
         const z = sy / TILE;
         const y = groundHeight(this.map, x, z) + 0.3;
+        const from = (raw & ORDER_FROM) !== 0;
+        const code = raw & ~ORDER_FROM;
         c.setHex(ORDER_COLORS[code] ?? 0xffffff);
-        put(seg * 2, px, py, pz);
-        put(seg * 2 + 1, x, y, z);
-        seg++;
+        // point de départ (foyer d'un chariot de convoi) : le trait part de lui, pas de l'unité
+        if (!from) {
+          put(seg * 2, px, py, pz);
+          put(seg * 2 + 1, x, y, z);
+          seg++;
+        }
         const key = (Math.round(x * 2) * 8192 + Math.round(z * 2)) * 16 + code;
         if (!seen.has(key) && nm < 3000) {
           seen.add(key);

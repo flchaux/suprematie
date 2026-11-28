@@ -45,7 +45,7 @@ fn stock_totals(w: &World) -> (Vec<[i32; NUM_ITEMS]>, Vec<i32>, Vec<[i32; NUM_IT
     }
     // la soute d'un commandant compte comme un dépôt
     for (p, c) in cap.iter_mut().enumerate() {
-        if let Some(s) = crate::drones::commander_store(w, p as u8) {
+        for s in crate::drones::commander_stores(w, p as u8) {
             *c += crate::ameliorations::store_cap(w, s) as i32;
         }
     }
@@ -141,6 +141,7 @@ fn unit_words(w: &World, s: usize, out: &mut Vec<i32>) {
                     w.ref_pos(target).unwrap_or((w.units.x[s], w.units.y[s]))
                 }
                 Order::Face { .. } => (w.units.x[s], w.units.y[s]),
+                Order::Gather => crate::chariots::gather_point(w, s).unwrap_or((w.units.x[s], w.units.y[s])),
                 Order::Ferry { ax, ay, bx, by } => if crate::units::ferry_loaded(w, s) { (bx, by) } else { (ax, ay) },
                 Order::Harvest { x, y } => (x * TILE + TILE / 2, y * TILE + TILE / 2),
                 Order::DeployAt { x, y, .. } => (x, y),
@@ -851,6 +852,7 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
         Order::Attack { target } | Order::Assist { target } | Order::Reclaim { target } | Order::Load { target } | Order::Enter { target } | Order::Collect { target } | Order::Pickup { target } | Order::Tame { target } | Order::Sacrifice { target } | Order::Haul { site: target, .. } | Order::Tow { ark: target } => w.ref_pos(target),
         Order::Jump { beacon } => w.ref_pos(beacon),
         Order::Face { .. } => None,
+        Order::Gather => crate::chariots::gather_point(w, s),
         Order::Ferry { ax, ay, .. } => Some((ax, ay)),
         Order::Harvest { x, y } => Some((x * TILE + TILE / 2, y * TILE + TILE / 2)),
         Order::DeployAt { x, y, .. } => Some((x, y)),
@@ -859,13 +861,21 @@ fn order_point(w: &World, s: usize, o: &Order) -> Option<(i32, i32)> {
 }
 
 /// Files d'ordres des unités demandées (affichage avec Maj) :
-/// pour chaque unité vivante : identifiant, x, y, nombre d'ordres n, puis n fois (code, x, y).
+/// pour chaque unité vivante : identifiant, x, y, nombre d'ordres n, puis n fois (code, x, y) ; un code + 128 marque un
+/// point de départ (pas de trait depuis l'étape précédente : foyer d'un chariot de convoi).
 pub fn unit_orders(w: &World, ids: &[u32]) -> Vec<i32> {
     let mut out = Vec::new();
     for &id in ids.iter().take(400) {
         let Some(s) = w.unit(id) else { continue };
         let mut pts: Vec<(u8, i32, i32)> = Vec::new();
         for o in w.units.cold[s].orders.iter() {
+            // chariot de convoi : le trait part de son foyer (soute ou Arche ; code + 128 : point de départ, sans
+            // trait depuis l'unité), puis va au bâtiment desservi
+            if matches!(o, Order::Haul { .. } | Order::Gather) {
+                if let Some((x, y)) = crate::chariots::home_point(w, s) {
+                    pts.push((o.code() | 128, x, y));
+                }
+            }
             if let Some((x, y)) = order_point(w, s, o) {
                 pts.push((o.code(), x, y));
             }

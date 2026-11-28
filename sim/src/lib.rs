@@ -626,6 +626,8 @@ mod transhumants_tests;
 #[cfg(test)]
 mod transfert_tests;
 #[cfg(test)]
+mod chariots_tests;
+#[cfg(test)]
 mod troupeau_tests;
 #[cfg(test)]
 mod bouclier_tests;

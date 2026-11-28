@@ -152,6 +152,10 @@ pub enum Order {
     /// chenillard des Transhumants : rejoindre la queue du convoi de l'Arche `ark` et s'y atteler ; attelé, il
     /// garde cet ordre (voir convoi.rs, « Chenillards attelés »)
     Tow { ark: u32 },
+    /// chariot de convoi des Transhumants : collecte, tournée des bâtiments de production de son joueur autour de son
+    /// foyer (soute ou Arche) dont il rapporte la sortie ; bâtiment visé dans `UnitCold::work` (voir
+    /// chariots::gather_step)
+    Gather,
 }
 
 impl Order {
@@ -182,6 +186,7 @@ impl Order {
             Order::Ferry { .. } => 23,
             Order::Sacrifice { .. } => 24,
             Order::Tow { .. } => 25,
+            Order::Gather => 26,
         }
     }
 }
@@ -238,6 +243,8 @@ impl Ser for Order {
                 dir.ser(w);
                 bid.ser(w);
             }
+            // (bâtiment visé dans UnitCold::work, déjà sauvegardé)
+            Order::Gather => {}
         }
     }
     fn de(r: &mut crate::ser::R) -> Self {
@@ -278,6 +285,7 @@ impl Ser for Order {
             23 => Order::Ferry { ax: i(r), ay: i(r), bx: i(r), by: i(r) },
             24 => Order::Sacrifice { target: u(r) },
             25 => Order::Tow { ark: u(r) },
+            26 => Order::Gather,
             _ => Order::Enter { target: u(r) },
         }
     }

@@ -345,7 +345,8 @@ fn carts_resume_their_routes_when_the_hold_is_redeployed() {
     let mut w = crate::save::restore(&crate::save::snapshot(&w)).expect("relue");
     let ch = *all(&w, U_CH_HOLD).iter().find(|&&s| w.units.cold[s].pack_fuel == 3).expect("soute repliée avec ses trois chariots");
     deploy(&mut w, ch);
-    let cs = all(&w, U_T_CART);
+    // (pas le chariot de départ de l'Arche)
+    let cs: Vec<usize> = all(&w, U_T_CART).into_iter().filter(|&c| w.building(w.units.cold[c].parent).is_some()).collect();
     assert_eq!(cs.len(), 3);
     let route = |s: usize| match w.units.cold[s].orders.first() {
         Some(Order::Haul { site, feed }) => Some((*site, *feed)),
@@ -442,14 +443,15 @@ fn a_hold_does_not_change_the_ore_of_a_furnace_fed_by_a_drill() {
     assert_eq!(w.players[0].produced[COPPER_PLATE as usize], 0);
 }
 
-/// La soute garde pour l'atelier ce qui manque à son unité : un assembleur collé ne prend que le reste.
+/// La soute garde pour l'atelier ce qui manque à son unité : un assembleur collé ne prend que le reste. L'atelier, collé
+/// à la fonderie, est servi par le réseau de transfert (les Transhumants n'ont pas de drones).
 #[test]
 fn the_workshop_is_served_before_the_glued_assemblers() {
     let (mut w, x, y) = base();
     let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
     put(&mut w, B_T_FURNACE, x + 2, y + 20, rec("iron_plate"));
     put(&mut w, B_T_ASSEMBLER, x - 2, y + 20, rec("gear"));
-    let s = put(&mut w, B_T_WORKSHOP, x + 8, y + 24, RECIPE_NONE);
+    let s = put(&mut w, B_T_WORKSHOP, x + 4, y + 20, RECIPE_NONE);
     stock(&mut w, h, IRON_ORE, 600);
     stock(&mut w, h, GEAR, 100);
     let r = bref(&w, s);
@@ -476,7 +478,7 @@ fn the_workshop_reserve_never_starves_the_parts_it_waits_for() {
     let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
     put(&mut w, B_T_FURNACE, x + 2, y + 20, rec("iron_plate"));
     put(&mut w, B_T_ASSEMBLER, x - 2, y + 20, rec("gear"));
-    let s = put(&mut w, B_T_WORKSHOP, x + 8, y + 24, RECIPE_NONE);
+    let s = put(&mut w, B_T_WORKSHOP, x + 4, y + 20, RECIPE_NONE);
     stock(&mut w, h, IRON_ORE, 600);
     let r = bref(&w, s);
     order(&mut w, O_FACTORY_QUEUE, &[r, U_CH_HOLD as i32, 1]);
@@ -489,25 +491,18 @@ fn the_workshop_reserve_never_starves_the_parts_it_waits_for() {
     panic!("jamais lancée : plaques {}, engrenages {}", crate::buildings::factory_has(&w.buildings[s], IRON_PLATE), crate::buildings::factory_has(&w.buildings[s], GEAR));
 }
 
-/// Un fabricant ne vide pas la soute pour un produit qu'elle a déjà en nombre ; tant que l'ingrédient abonde, il continue.
+/// La soute donne ses ingrédients à ses fabricants tant qu'elle en a, même quand elle a leur produit en nombre (cas
+/// signalé : 40 plaques et 197 engrenages, l'assembleur collé attendait ses plaques) ; seul ce qu'elle garde pour les
+/// ateliers reste.
 #[test]
-fn a_crafter_leaves_the_last_plates_of_the_hold_once_its_product_abounds() {
+fn a_crafter_takes_the_last_plates_even_when_its_product_abounds() {
     let (mut w, x, y) = base();
     let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
     put(&mut w, B_T_ASSEMBLER, x - 2, y + 20, rec("gear"));
-    stock(&mut w, h, IRON_PLATE, 100);
-    stock(&mut w, h, GEAR, 80);
-    steps(&mut w, 6000);
-    // 80 engrenages, puis 60 plaques de plus en font 30 : les 40 dernières restent
-    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (40, 110));
-    // des plaques de plus : il reprend
-    stock(&mut w, h, IRON_PLATE, 50);
-    steps(&mut w, 6000);
-    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (40, 135));
-    // plus d'engrenages en nombre : il prend tout
-    w.buildings[h].stash[GEAR as usize] = 0;
-    steps(&mut w, 6000);
-    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (0, 20));
+    stock(&mut w, h, IRON_PLATE, 40);
+    stock(&mut w, h, GEAR, 197);
+    steps(&mut w, 3000);
+    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (0, 217), "les 40 plaques font 20 engrenages");
 }
 
 // ---------- repli ----------
@@ -530,7 +525,8 @@ fn folding_an_overclocked_module_returns_its_shards() {
 fn folding_the_workshop_refunds_its_unit_and_keeps_its_queue() {
     let (mut w, x, y) = base();
     let h = put(&mut w, B_T_HOLD, x, y + 20, RECIPE_NONE);
-    let s = put(&mut w, B_T_WORKSHOP, x + 4, y + 20, RECIPE_NONE);
+    // collé à la soute : servi par le réseau de transfert
+    let s = put(&mut w, B_T_WORKSHOP, x + 2, y + 20, RECIPE_NONE);
     for it in [IRON_PLATE, GEAR, COPPER_PLATE] {
         stock(&mut w, h, it, 200);
     }
@@ -549,7 +545,6 @@ fn folding_the_workshop_refunds_its_unit_and_keeps_its_queue() {
     let before = all(&w, U_CH_WORKSHOP);
     order(&mut w, O_PACK, &[1, r]);
     steps(&mut w, 300);
-    // (les drones de l'atelier rapportent ce qu'ils avaient en vol)
     for it in [IRON_PLATE, GEAR, COPPER_PLATE] {
         assert_eq!(has(&w, h, it), 200, "objet {it} rendu");
     }
@@ -578,7 +573,8 @@ fn a_fixed_recipe_stays_fixed_after_a_move() {
 
 // ---------- départ, énergie, relevés ----------
 
-/// Départ : 60 hydrocarbures, 20 dans le générateur et 40 à bord de la soute ; le drone du générateur se sert.
+/// Départ : 60 hydrocarbures, 20 dans le générateur et 40 à bord de la soute. Pas de drone : le générateur ne se
+/// sert dans la soute que si elle est dans son réseau de transfert (sinon, un chariot de convoi le ravitaille).
 #[test]
 fn the_start_gives_sixty_hydrocarbon() {
     let (mut w, _, _) = base();
@@ -592,7 +588,11 @@ fn the_start_gives_sixty_hydrocarbon() {
     let (gb, hb) = (buildings(&w, B_T_GENERATOR)[0], buildings(&w, B_T_HOLD)[0]);
     w.buildings[gb].fuel = 2 * FUEL_HYDROCARBON;
     steps(&mut w, 400);
-    assert!(has(&w, hb, HYDROCARBON) <= 30, "ravitaillé depuis la soute : {}", has(&w, hb, HYDROCARBON));
+    if crate::transfert::same_net(&w, gb, hb) {
+        assert!(has(&w, hb, HYDROCARBON) <= 30, "ravitaillé depuis la soute de son réseau : {}", has(&w, hb, HYDROCARBON));
+    } else {
+        assert_eq!(has(&w, hb, HYDROCARBON), 40, "pas de drone : la soute hors du réseau garde son combustible");
+    }
 }
 
 /// La puissance affichée par la fiche de la foreuse est celle qu'elle consomme.

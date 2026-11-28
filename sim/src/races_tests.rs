@@ -440,6 +440,11 @@ fn taming_needs_room_and_a_calm_hand() {
 /// Transhumant (joueur 0) avec un gisement de fer tout près d'un chenillard foreuse.
 fn nomads() -> (World, usize, usize) {
     let mut w = game(RACE_TRANSH, RACE_INDUS);
+    // (le chariot de départ de l'Arche, qui croise les chenillards, est mis de côté : ces tests mesurent des positions)
+    let start_carts: Vec<usize> = (0..w.units.alive.len()).filter(|&c| w.units.alive[c] && w.units.kind[c] == U_T_CART).collect();
+    for c in start_carts {
+        crate::transhumants::vanish(&mut w, c);
+    }
     let s = find_unit(&w, 0, U_CH_DRILL).unwrap();
     let (tx, ty) = (w.units.x[s] / TILE, w.units.y[s] / TILE);
     flatten(&mut w, tx - 6, ty - 6, tx + 8, ty + 8);
@@ -885,8 +890,9 @@ fn hold_camp() -> (World, usize, i32) {
     (w, hb, sx)
 }
 
+/// Chariots de convoi attelés à une soute (pas celui que l'Arche a au départ).
 fn carts(w: &World) -> Vec<usize> {
-    (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_T_CART).collect()
+    (0..w.units.alive.len()).filter(|&s| w.units.alive[s] && w.units.kind[s] == U_T_CART && w.building(w.units.cold[s].parent).is_some()).collect()
 }
 
 /// Module des Transhumants posé terminé à `dx` cases de la soute.

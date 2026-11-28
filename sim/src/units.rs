@@ -530,7 +530,7 @@ fn marching(units: &Units, s: usize) -> bool {
     match c.orders.first() {
         Some(Order::Move { attack, .. }) => !attack || c.wtarget[0] == NONE,
         Some(Order::Patrol { .. } | Order::Attack { .. }) => c.wtarget[0] == NONE,
-        Some(Order::Enter { .. } | Order::DeployAt { .. } | Order::Haul { .. } | Order::Tow { .. }) => true,
+        Some(Order::Enter { .. } | Order::DeployAt { .. } | Order::Haul { .. } | Order::Tow { .. } | Order::Gather) => true,
         _ => false,
     }
 }
@@ -1105,6 +1105,10 @@ fn run_order(w: &mut World, s: usize) -> u32 {
         }
         Order::Haul { site, feed } => {
             crate::transhumants::haul_step(w, s, site, feed);
+            NONE
+        }
+        Order::Gather => {
+            crate::chariots::gather_step(w, s);
             NONE
         }
         Order::Sacrifice { target } => {

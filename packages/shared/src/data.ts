@@ -69,6 +69,8 @@ export interface ArkInfo {
   shieldR: number; shieldMax: number; dock: boolean; cap: number;
   /** remorques : [amélioration, état (CAR), ticks, PV ‰, unité (-1)] ; équipement payé de l'unité de l'atelier embarqué */
   cars: [number, number, number, number, number][]; kit: number;
+  /** chariots de convoi attelés à l'Arche, plafond, coût d'un de plus [objet, nombre] */
+  carts: number; cartsMax: number; cartCost: [number, number][];
 }
 /** États d'une tourelle d'Arche (comme TU_* dans ameliorations.rs). */
 export const TU = { ABOARD: 0, OUT: 1, RETURN: 2, LOST: 3, CONVERT: 4 } as const;
