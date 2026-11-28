@@ -205,6 +205,26 @@ await select(null);
   await page.waitForFunction(() => window.__game.ui.buildingInfo?.souche?.aid?.n === 1, null, { timeout: 60000 }).catch(() => {});
   const aid = await page.evaluate(() => [...document.querySelectorAll(".sel .row")].map((e) => e.textContent).find((t) => t.includes("Semeurs")) ?? "");
   check(/Semeurs\s*1\s*\/\s*12.*\+25 %/.test(aid), "fiche de la frondaison : un semeur, +25 %", aid);
+  // il travaille sur place, au contact, sans rayon de construction (cyan)
+  await select(null);
+  await look(leaf.x, leaf.z, 12);
+  const work = await page.evaluate(([id, lx, lz]) => new Promise((done) => {
+    const { client } = window.__game;
+    let beams = 0;
+    let n = 0;
+    const tick = () => {
+      beams += client.scene.entities.beamList.filter((b) => b.color.getHex() === 0x7df9ff).length;
+      if (++n < 12) requestAnimationFrame(tick);
+      else {
+        const f = client.frame;
+        let d = -1;
+        for (let i = 0, o = f.unitOff; i < f.nUnits; i++, o += 9) if (f.buf[o] >>> 0 === id) d = Math.hypot(f.buf[o + 2] / 256 - lx, f.buf[o + 3] / 256 - lz);
+        done({ beams, dist: +d.toFixed(2) });
+      }
+    };
+    tick();
+  }), [sower.ref, leaf.x, leaf.z]);
+  check(work.beams === 0 && work.dist >= 0 && work.dist <= 3, "semeur au contact, sans rayon", JSON.stringify(work));
   await shot("semeur");
   // la graine-mère poussée (l'autre pousse encore, sans réseau)
   const grown = await page.evaluate(() => {

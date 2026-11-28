@@ -132,6 +132,11 @@ fn a_sower_digs_a_borehole_that_becomes_a_well() {
         t += 1;
     }
     println!("forage creusé en {t} ticks");
+    // il a creusé au contact du forage, pas de loin
+    let (bx, by) = (hx + 3, hy);
+    let sl = w.unit(s).unwrap();
+    let near = ((w.units.x[sl] - (bx + 1) * TILE).pow(2) + (w.units.y[sl] - (by + 1) * TILE).pow(2)) as f64;
+    assert!(near.sqrt() <= (5 * TILE / 2) as f64 + 64.0, "à {} cases du centre", near.sqrt() / TILE as f64);
     assert!((560..=760).contains(&t), "une trentaine de secondes : {t}");
     let bore = (0..w.buildings.len()).find(|&b| w.buildings[b].alive && w.buildings[b].kind == B_BOREHOLE && w.buildings[b].x == hx + 3).unwrap();
     let info = crate::render::info_building(&w, w.building_ref(bore));

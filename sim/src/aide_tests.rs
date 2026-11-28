@@ -126,6 +126,21 @@ fn sowers_raise_a_taproot_output() {
     assert_eq!(salts(&mut w, 400), 20);
 }
 
+/// Les semeurs aident au contact (pas de loin) ; douze tiennent autour d'un organe de 2 × 2 cases.
+#[test]
+fn twelve_sowers_gather_close_around_an_organ() {
+    let mut w = game();
+    let (_, hx, hy) = base(&mut w, 20);
+    let t = taproot(&mut w, hx + 3, hy);
+    let ids: Vec<u32> = (0..12).map(|k| w.spawn_unit(U_SOWER, 0, (hx + 10 + k % 4) * TILE, (hy + 8 + k / 4) * TILE)).collect();
+    assist(&mut w, &ids, t);
+    steps(&mut w, 600);
+    assert_eq!(aide::count(&w, t), 12, "tous à leur poste");
+    let (cx, cy) = w.buildings[t].center();
+    let far = ids.iter().map(|&i| w.unit(i).unwrap()).map(|s| (((w.units.x[s] - cx).pow(2) + (w.units.y[s] - cy).pow(2)) as f64).sqrt() / TILE as f64).fold(0.0, f64::max);
+    assert!(far <= 3.0, "au contact : le plus loin à {far:.1} cases du centre");
+}
+
 /// Un semeur n'aide que ce qui produit : sur un bulbe, il le soigne puis s'en va ; un semeur adverse n'aide pas.
 #[test]
 fn sowers_only_help_their_own_producers() {

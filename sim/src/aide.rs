@@ -36,10 +36,11 @@ pub fn can_help(w: &World, s: usize, b: usize) -> bool {
     w.units.kind[s] == U_SOWER && bb.alive && bb.complete() && bb.owner == w.units.owner[s] && bb.def().race == RACE_SOUCHE && helps(bb.kind)
 }
 
-/// Distance (sous-unités) à laquelle un semeur aide un bâtiment : celle où il s'arrête pour l'assister.
+/// Distance (sous-unités) à laquelle un semeur aide un bâtiment : au contact, là où il s'arrête pour l'assister
+/// (units::contact_range), avec une demi-case de marge.
 #[inline]
 fn reach(bb: &Building) -> i32 {
-    crate::units::build_range(bb.kind, bb.dir) + TILE / 2
+    crate::units::contact_range(bb) + TILE / 2
 }
 
 /// Semeurs qui aident le bâtiment `b` en ce moment : ordre d'assistance en tête, à portée.

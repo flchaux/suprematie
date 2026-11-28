@@ -129,6 +129,24 @@ pub fn build_range(kind: u16, dir: u8) -> i32 {
     (6 + bw.max(bh) / 2) * TILE
 }
 
+/// Distance (sous-unités, du centre) à laquelle un ouvrier de la Souche travaille sur un organe de la Souche : au
+/// contact, une case et demie au-delà de son bord (il creuse, soigne et aide sur place, sans rayon).
+pub fn contact_range(bb: &Building) -> i32 {
+    let (bw, bh) = bb.size();
+    bw.max(bh) * TILE / 2 + 3 * TILE / 2
+}
+
+/// Distance à laquelle l'ouvrier `s` travaille sur le bâtiment `b` : celle d'un chantier (`build_range`), ou au
+/// contact pour un ouvrier de la Souche sur un organe de la Souche (`contact_range`).
+pub fn work_range(w: &World, s: usize, b: usize) -> i32 {
+    let bb = &w.buildings[b];
+    if udef(w.units.kind[s]).race == RACE_SOUCHE && bb.def().race == RACE_SOUCHE {
+        contact_range(bb)
+    } else {
+        build_range(bb.kind, bb.dir)
+    }
+}
+
 /// Libère le but de déplacement de l'unité.
 pub fn clear_goal(w: &mut World, s: usize) {
     let g = w.units.cold[s].goal;
@@ -847,7 +865,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                     return NONE;
                 }
                 let (cx, cy) = w.buildings[b].center();
-                let range = build_range(w.buildings[b].kind, w.buildings[b].dir);
+                let range = work_range(w, s, b);
                 if dist(w.units.x[s], w.units.y[s], cx, cy) > range {
                     retarget(w, s, cx, cy);
                     steer(w, s, cx, cy, cx, cy, range - TILE);
@@ -909,7 +927,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
         }
         Order::Assist { target } => {
             if let Some(b) = w.building(target) {
-                let range = build_range(w.buildings[b].kind, w.buildings[b].dir);
+                let range = work_range(w, s, b);
                 let (cx, cy) = w.buildings[b].center();
                 // un organe de la Souche pousse seul : on ne l'aide pas, on le soigne une fois poussé
                 let growing = !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE && w.buildings[b].kind != B_BOREHOLE;

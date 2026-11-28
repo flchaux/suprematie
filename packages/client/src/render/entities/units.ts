@@ -58,7 +58,12 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
     if (!inView) continue;
     const km = e.unitMeshes[kind];
     km.ensure(km.n + 1);
-    const facing = (buf[o + 6] & 0xffff) * ANG;
+    // ouvrier de la Souche au travail (il creuse un forage, soigne ou aide un organe) : tourné vers son ouvrage, sans
+    // rayon ; il pique du nez en cadence (voir plus bas)
+    const digging = def.race === 1 && def.buildPower > 0 && (flags & UF.WORKING) !== 0;
+    const workX = (buf[o + 8] & 0xfff) + 0.5;
+    const workZ = ((buf[o + 8] >> 12) & 0xfff) + 0.5;
+    const facing = digging && Math.hypot(workX - x, workZ - z) > 0.2 ? Math.atan2(workZ - z, workX - x) : (buf[o + 6] & 0xffff) * ANG;
     // chariot de convoi : ce que montre sa benne tient la place de l'angle de tourelle (il n'en a pas)
     const cart = kind === e.cartKind;
     const turret = cart ? 0 : ((buf[o + 6] >>> 16) & 0xffff) * ANG;
@@ -157,6 +162,14 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
         if (dt > 0) fx.charm(x + Math.cos(facing) * km.height * 0.45, y + bob + km.height * 0.8, z + Math.sin(facing) * km.height * 0.45, tx, tz, dt);
       }
     }
+    // ouvrier de la Souche au travail : il plonge la tête vers le sol en cadence (temps de la simulation, deux coups
+    // par seconde), le corps se soulève un peu à chaque coup ; de la terre jaillit devant lui
+    if (digging) {
+      const beat = Math.max(0, Math.sin(simT * 12 + id));
+      bob += beat * 0.06 * km.height;
+      tmpQ.premultiply(tmpQ2.setFromAxisAngle(tmpV2.set(-Math.sin(facing), 0, Math.cos(facing)), -0.32 * beat));
+      if (dt > 0 && Math.random() < dt * 3) fx.dirt(x + Math.cos(facing) * 0.55, z + Math.sin(facing) * 0.55, 0.3);
+    }
     // fouisseur enterré : seules les épines de son dos dépassent ; la terre vole quand il s'enterre ou surgit
     if (def.key === "burrower") {
       bob -= (st.dep ?? 0) * km.height * BURIED_DEPTH;
@@ -250,8 +263,8 @@ export function drawUnits(e: Entities, ctx: FrameCtx): void {
       bars++;
     }
     if (frac < 0.4 && def.radius >= 200) fx.burning(x, y + km.height * 0.8, z, 1 - frac / 0.4, def.radius / TILE, dt);
-    // rayon de construction des ingénieurs
-    if (flags & UF.WORKING) {
+    // rayon de construction des ingénieurs (pas de la Souche : ses ouvriers travaillent sur place, voir plus haut)
+    if (flags & UF.WORKING && !digging) {
       const aux = buf[o + 8];
       const tx = (aux & 0xfff) + 0.5;
       const tz = ((aux >> 12) & 0xfff) + 0.5;
