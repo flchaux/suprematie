@@ -202,7 +202,7 @@ await select(null);
   await run(200);
   await page.mouse.move(640, 300);
   await select(leaf.ref);
-  await page.waitForFunction(() => window.__game.ui.buildingInfo?.aid?.n === 1, null, { timeout: 60000 }).catch(() => {});
+  await page.waitForFunction(() => window.__game.ui.buildingInfo?.souche?.aid?.n === 1, null, { timeout: 60000 }).catch(() => {});
   const aid = await page.evaluate(() => [...document.querySelectorAll(".sel .row")].map((e) => e.textContent).find((t) => t.includes("Semeurs")) ?? "");
   check(/Semeurs\s*1\s*\/\s*12.*\+25 %/.test(aid), "fiche de la frondaison : un semeur, +25 %", aid);
   await shot("semeur");

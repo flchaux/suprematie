@@ -136,7 +136,8 @@ function cursorIntent(gc: GameClient, x: number, y: number): CursorKind {
   if (gc.mouse.down && gc.mouse.button === 2 && gc.mouse.dragging) return gc.formStart ? "move" : "grab";
   if (!gc.data || !gc.frame) return "default";
   const mode = ui.mode;
-  const playing = ui.me >= 0 && !ui.spectator && !ui.replay;
+  // (une démo qui transmet les ordres du joueur se joue : le curseur dit ce que fera le clic droit)
+  const playing = ui.me >= 0 && ((!ui.spectator && !ui.replay) || gc.demoOrders);
   if (mode === "build" || mode === "paste") return gc.ghostCells.some((c) => !c.ok) ? "invalid" : "build";
   if (mode === "copy") return "select";
   const g = gc.groundAt(x, y);

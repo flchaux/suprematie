@@ -381,8 +381,8 @@
             {#if wa.pct > 0}<span class="dim">−{fmtX(wa.use / 100)} /s · </span><span class:good={wa.ok} class:bad={!wa.ok}>{wa.ok ? `+${Math.round(wa.bonus / 10)} % de vitesse` : "plus d'eau dans le réseau"}</span>{/if}
           </div>
         {/if}
-        {#if info.aid}
-          {@const ai = info.aid}
+        {#if sv.aid}
+          {@const ai = sv.aid}
           <div class="row small" title="Clic droit avec des semeurs : ils s'y postent et l'aident. Chacun ajoute un peu moins que le précédent (25 %, 20 %, 17 %, 14 %…), {ai.max} au plus"><span class="kicker">Semeurs</span> <b class="num" class:good={ai.n > 0}>{ai.n}</b><span class="dim"> / {ai.max}</span>{#if ai.n}<span class="good">· +{Math.round(ai.bonus / 10)} %</span>{/if}{#if ai.next}<span class="dim">· le suivant +{Math.round(ai.next / 10)} %</span>{/if}</div>
         {/if}
         {#if sv.hatch >= 0}
