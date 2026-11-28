@@ -118,6 +118,9 @@ pub fn restore(bytes: &[u8]) -> Option<World> {
             if r.version < 11 {
                 crate::ameliorations::convert_slots(&mut w);
             }
+            if r.version <= 13 {
+                crate::ameliorations::convert_gen_poles(&mut w);
+            }
             Some(w)
         }
         _ => None,

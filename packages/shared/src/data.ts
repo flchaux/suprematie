@@ -83,6 +83,8 @@ export interface GameData {
   mods: ModDef[]; arkSlots: ModSlot[]; unitSlots: ModSlot[]; moduleSlots: ModSlot[]; oneSlot: ModSlot; turretKinds: number[];
   /** emplacements du chariot bouclier (émetteur, accumulateurs, régénérateurs) */
   shieldSlots?: ModSlot[];
+  /** emplacements du générateur nomade et de son chenillard (rendement, spécialité, lignes) */
+  generatorSlots?: ModSlot[];
   /** rayon de l'Arche selon ses tronçons (0 à 3) */
   arkRadii: number[];
   missileCost: [number, number][]; interceptorCost: [number, number][];

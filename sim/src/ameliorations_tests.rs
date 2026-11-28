@@ -104,7 +104,11 @@ fn the_table_of_upgrades_is_sound() {
     for (k, u) in UNITS.iter().enumerate() {
         let k = k as u16;
         let per: Vec<usize> = (0..slots(k).len() as u8).map(|sl| MODS.iter().filter(|d| d.host == k && d.slot == sl).count()).collect();
-        if u.deploys != NO_KIND {
+        if k == U_CH_GENERATOR {
+            // rendement : deux choix ; spécialité : le réservoir triplé seul (les câbles longs sont devenus les
+            // lignes) ; lignes : deux paliers
+            assert_eq!(per, [2, 1, 2], "{}", u.key);
+        } else if u.deploys != NO_KIND {
             assert_eq!(per, [2, 2], "{}", u.key);
         } else if k == U_T_CART {
             assert_eq!(per, [2], "{}", u.key);

@@ -10,7 +10,8 @@ import { LEVE, TY } from "./bastion.ts";
 /**
  * Générateur : seconde turbine couchée sur le flanc droit, à haute cheminée d'échappement (« gen_big »), ou turbine
  * carénée à plat et régulateur à boules (« gen_lean »), qui tournent au travail ; deux grands réservoirs debout sur le
- * flanc gauche (« gen_tank ») ou tourets de câble et poteaux rangés (« gen_poles »).
+ * flanc gauche (« gen_tank ») ; à l'arrière, touret de câble et poteaux couchés (« gen_lines1 »), ou deux tourets et un
+ * râtelier de longs poteaux (« gen_lines2 »).
  */
 export function annexesGenerateur(chariot: boolean): Part[] {
   const big = annexe(chariot, "gen_big");
@@ -77,23 +78,41 @@ export function annexesGenerateur(chariot: boolean): Part[] {
     ]),
   );
 
-  // câbles longs : deux gros tourets sur berceau, faisceau de poteaux au-dessus
-  const poles = annexe(chariot, "gen_poles");
+  // lignes (troisième emplacement, à l'arrière, à côté des réservoirs) : berceau en porte-à-faux sur des consoles,
+  // touret de câble de cuivre ; Lignes I : trois poteaux courts couchés à côté ; Lignes II : second touret, et un
+  // râtelier rehaussé à montants rayés qui porte six longs poteaux en travers, au-dessus des tourets
+  const lignes = annexe(chariot, "gen_lines1+gen_lines2");
+  const lignes1 = annexe(chariot, "gen_lines1");
+  const lignes2 = annexe(chariot, "gen_lines2");
+  const ZL = -1.32;
+  const touret = (x: number, cable: C): Part[] => [
+    { shape: "cylinder", sides: 10, radius: 0.17, height: 0.22, pos: [x, 0.88, ZL], rot: [0, 0, 90], color: cable },
+    ...[-0.13, 0.13].map((d): Part => ({ shape: "cylinder", sides: 10, radius: 0.25, height: 0.04, pos: [q(x + d), 0.88, ZL], rot: [0, 0, 90], color: "wood" })),
+    { shape: "cylinder", sides: 6, radius: 0.035, height: 0.36, pos: [x, 0.88, ZL], rot: [0, 0, 90], color: "steel", fine: true },
+    ...[-0.16, 0.16].map((d): Part => ({ shape: "box", size: [0.04, 0.26, 0.06], pos: [q(x + d), 0.74, ZL], color: "dark" })),
+  ];
+  const poteau = (x: number, y: number, z: number, long: number, k: number): Part => ({ shape: "cylinder", sides: 5, radius: 0.05, height: long, pos: [x, y, z], rot: [0, 0, 90], color: k % 2 ? "rust" : "wood" });
   out.push(
-    ...poles.fixe([
-      { shape: "box", size: [0.56, 0.08, 1.2], pos: [-0.9, 0.6, 0.0], color: "rust" },
-      ...[-0.29, 0.29].flatMap((z): Part[] => [
-        { shape: "cylinder", sides: 8, radius: 0.19, height: 0.26, pos: [-0.99, 0.9, z], rot: [0, 0, 90], color: z < 0 ? "black" : "copper" },
-        ...[-0.84, -1.14].map((x): Part => ({ shape: "cylinder", sides: 8, radius: 0.27, height: 0.05, pos: [x, 0.9, z], rot: [0, 0, 90], color: "wood" })),
+    ...lignes.fixe([
+      { shape: "box", size: [1.12, 0.07, 0.56], pos: [0.04, 0.6, ZL], color: "rust" },
+      ...[-0.36, 0.44].map((x): Part => ({ shape: "box", size: [0.08, 0.16, 0.36], pos: [x, 0.5, -1.2], color: "dark" })),
+      { shape: "box", size: [1.12, 0.05, 0.03], pos: [0.04, 0.6, q(ZL - 0.29)], color: "hazard", fine: true },
+      ...touret(-0.22, "copper"),
+    ]),
+    ...lignes1.fixe([
+      ...[[0.32, 0.69, -1.22], [0.32, 0.69, -1.36], [0.32, 0.78, -1.29]].map(([x, y, z], k) => poteau(x, y, z, 0.52, k)),
+      ...[-1.22, -1.36].map((z): Part => ({ shape: "box", size: [0.04, 0.04, 0.06], pos: [0.6, 0.69, z], color: "light", fine: true })),
+    ]),
+    ...lignes2.fixe([
+      ...touret(0.3, "black"),
+      ...[-0.54, 0.62].flatMap((x): Part[] => [
+        { shape: "box", size: [0.06, 0.72, 0.07], pos: [x, 0.98, ZL], color: "hazard" },
+        { shape: "box", size: [0.08, 0.05, 0.5], pos: [x, 1.32, ZL], color: "dark" },
       ]),
-      // râtelier des poteaux, du côté du châssis
-      ...[-0.56, 0.56].flatMap((z): Part[] => [
-        { shape: "box", size: [0.06, 0.86, 0.07], pos: [-0.78, 1.0, z], color: "hazard" },
-        { shape: "box", size: [0.3, 0.06, 0.08], pos: [-0.68, 1.12, z], color: "dark", fine: true },
-      ]),
-      ...[[-0.71, 1.2], [-0.6, 1.2], [-0.71, 1.31], [-0.6, 1.31], [-0.655, 1.41]].map(([x, y], k): Part => ({ shape: "cylinder", sides: 5, radius: 0.055, height: 1.7, pos: [x, y, -0.1], rot: [90, 0, 0], color: k % 2 ? "rust" : "wood" })),
-      ...[[-0.71, 1.31], [-0.6, 1.31]].map(([x, y]): Part => ({ shape: "box", size: [0.12, 0.12, 0.1], pos: [x, y, 0.78], color: "light", fine: true })),
-      { shape: "box", size: [0.28, 0.36, 0.06], pos: [-0.655, 1.3, 0.1], color: "faction" },
+      ...[-1.48, -1.38, -1.28, -1.18].map((z, k) => poteau(0.04, 1.4, z, 1.3, k)),
+      ...[-1.43, -1.23].map((z, k) => poteau(0.04, 1.5, z, 1.3, k + 1)),
+      { shape: "box", size: [0.26, 0.2, 0.04], pos: [0.04, 1.22, q(ZL + 0.27)], color: "faction" },
+      ...[-1.48, -1.18].map((z): Part => ({ shape: "box", size: [0.06, 0.1, 0.1], pos: [0.71, 1.4, z], color: "light", fine: true })),
     ]),
   );
   return out;

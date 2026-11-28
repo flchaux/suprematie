@@ -625,3 +625,5 @@ mod troupeau_tests;
 mod bouclier_tests;
 #[cfg(test)]
 mod convoi_tests;
+#[cfg(test)]
+mod lignes_tests;
