@@ -605,13 +605,18 @@ fn sources(w: &World, p: u8, x: i32, y: i32) -> Vec<(i64, Store)> {
 
 /// Paie `cost` au point (x, y) ; faux, sans rien prendre, si les réserves à portée ne couvrent pas tout.
 pub(crate) fn pay(w: &mut World, p: u8, x: i32, y: i32, cost: &[(u8, u16)]) -> bool {
-    let src = sources(w, p, x, y);
-    if !cost.iter().all(|&(it, n)| src.iter().map(|&(_, st)| st.has(w, it) as u32).sum::<u32>() >= n as u32) {
+    let src: Vec<Store> = sources(w, p, x, y).into_iter().map(|(_, st)| st).collect();
+    pay_from(w, p, &src, cost)
+}
+
+/// Paie `cost` dans les stocks `src`, dans l'ordre ; faux, sans rien prendre, s'ils ne couvrent pas tout.
+pub(crate) fn pay_from(w: &mut World, p: u8, src: &[Store], cost: &[(u8, u16)]) -> bool {
+    if !cost.iter().all(|&(it, n)| src.iter().map(|&st| st.has(w, it) as u32).sum::<u32>() >= n as u32) {
         return false;
     }
     for &(it, n) in cost {
         let mut left = n;
-        for &(_, st) in &src {
+        for &st in src {
             left -= st.take(w, it, left);
         }
         w.players[p as usize].consumed[it as usize] += n as u32;
@@ -894,8 +899,20 @@ pub fn update(w: &mut World) {
     let mut i = 0;
     while i < w.arks.len() {
         let Some(s) = w.unit(w.arks[i].unit) else {
-            // Arche perdue : ses tourelles et son groupe tombent avec le joueur (élimination)
-            w.arks.remove(i);
+            // Arche perdue : ses tourelles et ses remorques tombent avec elle, son groupe est démonté (le joueur
+            // n'est éliminé qu'avec sa dernière Arche, voir combat::next_commander)
+            let a = w.arks.remove(i);
+            for u in a.turrets.iter().map(|t| t.unit).chain(a.cars.iter().map(|c| c.unit)) {
+                if let Some(u) = w.unit(u) {
+                    if w.units.hp[u] > 0 {
+                        w.units.hp[u] = 0;
+                        w.dead_units.push(u as u32);
+                    }
+                }
+            }
+            if let Some(b) = w.building(a.dock) {
+                buildings::remove_building(w, b, false);
+            }
             continue;
         };
         update_ark(w, i, s);
@@ -1183,7 +1200,8 @@ fn workshop_aboard(w: &World, s: usize) -> bool {
 
 /// Unité que l'atelier embarqué peut fabriquer.
 fn workshop_ok(w: &World, p: u8, kind: u16) -> bool {
-    crate::races::unit_ok(w, p, kind) && udef(kind).race == RACE_TRANSH && udef(kind).factory == FactoryKind::Land && w.players[p as usize].has_tech(udef(kind).tech)
+    // (une Arche ne sort que d'un atelier déployé)
+    kind != U_ARK && crate::races::unit_ok(w, p, kind) && udef(kind).race == RACE_TRANSH && udef(kind).factory == FactoryKind::Land && w.players[p as usize].has_tech(udef(kind).tech)
 }
 
 /// Ordre : file de l'atelier embarqué de l'Arche `s` (delta < 0 : retire ; l'unité en cours retirée est remboursée).
@@ -1254,10 +1272,12 @@ fn update_workshop(w: &mut World, i: usize, s: usize, pct: u32) {
     let p = w.units.owner[s];
     let full = w.players[p as usize].unit_count >= UNIT_CAP;
     if !w.arks[i].paid {
-        let (x, y) = (w.units.x[s], w.units.y[s]);
-        if full || !w.tick.is_multiple_of(10) || !pay(w, p, x, y, udef(kind).cost) {
+        // payée dans la soute de l'Arche seule (soutes de pont comprises) : pas de drone chez les Transhumants, ce qui
+        // lui manque vient par contact (chariots de convoi)
+        if full || !w.tick.is_multiple_of(10) || !pay_from(w, p, &[Store::U(s)], udef(kind).cost) {
             return;
         }
+        let (x, y) = (w.units.x[s], w.units.y[s]);
         w.arks[i].paid = true;
         w.arks[i].prog = 0;
         w.arks[i].kit = crate::gabarits::begin(w, p, x, y, kind);
@@ -1553,8 +1573,11 @@ fn ark_info(w: &World, s: usize) -> String {
     let q: Vec<String> = a.queue.iter().map(|e| format!("[{},{}]", e.0, e.1)).collect();
     let need = a.queue.first().map_or(1, |e| (factory_ticks(e.0) + crate::gabarits::ticks(a.kit)) * 100).max(1);
     let (sr, sh) = unit_shield(w, s);
+    // chariots de convoi attelés à l'Arche (compte, plafond, coût d'un de plus)
+    let cart_cost: Vec<String> = udef(U_T_CART).cost.iter().map(|&(it, n)| format!("[{},{}]", it, n)).collect();
+    let carts = format!(",\"carts\":{},\"cartsMax\":{},\"cartCost\":[{}]", crate::chariots::ark_carts(w, s).len(), crate::chariots::CARTS_PER_HOLD, cart_cost.join(","));
     format!(
-        "{{\"turrets\":[{}],\"out\":{},\"hold\":{},\"queue\":[{}],\"prog\":{},\"paid\":{},\"boost\":{},\"boostReady\":{},\"shieldR\":{},\"shieldMax\":{},\"dock\":{},\"cap\":{},\"cars\":{},\"kit\":{}}}",
+        "{{\"turrets\":[{}],\"out\":{},\"hold\":{},\"queue\":[{}],\"prog\":{},\"paid\":{},\"boost\":{},\"boostReady\":{},\"shieldR\":{},\"shieldMax\":{},\"dock\":{},\"cap\":{},\"cars\":{},\"kit\":{}{}}}",
         tur.join(","),
         a.out,
         a.hold,
@@ -1568,6 +1591,7 @@ fn ark_info(w: &World, s: usize) -> String {
         w.building(a.dock).is_some(),
         store_cap(w, s),
         crate::convoi::info(w, i),
-        a.kit
+        a.kit,
+        carts
     )
 }

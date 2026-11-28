@@ -16,13 +16,13 @@ beforeAll(async () => {
 });
 
 describe("données", () => {
-  it("contient 96 unités (55 des Industriels et de la faune, 18 de la Souche dont 3 œufs, 23 des Transhumants dont 3 tourelles, la remorque d'Arche et le chariot bouclier), 80 bâtiments (53 dont le relais logistique, 16, 11 : neuf modules, le poteau nomade et le groupe de l'Arche) et 95 recherches (48, 26, 21)", () => {
+  it("contient 96 unités (55 des Industriels et de la faune, 18 de la Souche dont 3 œufs, 23 des Transhumants dont 3 tourelles, la remorque d'Arche et le chariot bouclier), 80 bâtiments (53 dont le relais logistique, 16, 11 : neuf modules, le poteau nomade et le groupe de l'Arche) et 96 recherches (48, 26, 22)", () => {
     expect(data.units.length).toBe(96);
     expect(data.buildings.length).toBe(80);
     expect(data.buildings.filter((b) => b.race === 1).length).toBe(16);
     expect(data.buildings.filter((b) => b.race === 2).length).toBe(11);
-    expect(data.techs.length).toBe(95);
-    expect(data.techs.filter((t) => t.race === 2).length).toBe(21);
+    expect(data.techs.length).toBe(96);
+    expect(data.techs.filter((t) => t.race === 2).length).toBe(22);
     expect(data.techs.filter((t) => t.race === 1).length).toBe(26);
     expect(data.races.map((r) => r.key)).toEqual(["industriels", "souche", "transhumants"]);
     expect(data.units.filter((u) => u.race === 1).length).toBe(18);

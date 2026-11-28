@@ -188,6 +188,9 @@ function cursorIntent(gc: GameClient, x: number, y: number): CursorKind {
   const engs = units.some((u) => gc.data!.units[u.kind].buildPower > 0);
   // chenillards sur notre Arche : ils s'y attellent
   if (unit && mine(unit.owner) && !ids.includes(unit.id) && gc.data.units[unit.kind].key === "ark" && units.some((u) => (gc.data!.units[u.kind].deploys ?? -1) >= 0)) return "load";
+  const carts = units.some((u) => gc.data!.units[u.kind].key === "t_cart");
+  // chariots de convoi sur notre Arche : ils s'y rattachent
+  if (unit && mine(unit.owner) && carts && gc.data.units[unit.kind].key === "ark") return "load";
   if (unit && mine(unit.owner) && !ids.includes(unit.id)) return gc.data.units[unit.kind].carry > 0 ? "load" : "assist";
   if (tb && hungryHeart(gc, tb) && units.some((u) => sacrificeValue(gc, u.kind) > 0)) return "load";
   if (tb && mine(tb.owner)) {
@@ -196,6 +199,7 @@ function cursorIntent(gc: GameClient, x: number, y: number): CursorKind {
     if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
     if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => gc.data!.units[u.kind].key === "commander")) return "load";
     if (canPickup(gc, def.cls, tb.build) && holdersOf(gc, units).length) return "load";
+    if (carts && (canHaul(def.cls, tb.build) || (def.key === "t_hold" && tb.build >= 65536))) return "load";
   }
   if (!tb && units.some((u) => gc.data!.units[u.kind].key === "commander")) {
     const s = spotAt(gc, Math.floor(g.x), Math.floor(g.z));
@@ -277,6 +281,16 @@ export function contextCommand(c: GameClient, x: number, y: number, queue: boole
       if (rest.length) c.cmd(Ord.target(O.ASSIST, rest, target.id, queue));
       return;
     }
+    // chariots de convoi sur notre Arche : ils s'y rattachent (six au plus), y rentrent et déchargent
+    const arkCarts = td.key === "ark" ? units.filter((u) => c.data!.units[u.kind].key === "t_cart").map((u) => u.id) : [];
+    if (arkCarts.length) {
+      c.cmd(Ord.haul(arkCarts, target.id, false));
+      const rest = units.filter((u) => !arkCarts.includes(u.id)).map((u) => u.id);
+      if (rest.length) c.cmd(Ord.target(O.ASSIST, rest, target.id, queue));
+      pushMessage("Convoi : les chariots s'attellent à l'Arche ; à l'arrêt, elle leur sert de soute", "info");
+      sfx.confirm();
+      return;
+    }
     if (td.carry > 0) {
       c.cmd(Ord.load(target.id, ids));
       sfx.confirm();
@@ -315,13 +329,20 @@ export function contextCommand(c: GameClient, x: number, y: number, queue: boole
     // sur une soute : lui porter ce que la leur a de plus (la leur : rentrer et décharger)
     const carts = units.filter((u) => c.data!.units[u.kind].key === "t_cart").map((u) => u.id);
     const hold = def.key === "t_hold" && tb.build >= 65536;
-    if (carts.length && (hold || canPickup(c, def.cls, tb.build))) {
+    if (carts.length && (hold || canHaul(def.cls, tb.build))) {
       const feed = hold || (queue && def.cls === BClass.Crafter);
       c.cmd(Ord.haul(carts, tb.ref, feed));
       const rest = units.filter((u) => !carts.includes(u.id));
       if (rest.length) c.cmd(Ord.move(rest, gx, gy, queue, false));
       c.scene?.addMarker(g.x, g.z, 0xffc83c);
-      pushMessage(hold ? "Convoi : la soute du chariot porte à celle-ci ce qu'elle a de plus, jusqu'à égalité" : feed ? `Convoi : la soute livre à ${def.name.toLowerCase()} les ingrédients de sa recette` : `Convoi : ce qui sort de ${def.name.toLowerCase()} est rapporté à la soute (Maj+clic droit sur un fabricant : le livrer)`, "info");
+      const name = def.name.toLowerCase();
+      pushMessage(
+        hold ? "Convoi : la soute du chariot porte à celle-ci ce qu'elle a de plus, jusqu'à égalité"
+        : feed ? `Convoi : la soute livre à ${name} les ingrédients de sa recette`
+        : def.cls === BClass.Power || def.cls === BClass.Factory ? `Convoi : la soute porte à ${name} ce qu'il demande (${def.cls === BClass.Power ? "combustible" : "composants de sa file"})`
+        : `Convoi : la soute porte à ${name} ce qu'il demande et en rapporte la production (Maj+clic droit sur un fabricant : seulement le livrer)`,
+        "info",
+      );
       sfx.confirm();
       return;
     }
@@ -478,6 +499,11 @@ function holdersOf(c: GameClient, units: { id: number; kind: number }[]): number
 /** Un bâtiment de cette classe, à cet avancement, a-t-il une sortie à ramasser (extracteur, fabricant terminés) ? */
 function canPickup(c: GameClient, cls: number, build: number): boolean {
   return (cls === BClass.Extractor || cls === BClass.Crafter) && build >= 65536;
+}
+
+/** Chariots de convoi : modules qu'ils desservent en navette (production rapportée, demande apportée ; voir chariots::haul_ok). */
+function canHaul(cls: number, build: number): boolean {
+  return (cls === BClass.Extractor || cls === BClass.Crafter || cls === BClass.Power || cls === BClass.Factory) && build >= 65536;
 }
 
 /**
@@ -641,6 +667,14 @@ export function towSelected(c: GameClient, ark?: number, queue = false): boolean
   pushMessage(`${ids.length > 1 ? `${ids.length} chenillards s'attellent` : "Le chenillard s'attelle"} à l'Arche, derrière ses remorques (neuf au plus ; −3 % de vitesse chacun). Un ordre de déplacement ou « Déployer » les dételle.`, "info");
   sfx.confirm();
   return true;
+}
+/** « Collecte » : les chariots de convoi sélectionnés font le tour des bâtiments de production autour de leur foyer. */
+export function gatherSelected(c: GameClient, queue = false): void {
+  const ids = c.selectedUnits().filter((u) => c.data!.units[u.kind].key === "t_cart").map((u) => u.id);
+  if (!ids.length) return;
+  c.cmd(Ord.gather(ids, queue));
+  pushMessage(`${ids.length > 1 ? `${ids.length} chariots ramassent` : "Le chariot ramasse"} ce qui attend en sortie des bâtiments de production autour de leur soute ou de leur Arche, et l'y rapportent`, "info");
+  sfx.confirm();
 }
 /** « Dételer » : les chenillards sélectionnés quittent le convoi et s'arrêtent là où ils sont. */
 export function untowSelected(c: GameClient): void {

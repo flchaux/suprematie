@@ -90,7 +90,7 @@ export const UNIT_DESCS: Record<string, string> = {
   ch_hold: "Se déploie en soute ; emporte son stock.",
   ch_lab: "Se déploie en laboratoire nomade.",
   ch_workshop: "Se déploie en atelier, l'usine des chenillards et de l'armée.",
-  t_cart: "Rapporte à sa soute la production d'un module éloigné, le ravitaille, ou livre une autre soute. Rentre quand elle se replie.",
+  t_cart: "Fait la navette entre sa soute (ou son Arche) et un module éloigné : lui porte ce qu'il demande, en rapporte la production. En collecte, fait le tour des bâtiments de production.",
   ch_bastion: "Se déploie en tourelle lourde.",
   tracker: "Éclaireur très rapide à grande vision, cher mais solide ; ce qu'il découvre donne des relevés. Passe sur l'eau.",
   rider: "Char rapide à canon cinétique, cher et long à produire mais très robuste. Passe sur l'eau.",

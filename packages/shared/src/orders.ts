@@ -77,6 +77,8 @@ export const O = {
   KIT_APPLY: 69,
   /** chenillards des Transhumants : s'atteler au convoi de l'Arche : [drapeaux (1 : en file), réf. de l'Arche, n, unités…] */
   TOW: 70,
+  /** chariots de convoi : collecte autour de leur soute ou de leur Arche : [drapeaux (1 : en file), n, unités…] */
+  GATHER: 71,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -236,6 +238,10 @@ export function hitch(hold: number): Cmd {
  */
 export function haul(ids: number[], site: number, feed: boolean, queue = false): Cmd {
   return [O.HAUL, (queue ? 1 : 0) | (feed ? 2 : 0), site | 0, ids.length, ...ids.map((x) => x | 0)];
+}
+/** Chariots de convoi : collecte, tournée des bâtiments de production autour de leur soute ou de leur Arche. */
+export function gather(ids: number[], queue = false): Cmd {
+  return [O.GATHER, queue ? 1 : 0, ids.length, ...ids.map((x) => x | 0)];
 }
 /** Chenillards des Transhumants : s'atteler au convoi de l'Arche `ark` (un autre ordre les dételle). */
 export function tow(ids: number[], ark: number, queue = false): Cmd {

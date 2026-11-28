@@ -526,7 +526,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 95] = [
+pub const TECHS: [TechDef; 96] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -626,6 +626,7 @@ pub const TECHS: [TechDef; 95] = [
     t!("t_mastiff", "Chiens de fer", 2, 14, 8, [58], "Mâtin : quadrupède d'assaut, plus fort en meute", race: RACE_TRANSH),
     t!("t_shepherd", "Le Grand Berger", 5, 40, 14, [92, 62], "Berger : marcheur géant de commandement, qui accélère les unités autour de lui", race: RACE_TRANSH),
     t!("t_shield_cart", "Projecteurs de convoi", 3, 18, 10, [83], "Chariot bouclier : une bulle qui couvre le convoi ; émetteur, accumulateurs et recharge à améliorer", race: RACE_TRANSH),
+    t!("t_relief", "Arche de relève", 2, 20, 8, [60], "Atelier : une nouvelle Arche, trois au plus ; le peuple ne tombe qu'avec la dernière", race: RACE_TRANSH),
 ];
 /// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
 pub const T_T_ARMORY: u8 = 80;
@@ -643,6 +644,8 @@ pub const T_T_CROWN: u8 = 91;
 pub const T_T_MASTIFF: u8 = 92;
 pub const T_T_SHEPHERD: u8 = 93;
 pub const T_T_SHIELD_CART: u8 = 94;
+/// Arche de relève : l'atelier déployé produit une nouvelle Arche (voir transhumants::ARKS_MAX).
+pub const T_T_RELIEF: u8 = 95;
 /// Recherches de la Souche et des Transhumants (indices dans TECHS).
 pub const T_S_SPITTERS: u8 = 48;
 pub const T_S_SHELLS: u8 = 49;
@@ -1268,7 +1271,7 @@ pub const UNITS: [UnitDef; 96] = [
     UnitDef { key: "vine", name: "Liane", hp: 450, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 60), (SELS, 15)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
     UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 400, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 70), (SELS, 25)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
-    UnitDef { key: "ark", name: "Arche", layer: Layer::Hover, hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "ark", name: "Arche", layer: Layer::Hover, hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::Land, tech: T_T_RELIEF, cost: &[(STEEL, 300), (GEAR, 150), (CIRCUIT, 60), (ENGINE, 30)], build: 150, build_power: 20, drones: 0, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ch_drill", name: "Chariot foreuse", layer: Layer::Hover, hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
     UnitDef { key: "ch_furnace", name: "Chenillard fonderie", layer: Layer::Hover, hp: 1000, speed: 20, radius: 209, cost: &[(IRON_PLATE, 12), (COPPER_PLATE, 4), (GEAR, 4)], build: 8, race: RACE_TRANSH, deploys: B_T_FURNACE, ..UD },
     UnitDef { key: "ch_assembler", name: "Chenillard assembleur", layer: Layer::Hover, hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 8), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_ASSEMBLER, ..UD },

@@ -101,6 +101,21 @@ pub fn commander_store(w: &World, p: u8) -> Option<usize> {
     (w.units.alive[s] && unit_is_store(w, s)).then_some(s)
 }
 
+/// Soutes de commandant du joueur `p` qui sont des stocks : celle de son commandant, puis celles de ses autres
+/// Arches (Transhumants : plusieurs Arches), par case d'unité croissante.
+pub fn commander_stores(w: &World, p: u8) -> Vec<usize> {
+    let first = commander_store(w, p);
+    let mut v: Vec<usize> = first.into_iter().collect();
+    for a in &w.arks {
+        if let Some(s) = w.unit(a.unit) {
+            if Some(s) != first && w.units.owner[s] == p && unit_is_store(w, s) {
+                v.push(s);
+            }
+        }
+    }
+    v
+}
+
 /// Un stock : dépôt ou entrepôt d'équipe (`B`, indice de bâtiment), ou soute d'un commandant (`U`, case
 /// d'unité).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -226,7 +241,7 @@ pub fn stores_near(w: &World, p: u8, x: i32, y: i32, r: i32) -> Vec<(i64, Store)
             v.push((d, Store::B(b)));
         }
     }
-    if let Some(s) = commander_store(w, p) {
+    for s in commander_stores(w, p) {
         let d = dist2(x, y, w.units.x[s], w.units.y[s]);
         if d <= r2 {
             v.push((d, Store::U(s)));
@@ -348,7 +363,7 @@ pub fn net_stores(w: &World, p: u8, rel: &[usize], x: i32, y: i32) -> Vec<(i64, 
             v.push((dist2(x, y, cx, cy), Store::B(b)));
         }
     }
-    if let Some(s) = commander_store(w, p) {
+    for s in commander_stores(w, p) {
         let (ux, uy) = (w.units.x[s], w.units.y[s]);
         if covered(ux, uy) {
             v.push((dist2(x, y, ux, uy), Store::U(s)));
@@ -743,6 +758,10 @@ pub fn plan(w: &mut World) {
         if !bb.alive || !bb.complete() {
             continue;
         }
+        // les Transhumants n'ont pas de drones : tout passe par contact (réseau de transfert) ou par les chariots
+        if bb.def().race == RACE_TRANSH {
+            continue;
+        }
         match bb.def().class {
             BClass::Factory if !bb.queue.is_empty() && !crate::buildings::paused(bb) => plan_factory(w, b, &fl, &mut rb),
             BClass::Power if !crate::buildings::fuelless(bb.kind) && bb.fuel * 2 <= crate::buildings::tank_of(bb) => plan_generator(w, b, &fl, &mut rb),
@@ -928,7 +947,7 @@ fn plan_unit(w: &mut World, s: usize, fl: &Flights, rb: &mut RelayBusy) {
 }
 
 /// Usine d'unités : ses drones vont chercher les composants de sa file (réserve d'avance de 2 unités), dans les
-/// stocks à FACTORY_SUPPLY cases et, pour un atelier des Transhumants, dans les soutes de son réseau de transfert ;
+/// stocks à FACTORY_SUPPLY cases (pas chez les Transhumants : voir `plan`) ;
 /// les relais qui la couvrent apportent ce qui manque encore.
 fn plan_factory(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     let home = w.building_ref(b);
@@ -949,16 +968,7 @@ fn plan_factory(w: &mut World, b: usize, fl: &Flights, rb: &mut RelayBusy) {
     }
     let owner = w.buildings[b].owner;
     let (x, y) = w.buildings[b].center();
-    let mut near = stores_near(w, owner, x, y, FACTORY_SUPPLY * TILE);
-    // atelier des Transhumants : aussi les soutes de son réseau de transfert, même plus loin
-    for &c in crate::transfert::members(w, b) {
-        let c = c as usize;
-        if is_store(&w.buildings[c]) && usable(w, owner, c) && !near.iter().any(|e| e.1 == Store::B(c)) {
-            let (sx, sy) = w.buildings[c].center();
-            near.push((dist2(x, y, sx, sy), Store::B(c)));
-        }
-    }
-    near.sort_unstable();
+    let near = stores_near(w, owner, x, y, FACTORY_SUPPLY * TILE);
     fetch(w, owner, home, x, y, &near, &mut want, &mut free);
     if relays {
         relay_fetch(w, owner, home, x, y, None, rb, &mut want);

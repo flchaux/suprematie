@@ -184,22 +184,22 @@ fn losing_the_middle_building_cuts_the_network() {
     }
 }
 
-/// Les priorités de la soute valent pour tout le réseau : un assembleur relié lui laisse les 40 dernières plaques
-/// une fois qu'elle a 100 engrenages.
+/// La soute donne à un assembleur relié tout ce qu'elle a, même quand elle a son produit en nombre (pas de « 40
+/// dernières plaques » gardées).
 #[test]
-fn the_hold_keeps_its_last_plates_across_the_network() {
+fn the_hold_gives_its_last_plates_across_the_network() {
     let (mut w, x, y) = base();
     let h = put(&mut w, B_T_HOLD, x, y, RECIPE_NONE);
     put(&mut w, B_T_BASTION, x + 2, y, RECIPE_NONE);
     put(&mut w, B_T_ASSEMBLER, x + 4, y, rec("gear"));
-    stock(&mut w, h, IRON_PLATE, 100);
-    stock(&mut w, h, GEAR, 80);
-    steps(&mut w, 6000);
-    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (40, 110));
+    stock(&mut w, h, IRON_PLATE, 40);
+    stock(&mut w, h, GEAR, 197);
+    steps(&mut w, 3000);
+    assert_eq!((has(&w, h, IRON_PLATE), has(&w, h, GEAR)), (0, 217));
 }
 
 /// Un atelier relié à la soute par une longue file de poteaux (au-delà de 30 cases) passe avant l'assembleur collé :
-/// la soute lui garde ce qui manque à son unité, et ses drones vont l'y chercher.
+/// la soute lui garde ce qui manque à son unité et le lui envoie par le réseau (les Transhumants n'ont pas de drones).
 #[test]
 fn a_far_workshop_of_the_network_is_served_first() {
     let (mut w, x, y) = base();

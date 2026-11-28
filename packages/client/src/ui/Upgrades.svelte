@@ -194,6 +194,13 @@
       {@const sh = ui.unitInfo?.shield ?? 0}
       <div class="row small" title="Arrête les tirs du dehors. Brisé, revient après 10 s."><span class="kicker">Bouclier</span><span class="shb"><span style:width={(sh / ark.shieldMax) * 100 + "%"}></span></span><span class="num">{sh} / {ark.shieldMax}</span><span class="dim">· {ark.shieldR} cases</span></div>
     {/if}
+    {#if ark.cartsMax}
+      {@const poor = !canPay(mi.reach, ark.cartCost)}
+      <div class="row small" title="À l'arrêt depuis 3 s, ses chariots font la navette avec les modules ; quand elle roule, ils la suivent">
+        <span class="kicker">Chariots</span> <span class="num">{ark.carts} / {ark.cartsMax}</span>
+        {#if ark.carts < ark.cartsMax}<button class="icon-btn" disabled={poor} onclick={() => client.hitchCart()} title={poor ? "Il manque des composants dans les réserves à moins de 30 cases" : "Atteler un chariot de convoi, payé par la soute de l'Arche, puis par les réserves à moins de 30 cases"}>Atteler un chariot <Cost cost={ark.cartCost} /></button>{/if}
+      </div>
+    {/if}
     {#if mods[mi.mods[4]]?.key === "ark_dynamo"}
       <div class="row small"><span class="kicker">Groupe</span><span class={ark.dock ? "good" : "dim"}>{ark.dock ? "posé : 500 kW sans combustible" : "à bord : posé après 3 s à l'arrêt"}</span></div>
     {/if}

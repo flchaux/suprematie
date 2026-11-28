@@ -57,6 +57,26 @@ pub const LOOT_RANGE: i32 = 15;
 pub const START_FUEL_RESERVE: u16 = 40;
 /// Poteaux relais qu'un générateur nomade peut avoir plantés en même temps.
 pub const POLES_PER_GEN: usize = 10;
+/// Arches qu'un joueur peut avoir en même temps (la première comprise ; recherche Arche de relève).
+pub const ARKS_MAX: usize = 3;
+
+/// Arches en jeu du joueur `p`.
+pub fn arks_of(w: &World, p: u8) -> usize {
+    w.arks.iter().filter_map(|a| w.unit(a.unit)).filter(|&s| w.units.owner[s] == p && w.units.kind[s] == U_ARK).count()
+}
+
+/// Arches du joueur `p` en jeu et dans les files de ses ateliers (en cours comprise).
+pub fn arks_planned(w: &World, p: u8) -> usize {
+    let queued: usize = w
+        .buildings
+        .iter()
+        .filter(|b| b.alive && b.owner == p && b.def().class == BClass::Factory)
+        .flat_map(|b| b.queue.iter())
+        .filter(|q| q.0 == U_ARK)
+        .map(|q| q.1 as usize)
+        .sum();
+    arks_of(w, p) + queued
+}
 
 #[inline]
 pub fn is_transh(w: &World, p: u8) -> bool {
@@ -94,6 +114,10 @@ pub fn place_start(w: &mut World, p: usize) {
                 }
             }
         }
+    }
+    // un chariot de convoi attelé à l'Arche, offert
+    if let Some(a) = w.unit(w.players[p].commander).filter(|&a| w.units.kind[a] == U_ARK) {
+        crate::chariots::spawn_cart(w, crate::drones::Store::U(a));
     }
 }
 
@@ -775,6 +799,9 @@ pub fn info(w: &World, b: usize) -> String {
     } else if bb.kind == B_T_HOLD {
         let cost: Vec<String> = udef(U_T_CART).cost.iter().map(|&(it, n)| format!("[{},{}]", it, n)).collect();
         format!(",\"carts\":{},\"cartsMax\":{},\"cartCost\":[{}]", carts_of(w, b).len(), CARTS_PER_HOLD, cost.join(","))
+    } else if bb.kind == B_T_WORKSHOP {
+        // Arches du joueur : en jeu, en jeu et en file, plafond (bouton de l'Arche grisé au plafond)
+        format!(",\"arks\":[{},{},{}]", arks_of(w, bb.owner), arks_planned(w, bb.owner), ARKS_MAX)
     } else {
         String::new()
     };

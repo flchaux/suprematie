@@ -30,11 +30,14 @@ export function togglePauseSelected(c: GameClient): void {
   sfx.click();
 }
 
-/** Transhumants : la soute sélectionnée attelle un chariot de convoi. */
+/** Transhumants : la soute sélectionnée, ou l'Arche sélectionnée seule, attelle un chariot de convoi. */
 export function hitchCart(c: GameClient): void {
   const h = ui.selBuildings.find((b) => b.owner === ui.me && c.data?.buildings[b.kind].key === "t_hold");
-  if (!h) return;
-  c.cmd(Ord.hitch(h.ref));
+  const sel = c.selectedUnits();
+  const ark = sel.length === 1 && c.data?.units[sel[0].kind].key === "ark" ? sel[0] : undefined;
+  const r = h?.ref ?? ark?.id;
+  if (r === undefined) return;
+  c.cmd(Ord.hitch(r));
   sfx.confirm();
 }
 
