@@ -1314,7 +1314,7 @@ pub const UNITS: [UnitDef; 96] = [
     UnitDef { key: "egg_l", name: "Gros œuf", hp: 600, speed: 0, radius: 140, vision: 3, factory: FactoryKind::None, tier: 0, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : chariot de convoi, attelé à une soute (coût pris dans son stock), qui fait la
     // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
-    UnitDef { key: "t_cart", name: "Chariot de convoi", layer: Layer::Hover, hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
+    UnitDef { key: "t_cart", name: "Chariot de convoi", layer: Layer::Hover, hp: 300, speed: 24, radius: 112, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Souche, suite -----
     UnitDef { key: "burster", name: "Vessie", hp: 98, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 21), (SELS, 6), (EAU, 7)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
     UnitDef { key: "dart", name: "Dard", hp: 252, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 32), (SELS, 13), (EAU, 11)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
