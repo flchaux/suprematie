@@ -1,5 +1,5 @@
-// Curseurs contextuels (packages/client/src/ui/cursors.ts) : le curseur posé sur la scène est bien l'image de
-// 64 x 64 de ui/cursors.ts, puis quelques curseurs sont dessinés en taille réelle sur la scène (le curseur système
+// Curseurs contextuels (packages/client/src/ui/cursors.ts) : le curseur posé sur la scène est bien celui de
+// ui/cursors.ts (flèche avec symbole : image de 64 x 64 ; viseurs : 32 x 32), puis quelques curseurs sont dessinés en taille réelle sur la scène (le curseur système
 // n'apparaît pas dans les captures), avec leur point actif en magenta. Avec un second module (ancienne version),
 // ses curseurs sont posés à côté pour comparer.
 // Usage : node tools/e2e-curseurs.mjs http://127.0.0.1:3061 [dossier des captures] [ancien cursors.ts]
@@ -63,7 +63,7 @@ await page.evaluate((items) => {
   }
 }, items);
 const sizes = await page.evaluate(() => [...document.querySelectorAll("img[style*='z-index: 99999']")].map((i) => i.naturalWidth));
-check(sizes.slice(0, kinds.length).every((w) => w === 64), "images de 64 px", sizes.join(" "));
+check(sizes.slice(0, kinds.length).join(" ") === "64 32 64 64", "flèches en 64 px, viseur en 32 px", sizes.join(" "));
 await page.waitForTimeout(500);
 const path = `${outDir}/curseurs.png`;
 await page.screenshot({ path, clip: { x: 300, y: 220, width: 680, height: old ? 320 : 180 }, timeout: 240000 });
