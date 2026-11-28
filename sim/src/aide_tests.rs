@@ -183,6 +183,7 @@ fn sowers_make_a_seed_heart_hatch_faster() {
         let net = w.buildings[h].net as usize;
         w.nets[net].seve = 5000;
         w.nets[net].sels = 5000;
+        w.nets[net].eau = 5000;
         let before = w.players[0].produced[SEVE as usize];
         let r = w.building_ref(h) as i32;
         order(&mut w, crate::orders::O_FACTORY_QUEUE, &[r, U_GNAWER as i32, 1]);

@@ -169,7 +169,8 @@ fn a_save_with_long_cables_reads_back_with_lines_two() {
     let t = place_building(&mut w, 0, B_T_GENERATOR, 240, 240, 0).unwrap();
     complete_building(&mut w, t);
     w.buildings[t].mods = (M_GEN_TANK as u64) << 8;
-    let w2 = crate::save::restore(&crate::save::snapshot(&w)).expect("restauration");
+    // (relu d'une sauvegarde au format 13, d'avant l'eau : la conversion vise les sauvegardes jusqu'à ce format)
+    let w2 = crate::save::restore(&crate::save::write(&w, 13, &[])).expect("restauration");
     let m = w2.buildings[g].mods;
     assert_eq!((at(m, 0), at(m, SLOT_SPEC), at(m, SLOT_LINES)), (M_GEN_BIG, 0, M_GEN_LINES2));
     assert_eq!(poles_max(&w2.buildings[g]), 12);

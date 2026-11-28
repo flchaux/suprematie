@@ -185,6 +185,7 @@ export const SOUCHE_ITEMS = {
   seve: "a single fat glossy drop of thick glowing green plant sap (#7fc24a), teardrop shape, hanging from the tip of a short dark brown root",
   sels: "a small cluster of pale beige cubic mineral salt crystals (#d9d2c0), matte and angular, gripped by two thin dark brown rootlets",
   adn: "a short chunky double helix of DNA made of two twisted purple strands (#c35bd6) joined by glowing pink rungs, organic and fleshy",
+  eau: "a single round drop of clear pale blue water (#4aa8e0) with a bright highlight, held in a small cupped dark green leaf, two thin dark brown rootlets curling under the leaf",
 };
 
 /**
@@ -210,6 +211,12 @@ export const SOUCHE_BUILDINGS = {
   taproot:
     "a swollen bottle-shaped trunk of brown bark planted upright in the ground like a drilling well: wide belly narrowing to a thin neck, two bands of slate-grey chitin around the belly, " +
     "four glowing acid green veins climbing up its sides, a glowing green sucking mouth at the very top under four small leaves, six roots diving into a mound of dry earth around its foot",
+  borehole:
+    "a freshly dug borehole seen from above at a slight angle: a low round mound of turned brown earth with a few dark clods and stones, a dark round hole in its centre with a glint of pale blue water deep inside, " +
+    "a thin slate-grey chitin ring around the hole, three thin roots poking out of the dug earth, very low and flat shape",
+  well:
+    "a living well: a round rim of pale bone around a pool of clear pale blue water, ringed by a slate-grey chitin band, three arched bone ribs rising from the rim and meeting above the water, " +
+    "holding a fleshy glowing acid green pump sac at their top with thin green veins hanging down into the water, small clusters of glowing sap beads at its foot",
   bulb:
     "a big round sap storage sac, a translucent yellow-green balloon glowing from inside, held in a net of eight dark green ribs, a collar of slate-grey chitin at its narrow neck with three tiny leaves, " +
     "cupped by six dark green sepals at the base, with two small glowing acid green satellite bulbs beside it",

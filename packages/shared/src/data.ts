@@ -123,6 +123,8 @@ export const SEVE = 27;
 export const SELS = 28;
 export const ADN = 29;
 export const RELEVES = 30;
+/** Souche : eau (réserve des réseaux, tirée par les puits) */
+export const EAU = 31;
 /** Équipe de la faune (joueur caché, toujours le dernier de la liste des joueurs ; voir sim/src/nature.rs). */
 export const NATURE_TEAM = 8;
 /** Couleur des bêtes et des nids de la faune (brun de terre, distinct des 8 couleurs de joueur). */

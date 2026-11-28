@@ -115,6 +115,8 @@ pub const O_KIT_APPLY: i32 = 69;
 /// Chenillards des Transhumants : s'atteler au convoi de l'Arche : [drapeaux (bit 0 en file), réf. de l'Arche, n,
 /// unités…] (voir convoi.rs, « Chenillards attelés » ; un ordre qui remplace celui-ci les dételle).
 pub const O_TOW: i32 = 70;
+/// Souche : consommation d'eau des frondaisons : [pourcentage (0 à 200), n, réf. de bâtiment…] (voir eau::leaf_water).
+pub const O_WATER: i32 = 71;
 
 /// Gabarit lu dans un ordre : trois améliorations, une par emplacement.
 fn kit_set(c: &mut Cur) -> u32 {
@@ -880,6 +882,17 @@ fn apply_one(w: &mut World, p: u8, t: i32, mut c: Cur) {
                 if w.buildings[b].def().class == crate::data::BClass::Inserter && (1..=3).contains(&k) {
                     w.buildings[b].turn = k as u8;
                     w.buildings[b].wake = 0;
+                }
+            }
+        }
+        O_WATER => {
+            let pct = c.next().clamp(0, 200) as u16;
+            let n = c.next().clamp(0, 4096);
+            for _ in 0..n {
+                if let Some(b) = own_building(w, p, c.next()) {
+                    if w.buildings[b].kind == B_LEAVES {
+                        w.buildings[b].lot = pct + 1;
+                    }
                 }
             }
         }

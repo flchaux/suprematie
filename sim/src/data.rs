@@ -33,10 +33,24 @@ pub const SELS: u8 = 28;
 pub const ADN: u8 = 29;
 /// Transhumants : relevés (recherche par l'exploration, voir transhumants.rs).
 pub const RELEVES: u8 = 30;
-pub const NUM_ITEMS: usize = 31;
+/// Souche : eau (réserve de chaque réseau, tirée par les puits ; voir eau.rs).
+pub const EAU: u8 = 31;
+pub const NUM_ITEMS: usize = 32;
 /// Nombre d'objets des sauvegardes d'avant les races (format 2 et moins) : les tableaux d'objets
 /// sauvegardés n'avaient que ces cases (voir ser.rs).
 pub const NUM_ITEMS_V2: usize = 27;
+/// Nombre d'objets des sauvegardes d'avant l'eau (format 13 et moins).
+pub const NUM_ITEMS_V13: usize = 31;
+
+/// Cases des tableaux d'objets d'une sauvegarde au format `version`.
+#[inline]
+pub fn items_in(version: u32) -> usize {
+    match version {
+        0..=2 => NUM_ITEMS_V2,
+        3..=13 => NUM_ITEMS_V13,
+        _ => NUM_ITEMS,
+    }
+}
 
 pub struct ItemDef {
     pub key: &'static str,
@@ -76,6 +90,7 @@ pub const ITEMS: [ItemDef; NUM_ITEMS] = [
     ItemDef { key: "sels", name: "Sels", color: 0xd9d2c0 },
     ItemDef { key: "adn", name: "ADN", color: 0xc35bd6 },
     ItemDef { key: "releves", name: "Relevés", color: 0xe8b84a },
+    ItemDef { key: "eau", name: "Eau", color: 0x4aa8e0 },
 ];
 
 // ---------- Races ----------
@@ -900,8 +915,11 @@ pub const B_SPAWNERY: u16 = 77;
 pub const B_COCOON: u16 = 78;
 /// Groupe électrogène que l'Arche pose à l'arrêt (voir ameliorations::update_dock).
 pub const B_ARK_DOCK: u16 = 79;
+// Souche, eau (voir eau.rs)
+pub const B_BOREHOLE: u16 = 80;
+pub const B_WELL: u16 = 81;
 
-pub const BUILDINGS: [BuildingDef; 80] = [
+pub const BUILDINGS: [BuildingDef; 82] = [
     BuildingDef { key: "extractor", name: "Extracteur", size: (2, 2), hp: 400, power_use: 90, cost: &[(IRON_PLATE, 10), (COPPER_PLATE, 5)], build: 4, class: BClass::Extractor, deposit: 255, ..BD },
     BuildingDef { key: "belt1", name: "Tapis roulant", hp: 60, cost: &[(IRON_PLATE, 1)], build: 1, power_use: 1, class: BClass::Belt, speed: 24, passable: true, vision: 0, ..BD },
     BuildingDef { key: "belt2", name: "Tapis rapide", hp: 80, cost: &[(IRON_PLATE, 1), (GEAR, 1)], build: 1, tech: 8, power_use: 2, class: BClass::Belt, speed: 48, passable: true, vision: 0, ..BD },
@@ -968,7 +986,7 @@ pub const BUILDINGS: [BuildingDef; 80] = [
     BuildingDef { key: "seed_heart", name: "Graine-mère", size: (3, 3), hp: 6000, build: 90, class: BClass::Factory, factory: FactoryKind::Land, supply: 2, connect: 8, vision: 14, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "root", name: "Racine", hp: 150, cost: &[(SEVE, 4)], build: 2, class: BClass::Pylon, supply: 3, connect: 5, passable: true, vision: 0, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "leaves", name: "Frondaison", size: (2, 2), hp: 300, cost: &[(SEVE, 40), (SELS, 10)], build: 8, class: BClass::Organ, vision: 6, race: RACE_SOUCHE, ..BD },
-    BuildingDef { key: "taproot", name: "Racine-puits", size: (2, 2), hp: 600, cost: &[(SEVE, 60)], build: 10, class: BClass::Organ, deposit: 255, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "taproot", name: "Racine saline", size: (2, 2), hp: 600, cost: &[(SEVE, 60)], build: 10, class: BClass::Organ, deposit: 255, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "bulb", name: "Bulbe", size: (2, 2), hp: 800, cost: &[(SEVE, 50), (SELS, 20)], build: 8, class: BClass::Organ, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "brood", name: "Couveuse", size: (3, 3), hp: 3000, cost: &[(SEVE, 150), (SELS, 50)], build: 20, class: BClass::Factory, factory: FactoryKind::Land, vision: 12, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "matrix", name: "Matrice", size: (2, 2), hp: 600, cost: &[(SEVE, 100), (SELS, 40)], build: 12, class: BClass::Lab, race: RACE_SOUCHE, ..BD },
@@ -994,9 +1012,12 @@ pub const BUILDINGS: [BuildingDef; 80] = [
     BuildingDef { key: "maw", name: "Panse", size: (2, 2), hp: 1200, cost: &[(SEVE, 90), (SELS, 20)], build: 12, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "sporangium", name: "Sporange", size: (2, 2), hp: 1600, cost: &[(SEVE, 220), (SELS, 110)], build: 18, tech: T_S_SPORANGIA, class: BClass::Turret, weapon: 82, vision: 20, race: RACE_SOUCHE, ..BD },
     BuildingDef { key: "spawnery", name: "Frayère", size: (3, 3), hp: 3500, cost: &[(SEVE, 220), (SELS, 90)], build: 22, tech: T_S_TIDES, class: BClass::Factory, factory: FactoryKind::Naval, water: true, vision: 14, race: RACE_SOUCHE, ..BD },
-    BuildingDef { key: "cocoon", name: "Cocon", size: (4, 4), hp: 9000, cost: &[(SEVE, 1680), (SELS, 770)], build: 120, tech: T_S_BEHEMOTH, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "cocoon", name: "Cocon", size: (4, 4), hp: 9000, cost: &[(SEVE, 1680), (SELS, 770), (EAU, 560)], build: 120, tech: T_S_BEHEMOTH, class: BClass::Organ, vision: 12, race: RACE_SOUCHE, ..BD },
     // Transhumants : groupe électrogène posé par l'Arche à l'arrêt (amélioration « groupe électrogène »)
     BuildingDef { key: "ark_dock", name: "Groupe de l'Arche", hp: 800, power_prod: 500, cost: &[], build: 1, class: BClass::Power, supply: 8, connect: 20, race: RACE_TRANSH, ..BD },
+    // Souche, eau (voir eau.rs) : forage creusé par un semeur, puits (sur un forage, ou au bord de l'eau)
+    BuildingDef { key: "borehole", name: "Forage", size: (2, 2), hp: 400, cost: &[], build: crate::eau::BOREHOLE_BUILD, class: BClass::Organ, passable: true, vision: 4, race: RACE_SOUCHE, ..BD },
+    BuildingDef { key: "well", name: "Puits", size: (2, 2), hp: 900, cost: &[(SEVE, 80), (SELS, 20)], build: 15, class: BClass::Organ, vision: 6, race: RACE_SOUCHE, ..BD },
 ];
 
 /// Rayon d'action d'une base de robots (cases) et nombre de robots par base.
@@ -1261,12 +1282,12 @@ pub const UNITS: [UnitDef; 96] = [
     UnitDef { key: "disruptor", name: "Disrupteur", hp: 450, speed: 32, radius: 120, weapons: &[61], cost: &[(IRON_PLATE, 8), (GEAR, 2), (CIRCUIT, 3)], build: 6, tech: 2, tier: 1, ..UD },
     // ----- Souche : organismes vivants, pondus par les graines-mères (voir ponte.rs) -----
     UnitDef { key: "queen", name: "Reine", hp: 10000, speed: 18, radius: 220, weapons: &[62], vision: 26, factory: FactoryKind::None, build_power: 15, tier: 0, commander: true, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "sower", name: "Semeur", hp: 175, speed: 34, radius: 90, cost: &[(SEVE, 21), (SELS, 4)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
-    UnitDef { key: "gnawer", name: "Rongeur", hp: 182, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 18), (SELS, 3)], build: 4, bio: true, race: RACE_SOUCHE, litter: 6, ..UD },
-    UnitDef { key: "spitter", name: "Cracheur", hp: 224, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 35), (SELS, 14)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "shell", name: "Carapace", hp: 1540, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 84), (SELS, 28)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
-    UnitDef { key: "vine", name: "Liane", hp: 315, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 42), (SELS, 11)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 280, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 49), (SELS, 18)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "sower", name: "Semeur", hp: 175, speed: 34, radius: 90, cost: &[(SEVE, 21), (SELS, 4), (EAU, 7)], build: 6, build_power: 10, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "gnawer", name: "Rongeur", hp: 182, speed: 44, radius: 90, weapons: &[63], vision: 18, cost: &[(SEVE, 18), (SELS, 3), (EAU, 6)], build: 4, bio: true, race: RACE_SOUCHE, litter: 6, ..UD },
+    UnitDef { key: "spitter", name: "Cracheur", hp: 224, speed: 26, radius: 130, weapons: &[64], vision: 22, cost: &[(SEVE, 35), (SELS, 14), (EAU, 12)], build: 8, tech: T_S_SPITTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "shell", name: "Carapace", hp: 1540, speed: 26, radius: 200, weapons: &[65], cost: &[(SEVE, 84), (SELS, 28), (EAU, 28)], build: 14, tech: T_S_SHELLS, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "vine", name: "Liane", hp: 315, speed: 30, radius: 120, weapons: &[66], cost: &[(SEVE, 42), (SELS, 11), (EAU, 14)], build: 8, tech: T_S_VINES, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "membrane", name: "Planeur à membranes", layer: Layer::Air, hp: 280, speed: 110, radius: 160, weapons: &[68], vision: 26, cost: &[(SEVE, 49), (SELS, 18), (EAU, 16)], build: 10, tech: T_S_MEMBRANES, tier: 3, altitude: 1792, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
     // ----- Transhumants : l'Arche, les chenillards (modules repliés) et l'armée (voir transhumants.rs) -----
     UnitDef { key: "ark", name: "Arche", layer: Layer::Hover, hp: 16000, speed: 16, radius: 360, weapons: &[69, 6], vision: 30, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, race: RACE_TRANSH, ..UD },
     UnitDef { key: "ch_drill", name: "Chariot foreuse", layer: Layer::Hover, hp: 1200, speed: 20, radius: 209, cost: &[(IRON_PLATE, 14), (COPPER_PLATE, 6), (GEAR, 6)], build: 10, race: RACE_TRANSH, deploys: B_T_DRILL, ..UD },
@@ -1292,16 +1313,16 @@ pub const UNITS: [UnitDef; 96] = [
     // navette entre elle et un module éloigné (voir transhumants::haul_step) -----
     UnitDef { key: "t_cart", name: "Chariot de convoi", layer: Layer::Hover, hp: 300, speed: 24, radius: 150, vision: 10, cost: &[(IRON_PLATE, 6), (GEAR, 2)], build: 0, factory: FactoryKind::None, hold: 20, tier: 0, race: RACE_TRANSH, ..UD },
     // ----- Souche, suite -----
-    UnitDef { key: "burster", name: "Vessie", hp: 98, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 21), (SELS, 6)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
-    UnitDef { key: "dart", name: "Dard", hp: 252, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 32), (SELS, 13)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "burrower", name: "Fouisseur", hp: 364, speed: 38, radius: 130, weapons: &[77], vision: 16, cost: &[(SEVE, 39), (SELS, 10)], build: 7, tech: T_S_BURROWERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
-    UnitDef { key: "nurse", name: "Nourrice", hp: 490, speed: 30, radius: 160, vision: 20, cost: &[(SEVE, 46), (SELS, 17)], build: 9, tech: T_S_NURSES, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
-    UnitDef { key: "hornet", name: "Frelon", layer: Layer::Air, hp: 210, speed: 130, radius: 110, weapons: &[78], vision: 26, cost: &[(SEVE, 32), (SELS, 13)], build: 7, tech: T_S_HORNETS, tier: 4, altitude: 2048, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "burster", name: "Vessie", hp: 98, speed: 46, radius: 110, weapons: &[W_BURST], vision: 16, cost: &[(SEVE, 21), (SELS, 6), (EAU, 7)], build: 4, tech: T_S_BURSTERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 5, ..UD },
+    UnitDef { key: "dart", name: "Dard", hp: 252, speed: 28, radius: 130, weapons: &[76], vision: 28, cost: &[(SEVE, 32), (SELS, 13), (EAU, 11)], build: 7, tech: T_S_DARTS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "burrower", name: "Fouisseur", hp: 364, speed: 38, radius: 130, weapons: &[77], vision: 16, cost: &[(SEVE, 39), (SELS, 10), (EAU, 13)], build: 7, tech: T_S_BURROWERS, tier: 2, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
+    UnitDef { key: "nurse", name: "Nourrice", hp: 490, speed: 30, radius: 160, vision: 20, cost: &[(SEVE, 46), (SELS, 17), (EAU, 15)], build: 9, tech: T_S_NURSES, tier: 3, bio: true, race: RACE_SOUCHE, litter: 3, ..UD },
+    UnitDef { key: "hornet", name: "Frelon", layer: Layer::Air, hp: 210, speed: 130, radius: 110, weapons: &[78], vision: 26, cost: &[(SEVE, 32), (SELS, 13), (EAU, 11)], build: 7, tech: T_S_HORNETS, tier: 4, altitude: 2048, bio: true, race: RACE_SOUCHE, litter: 4, ..UD },
     // la Frayère met bas des petits déjà formés, un par un (pas d'œufs sur l'eau)
-    UnitDef { key: "moray", name: "Murène", layer: Layer::Naval, hp: 1120, speed: 44, radius: 260, weapons: &[79], vision: 26, cost: &[(SEVE, 112), (SELS, 42)], build: 16, tech: T_S_TIDES, factory: FactoryKind::Naval, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
-    UnitDef { key: "leviathan", name: "Léviathan", layer: Layer::Hover, hp: 9800, speed: 26, radius: 480, weapons: &[80, 81], vision: 32, cost: &[(SEVE, 630), (SELS, 294)], build: 70, tech: T_S_LEVIATHAN, factory: FactoryKind::Naval, tier: 5, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "moray", name: "Murène", layer: Layer::Naval, hp: 1120, speed: 44, radius: 260, weapons: &[79], vision: 26, cost: &[(SEVE, 112), (SELS, 42), (EAU, 37)], build: 16, tech: T_S_TIDES, factory: FactoryKind::Naval, tier: 3, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "leviathan", name: "Léviathan", layer: Layer::Hover, hp: 9800, speed: 26, radius: 480, weapons: &[80, 81], vision: 32, cost: &[(SEVE, 630), (SELS, 294), (EAU, 210)], build: 70, tech: T_S_LEVIATHAN, factory: FactoryKind::Naval, tier: 5, bio: true, race: RACE_SOUCHE, ..UD },
     // il sort d'un Cocon, aucune graine-mère ne le pond (voir souche::tick_cocoon)
-    UnitDef { key: "behemoth", name: "Béhémoth", hp: 36400, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 1680), (SELS, 770)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
+    UnitDef { key: "behemoth", name: "Béhémoth", hp: 36400, speed: 20, radius: 720, weapons: &[83, 84], vision: 36, cost: &[(SEVE, 1680), (SELS, 770), (EAU, 560)], build: 120, tech: T_S_BEHEMOTH, factory: FactoryKind::None, tier: 6, bio: true, race: RACE_SOUCHE, ..UD },
     // ----- Transhumants : tourelles de l'Arche. Elles roulent jusqu'à leur poste, s'y déploient, et rentrent à
     // bord ; le coût est celui de la reconstruction d'une tourelle détruite (voir ameliorations.rs) -----
     UnitDef { key: "turret_gun", name: "Tourelle mitrailleuse", layer: Layer::Hover, hp: 700, speed: 42, radius: 130, weapons: &[90], vision: 20, cost: &[(IRON_PLATE, 12), (GEAR, 4)], build: 0, factory: FactoryKind::None, tier: 0, race: RACE_TRANSH, ..UD },

@@ -12,6 +12,7 @@ pub mod combat;
 pub mod convoi;
 pub mod data;
 pub mod drones;
+pub mod eau;
 pub mod essaim;
 pub mod fixed;
 pub mod flow;
@@ -601,6 +602,8 @@ mod pickup_tests;
 mod races_tests;
 #[cfg(test)]
 mod aide_tests;
+#[cfg(test)]
+mod eau_tests;
 #[cfg(test)]
 mod essaim_tests;
 #[cfg(test)]

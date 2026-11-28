@@ -4,7 +4,7 @@
 // Méthodes de GameClient (client.ts) sorties en fonctions libres : le client est leur premier paramètre, `c`
 // (`gc` dans les fonctions qui ont déjà une variable `c`).
 import * as Ord from "@supreme/shared/orders.ts";
-import { UNIT_WORDS, BUILDING_WORDS, BF, SEVE, SELS, pausableClass, realPlayers } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, BF, SEVE, SELS, EAU, pausableClass, realPlayers } from "@supreme/shared";
 import type { ModInfo, ZoneEconomy } from "@supreme/shared";
 import type { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -75,6 +75,7 @@ export function updateUi(c: GameClient): void {
     if (me.race === 1) {
       ui.stock[SEVE] = me.seve;
       ui.stock[SELS] = me.sels;
+      ui.stock[EAU] = me.eau ?? 0;
     }
     ui.teamStock = Array.from(me.teamStock);
     ui.stockCap = me.stockCap;

@@ -7,7 +7,7 @@ use crate::world::*;
 
 pub const HEADER: usize = 17;
 /// ... + plafond total des dépôts, fragments, EPPZ, race, recherches 64 à 127, réserves de la Souche
-pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 9;
+pub const PLAYER_WORDS: usize = 13 + 4 * NUM_ITEMS + 10;
 pub const CARRIER_WORDS: usize = 5;
 /// Transhumants : améliorations d'une unité ou d'un module.
 pub const MOD_WORDS: usize = 3;
@@ -97,8 +97,9 @@ fn player_block(w: &World, out: &mut Vec<i32>) {
         out.push(p.race as i32);
         out.push(p.researched2 as u32 as i32);
         out.push((p.researched2 >> 32) as u32 as i32);
-        let (sv, sl, st) = if p.race == crate::data::RACE_SOUCHE { crate::souche::totals(w, i as u8) } else { (0, 0, 0) };
-        out.extend_from_slice(&[sv, sl, st]);
+        // (eau des réseaux de la Souche après le plafond, pour garder les places des mots plus anciens)
+        let (sv, sl, st, eau) = if p.race == crate::data::RACE_SOUCHE { crate::souche::totals(w, i as u8) } else { (0, 0, 0, 0) };
+        out.extend_from_slice(&[sv, sl, st, eau]);
     }
 }
 

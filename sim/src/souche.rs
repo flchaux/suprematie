@@ -32,6 +32,7 @@ pub const MAX_HEARTS: usize = 3;
 /// Réserve de départ du premier réseau.
 pub const START_SEVE: i32 = 400;
 pub const START_SELS: i32 = 150;
+pub const START_EAU: i32 = 150;
 /// Plus grande zone (cases) d'un poteau de la Souche (rayon de recherche ; test : souche_supply_is_bounded).
 pub const MAX_SUPPLY: i32 = 7;
 /// Période des organes (production, régénération), en ticks.
@@ -85,6 +86,7 @@ pub fn endow_start(w: &mut World) {
             if n.seve == 0 && n.sels == 0 {
                 n.seve = START_SEVE.min(n.store);
                 n.sels = START_SELS.min(n.store);
+                n.eau = START_EAU.min(n.store);
             }
         }
     }
@@ -159,6 +161,13 @@ pub fn can_place(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32, bh: i
     if kind == B_BROOD {
         return false;
     }
+    // forage : n'importe où à terre ; puits posé directement : au bord de l'eau, sur le terreau (sinon sur un forage)
+    if kind == B_BOREHOLE {
+        return true;
+    }
+    if kind == B_WELL {
+        return on_terreau(w, owner, x, y, bw, bh) && crate::eau::near_water(w, x, y, bw, bh);
+    }
     if kind == B_SEED_HEART {
         let n = w.buildings.iter().filter(|b| b.alive && b.owner == owner && b.kind == B_SEED_HEART).count();
         return n < MAX_HEARTS;
@@ -188,11 +197,11 @@ pub fn touches_network(w: &World, owner: u8, kind: u16, x: i32, y: i32, bw: i32,
     ok
 }
 
-/// Réserves des réseaux avant un nouveau calcul : (sève, sels) par ancien réseau, et le nombre de
+/// Réserves des réseaux avant un nouveau calcul : (sève, sels, eau) par ancien réseau, et le nombre de
 /// bâtiments de la Souche encore vivants de chaque ancien réseau.
 pub struct OldPools {
     pub net_of: Vec<u16>,
-    pub pools: Vec<(i32, i32)>,
+    pub pools: Vec<(i32, i32, i32)>,
     pub count: Vec<u32>,
 }
 
@@ -201,7 +210,7 @@ pub fn old_pools(w: &World) -> Option<OldPools> {
     if !w.players.iter().any(|p| p.race == RACE_SOUCHE) {
         return None;
     }
-    let pools: Vec<(i32, i32)> = w.nets.iter().map(|n| (n.seve, n.sels)).collect();
+    let pools: Vec<(i32, i32, i32)> = w.nets.iter().map(|n| (n.seve, n.sels, n.eau)).collect();
     let mut count = vec![0u32; w.nets.len()];
     let mut net_of = vec![0u16; w.buildings.len()];
     for (i, b) in w.buildings.iter().enumerate() {
@@ -236,16 +245,18 @@ pub fn split_pools(w: &mut World, old: OldPools) {
             continue;
         }
         let c = old.count[o] as i32;
-        let (sv, sl) = old.pools[o];
-        let (mut gs, mut gl) = (sv / c, sl / c);
+        let (sv, sl, se) = old.pools[o];
+        let (mut gs, mut gl, mut ge) = (sv / c, sl / c, se / c);
         if !first_seen[o] {
             first_seen[o] = true;
             gs += sv % c;
             gl += sl % c;
+            ge += se % c;
         }
         if k != 0 && k < w.nets.len() {
             w.nets[k].seve += gs;
             w.nets[k].sels += gl;
+            w.nets[k].eau += ge;
         }
     }
     // bâtiments de la Souche posés depuis (sans ancien réseau) : leur réserve aussi
@@ -264,18 +275,20 @@ pub fn split_pools(w: &mut World, old: OldPools) {
             n.store += STORE_BASE;
             n.seve = n.seve.min(n.store);
             n.sels = n.sels.min(n.store);
+            n.eau = n.eau.min(n.store);
         }
     }
 }
 
-/// Réseaux de la Souche d'un joueur : réserve totale (sève, sels) et plafond total.
-pub fn totals(w: &World, p: u8) -> (i32, i32, i32) {
-    let mut t = (0, 0, 0);
+/// Réseaux de la Souche d'un joueur : réserve totale (sève, sels), plafond total, eau.
+pub fn totals(w: &World, p: u8) -> (i32, i32, i32, i32) {
+    let mut t = (0, 0, 0, 0);
     for n in w.nets.iter().skip(1) {
         if n.owner == p && !n.unlimited {
             t.0 += n.seve;
             t.1 += n.sels;
             t.2 += n.store;
+            t.3 += n.eau;
         }
     }
     t
@@ -302,7 +315,18 @@ pub fn feed(w: &mut World, owner: u8, net: u16, seve: i32, sels: i32) {
     p.produced[SELS as usize] += sels as u32;
 }
 
-/// Prend `n` d'un objet (sève ou sels) dans un réseau ; faux s'il n'y en a pas assez.
+/// Verse de l'eau dans un réseau (dans la limite de son plafond), comptée dans la production du joueur.
+pub fn feed_eau(w: &mut World, owner: u8, net: u16, eau: i32) {
+    if net == 0 {
+        return;
+    }
+    if let Some(n) = w.nets.get_mut(net as usize) {
+        n.eau = (n.eau + eau).min(n.store.max(n.eau));
+    }
+    w.players[owner as usize].produced[EAU as usize] += eau as u32;
+}
+
+/// Prend `n` d'un objet (sève, sels ou eau) dans un réseau ; faux s'il n'y en a pas assez.
 fn take_pool(w: &mut World, net: u16, item: u8, n: i32) -> bool {
     if net == 0 {
         return n <= 0;
@@ -311,6 +335,7 @@ fn take_pool(w: &mut World, net: u16, item: u8, n: i32) -> bool {
     let slot = match item {
         SEVE => &mut nn.seve,
         SELS => &mut nn.sels,
+        EAU => &mut nn.eau,
         _ => return n <= 0,
     };
     if *slot < n {
@@ -351,6 +376,7 @@ fn pool_of(w: &World, net: u16, item: u8) -> i32 {
     match (w.nets.get(net as usize), item) {
         (Some(n), SEVE) if net != 0 => n.seve,
         (Some(n), SELS) if net != 0 => n.sels,
+        (Some(n), EAU) if net != 0 => n.eau,
         _ => 0,
     }
 }
@@ -440,8 +466,8 @@ pub fn line_cost(w: &World, owner: u8, kind: u16, cells: &[(i32, i32, u8)]) -> V
 pub fn grow(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + GROW_PERIOD;
     let (kind, owner) = (w.buildings[b].kind, w.buildings[b].owner);
-    // une graine-mère ne pousse que des organismes qui s'y sacrifient
-    if kind == B_SEED_HEART {
+    // une graine-mère ne pousse que des organismes qui s'y sacrifient ; un forage se creuse (semeur, Reine)
+    if kind == B_SEED_HEART || kind == B_BOREHOLE {
         return;
     }
     let def = bdef(kind);
@@ -563,6 +589,11 @@ pub fn tick_organ(w: &mut World, b: usize) {
         }
         B_TAPROOT => {
             tick_taproot(w, b);
+            regen_building(w, b);
+            return;
+        }
+        B_WELL => {
+            crate::eau::tick_well(w, b);
             regen_building(w, b);
             return;
         }
@@ -877,6 +908,11 @@ pub fn refund(w: &mut World, net: u16, item: u8, n: i32) {
     match item {
         SEVE => add_pool(w, net, n, 0),
         SELS => add_pool(w, net, 0, n),
+        EAU => {
+            if let Some(nn) = w.nets.get_mut(net as usize).filter(|_| net != 0) {
+                nn.eau = (nn.eau + n).min(nn.store.max(nn.eau));
+            }
+        }
         _ => {}
     }
 }
@@ -1025,5 +1061,6 @@ pub fn info(w: &World, b: usize) -> String {
     };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
     let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
-    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), heart_info(bb), crate::aide::info(w, b), adapt)
+    let eau = n.map_or(0, |n| n.eau);
+    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"eau\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}{}{}{}}}{}", bb.net, s, l, eau, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), heart_info(bb), crate::aide::info(w, b), crate::eau::info(w, b), adapt)
 }

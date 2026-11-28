@@ -230,6 +230,13 @@ fn machine_rates(w: &World, b: usize, prod: &mut [u64; N], cons: &mut [u64; N]) 
             let (s, l) = crate::souche::organ_rate(w, b);
             prod[SEVE as usize] += s.max(0) as u64 * 60;
             prod[SELS as usize] += l.max(0) as u64 * 60;
+            // eau : ce que tire un puits, ce que boit une frondaison
+            if bb.kind == B_WELL {
+                let (cx, cy) = bb.center();
+                prod[EAU as usize] += crate::eau::rate_at(w, cx, cy) as u64 * crate::aide::mult_now(w, b) as u64 / 1000 * 60;
+            } else if bb.kind == B_LEAVES {
+                cons[EAU as usize] += (crate::eau::LEAF_WATER * crate::eau::leaf_pct(bb) / 100) as u64 * 60;
+            }
         }
         _ => {}
     }
@@ -264,6 +271,7 @@ pub fn zone_economy(w: &World, p: i32, tx: i32, ty: i32) -> String {
         let net = &w.nets[n as usize];
         stock[SEVE as usize] += net.seve.max(0) as i64;
         stock[SELS as usize] += net.sels.max(0) as i64;
+        stock[EAU as usize] += net.eau.max(0) as i64;
         cap = net.store as i64;
         // Reine enracinée sur ce réseau (centièmes par minute)
         if crate::essaim::queen_net(w, p) == n {

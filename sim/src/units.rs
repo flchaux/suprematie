@@ -837,8 +837,8 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 return NONE;
             }
             if let Some(b) = w.building(bid) {
-                // Souche : l'organe planté pousse seul, le semeur repart
-                if !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE {
+                // Souche : l'organe planté pousse seul, le semeur repart (un forage, lui, se creuse)
+                if !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE && w.buildings[b].kind != B_BOREHOLE {
                     pop_order(w, s);
                     return NONE;
                 }
@@ -912,7 +912,7 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                 let range = build_range(w.buildings[b].kind, w.buildings[b].dir);
                 let (cx, cy) = w.buildings[b].center();
                 // un organe de la Souche pousse seul : on ne l'aide pas, on le soigne une fois poussé
-                let growing = !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE;
+                let growing = !w.buildings[b].complete() && w.buildings[b].def().race == RACE_SOUCHE && w.buildings[b].kind != B_BOREHOLE;
                 if w.team_of(w.buildings[b].owner) != w.team_of(owner) || def.build_power == 0 || growing {
                     pop_order(w, s);
                     return NONE;

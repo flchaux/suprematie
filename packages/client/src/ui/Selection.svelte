@@ -5,7 +5,7 @@
   import { UNIT_DESCS } from "../game/unitDescs.ts";
   import { BUILDING_DESCS } from "../game/buildingDescs.ts";
   import { client } from "../game/client.ts";
-  import { BClass, RECIPE_NONE, ADN, SEVE, SELS, PACK1, HYDROCARBON, ENERGY_CELL, RACE_TRANSH, pausableClass } from "@supreme/shared";
+  import { BClass, RECIPE_NONE, ADN, SEVE, SELS, EAU, PACK1, HYDROCARBON, ENERGY_CELL, RACE_TRANSH, pausableClass } from "@supreme/shared";
   import { recipeOfRace } from "../game/research.ts";
   import Item from "./Item.svelte";
   import Cost from "./Cost.svelte";
@@ -46,6 +46,11 @@
   const upg = $derived.by(() => {
     if (!info || !bdef || !d) return null;
     // graine-mère de la Souche : plus de portées à la fois, payées par son réseau de racines
+    // forage : on y construit un puits, payé par son réseau
+    if (bdef.key === "borehole" && d.buildings.find((b) => b.key === "well")) {
+      const wd = d.buildings.find((b) => b.key === "well")!;
+      return { label: "Construire un puits", cost: wd.cost, tech: 0, time: 20, gain: info.souche?.well ? `≈ ${fmtX(info.souche.well.rate / 100)} eau par seconde` : "un puits", running: false, net: true };
+    }
     if (layer && d.broodLevels) {
       const l = info.level ?? 0;
       const n = d.broodLevels[l + 1];
@@ -94,6 +99,7 @@
     const have: number[] = [];
     have[SEVE] = info.souche.net ? info.souche.seve : 0;
     have[SELS] = info.souche.net ? info.souche.sels : 0;
+    have[EAU] = info.souche.net ? (info.souche.eau ?? 0) : 0;
     return have;
   });
   /** graine-mère (ou couveuse d'une ancienne partie) : elle pond les organismes */
@@ -129,6 +135,7 @@
     // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
     if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
     if (info.build >= 65536 && info.souche?.soil?.spent) return { text: "Lente : l'herbe est loin, plantez-en au bord du terreau", kind: "warn" };
+    if (info.build < 65536 && bdef.key === "borehole") return { text: `Creusage ${Math.floor((info.build / 65536) * 100)} % : un semeur ou la Reine doit y travailler`, kind: "build" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · en attente de matériaux" : ""), kind: info.stalled ? "warn" : "build" };
     if (paused) return { text: "En pause : ni énergie, ni ingrédients, ni production ; il reprendra là où il en était", kind: "paused" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : layer ? "elle pond toujours" : "arrêté"} pendant le chantier)`, kind: "build" };
@@ -338,7 +345,7 @@
         <div class="row small" title="Réserve partagée par les organes du réseau">
           <span class="kicker">Réseau</span>
           {#if sv.net}
-            <Item id={27} size={16} /> <span class="num">{sv.seve}</span> <Item id={28} size={16} /> <span class="num">{sv.sels}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
+            <Item id={SEVE} size={16} /> <span class="num">{sv.seve}</span> <Item id={SELS} size={16} /> <span class="num">{sv.sels}</span> <Item id={EAU} size={16} /> <span class="num">{sv.eau ?? 0}</span> <span class="dim">/ <span class="num">{sv.store}</span></span>
           {:else if !sv.heart}<b class="bad">hors du terreau : rien ne pousse</b>{:else}<span class="dim">le sien, une fois poussée</span>{/if}
         </div>
         {#if sv.heart}
@@ -357,6 +364,21 @@
           </div>
           {#if bdef.key === "root" && so.left}<div class="row small"><span class="kicker">À sa portée</span> <span class="num">{so.left}</span><span class="dim"> case{so.left > 1 ? "s" : ""}{so.share < 950 ? `, dont ${Math.max(1, Math.round((so.left * so.share) / 1000))} pour elle` : ""}</span></div>{/if}
           {#if so.near >= 0 && so.share < 950 && bdef.key !== "root"}<div class="row small"><span class="kicker">Part</span> <span class="num">{Math.round(so.share / 10)} %</span><span class="dim"> (herbe partagée)</span></div>{/if}
+        {/if}
+        {#if sv.well}
+          {@const wl = sv.well}
+          <div class="row small" title="L'eau vient des nappes cachées sous la carte et des étendues d'eau proches ; un puits les épuise peu à peu"><span class="kicker">{bdef.key === "well" ? "Eau" : "Nappe"}</span>{#if wl.rate > 0}<Item id={EAU} size={14} /> <b class="num">{fmtX(wl.rate / 100)}</b><span class="dim"> /s{bdef.key === "well" ? "" : " pour un puits"} · {wl.avail.toLocaleString("fr-FR")} alentour</span>{:else}<span class="bad">sèche</span>{/if}</div>
+          {#if bdef.key === "well"}<div class="upbar"><span style="width: {Math.min(100, (wl.rate / Math.max(1, wl.max)) * 100)}%"></span></div>{/if}
+        {/if}
+        {#if sv.water}
+          {@const wa = sv.water}
+          <div class="row small water" title="Eau bue par la frondaison : 0,2 eau par seconde à 100 %, pour 50 % de vitesse en plus ; sans eau dans le réseau, elle va à son rythme">
+            <span class="kicker">Eau</span>
+            <button class="icon-btn" disabled={wa.pct <= 0} onclick={() => client.setWater(Math.max(0, wa.pct - 25))}>−</button>
+            <b class="num">{wa.pct} %</b>
+            <button class="icon-btn" disabled={wa.pct >= 200} onclick={() => client.setWater(Math.min(200, wa.pct + 25))}>+</button>
+            {#if wa.pct > 0}<span class="dim">−{fmtX(wa.use / 100)} /s · </span><span class:good={wa.ok} class:bad={!wa.ok}>{wa.ok ? `+${Math.round(wa.bonus / 10)} % de vitesse` : "plus d'eau dans le réseau"}</span>{/if}
+          </div>
         {/if}
         {#if info.aid}
           {@const ai = info.aid}

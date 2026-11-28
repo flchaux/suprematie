@@ -3,7 +3,7 @@
   // lignes : stock, production maximale, consommation maximale, solde (débits par minute). Données : requête
   // zoneEconomy (sim/src/zone_eco.rs), 4 fois par seconde au plus.
   import { ui } from "../game/state.svelte.ts";
-  import { SEVE, SELS, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
+  import { SEVE, SELS, EAU, ADN, RELEVES, RACE_SOUCHE, RACE_TRANSH } from "@supreme/shared";
   import Item from "./Item.svelte";
   import Icon from "./Icon.svelte";
   import { itemTip } from "../game/itemDescs.ts";
@@ -34,7 +34,7 @@
   });
   const cols = $derived.by(() => {
     if (!z || z.zone === 0) return [];
-    if (souche) return [SEVE, SELS, ADN];
+    if (souche) return [SEVE, SELS, EAU, ADN];
     const ids = all ? [...BASE, ...extra].sort((a, b) => a - b) : BASE;
     return ui.race === RACE_TRANSH ? [RELEVES, ...ids] : ids;
   });

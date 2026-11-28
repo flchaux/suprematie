@@ -609,6 +609,7 @@ pub fn ponte_demo() -> World {
         if net != 0 {
             w.nets[net].seve = 1_000_000;
             w.nets[net].sels = 1_000_000;
+            w.nets[net].eau = 1_000_000;
         }
         for &kind in kinds {
             w.buildings[b].queue.push((kind, 1));
@@ -696,6 +697,7 @@ pub fn essaim_demo() -> World {
     if net != 0 {
         w.nets[net].seve = 1_000_000;
         w.nets[net].sels = 1_000_000;
+        w.nets[net].eau = 1_000_000;
     }
     if let (Some(a), Some(b)) = (a, b) {
         crate::souche::link_burrow(&mut w, a, b);
@@ -711,9 +713,22 @@ pub fn essaim_demo() -> World {
             w.units.cold[slot_of(id)].orders.push(Order::Sacrifice { target });
         }
     }
-    // la frondaison a déjà mangé une partie de son herbe
+    // la frondaison a déjà mangé une partie de son herbe ; elle boit (100 %)
     if let Some(l) = leaves {
         crate::soil::graze_now(&mut w, l, 45);
+        w.buildings[l].lot = 101;
+    }
+    // eau : un puits au bord du lac (sur le terreau du câble sud), un forage creusé à l'ouest
+    if let Some(b) = put(&mut w, 0, B_WELL, hx + 3, hy + 9) {
+        w.buildings[b].dir = 0;
+    }
+    put(&mut w, 0, B_BOREHOLE, hx - 9, hy + 6);
+    // terreau sec : de l'herbe mangée loin de tout poteau (ni veines ni mousse)
+    for y in hy - 24..hy - 17 {
+        for x in hx - 42..hx - 33 {
+            let i = w.map.idx(x, y);
+            crate::soil::eat(&mut w, 0, i);
+        }
     }
     if let Some(m) = maw {
         let (cx, cy) = w.buildings[m].center();

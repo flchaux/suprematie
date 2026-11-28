@@ -15,7 +15,7 @@ export const BUILD_CATS: [string, string, string[]][] = [
 
 /** Menu de construction de la Souche : organes posés sur le terreau de ses racines. */
 export const SOUCHE_CATS: [string, string, string[]][] = [
-  ["Réseau", "production", ["root", "rhizome", "seed_heart", "leaves", "taproot", "bulb", "burrow"]],
+  ["Réseau", "production", ["root", "rhizome", "seed_heart", "leaves", "taproot", "borehole", "well", "bulb", "burrow"]],
   ["Organes", "factory", ["matrix", "maw", "spawnery", "cocoon"]],
   ["Défense", "defense", ["thorn", "bramble", "sporangium", "bloom"]],
 ];

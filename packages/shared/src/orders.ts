@@ -77,6 +77,8 @@ export const O = {
   KIT_APPLY: 69,
   /** chenillards des Transhumants : s'atteler au convoi de l'Arche : [drapeaux (1 : en file), réf. de l'Arche, n, unités…] */
   TOW: 70,
+  /** Souche : consommation d'eau des frondaisons : [pourcentage (0 à 200), n, réf. de bâtiment…] */
+  WATER: 71,
   RALLY: 11,
   ATTACK_GROUND: 12,
   DEPLOY: 13,
@@ -328,6 +330,10 @@ export function rotate(refs: number[]): Cmd {
 /** Souche : fixe dans l'espèce la résistance à une famille d'armes (Mémoire du sang). */
 export function adapt(family: number): Cmd {
   return [O.ADAPT, family | 0];
+}
+/** Souche : consommation d'eau de frondaisons (0 à 200 %). */
+export function water(refs: number[], pct: number): Cmd {
+  return [O.WATER, Math.max(0, Math.min(200, Math.round(pct))), refs.length, ...refs.map((r) => r | 0)];
 }
 /** Met en pause (ou relance) des extracteurs, fabricants et usines d'unités. */
 export function setPause(refs: number[], on: boolean): Cmd {

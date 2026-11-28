@@ -399,7 +399,11 @@ pub fn graze(w: &mut World, b: usize, period: u32) {
             m = meal(w, kind, owner, area, ring_of(kind, r), 0);
         }
     }
-    let aid = crate::aide::mult(w, b);
+    // semeurs qui l'aident, et l'eau qu'elle boit (frondaison, réglée de 0 à 200 %)
+    let mut aid = crate::aide::mult(w, b);
+    if kind == B_LEAVES {
+        aid = aid * crate::eau::leaf_water(w, b, period) / 1000;
+    }
     let y = yield_of(kind, &m);
     let was = w.buildings[b].stalled;
     let spent = kind == B_LEAVES && (y < LOW || (was && y < FINE));

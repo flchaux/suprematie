@@ -31,7 +31,10 @@ const MAGIC: u32 = 0x5355_5032; // "SUP2"
 /// - 11 : Transhumants : emplacements des améliorations (unités, modules), gabarits d'équipement, remorques de l'Arche.
 /// - 12 : Transhumants : navettes des chariots d'une soute repliée, file d'un atelier replié (`UnitCold::aboard`).
 /// - 13 : Transhumants : chenillards attelés à l'Arche (`Ark::tow`, `Order::Tow`).
-pub const VERSION: u32 = 13;
+/// - 14 : Souche : l'eau (objet 31, réserve des réseaux, eau tirée des nappes par les puits `World::drawn`) ; les
+///   tableaux d'objets ont une case de plus (`data::items_in`), les stocks des sauvegardes plus anciennes sont élargis
+///   à la lecture (`widen_items`).
+pub const VERSION: u32 = 14;
 
 pub fn snapshot(w: &World) -> Vec<u8> {
     write(w, VERSION, &[])
@@ -80,6 +83,9 @@ pub fn write(w: &World, version: u32, team_stock: &[[i32; crate::data::NUM_ITEMS
     }
     if version >= 9 {
         crate::soil::write(&w.soil, &mut o);
+    }
+    if version >= 14 {
+        w.drawn.ser(&mut o);
     }
     o.buf
 }
@@ -171,7 +177,35 @@ fn read_world(r: &mut R) -> Option<(World, Vec<[i32; crate::data::NUM_ITEMS]>)> 
         w.soil = crate::soil::read(r, (w.map.w * w.map.h) as usize);
         w.soil_n = w.soil.iter().filter(|&&o| o != 0).count() as u32;
     }
+    if r.version >= 14 {
+        w.drawn = Ser::de(r);
+    }
+    if r.version < 14 {
+        widen_items(&mut w, crate::data::items_in(r.version));
+    }
     Some((w, team_stock))
+}
+
+/// Sauvegarde d'avant l'eau : les stocks par objet tenus en listes (dépôts, usines, soutes ; gares et héliports :
+/// à envoyer puis reçus) avaient `old` cases ; ils sont élargis, les objets ajoutés à zéro.
+fn widen_items(w: &mut World, old: usize) {
+    use crate::data::NUM_ITEMS;
+    let widen = |v: &mut Vec<u16>| {
+        if v.len() == 2 * old {
+            let recv = v.split_off(old);
+            v.resize(NUM_ITEMS, 0);
+            v.extend_from_slice(&recv);
+            v.resize(2 * NUM_ITEMS, 0);
+        } else if v.len() == old {
+            v.resize(NUM_ITEMS, 0);
+        }
+    };
+    for b in w.buildings.iter_mut() {
+        widen(&mut b.stash);
+    }
+    for c in w.units.cold.iter_mut() {
+        widen(&mut c.hold);
+    }
 }
 
 /// Sauvegarde de version < 4 : la réserve de chaque joueur (sauf les monnaies de race, ADN et relevés,

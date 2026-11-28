@@ -144,7 +144,7 @@ impl<T: Ser> Ser for Option<T> {
 impl<T: Ser + Copy + Default, const N: usize> Ser for [T; N] {
     fn ser(&self, w: &mut W) {
         // écriture d'un format d'avant les races (tests des anciennes sauvegardes) : objets d'alors
-        let n = if N == crate::data::NUM_ITEMS && w.version < 3 { crate::data::NUM_ITEMS_V2 } else { N };
+        let n = if N == crate::data::NUM_ITEMS { crate::data::items_in(w.version) } else { N };
         for x in self.iter().take(n) {
             x.ser(w);
         }
@@ -152,8 +152,8 @@ impl<T: Ser + Copy + Default, const N: usize> Ser for [T; N] {
     fn de(r: &mut R) -> Self {
         let mut a = [T::default(); N];
         // tableaux d'objets (stocks, compteurs) : les sauvegardes d'avant les races (format 2 et
-        // moins) en avaient moins ; les objets ajoutés depuis valent zéro
-        let n = if N == crate::data::NUM_ITEMS && r.version < 3 { crate::data::NUM_ITEMS_V2 } else { N };
+        // moins) et d'avant l'eau (format 13 et moins) en avaient moins ; les objets ajoutés depuis valent zéro
+        let n = if N == crate::data::NUM_ITEMS { crate::data::items_in(r.version) } else { N };
         for x in a.iter_mut().take(n) {
             *x = T::de(r);
         }

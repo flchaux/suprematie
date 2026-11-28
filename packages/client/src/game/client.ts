@@ -277,6 +277,7 @@ export class GameClient {
   adapt(family: number): void { Buildings.adapt(this, family); }
   toggleBuilding(): void { Buildings.toggleBuilding(this); }
   upgradeBuilding(): void { Buildings.upgradeBuilding(this); }
+  setWater(pct: number): void { Buildings.setWater(this, pct); }
   setSplit(mode: number): void { Buildings.setSplit(this, mode); }
   setClock(clock: number): void { Buildings.setClock(this, clock); }
   setLot(n: number): void { Buildings.setLot(this, n); }

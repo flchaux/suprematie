@@ -563,12 +563,13 @@ pub struct Net {
     pub unlimited: bool,
     /// consommation permanente des tapis de la zone (kW)
     pub belt_demand: i32,
-    /// Souche : réserve du réseau de racines (sève, sels) et son plafond (voir souche.rs)
+    /// Souche : réserve du réseau de racines (sève, sels, eau) et son plafond (voir souche.rs)
     pub seve: i32,
     pub sels: i32,
     pub store: i32,
+    pub eau: i32,
 }
-crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap, unlimited, belt_demand; since 3: seve, sels, store });
+crate::ser_struct!(Net { prod, demand, demand_next, sat, owner, gens, cap, unlimited, belt_demand; since 3: seve, sels, store; since 14: eau });
 
 // Événements pour le rendu (non hachés, non sérialisés)
 pub const EV_BEAM: i32 = 2;
@@ -684,6 +685,10 @@ pub struct World {
     pub eaters: Vec<u16>,
     /// Souche : semeurs qui aident chaque bâtiment, comptés au tick (tick + 1, nombre ; dérivé, voir aide::mult)
     pub aid: Vec<(u32, u16)>,
+    /// Souche : eau des nappes et des étendues d'eau, par maille (dérivé de la carte, voir eau::ensure)
+    pub aquifer: Vec<u32>,
+    /// Souche : eau déjà tirée par les puits, par maille (maille, quantité ; mailles croissantes, sauvegardé)
+    pub drawn: Vec<(u32, u32)>,
     /// Souche : réseau que nourrit la Reine enracinée de chaque joueur (dérivé, refait à chaque tick)
     pub royal: Vec<u16>,
     /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
@@ -801,6 +806,8 @@ impl World {
             terreau: Vec::new(),
             eaters: Vec::new(),
             aid: Vec::new(),
+            aquifer: Vec::new(),
+            drawn: Vec::new(),
             royal: Vec::new(),
             arks: Vec::new(),
             flock: Vec::new(),

@@ -218,6 +218,7 @@ fn eggs_wait_when_the_network_is_dry() {
     assert!(crate::render::info_unit(&w, w.unit_id(s)).contains("\"wait\":true"));
     w.nets[net].seve = 300;
     w.nets[net].sels = 100;
+    w.nets[net].eau = 100;
     steps(&mut w, ponte::incubation(U_GNAWER));
     assert!(eggs(&w).is_empty());
     assert_eq!(units_of(&w, U_GNAWER).len(), 6);
@@ -241,6 +242,7 @@ fn a_brood_tends_three_litters_at_most() {
     for _ in 0..40 {
         w.nets[net].seve = 900;
         w.nets[net].sels = 900;
+        w.nets[net].eau = 900;
         steps(&mut w, 40);
         assert!(eggs(&w).len() <= 18);
     }
@@ -387,6 +389,7 @@ fn successive_litters_do_not_pile_up() {
     let net = w.buildings[h].net as usize;
     w.nets[net].seve = 900;
     w.nets[net].sels = 900;
+    w.nets[net].eau = 900;
     w.players[0].set_tech(T_S_FERTILITY);
     // trois portées de semeurs, pondues presque à la suite
     queue(&mut w, b, U_SOWER, 3);
@@ -456,6 +459,7 @@ fn a_brood_grows_to_six_then_twelve_litters() {
         w.nets[net].store = 2000;
         w.nets[net].seve = 900;
         w.nets[net].sels = 900;
+        w.nets[net].eau = 900;
     };
     let count = |w: &World| ponte::litters(w, Some(w.building_ref(b))).len();
     assert_eq!(BROOD_LEVELS.iter().map(|l| l.litters).collect::<Vec<_>>(), vec![3, 6, 12]);
@@ -536,6 +540,7 @@ fn a_litter_keeps_its_place_until_its_last_egg() {
     for _ in 0..8 {
         w.nets[net].seve = 900;
         w.nets[net].sels = 900;
+        w.nets[net].eau = 900;
         steps(&mut w, 20);
     }
     let l = ponte::litters(&w, Some(w.building_ref(b)));

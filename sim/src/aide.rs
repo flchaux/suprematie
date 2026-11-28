@@ -5,7 +5,7 @@
 //! ajoute un peu moins que le précédent : le k-ième ajoute 1000 / (k + 3) ‰ de productivité (25 %, 20 %, 16,6 %,
 //! 14,2 %, 12,5 %…), HELPERS_MAX semeurs au plus (+148 % à douze). Ce qui est accéléré :
 //! - frondaison, racine : l'herbe mangée (vitesse et sève) ;
-//! - racine-puits : les sels ;
+//! - racine saline : les sels ; puits : l'eau ;
 //! - graine-mère (et couveuse d'une ancienne partie) : sa sève, et l'incubation de ses œufs ;
 //! - matrice : la recherche ; frayère : la fabrication.
 //!
@@ -22,7 +22,7 @@ pub const HELPERS_MAX: u32 = 12;
 /// Bâtiment que des semeurs peuvent aider.
 #[inline]
 pub fn helps(kind: u16) -> bool {
-    matches!(kind, B_LEAVES | B_ROOT | B_TAPROOT | B_SEED_HEART | B_BROOD | B_MATRIX | B_SPAWNERY)
+    matches!(kind, B_LEAVES | B_ROOT | B_TAPROOT | B_SEED_HEART | B_BROOD | B_MATRIX | B_SPAWNERY | B_WELL)
 }
 
 /// Productivité ajoutée (‰) par `n` semeurs.

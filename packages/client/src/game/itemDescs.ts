@@ -31,7 +31,8 @@ export const ITEM_DESCS: Record<string, string> = {
   pack5: "Lot de recherche du palier 5, demandé aussi par les suivants.",
   pack6: "Lot de recherche du dernier palier.",
   seve: "Nourriture de la Souche, gardée par chaque réseau.",
-  sels: "Minéraux de la Souche, puisés par les racines-puits.",
+  sels: "Minéraux de la Souche, puisés par les racines salines.",
+  eau: "Eau de la Souche, gardée par chaque réseau : les puits la tirent des nappes et des étendues d'eau. Les œufs en puisent, les frondaisons en boivent.",
   adn: "Paie les recherches. Vient de ce qui meurt sur le terreau, ou de la Matrice.",
   releves: "Paient recherches et améliorations. S'obtiennent en explorant et en détruisant.",
 };

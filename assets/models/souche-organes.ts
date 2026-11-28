@@ -412,6 +412,52 @@ const cocoon: Model = {
   ],
 };
 
+// =====================================================================================================
+// Eau : forage et puits
+// =====================================================================================================
+
+// forage : tertre de terre retournée, trou sombre au centre où luit l'eau de la nappe, bague d'équipe, mottes et
+// radicelles autour (les unités marchent dessus)
+const borehole: Model = {
+  parts: [
+    tertre(0.95, 0.24, "dry"),
+    { shape: "cylinder", sides: 14, radius: 0.38, radiusTop: 0.42, height: 0.08, pos: [0, 0.21, 0], color: "black" },
+    { shape: "cylinder", sides: 14, radius: 0.3, height: 0.02, pos: [0, 0.25, 0], color: "ice" },
+    { shape: "torus", radius: 0.45, tube: 0.04, sides: 14, pos: [0, 0.25, 0], color: "faction" },
+    ...[20, 140, 260].map((a): Part => blob(0.15, pol(0.7, a, 0.16), [1.2, 0.6, 1], "rock")),
+    ...[80, 200, 320].map((a): Part => blob(0.1, pol(0.6, a, 0.2), [1, 0.7, 1.3], "dry")),
+    ...[50, 170, 290].map((a): Part => epine(pol(0.5, a, 0.18), add(pol(1, a, 0), [0, 0.5, 0]), 0.04, 0.5, "wood", { fine: true })),
+  ],
+};
+
+/** Tronçon d'os (cylindre) de `p` à `q`. */
+const os = (p: Vec3, q: Vec3, r: number): Part => {
+  const d = sub(q, p);
+  return { shape: "cylinder", sides: 6, radius: r, radiusTop: r * 0.8, height: r3(Math.hypot(...d)), pos: add(p, d, 0.5), rot: along(d), color: "dry" };
+};
+
+// puits : margelle d'os autour d'une eau claire, bague d'équipe ; trois côtes d'os arquées portent au-dessus une
+// poche de chair qui pompe (sève lumineuse), veines qui descendent dans l'eau ; grappes de sève au pied
+const MARGELLE: [number, number][] = [[0.5, 0.18], [0.62, 0.05], [0.7, 0.12], [0.68, 0.44], [0.56, 0.5], [0.5, 0.36]];
+const well: Model = {
+  parts: [
+    tertre(0.98, 0.16, "wood"),
+    { shape: "lathe", sides: 18, profile: MARGELLE, color: "dry" },
+    { shape: "cylinder", sides: 18, radius: 0.52, height: 0.02, pos: [0, 0.34, 0], color: "ice" },
+    { shape: "torus", radius: 0.66, tube: 0.05, sides: 18, pos: [0, 0.46, 0], color: "faction" },
+    ...[30, 150, 270].flatMap((a): Part[] => {
+      const foot = pol(0.62, a, 0.45);
+      const knee = pol(0.42, a, 1.05);
+      const top: Vec3 = [0, 1.42, 0];
+      return [os(foot, knee, 0.07), os(knee, top, 0.055), blob(0.08, knee, 1, "black")];
+    }),
+    blob(0.26, [0, 1.2, 0], [1, 1.25, 1], "acid"),
+    { shape: "torus", radius: 0.16, tube: 0.04, sides: 12, pos: [0, 1.46, 0], color: "faction" },
+    ...[90, 210, 330].map((a): Part => ({ shape: "cylinder", sides: 5, radius: 0.025, height: 0.85, pos: pol(0.12, a, 0.75), color: "acid", fine: true })),
+    ...[0, 120, 240].flatMap((a) => grappe(pol(0.8, a, 0.18), 0.9, "acid", 1.1)),
+  ],
+};
+
 export const SOUCHE_ORGAN_MODELS: Record<string, Model> = vivants({
   bramble,
   bramble_seg: brambleSeg,
@@ -421,4 +467,6 @@ export const SOUCHE_ORGAN_MODELS: Record<string, Model> = vivants({
   sporangium,
   spawnery,
   cocoon,
+  borehole,
+  well,
 });

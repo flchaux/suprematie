@@ -221,6 +221,37 @@ await select(null);
   await select(null);
 }
 
+// ---------- eau : puits au bord du lac, forage, frondaison qui boit ; terreau sec ----------
+{
+  await look(heart.x, heart.z + 6, 60);
+  const [well] = await find("well");
+  const [bore] = await find("borehole");
+  check(!!well && !!bore, "un puits et un forage");
+  await select(well?.ref ?? null);
+  await page.waitForFunction(() => !!window.__game.ui.buildingInfo?.souche?.well, null, { timeout: 60000 }).catch(() => {});
+  const wl = await page.evaluate(() => ({ info: window.__game.ui.buildingInfo?.souche?.well, row: [...document.querySelectorAll(".sel .row")].map((e) => e.textContent).find((t) => t.startsWith("Eau")) ?? "" }));
+  check((wl.info?.rate ?? 0) > 0 && /Eau.*\/s/.test(wl.row), "fiche du puits : il tire de l'eau du lac", JSON.stringify(wl));
+  await look(well.x, well.z, 18);
+  await shot("puits");
+  await select(bore?.ref ?? null);
+  await page.waitForFunction(() => !!window.__game.ui.buildingInfo?.souche?.well, null, { timeout: 60000 }).catch(() => {});
+  const up = await page.evaluate(() => [...document.querySelectorAll(".sel .upcard button")].map((b) => b.textContent).join(" | "));
+  check(/Construire un puits/.test(up), "forage : bouton « Construire un puits »", up);
+  const [leaf] = await find("leaves");
+  await select(leaf.ref);
+  await page.waitForFunction(() => !!window.__game.ui.buildingInfo?.souche?.water, null, { timeout: 60000 }).catch(() => {});
+  const wa = await page.evaluate(() => [...document.querySelectorAll(".sel .water")].map((e) => e.textContent).join(""));
+  check(/100 %/.test(wa) && /\+50 % de vitesse/.test(wa), "frondaison : eau à 100 %, +50 % de vitesse", wa);
+  await select(null);
+  // terreau sec, loin de tout poteau, à côté du terreau irrigué du câble ouest
+  await look(heart.x - 30, heart.z - 12, 36);
+  check(await page.evaluate(([x, z]) => {
+    const t = window.__game.client.scene.terreau;
+    return t.at(x, z) && !t.wetAt(x, z) && t.wetAt(x + 26, z + 20);
+  }, [Math.floor(heart.x) - 38, Math.floor(heart.z) - 21]), "terreau sec au loin, irrigué près des racines");
+  await shot("terreau-sec");
+}
+
 // ---------- Matrice : caractère acquis ----------
 await look(heart.x + 4, heart.z + 2, 90);
 await select(at.matrix.ref);

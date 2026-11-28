@@ -23,7 +23,7 @@ const loadData = async (): Promise<GameData> => {
   return JSON.parse(sim.dataJson()) as GameData;
 };
 /** Objets propres à la Souche : sève, sels, ADN (réserves de ses réseaux et monnaie de sa recherche). */
-const SOUCHE_ITEM_KEYS = ["seve", "sels", "adn"];
+const SOUCHE_ITEM_KEYS = ["seve", "sels", "adn", "eau"];
 /** Couches de matière des machines (0 à 8), de la Souche (9 à 12) et des Transhumants (13 à 20). */
 const MACHINE_LAYERS = 9;
 const SALVAGE_LAYERS = 13;

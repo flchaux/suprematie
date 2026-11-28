@@ -2,9 +2,9 @@
 import { NATURE_TEAM } from "./data.ts";
 
 export const HEADER = 17;
-export const NUM_ITEMS = 31;
+export const NUM_ITEMS = 32;
 /** ... + plafond de la réserve (dernier mot) */
-export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 9;
+export const PLAYER_WORDS = 13 + 4 * NUM_ITEMS + 10;
 export const UNIT_WORDS = 9;
 export const BUILDING_WORDS = 8;
 export const ITEM_WORDS = 3;
@@ -68,6 +68,8 @@ export interface PlayerView {
   seve: number;
   sels: number;
   store: number;
+  /** Souche : eau de ses réseaux (après le plafond, voir render.rs) */
+  eau: number;
 }
 
 export interface Frame {
@@ -131,6 +133,7 @@ export function parseFrame(buf: Int32Array): Frame {
       seve: buf[o + 19 + 4 * NUM_ITEMS],
       sels: buf[o + 20 + 4 * NUM_ITEMS],
       store: buf[o + 21 + 4 * NUM_ITEMS],
+      eau: buf[o + 22 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }
@@ -197,6 +200,7 @@ export function parseBotDump(buf: Int32Array): BotView {
       seve: buf[o + 19 + 4 * NUM_ITEMS],
       sels: buf[o + 20 + 4 * NUM_ITEMS],
       store: buf[o + 21 + 4 * NUM_ITEMS],
+      eau: buf[o + 22 + 4 * NUM_ITEMS],
     });
     o += PLAYER_WORDS;
   }

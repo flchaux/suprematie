@@ -153,6 +153,10 @@ export function upgradeBuilding(c: GameClient): void {
     sfx.confirm();
   }
 }
+/** Consommation d'eau de la frondaison sélectionnée (0 à 200 %). */
+export function setWater(c: GameClient, pct: number): void {
+  if (ui.selBuilding) c.cmd(Ord.water([ui.selBuilding.ref], pct));
+}
 /** Sorties du répartiteur sélectionné (0 : les trois, 1 : gauche et avant, 2 : droite et avant). */
 export function setSplit(c: GameClient, mode: number): void {
   if (ui.selBuilding) c.cmd(Ord.setSplit(ui.selBuilding.ref, mode));
