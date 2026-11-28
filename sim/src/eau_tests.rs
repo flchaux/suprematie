@@ -269,9 +269,9 @@ fn leaves_drink_to_grow_faster() {
         let net = w.buildings[h].net as usize;
         w.nets[net].eau = water;
         let made = w.players[0].produced[SEVE as usize];
-        steps(&mut w, 4000);
+        steps(&mut w, 2000);
         let drunk = water - w.nets[net].eau;
-        ((w.players[0].produced[SEVE as usize] - made) as i32 - 200, drunk, eau::leaf_pct(&w.buildings[l]))
+        ((w.players[0].produced[SEVE as usize] - made) as i32 - 100, drunk, eau::leaf_pct(&w.buildings[l]))
     };
     let (dry, d0, p0) = run(0, 5000);
     let (normal, d1, _) = run(100, 5000);
@@ -280,7 +280,7 @@ fn leaves_drink_to_grow_faster() {
     println!("sans eau {dry} ({d0}), 100 % {normal} ({d1}), 200 % {full} ({d2}), réseau sec {thirsty}");
     assert_eq!((p0, p2), (0, 200));
     assert_eq!(d0, 0, "à 0 %, elle ne boit pas");
-    assert!((38..=42).contains(&d1) && (78..=82).contains(&d2), "0,2 puis 0,4 eau par seconde : {d1} {d2}");
+    assert!((18..=22).contains(&d1) && (38..=42).contains(&d2), "0,2 puis 0,4 eau par seconde : {d1} {d2}");
     assert!(normal * 100 > dry * 135 && full * 100 > dry * 175, "+50 % puis +100 % : {dry} {normal} {full}");
     assert!((thirsty - dry).abs() * 10 <= dry, "sans eau dans le réseau, son rythme : {thirsty} contre {dry}");
 }

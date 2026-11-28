@@ -175,14 +175,15 @@ fn sowers_make_leaves_eat_faster() {
         assert_eq!(aide::count(&w, l), helpers as u32);
         let made = w.players[0].produced[SEVE as usize];
         let eaten = w.soil_n;
-        steps(&mut w, 4000);
-        ((w.players[0].produced[SEVE as usize] - made) as i32 - 200, (w.soil_n - eaten) as i32)
+        steps(&mut w, 2000);
+        ((w.players[0].produced[SEVE as usize] - made) as i32 - 100, (w.soil_n - eaten) as i32)
     };
     let (alone, n1) = run(0);
     let (helped, n4) = run(4);
     println!("seule : {alone} sève, {n1} cases ; quatre semeurs : {helped} sève, {n4} cases");
-    assert!(helped * 100 > alone * 160 && helped * 100 < alone * 185, "+76 % environ : {alone} puis {helped}");
-    assert!(n4 > n1 * 3 / 2, "elle mange plus vite : {n1} puis {n4}");
+    // +76 % de vitesse ; un peu moins de sève, l'herbe reculant plus vite
+    assert!(helped * 100 > alone * 145 && helped * 100 < alone * 185, "+50 à +76 % : {alone} puis {helped}");
+    assert!(n4 * 100 >= n1 * 140, "elle mange plus vite : {n1} puis {n4}");
 }
 
 /// Une graine-mère aidée : sa sève, et ses œufs éclosent plus vite.

@@ -79,8 +79,8 @@ fn leaves_eat_the_edge_of_the_grass_and_turn_it_into_terreau() {
     steps(&mut w, 40);
     let m = meal_of(&w, l);
     assert!(m.left >= 5 && m.share == 1000, "{} cases au bord, seule à les convoiter : {}", m.left, m.share);
-    // la première case, la plus proche, prend de 10 à 20 s selon sa distance
-    assert!((200..=400).contains(&m.ticks), "{} ticks", m.ticks);
+    // la première case, la plus proche, prend de 5 à 10 s selon sa distance
+    assert!((100..=200).contains(&m.ticks), "{} ticks", m.ticks);
     steps(&mut w, m.ticks + 60);
     assert_eq!(eaten(&w), 1);
     assert_eq!(w.soil_n, 1);
@@ -89,7 +89,7 @@ fn leaves_eat_the_edge_of_the_grass_and_turn_it_into_terreau() {
     let before = eaten(&w);
     steps(&mut w, 6000);
     let n = eaten(&w) - before;
-    assert!((15..=30).contains(&n), "une vingtaine de cases en 5 min : {n}");
+    assert!((30..=60).contains(&n), "une quarantaine de cases en 5 min : {n}");
     // c'est l'herbe mangée qui donne la sève : 20 par case (et une par seconde de la graine-mère)
     let got = (w.players[0].produced[SEVE as usize] - made) as i32 - 300;
     assert!((got - 20 * n as i32).abs() <= 40, "{got} sève pour {n} cases");
@@ -107,7 +107,7 @@ fn leaves_eat_the_edge_of_the_grass_and_turn_it_into_terreau() {
     // plus l'herbe est loin, plus elle met de temps
     assert!(souche::organ_rate(&w, l).0 < early, "{} puis {}", early, souche::organ_rate(&w, l).0);
     let bite = |d: i32| soil::bite_ticks(B_LEAVES, 4 * d * d);
-    assert_eq!((bite(4), bite(10), bite(20)), (328, 1000, 3400));
+    assert_eq!((bite(4), bite(10), bite(20)), (164, 500, 1700));
     check_terreau(&mut w);
 }
 
@@ -352,7 +352,7 @@ fn roots_eat_a_very_short_way_four_times_faster_for_half_the_sap() {
     let mid = &w.buildings[line[15]];
     let m = soil::meal(&w, B_ROOT, 0, (mid.x, mid.y, 1, 1), (0, soil::ROOT_R), 0);
     assert!(m.left == 10 && m.share == 200 && m.near == 64, "cinq racines convoitent chaque case : {} cases, part {}", m.left, m.share);
-    assert!((80..=100).contains(&m.ticks), "une case à 4 cases : {} ticks", m.ticks);
+    assert!((40..=50).contains(&m.ticks), "une case à 4 cases : {} ticks", m.ticks);
     assert!(souche::organ_rate(&w, line[15]).0 > 0);
     let mut t = 42;
     let mut last = 0;

@@ -28,9 +28,9 @@ use crate::world::*;
 pub const RING: i32 = 4;
 pub const REACH_MAX: i32 = 120;
 /// Temps pour manger une case (ticks) : BITE_BASE, plus BITE_FAR par demi-case de distance au centre, au carré
-/// (10 s plus 0,4 s par case au carré : 16 s à 4 cases, 20 s à 5, 50 s à 10, 1 min 40 à 15, 2 min 50 à 20).
-pub const BITE_BASE: u32 = 200;
-pub const BITE_FAR: u32 = 2;
+/// (5 s plus 0,2 s par case au carré : 8 s à 4 cases, 10 s à 5, 25 s à 10, 50 s à 15, 1 min 25 à 20).
+pub const BITE_BASE: u32 = 100;
+pub const BITE_FAR: u32 = 1;
 /// Racine : portée (cases depuis son centre, une de plus que sa zone), vitesse (× celle d'une frondaison à la même
 /// distance) et sève d'une case mangée (la moitié de ce qu'elle donne à une frondaison).
 pub const ROOT_R: i32 = 4;
