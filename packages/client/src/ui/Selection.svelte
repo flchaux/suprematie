@@ -128,7 +128,7 @@
   const status = $derived.by(() => {
     // nid de la faune : son état (horde, risque d'attaque) a sa propre ligne
     if (!info || !bdef || !d || bdef.cls === BClass.Nest) return { text: "", kind: "" };
-    if (info.build >= 65536 && info.souche?.soil?.spent) return { text: bdef.key === "taproot" ? `Épuisée : plus d'herbe autour, ${info.souche.soil.pct} % de sa production` : "Lente : l'herbe est loin, plantez-en au bord du terreau", kind: "warn" };
+    if (info.build >= 65536 && info.souche?.soil?.spent) return { text: "Lente : l'herbe est loin, plantez-en au bord du terreau", kind: "warn" };
     if (info.build < 65536) return { text: `En construction ${Math.floor((info.build / 65536) * 100)} %` + (info.stalled ? " · en attente de matériaux" : ""), kind: info.stalled ? "warn" : "build" };
     if (paused) return { text: "En pause : ni énergie, ni ingrédients, ni production ; il reprendra là où il en était", kind: "paused" };
     if (info.upgrade > 0) return { text: `Amélioration en cours ${Math.floor(info.upgrade / 10)} % (${bdef.key === "main_generator" ? "toujours en service" : layer ? "elle pond toujours" : "arrêté"} pendant le chantier)`, kind: "build" };
@@ -357,10 +357,10 @@
           </div>
           {#if bdef.key === "root" && so.left}<div class="row small"><span class="kicker">À sa portée</span> <span class="num">{so.left}</span><span class="dim"> case{so.left > 1 ? "s" : ""}{so.share < 950 ? `, dont ${Math.max(1, Math.round((so.left * so.share) / 1000))} pour elle` : ""}</span></div>{/if}
           {#if so.near >= 0 && so.share < 950 && bdef.key !== "root"}<div class="row small"><span class="kicker">Part</span> <span class="num">{Math.round(so.share / 10)} %</span><span class="dim"> (herbe partagée)</span></div>{/if}
-          {#if so.total}
-            <div class="row small"><span class="kicker">Herbe du périmètre</span> <b class="num" class:bad={so.left < 15}>{so.left}</b><span class="dim"> / <span class="num">{so.total}</span> cases{so.left ? ` · ≈ ${Math.max(1, Math.round(so.all / 60))} min` : ""}</span></div>
-            <div class="upbar"><span style="width: {(so.left / Math.max(1, so.total)) * 100}%"></span></div>
-          {/if}
+        {/if}
+        {#if info.aid}
+          {@const ai = info.aid}
+          <div class="row small" title="Clic droit avec des semeurs : ils s'y postent et l'aident. Chacun ajoute un peu moins que le précédent (25 %, 20 %, 17 %, 14 %…), {ai.max} au plus"><span class="kicker">Semeurs</span> <b class="num" class:good={ai.n > 0}>{ai.n}</b><span class="dim"> / {ai.max}</span>{#if ai.n}<span class="good">· +{Math.round(ai.bonus / 10)} %</span>{/if}{#if ai.next}<span class="dim">· le suivant +{Math.round(ai.next / 10)} %</span>{/if}</div>
         {/if}
         {#if sv.hatch >= 0}
           <div class="row small"><span class="kicker">Éclosion</span> <b>Béhémoth</b> <span class="num">{sv.hatch > 0 ? `dans ${Math.ceil(sv.hatch / 20)} s` : "dès qu'il y a de la place sous la limite d'unités"}</span></div>
@@ -581,7 +581,7 @@
               </button>
               <div class="tt"><b>{u.name}</b><br />{#if UNIT_DESCS[u.key]}<span class="udesc">{UNIT_DESCS[u.key]}</span><br />{/if}{#if !ok}<span class="bad"><Icon name="lock" size={12} /> Recherche : {d.techs[u.tech].name}</span><br />{/if}
                 <span class="num">PV {u.hp} · {(u.speed / 10).toFixed(1)} c/s · {u.litter ? `éclosion en ${10 + 2 * u.build} s` : `${u.build} s`}</span><br />
-                {#if u.litter}<span class="good">Portée de {u.litter} œufs{brood ? `, ${brood.max} portées à la fois` : ""}</span><br /><span class="dim">La portée, en tout :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
+                {#if u.litter}<span class="good">Portée de {u.litter} œufs{brood ? `, ${brood.max} portées à la fois` : ""}</span><br /><span class="dim">La portée, en tout :</span> <Cost cost={u.cost.map(([it, n]): [number, number] => [it, n * u.litter])} have={info.souche ? upgHave : undefined} />{:else}<Cost cost={u.cost} have={(bdef.race ?? 0) === 0 ? info.reach : undefined} />{/if}</div>
             </div>
           {/each}
         </div>

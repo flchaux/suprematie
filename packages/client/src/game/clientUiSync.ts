@@ -4,7 +4,7 @@
 // Méthodes de GameClient (client.ts) sorties en fonctions libres : le client est leur premier paramètre, `c`
 // (`gc` dans les fonctions qui ont déjà une variable `c`).
 import * as Ord from "@supreme/shared/orders.ts";
-import { UNIT_WORDS, BUILDING_WORDS, BF, pausableClass, realPlayers } from "@supreme/shared";
+import { UNIT_WORDS, BUILDING_WORDS, BF, SEVE, SELS, pausableClass, realPlayers } from "@supreme/shared";
 import type { ModInfo, ZoneEconomy } from "@supreme/shared";
 import type { GameScene } from "../render/scene.ts";
 import { DEAD_COLOR } from "../render/power.ts";
@@ -71,6 +71,11 @@ export function updateUi(c: GameClient): void {
   const me = f.players[Math.max(0, ui.me)];
   if (me && ui.me >= 0) {
     ui.stock = Array.from(me.stock);
+    // Souche : sève et sels sont dans les réseaux de racines (réserve totale), pas dans le stock
+    if (me.race === 1) {
+      ui.stock[SEVE] = me.seve;
+      ui.stock[SELS] = me.sels;
+    }
     ui.teamStock = Array.from(me.teamStock);
     ui.stockCap = me.stockCap;
     ui.shards = me.shards ?? 0;

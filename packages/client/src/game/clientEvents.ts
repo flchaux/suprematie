@@ -268,7 +268,7 @@ export function handleEvents(gc: GameClient, f: Frame): void {
           gc.alertPos = { x: a / TILE, z: c / TILE };
           if (!gc.spentTimer) {
             gc.spentTimer = window.setTimeout(() => {
-              const list = [...gc.spent].map(([k, n]) => (gc.data?.buildings[k]?.key === "taproot" ? `${n} racine${n > 1 ? "s" : ""}-puits épuisée${n > 1 ? "s" : ""}` : `${n} frondaison${n > 1 ? "s" : ""} lente${n > 1 ? "s" : ""}`)).join(", ");
+              const list = [...gc.spent].map(([, n]) => `${n} frondaison${n > 1 ? "s" : ""} lente${n > 1 ? "s" : ""}`).join(", ");
               pushMessage(`${list} : l'herbe est loin, étendez votre réseau (Espace pour y aller)`, "alert");
               gc.spent.clear();
               gc.spentTimer = 0;

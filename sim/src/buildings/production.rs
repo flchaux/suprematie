@@ -268,8 +268,10 @@ pub(super) fn tick_lab(w: &mut World, b: usize) {
     }
     let need = power_need(&w.buildings[b]);
     let s = use_power(w, b, need);
+    // matrice de la Souche : plus vite avec des semeurs qui l'aident
+    let aid = if w.buildings[b].def().race == RACE_SOUCHE { crate::aide::mult(w, b) } else { 1000 };
     let bb = &mut w.buildings[b];
-    bb.progress += s as u32 * crate::ameliorations::module_speed(bb);
+    bb.progress += s as u32 * crate::ameliorations::module_speed(bb) * aid / 1000;
     let t = bb.tech;
     let need = TECHS[t as usize].time as u32 * 20 * RECIPE_SCALE;
     if bb.progress >= need {

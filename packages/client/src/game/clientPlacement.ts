@@ -313,10 +313,10 @@ export async function updateGhost(gc: GameClient): Promise<void> {
   // matériaux : disponible à portée du lieu (stocks à moins de 30 cases, réseau des relais, soutes des
   // constructeurs choisis) ; les cases de la file qu'il ne couvre plus (coût cumulé) sont ambre
   const reach = def.cost.length && ui.race === 0 ? await reachStock(gc, cur.x + (def.w >> 1), cur.y + (def.h >> 1), gc.data.depot?.near ?? 30, gc.engineers()) : null;
-  // frondaison, racine-puits : l'herbe qu'elle aura à manger autour d'elle
+  // frondaison : l'herbe qu'elle aura à manger
   let grass: typeof ui.grass = null;
   let grassR = 0;
-  if (def.key === "leaves" || def.key === "taproot") {
+  if (def.key === "leaves") {
     const v = (await gc.query<number[]>("soilPreview", [ui.me, ui.buildKind, cells[0].x, cells[0].y])) ?? [];
     if (v.length === 10) {
       grass = { near: v[0], tenths: v[1], share: v[3], left: v[5], total: v[6], all: v[7], seve: v[8], sels: v[9] };

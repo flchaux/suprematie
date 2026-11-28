@@ -58,7 +58,7 @@ export const BUILDING_DESCS: Record<string, string> = {
   seed_heart: "Cœur d'un réseau de racines : sa réserve, et elle pond les organismes. Pousse grâce aux organismes qui s'y sacrifient ; trois au plus.",
   root: "Étend le terreau, relie les organes et mange l'herbe de son bord : 10 sève par case, très vite. Plus chère loin de la graine-mère.",
   leaves: "Change l'herbe au bord du terreau en terreau : 20 sève par case. Plus l'herbe est loin, plus c'est lent.",
-  taproot: "Tire d'un gisement de la sève (hydrocarbure) ou des sels. Sans herbe autour, elle produit moins.",
+  taproot: "Tire des sels de n'importe quel gisement, sans manger d'herbe.",
   bulb: "Agrandit la réserve de sève et de sels du réseau.",
   brood: "Ancienne couveuse : ne se construit plus, la graine-mère pond. Celle d'une partie en cours pond encore.",
   matrix: "Laboratoire de la Souche : consomme l'ADN de ce qui meurt sur le terreau, ou en tire lentement de la sève.",

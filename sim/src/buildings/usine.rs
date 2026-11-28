@@ -127,6 +127,8 @@ pub(super) fn tick_factory(w: &mut World, b: usize) {
         if w.buildings[b].net != 0 && crate::essaim::royal_net(w, owner as u8) == w.buildings[b].net {
             mult = mult * crate::essaim::Q_BROOD / 100;
         }
+        // semeurs qui l'aident (graine-mère, frayère)
+        mult = mult * crate::aide::mult(w, b) / 1000;
     }
     w.buildings[b].progress += s as u32 * mult;
     if w.buildings[b].progress >= (factory_ticks(kind) + crate::gabarits::ticks(w.buildings[b].kit)) * RECIPE_SCALE {

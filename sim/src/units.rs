@@ -926,8 +926,12 @@ fn run_order(w: &mut World, s: usize) -> u32 {
                     return NONE;
                 }
                 clear_goal(w, s);
-                if !construct(w, s, b) {
+                // semeur auprès d'un bâtiment de la Souche qui produit : il le soigne, puis reste l'aider (aide.rs)
+                let tend = crate::aide::can_help(w, s, b);
+                if !construct(w, s, b) && !tend {
                     pop_order(w, s);
+                } else if tend {
+                    w.units.cold[s].flags |= UF_WORKING;
                 }
                 return NONE;
             }

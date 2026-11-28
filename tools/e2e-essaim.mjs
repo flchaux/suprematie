@@ -172,6 +172,42 @@ const growing = await page.evaluate(() => [...document.querySelectorAll(".sel .s
 check(/elle pond toujours/.test(growing), "agrandissement lancé, elle pond toujours", growing);
 await select(null);
 
+// ---------- semeur qui aide une frondaison ; coût d'une portée dans la réserve du réseau ----------
+{
+  const [sower] = await find("sower", true);
+  const [leaf] = await find("leaves");
+  await look(leaf.x, leaf.z, 30);
+  await select(sower?.ref ?? null);
+  const lp = await page.evaluate(([x, z]) => {
+    const p = { x: 0, y: 0 };
+    const { client } = window.__game;
+    let h = client.scene.target.y;
+    for (let i = 0; i < 3; i++) {
+      client.scene.project(x, h, z, p);
+      h = client.groundAt(p.x, p.y)?.y ?? h;
+    }
+    return p;
+  }, [leaf.x, leaf.z]);
+  await page.mouse.move(lp.x, lp.y);
+  await page.mouse.move(lp.x + 1, lp.y + 1);
+  await page.evaluate(() => window.__game.client.updateCursor?.(true));
+  await page.waitForFunction(() => window.__game.client.cursorKind === "assist", null, { timeout: 30000 }).catch(() => {});
+  check(await page.evaluate(() => window.__game.client.cursorKind === "assist"), "curseur « assister » sur la frondaison, semeur choisi", await page.evaluate(() => window.__game.client.cursorKind));
+  await page.mouse.click(lp.x + 1, lp.y + 1, { button: "right" });
+  await run(200);
+  await page.mouse.move(640, 300);
+  await select(leaf.ref);
+  await page.waitForFunction(() => window.__game.ui.buildingInfo?.aid?.n === 1, null, { timeout: 60000 }).catch(() => {});
+  const aid = await page.evaluate(() => [...document.querySelectorAll(".sel .row")].map((e) => e.textContent).find((t) => t.includes("Semeurs")) ?? "");
+  check(/Semeurs\s*1\s*\/\s*12.*\+25 %/.test(aid), "fiche de la frondaison : un semeur, +25 %", aid);
+  await shot("semeur");
+  await select(heart.ref);
+  await page.waitForFunction(() => document.querySelectorAll(".sel .units .tt .cost").length > 0, null, { timeout: 60000 }).catch(() => {});
+  const red = await page.evaluate(() => ({ costs: document.querySelectorAll(".sel .units .tt .cost").length, bad: document.querySelectorAll(".sel .units .tt .cost .bad").length, net: window.__game.ui.buildingInfo?.souche?.seve }));
+  check(red.costs > 0 && red.bad === 0, "coût d'une portée : pas rouge quand le réseau a de quoi", JSON.stringify(red));
+  await select(null);
+}
+
 // ---------- Matrice : caractère acquis ----------
 await look(heart.x + 4, heart.z + 2, 90);
 await select(at.matrix.ref);

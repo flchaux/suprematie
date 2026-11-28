@@ -194,6 +194,8 @@ function cursorIntent(gc: GameClient, x: number, y: number): CursorKind {
     const def = gc.data.buildings[tb.kind];
     if (def.cls === BClass.Gate) return "move";
     if (engs && (tb.build < 65536 || tb.hp < def.hp)) return "repair";
+    // semeurs sur un organe qui produit : ils l'aident
+    if (aidable(gc, tb) && units.some((u) => gc.data!.units[u.kind].key === "sower")) return "assist";
     if (def.cls === BClass.Belt && tb.owner === ui.me && units.some((u) => gc.data!.units[u.kind].key === "commander")) return "load";
     if (canPickup(gc, def.cls, tb.build) && holdersOf(gc, units).length) return "load";
   }
@@ -300,6 +302,17 @@ export function contextCommand(c: GameClient, x: number, y: number, queue: boole
       sfx.confirm();
       return;
     }
+    // semeurs sur un organe qui produit : ils s'y postent et l'aident (voir sim/src/aide.rs)
+    const sowers = units.filter((u) => c.data!.units[u.kind].key === "sower").map((u) => u.id);
+    if (sowers.length && aidable(c, tb)) {
+      c.cmd(Ord.target(O.ASSIST, sowers, tb.ref, queue));
+      const rest = units.filter((u) => !sowers.includes(u.id));
+      if (rest.length) c.cmd(Ord.move(rest, gx, gy, queue));
+      c.scene?.addMarker(g.x, g.z, 0x7dff9a);
+      pushMessage(`${sowers.length} semeur${sowers.length > 1 ? "s aident" : " aide"} : ${def.name.toLowerCase()}`, "info");
+      sfx.confirm();
+      return;
+    }
     // commandant sur un de nos tapis : il s'y poste et récupère les objets qui passent (dans sa soute)
     const cmdrs = units.filter((u) => c.data!.units[u.kind].key === "commander").map((u) => u.id);
     if (def.cls === BClass.Belt && cmdrs.length) {
@@ -400,6 +413,14 @@ function wildNest(c: GameClient, tb: { kind: number; owner: number }): boolean {
 }
 
 /** Notre graine-mère (Souche) encore en croissance : elle se nourrit de sacrifices. */
+/** Bâtiments de la Souche que des semeurs peuvent aider (même liste que `helps` dans sim/src/aide.rs). */
+const AIDABLE = new Set(["leaves", "root", "taproot", "seed_heart", "brood", "matrix", "spawnery"]);
+
+/** Notre bâtiment terminé que des semeurs peuvent aider. */
+function aidable(c: GameClient, tb: { kind: number; owner: number; build: number }): boolean {
+  return tb.owner === ui.me && tb.build >= 65536 && AIDABLE.has(c.data?.buildings[tb.kind]?.key ?? "");
+}
+
 function hungryHeart(c: GameClient, tb: { kind: number; owner: number; build: number }): boolean {
   return tb.owner === ui.me && tb.build < 65536 && c.data?.buildings[tb.kind]?.key === "seed_heart";
 }

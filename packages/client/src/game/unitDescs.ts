@@ -58,7 +58,7 @@ export const UNIT_DESCS: Record<string, string> = {
   disruptor: "Arme contre les réplicateurs et leurs ruches. Un cinquième des dégâts contre le reste.",
   // ----- Souche -----
   queen: "Plante les organes, apprivoise les nids et s'enracine pour nourrir son réseau. Sa mort vous élimine.",
-  sower: "Plante et soigne les organes. Sans arme.",
+  sower: "Plante et soigne les organes. Clic droit sur un organe qui produit : il l'aide, chaque semeur un peu moins que le précédent. Sans arme.",
   gnawer: "Rapide et bon marché, au corps-à-corps contre le sol. Craint le feu.",
   spitter: "Artillerie d'acide, à dégâts de zone.",
   shell: "Très résistante, mord fort au corps-à-corps.",

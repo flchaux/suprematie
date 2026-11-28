@@ -674,6 +674,8 @@ pub struct World {
     pub terreau: Vec<u8>,
     /// Souche : organes qui mangent l'herbe dont le périmètre couvre chaque case (dérivé, voir soil::ensure)
     pub eaters: Vec<u16>,
+    /// Souche : semeurs qui aident chaque bâtiment, comptés au tick (tick + 1, nombre ; dérivé, voir aide::mult)
+    pub aid: Vec<(u32, u16)>,
     /// Souche : réseau que nourrit la Reine enracinée de chaque joueur (dérivé, refait à chaque tick)
     pub royal: Vec<u16>,
     /// Transhumants : état de chaque Arche (tourelles, atelier embarqué…), par case d'unité croissante
@@ -790,6 +792,7 @@ impl World {
             soil_n: 0,
             terreau: Vec::new(),
             eaters: Vec::new(),
+            aid: Vec::new(),
             royal: Vec::new(),
             arks: Vec::new(),
             flock: Vec::new(),

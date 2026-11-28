@@ -217,7 +217,7 @@ fn grass_is_dry_open_ground_that_is_nobodys_terreau() {
     let mut w = game(0);
     let (_, hx, hy) = base(&mut w, 0, 40);
     soil::ensure(&mut w);
-    let count = |w: &World| soil::grass_left(w, hx + 20, hy, 2, 2);
+    let count = |w: &World| soil::grass_left(w, hx + 20, hy, 2, 2, 9);
     let open = count(&w);
     // de l'eau, une falaise, un bâtiment, une racine (sa zone est du terreau), le sol d'un autre joueur
     let i = w.map.idx(hx + 25, hy);
@@ -300,34 +300,36 @@ fn terreau_of_dead_roots_turns_back_to_grass_but_eaten_ground_stays() {
     assert!(at(&w, hx + 6, hy + 3), "les racines restantes gardent leur zone");
 }
 
+/// La racine-puits ne mange pas d'herbe : elle tire des sels de son gisement, quel qu'il soit, sans s'épuiser.
 #[test]
-fn taproots_graze_too_and_dry_up() {
+fn taproots_make_salts_without_eating_grass() {
     let mut w = game(0);
-    let (_, hx, hy) = base(&mut w, 0, 40);
-    for dy in 0..2 {
-        for dx in 0..2 {
-            let i = w.map.idx(hx + 4 + dx, hy + dy);
-            w.map.deposit[i] = HYDROCARBON;
+    let (heart, hx, hy) = base(&mut w, 0, 40);
+    let mut taps = Vec::new();
+    for (item, x, y) in [(HYDROCARBON, hx + 3, hy), (IRON_ORE, hx, hy + 3), (CRYSTAL, hx, hy - 2)] {
+        for dy in 0..2 {
+            for dx in 0..2 {
+                let i = w.map.idx(x + dx, y + dy);
+                w.map.deposit[i] = item;
+            }
         }
+        w.map.spots.push(crate::map::Spot { kind: item, x, y, purity: 0 });
+        w.wear.resize(w.map.spots.len(), 0);
+        taps.push(put(&mut w, 0, B_TAPROOT, x, y));
     }
-    w.map.spots.push(crate::map::Spot { kind: HYDROCARBON, x: hx + 4, y: hy, purity: 0 });
-    w.wear.resize(w.map.spots.len(), 0);
-    let t = put(&mut w, 0, B_TAPROOT, hx + 4, hy);
-    steps(&mut w, 40);
-    let near = souche::organ_rate(&w, t).0;
-    assert!(near > 300, "herbe toute proche : {near}");
+    assert!(!soil::eats(B_TAPROOT) && soil::preview(&w, 0, B_TAPROOT, hx + 3, hy).is_empty());
+    let rates: Vec<(i32, i32)> = taps.iter().map(|&t| souche::organ_rate(&w, t)).collect();
+    assert_eq!(rates, vec![(0, 100), (0, 100), (0, 200)], "des sels, même sur l'hydrocarbure");
+    let n = w.buildings[heart].net as usize;
+    w.nets[n].sels = 0;
+    w.nets[n].store = 5000;
+    let made = w.players[0].produced[SELS as usize];
     steps(&mut w, 2000);
-    assert!((4..=10).contains(&eaten(&w)), "{} cases", eaten(&w));
-    // elle ne sort pas de son périmètre
-    for i in 0..w.terreau.len() {
-        let (x, y) = (i as i32 % w.map.w, i as i32 / w.map.w);
-        if w.terreau[i] == 0 && (x - hx).abs() < 22 && (y - hy).abs() < 22 {
-            soil::eat(&mut w, 0, i);
-        }
-    }
-    steps(&mut w, 40);
-    assert!(w.buildings[t].stalled);
-    assert_eq!(souche::organ_rate(&w, t), (3 * soil::SPENT_PCT, 0));
+    let got = (w.players[0].produced[SELS as usize] - made) as i32;
+    assert!((395..=405).contains(&got), "4 sels par seconde pendant 100 s : {got}");
+    assert_eq!(eaten(&w), 0, "pas une case d'herbe mangée");
+    assert!(taps.iter().all(|&t| !w.buildings[t].stalled));
+    assert!(!crate::render::info_building(&w, w.building_ref(taps[0])).contains("\"soil\""));
 }
 
 /// Une racine mange très court (une case au-delà de sa zone), quatre fois plus vite qu'une frondaison, pour moitié
@@ -445,8 +447,6 @@ fn preview_layer_and_save_tell_the_same_ground() {
     assert!(p[3] < 900 && p[0] >= 1 && p[2] == p[0] + soil::RING, "{p:?}");
     remove_building(&mut w, twin, false);
     assert!(soil::preview(&w, 0, B_BULB, gx, gy).is_empty());
-    let t = soil::preview(&w, 0, B_TAPROOT, gx, gy);
-    assert!(t[2] == soil::TAPROOT_R && t[5] > 50 && t[6] >= t[5], "{t:?}");
     steps(&mut w, 2200);
     let n = eaten(&w);
     assert!(n >= 4);

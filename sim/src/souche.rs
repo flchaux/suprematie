@@ -480,13 +480,14 @@ pub fn grow(w: &mut World, b: usize) {
     }
 }
 
-/// Production par seconde d'un organe (sève, sels), en centièmes. Celle d'une frondaison, d'une racine-puits ou d'une
-/// racine vient de l'herbe qu'elle mange (distance, concurrence, épuisement ; voir soil.rs).
+/// Production par seconde d'un organe (sève, sels), en centièmes, aide des semeurs comprise (aide.rs). Celle d'une
+/// frondaison ou d'une racine vient de l'herbe qu'elle mange (distance, concurrence ; voir soil.rs).
 pub fn organ_rate(w: &World, b: usize) -> (i32, i32) {
     let (s, l) = full_rate(w, b);
     let bb = &w.buildings[b];
     if !crate::soil::eats(bb.kind) {
-        return (s, l);
+        let m = if bb.complete() { crate::aide::mult_now(w, b) as i32 } else { 1000 };
+        return (s * m / 1000, l * m / 1000);
     }
     // rendement tenu par soil::graze
     let k = bb.timer as i32;
@@ -518,17 +519,35 @@ fn rate_of(w: &World, owner: u8, kind: u16, item: u8, pur: i32) -> (i32, i32) {
         B_LEAVES => (big, 0),
         // une case toutes les ROOT_NOMINAL ticks
         B_ROOT => (crate::soil::ROOT_SEVE * 100 * 20 / crate::soil::ROOT_NOMINAL as i32, 0),
+        // racine-puits : des sels seulement, quel que soit le gisement, sans manger d'herbe
         B_TAPROOT => {
-            let (s, l) = match item {
-                HYDROCARBON => (300, 0),
-                IRON_ORE | COPPER_ORE | SILICON => (0, 100),
-                CRYSTAL => (0, 200),
-                _ => (0, 0),
+            let l = match item {
+                HYDROCARBON | IRON_ORE | COPPER_ORE | SILICON => 100,
+                CRYSTAL => 200,
+                _ => 0,
             };
-            (s * pur / 100 * big / 100, l * pur / 100 * big / 100)
+            (0, l * pur / 100 * big / 100)
         }
         _ => (0, 0),
     }
+}
+
+/// Racine-puits (toutes les ORGAN_PERIOD ticks, une seconde) : les sels de son gisement, aide des semeurs comprise ;
+/// le reste en cent-millièmes dans `progress`, comme une frondaison.
+fn tick_taproot(w: &mut World, b: usize) {
+    // racine-puits d'une partie plus ancienne, qui mangeait l'herbe : ni rendement ni épuisement
+    let bb = &mut w.buildings[b];
+    if bb.timer != 0 || bb.stalled {
+        bb.timer = 0;
+        bb.stalled = false;
+    }
+    if w.buildings[b].net == 0 {
+        w.buildings[b].working = false;
+        return;
+    }
+    let aid = crate::aide::mult(w, b) as u64;
+    let l = full_rate(w, b).1.max(0) as u64;
+    crate::soil::add_yield(w, b, l * 1000 * aid / 1000, true);
 }
 
 /// Organe terminé (toutes les ORGAN_PERIOD ticks) : production dans son réseau, régénération.
@@ -536,9 +555,14 @@ pub fn tick_organ(w: &mut World, b: usize) {
     w.buildings[b].wake = w.tick + ORGAN_PERIOD;
     let kind = w.buildings[b].kind;
     match kind {
-        // (leur production vient de l'herbe qu'elles mangent, elle y est comptée)
-        B_LEAVES | B_TAPROOT => {
+        // (sa production vient de l'herbe qu'elle mange, elle y est comptée)
+        B_LEAVES => {
             crate::soil::graze(w, b, ORGAN_PERIOD);
+            regen_building(w, b);
+            return;
+        }
+        B_TAPROOT => {
+            tick_taproot(w, b);
             regen_building(w, b);
             return;
         }
@@ -590,8 +614,13 @@ pub fn regen_organs(w: &mut World) {
         let bb = &w.buildings[b];
         if bb.alive && bb.complete() && bb.def().race == RACE_SOUCHE && !matches!(bb.def().class, BClass::Organ | BClass::Pylon | BClass::Wall) {
             if bb.kind == B_SEED_HEART {
+                // sa sève, en centièmes (aide des semeurs comprise) : le reste est gardé dans `charge`
+                let rate = full_rate(w, b).0.max(0) as u32 * crate::aide::mult(w, b) / 1000;
+                let bb = &mut w.buildings[b];
+                let sum = bb.charge % 100 + rate;
+                bb.charge = sum % 100;
                 let (owner, net) = (bb.owner, bb.net);
-                feed(w, owner, net, organ_rate(w, b).0 / 100, 0);
+                feed(w, owner, net, (sum / 100) as i32, 0);
             }
             regen_building(w, b);
         }
@@ -996,5 +1025,5 @@ pub fn info(w: &World, b: usize) -> String {
     };
     // cocon : ticks avant l'ouverture (-1 : pas un cocon, ou encore en croissance)
     let hatch = if bb.kind == B_COCOON && bb.complete() { COCOON_TICKS.saturating_sub(bb.charge) as i32 } else { -1 };
-    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), heart_info(bb), adapt)
+    format!(",\"souche\":{{\"net\":{},\"seve\":{},\"sels\":{},\"store\":{},\"rateSeve\":{},\"rateSels\":{},\"hatch\":{},\"far\":{}{}{}{}}}{}", bb.net, s, l, st, rs, rl, hatch, far_of(bb), crate::soil::info(w, b), heart_info(bb), crate::aide::info(w, b), adapt)
 }

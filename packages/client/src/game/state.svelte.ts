@@ -33,7 +33,7 @@ export const ui = $state({
    * réseau des relais logistiques qui le couvrent et soute des constructeurs choisis ; null tant qu'inconnu.
    */
   buildReach: null as number[] | null,
-  /** Souche : herbe qu'aura à manger la frondaison ou la racine-puits à poser */
+  /** Souche : herbe qu'aura à manger la frondaison à poser */
   grass: null as null | { /** distance de l'herbe (cases ; -1 : aucune), dixièmes de seconde par case, part (‰) */ near: number; tenths: number; share: number; /** racine-puits : herbe et cases du périmètre, secondes en tout */ left: number; total: number; all: number; /** ce que donne une case (centièmes) */ seve: number; sels: number },
   /** Souche : racines ou rhizomes en cours de tracé : nombre posable, coût total [objet, quantité], supplément le plus fort (%) ; racines : cases d'herbe qu'elles mangeront et sève qu'elles en tireront */
   lineCost: null as null | { n: number; cost: [number, number][]; pct: number; grass: number; seve: number },

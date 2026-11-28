@@ -61,13 +61,19 @@ pub fn incubation(kind: u16) -> u32 {
     INCUBATION + INCUBATION_PER_SEC * udef(kind).build as u32
 }
 
-/// Vitesse d'incubation (%) d'un œuf du joueur dans le réseau `net` : Fécondité, Reine enracinée.
+/// Vitesse d'incubation (%) d'un œuf du joueur dans le réseau `net` : Fécondité, Reine enracinée (l'aide des semeurs de
+/// sa graine-mère est comptée à part, voir `aid_of`).
 fn egg_speed(w: &World, owner: u8, net: u16) -> u32 {
     let mut v = crate::souche::brood_speed(w, owner);
     if net != 0 && crate::essaim::royal_net(w, owner) == net {
         v = v * crate::essaim::Q_BROOD / 100;
     }
     v.max(1)
+}
+
+/// Aide des semeurs (‰) de la graine-mère de l'œuf, comptée sans la garder (affichage).
+fn aid_of(w: &World, s: usize) -> u32 {
+    mother(w, s).map_or(1000, |b| crate::aide::mult_now(w, b))
 }
 
 /// Couveuse de l'œuf, si elle vit encore.
@@ -207,7 +213,8 @@ pub fn hatch_left(w: &World, s: usize) -> u32 {
         return c.ready_tick.saturating_sub(w.tick).min(EGG_NEVER - 1);
     }
     let left = (c.timer as u32 * 100).saturating_sub(c.xp);
-    left.div_ceil(crate::souche::brood_speed(w, w.units.owner[s]).max(1)).min(EGG_NEVER - 1)
+    let speed = crate::souche::brood_speed(w, w.units.owner[s]) as u64 * aid_of(w, s) as u64 / 1000;
+    (left as u64).div_ceil(speed.max(1)).min(EGG_NEVER as u64 - 1) as u32
 }
 
 /// Œuf qui paie son éclosion : le réseau où il puise, son espèce et la durée de son incubation (ticks, à la vitesse
@@ -217,7 +224,8 @@ pub fn egg_load(w: &World, s: usize) -> Option<(u16, u16, u32)> {
     if w.units.cold[s].ready_tick != DRAWS {
         return None;
     }
-    Some((egg_net(w, s), k, w.units.cold[s].timer as u32 * 100 / crate::souche::brood_speed(w, w.units.owner[s]).max(1)))
+    let speed = crate::souche::brood_speed(w, w.units.owner[s]) as u64 * aid_of(w, s) as u64 / 1000;
+    Some((egg_net(w, s), k, (w.units.cold[s].timer as u64 * 100 / speed.max(1)) as u32))
 }
 
 /// Fiche d'un œuf (JSON) : espèce, ticks avant l'éclosion, durée, ce qu'il a déjà puisé de son prix, en attente.
@@ -381,8 +389,11 @@ pub fn tick_egg(w: &mut World, s: usize) {
     }
     let owner = w.units.owner[s];
     let (xp, timer) = (w.units.cold[s].xp, w.units.cold[s].timer);
-    let near = mother(w, s).map_or(0, |b| w.buildings[b].net);
-    let p2 = (xp + egg_speed(w, owner, near)).min(timer as u32 * 100);
+    let mum = mother(w, s);
+    let near = mum.map_or(0, |b| w.buildings[b].net);
+    // semeurs qui aident sa graine-mère
+    let aid = mum.map_or(1000, |b| crate::aide::mult(w, b));
+    let p2 = (xp + egg_speed(w, owner, near) * aid / 1000).min(timer as u32 * 100);
     let cost = udef(kind).cost;
     let need = |k: usize| drawn(cost[k].1, p2, timer) - drawn(cost[k].1, xp, timer);
     if (0..cost.len()).any(|k| need(k) > 0) {
