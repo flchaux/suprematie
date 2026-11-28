@@ -1,6 +1,6 @@
 // Câbles des Transhumants : qui est relié à quoi, et forme de la courbe posée au sol.
 import { describe, it, expect } from "vitest";
-import { CABLE_GEN, CABLE_MODULE, CABLE_POLE, PLUG_OUT, cableCurve, cablePairs, pairHash, type CableNode } from "../src/render/cables.ts";
+import { CABLE_GEN, CABLE_MODULE, CABLE_POLE, END_IN, cableCurve, cablePairs, pairHash, type CableNode } from "../src/render/cables.ts";
 
 let nextRef = 1;
 const gen = (owner: number, x: number, z: number, supply = 9): CableNode => ({ ref: nextRef++, owner, role: CABLE_GEN, x, z, w: 2, h: 2, supply, connect: 22 });
@@ -75,27 +75,21 @@ describe("câbles : courbe", () => {
   /** distance d'un point au bord du rectangle d'un bâtiment (positive dehors) */
   const outside = (n: CableNode, x: number, z: number) => Math.max(n.x - x, x - (n.x + n.w), n.z - z, z - (n.z + n.h));
 
-  it("part et arrive au bord des emprises, prises comprises, et remonte vers elles", () => {
+  it("part de sous chaque emprise, juste en deçà du bord tourné vers l'autre bout, et reste posé au sol", () => {
     const c = cableCurve(a, b, pairHash(a.ref, b.ref))!;
     expect(c).not.toBeNull();
     const n = c.xs.length;
-    expect(outside(a, c.xs[0], c.zs[0])).toBeGreaterThan(0);
-    expect(outside(a, c.xs[0], c.zs[0])).toBeLessThan(0.5);
-    expect(outside(b, c.xs[n - 1], c.zs[n - 1])).toBeGreaterThan(0);
-    expect(outside(b, c.xs[n - 1], c.zs[n - 1])).toBeLessThan(0.5);
-    // prises au bord, côté de l'autre bout
-    for (const [n, p] of [[a, c.plugs[0]], [b, c.plugs[1]]] as const) {
-      expect(outside(n, p[0], p[1])).toBeGreaterThan(0);
-      expect(outside(n, p[0], p[1])).toBeLessThanOrEqual(PLUG_OUT + 1e-6);
+    // bouts sous le bâtiment, au plus à END_IN en deçà du bord (moins quand le câble part en biais)
+    for (const [nd, x, z] of [[a, c.xs[0], c.zs[0]], [b, c.xs[n - 1], c.zs[n - 1]]] as const) {
+      expect(outside(nd, x, z)).toBeLessThan(0);
+      expect(outside(nd, x, z)).toBeGreaterThanOrEqual(-END_IN - 1e-6);
     }
-    // côté de l'autre bout : la prise de a est tournée vers b, et inversement
-    expect(c.plugs[0][2] * (b.x - a.x) + c.plugs[0][3] * (b.z - a.z)).toBeGreaterThan(0);
-    expect(c.plugs[1][2] * (a.x - b.x) + c.plugs[1][3] * (a.z - b.z)).toBeGreaterThan(0);
-    // au milieu, posé au sol ; aux bouts, à hauteur de prise
-    const mid = c.ys[n >> 1];
-    expect(mid).toBeLessThan(0.12);
-    expect(c.ys[0]).toBeGreaterThan(mid + 0.05);
-    expect(c.ys[n - 1]).toBeGreaterThan(mid + 0.05);
+    expect([c.ends[0][0], c.ends[0][1]]).toEqual([c.xs[0], c.zs[0]]);
+    // côté de l'autre bout : le bout de a est tourné vers b, et inversement
+    expect(c.ends[0][2] * (b.x - a.x) + c.ends[0][3] * (b.z - a.z)).toBeGreaterThan(0);
+    expect(c.ends[1][2] * (a.x - b.x) + c.ends[1][3] * (a.z - b.z)).toBeGreaterThan(0);
+    // posé au sol d'un bout à l'autre, fin
+    for (const y of c.ys) expect(y).toBeLessThan(0.06);
   });
 
   it("flèche de 6 à 10 % de la longueur, pour toutes les paires", () => {

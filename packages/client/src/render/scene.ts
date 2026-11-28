@@ -248,7 +248,7 @@ export class GameScene {
     this.entities.setShieldFx(this.gfx.shieldFx !== false);
     this.scene.add(this.entities.group);
     this.cables?.dispose();
-    this.cables = new Cables(map, data, this.entities.teamColors);
+    this.cables = new Cables(map, data);
     this.scene.add(this.cables.mesh);
     this.camera.far = map.w * 4;
   }
