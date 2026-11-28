@@ -33,14 +33,40 @@ Six paliers de recherche, chacun avec son lot. Une recherche d'un palier demande
 | 2 | Données électroniques | circuits, bras | usine aérienne, centrale à hydrocarbure, artillerie mobile, appareils légers |
 | 3 | Données militaires | munitions, acier | usine navale, marcheurs d'assaut, chars glisseurs, canonnières, bombardiers |
 | 4 | Données avancées | processeurs, composites | boucliers, canons à ions, marcheurs de siège, plateforme de transfert, raffinage du cristal |
-| 5 | Données cristallines | cristal raffiné, processeurs | robots de choc, porte de transit, bouclier de zone, missile stratégique, réacteur à cristal |
+| 5 | Données cristallines | cristal raffiné, processeurs | robots de choc et char lourd, porte de transit, bouclier de zone, missile stratégique, réacteur à cristal |
 | 6 | Données orbitales | cellules d'énergie, composites, processeurs | portique expérimental et unités expérimentales, canon orbital |
 
 Les quantités, les coûts et les durées de recherche sont fixés pendant l'équilibrage.
 
 ## Unités
 
-La faction compte 37 unités, inspirées de Supreme Commander, Star Wars et Stargate. Les noms sont provisoires.
+La faction compte 58 unités, inspirées de Supreme Commander, Star Wars et Stargate. Les noms sont provisoires.
+
+### Paliers des unités
+
+Comme dans Supreme Commander, un rôle a une version par palier : la variante d'un palier supérieur est plus chère, plus résistante et frappe plus fort. Les six paliers de recherche se regroupent en quatre niveaux, ceux de Supreme Commander : paliers 1 et 2, paliers 3 et 4, palier 5, palier 6 (expérimentales). L'usine aérienne arrive au palier 2 et l'usine navale au palier 3 : leurs échelles commencent là. Le palier d'une unité est entre parenthèses. Tests : `sim/src/paliers_tests.rs` (`industrial_roles_climb_the_tiers` : chaque échelle sort de la même usine et ne descend jamais ; la canonnière lourde vole sur place ; torpilles du bombardier torpilleur ; sonar du sous-marin chasseur). Contrôle d'affichage : `tools/e2e-paliers.mjs` (vitrine : les sept variantes, leurs icônes dans la fiche de sélection, des icônes des Transhumants).
+
+| Rôle | Paliers 1 et 2 | Paliers 3 et 4 | Palier 5 | Palier 6 |
+| --- | --- | --- | --- | --- |
+| Ingénieur | drone ingénieur (1) | drone ingénieur avancé (3) | drone ingénieur suprême (5) | |
+| Robot d'assaut | robot de ligne (1) | marcheur d'assaut (3), droïde roulant (3) | robot de choc (5) | colosse |
+| Char | char léger (1) | Gardien (3), char glisseur (3), marcheur de siège (4) | **char lourd** (5) | Char Blatte, araignée de siège |
+| Artillerie | artillerie mobile (2) | lance-roquettes à saturation (3), lance-missiles mobile (3), tourelle mobile déployable (4) | artillerie lourde mobile (5) | |
+| Antiaérien | défense antiaérienne mobile (2) | **flak mobile** (4) | | |
+| Reconnaissance, discrétion | moto-glisseur (1), sonde de détection (2) | brouilleur mobile (4), commando furtif (4) | | |
+| Soutien | disrupteur (1) | générateur de bouclier mobile (4), canon à ions mobile (4), lanceur de drones guidés (4) | | forteresse marchante |
+| Avion de reconnaissance | avion éclaireur (2) | avion de guerre électronique (4) | **avion espion** (5) | |
+| Chasseur | intercepteur (2) | chasseur de supériorité (4) | | |
+| Bombardier | planeur d'attaque (2) | bombardier (3), bombardier furtif (4) | bombardier stratégique (5) | vaisseau-mère |
+| Canonnière | | canonnière (3) | **canonnière lourde** (5) | Gros Chinois |
+| Torpilleur | | **bombardier torpilleur** (3) | | |
+| Transport | transport (2) | transport lourd (4) | | croiseur hyperespace |
+| Navire de ligne | | frégate (3), destroyer (4) | cuirassé à canons de rail (5) | Cuirassé stellaire |
+| Sous-marin | | sous-marin (3) | **sous-marin chasseur** (5) | |
+| Antiaérien naval | | **croiseur antiaérien** (4) | croiseur lance-missiles (5) | |
+| Porte-avions | | | porte-avions (5) | |
+
+En gras : les sept variantes ajoutées pour compléter les échelles. Recherches : le char lourd vient avec Assaut lourd (ex-Robots de choc), la flak mobile avec Défense antiaérienne lourde (palier 4, après Assaut), l'avion espion et la canonnière lourde avec Aviation stratégique (ex-Bombardier stratégique), le bombardier torpilleur avec Aviation lourde, le croiseur antiaérien avec Escorte navale (ex-Destroyer), le sous-marin chasseur avec Marine lourde.
 
 ### Commandement
 
@@ -70,6 +96,8 @@ La faction compte 37 unités, inspirées de Supreme Commander, Star Wars et Star
 | Marcheur de siège | Quadripède très blindé, canons lourds, transporte des robots de ligne | 4 | Star Wars (marcheurs quadripèdes) |
 | Robot de choc | Robot d'assaut lourd, arme à plasma | 5 | Supreme Commander (robots d'assaut), Stargate (armes à plasma) |
 | Artillerie lourde mobile | Très longue portée, se déploie avant de tirer | 5 | Supreme Commander |
+| Char lourd | Char très blindé à canon lourd, variante du char léger au palier 5 | 5 | Supreme Commander (chars de siège) |
+| Flak mobile | Flak lourde à éclats contre les avions, variante de la défense antiaérienne mobile | 4 | Supreme Commander (flak mobile) |
 
 ### Air
 
@@ -83,6 +111,9 @@ La faction compte 37 unités, inspirées de Supreme Commander, Star Wars et Star
 | Bombardier | Bombes contre les unités et les bâtiments | 3 | Supreme Commander |
 | Chasseur de supériorité | Chasseur lourd contre les avions | 4 | Supreme Commander |
 | Bombardier stratégique | Bombes lourdes contre les bâtiments | 5 | Supreme Commander |
+| Bombardier torpilleur | Torpilles larguées contre les navires et les sous-marins | 3 | Supreme Commander |
+| Avion espion | Le plus rapide des avions : très grande vision et radar, sans arme | 5 | Supreme Commander |
+| Canonnière lourde | Vol stationnaire, très résistante, contre le sol ; antiaérien léger | 5 | Supreme Commander |
 
 ### Mer (cartes avec eau)
 
@@ -92,6 +123,8 @@ La faction compte 37 unités, inspirées de Supreme Commander, Star Wars et Star
 | Sous-marin | Attaque les navires sans apparaître au radar | 3 | Supreme Commander |
 | Destroyer | Navire de ligne, armes contre surface et sous-marins | 4 | Supreme Commander |
 | Croiseur lance-missiles | Missiles à longue portée et défense antiaérienne | 5 | Supreme Commander |
+| Croiseur antiaérien | Missiles antiaériens à longue portée, canon de surface | 4 | Supreme Commander (croiseurs) |
+| Sous-marin chasseur | Torpilles lourdes ; son sonar porte à 30 cases (18 pour un sous-marin), il repère et coule les sous-marins | 5 | Supreme Commander |
 
 ### Expérimentales (palier 6, construites dans le portique expérimental)
 

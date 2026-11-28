@@ -89,6 +89,7 @@ export const BUILDINGS = {
   replicator_hive: "a crashed alien ship hull made of grey metal blocks with glowing blue seams, loose metal cubes scattered around",
   ancient_ruin: "ancient alien stone ruins with broken pale columns, a carved arch with glowing glyphs and a pedestal holding a floating amber energy crystal",
   eppz_socket: "a power socket cradle with three claws holding a glowing amber hexagonal energy crystal, glowing rings",
+  logistic_relay: "a logistics relay: a square paved pad with four small round drone landing pads at its corners, a central octagonal base with a blue dome and a slim mast topped by a glowing cyan ring beacon",
   gift_portal: "a glowing gateway arch on a platform where allied troops walk through to join another commander",
   roboport: "a logistics robot hub: a square tower with a landing pad on top, beacon lights and small flying robots",
   gate: "a large circular transit portal gate with a swirling energy field",
@@ -152,10 +153,18 @@ export const UNITS = {
   railgun_ship: "a heavy battleship warship with two front turrets carrying very long twin railgun barrels with glowing coils, massive central superstructure",
   beast_s: "a small six-legged alien beetle creature with a segmented brown chitin carapace, bone spines on its back, hooked mandibles and glowing amber eyes",
   beast_m: "a six-legged alien beetle beast with a segmented brown chitin carapace, rows of bone spines, big hooked mandibles, a red maw and glowing amber eyes",
-  beast_l: "a huge six-legged armored alien beetle beast with thick brown chitin shoulder plates, curved bone horns, crushing mandibles and glowing amber eyes",
+  beast_l: "a huge six-legged alien beetle beast, a living organic creature and not a robot, warm dark brown and ochre chitin shoulder plates, curved ivory bone horns, crushing mandibles and glowing amber eyes, no metal parts and no cyan lights on it",
   roll_droid: "a bronze combat droid deployed on three arched legs with twin blasters, next to its rolled-up wheel form",
   replicator: "a small spider-like robot made of grey metal blocks with a glowing blue core and six blocky legs",
   disruptor: "a stocky robot soldier carrying a long rifle with glowing blue coils",
+  // variantes des paliers supérieurs (docs/spec/contenu.md, « Paliers des unités ») : même famille que la version de base
+  heavy_tank: "a heavy tracked battle tank, wide tracks, a massive hull of sloped armor plates, a big faceted turret with a long thick cannon and a muzzle brake",
+  flak: "a heavy six-wheeled anti-aircraft truck with continuous mudguards and a small cab at the front, a big turret carrying four flak cannons pointing steeply up to the sky in two twin pods, a small fire-control radar dish on a mast at the rear",
+  spy_plane: "a sleek strategic reconnaissance jet, a very long slender fuselage, thin delta wings, twin engines, sensor pods and a small radome, no weapons",
+  heavy_gunship: "a heavy armored hovering gunship with four ducted rotors, a glazed cockpit, twin energy guns under the nose and a small anti-aircraft turret on its back",
+  torpedo_bomber: "a twin-engine torpedo bomber aircraft with straight wings, a glazed nose and two large torpedoes slung under its belly",
+  hunter_sub: "a long sleek hunter-killer submarine, a streamlined conning tower, a sonar dome at the bow, torpedo tube doors, cross-shaped tail fins and a propeller",
+  aa_cruiser: "an anti-aircraft cruiser warship, a long hull, a superstructure with rotating radar dishes, rows of vertical missile launch cells and surface-to-air missile launchers, a deck gun at the bow",
 };
 
 /**
@@ -314,6 +323,80 @@ export const SOUCHE_UNITS = {
 };
 
 /** Illustrations (pas d'arrière-plan transparent). */
+/**
+ * Style des icônes des Transhumants (peuple nomade en convoi de chenillards) : même cadrage que STYLE.
+ * Matières des modèles (assets/models/transhumants.ts, nomades/) : plaques de tôle rivetées et rapiécées de
+ * teintes dépareillées, rouille, peinture écaillée, bâches de toile beige, planches et caisses, cuivre, petites
+ * lampes ambre. Les bandes à la couleur du joueur sont rendues en bleu acier passé (l'icône est la même pour
+ * tous les joueurs).
+ */
+export const TRANSH_STYLE =
+  "Single game icon for a sci-fi real-time strategy game interface, showing one vehicle or machine of a nomadic scavenger faction that lives in a moving convoy of tracked vehicles. " +
+  "Clean stylized 3D hard-surface render with simple chunky shapes, three-quarter top-down view, riveted grey sheet-metal plates patched with mismatched panels, rusty orange-brown plates, chipped paint, " +
+  "weathered wooden planks and crates, tan canvas tarps, copper pipes, small warm amber lamps, a few faded steel-blue painted stripes, soft studio rim light, " +
+  "high contrast readable silhouette, centered, subject fills about 80% of the frame, " +
+  "isolated on a fully transparent background, no text, no letters, no numbers, no border, no frame, no ground, no cast shadow.";
+
+/** Style des objets des Transhumants (relevés) : petits objets de récupération, lisibles à 18 pixels. */
+export const TRANSH_ITEM_STYLE =
+  "Single resource item icon for a sci-fi strategy game interface, one small salvaged object from a nomadic scavenger faction. " +
+  "Clean stylized 3D render with a very simple bold shape, three-quarter view, soft studio light with a thin warm rim light, " +
+  "high contrast readable silhouette, centered, fills about 75% of the frame, isolated on a fully transparent background, " +
+  "no text, no letters, no border, no frame, no ground, no cast shadow.";
+
+/** Objets des Transhumants (couleurs de sim/src/data.rs). */
+export const TRANSH_ITEMS = {
+  releves: "a rolled survey chart of yellowed paper (#e8b84a) tied with a red cord, lying across a small brass surveying compass",
+};
+
+/**
+ * Modules déployés des Transhumants. Chaque description suit le modèle 3D (nomades/*.ts) : le chenillard posé sur
+ * ses stabilisateurs, son gréement dressé ; le même module replié est dans TRANSH_UNITS (« ch_… »).
+ */
+export const TRANSH_BUILDINGS = {
+  t_drill: "a deployed nomad drilling rig: a tracked carrier resting on four extended stabilizer legs with pads, a tall lattice drilling mast raised upright at the back, a spiral drill rod plunged into the ground, a motor head at the top",
+  t_furnace: "a deployed nomad smelter: a tracked carrier on stabilizer legs, a big crucible glowing orange tilted between two pillars, a tall telescopic chimney raised, a blower box with a duct",
+  t_assembler: "a deployed nomad assembler: a tracked carrier on stabilizer legs, a jointed robotic arm raised over a turntable, a workbench under a wide tan canvas awning, crates of parts",
+  t_refinery: "a deployed nomad refinery: a tracked carrier on stabilizer legs, three distillation columns standing upright, a horizontal tank, a swinging pipe and a small burning flare stack",
+  t_generator: "a deployed nomad power generator: a tracked carrier on stabilizer legs, a diesel engine block with tall exhaust stacks, a radiator with a horizontal fan, a raised telescopic lattice power pylon with insulators",
+  t_hold: "a deployed nomad storage depot: a tracked carrier on stabilizer legs, a long rusty shipping container, a stacked container with an open door, crates under a cargo net, a raised loading crane, side boards lowered as loading docks",
+  t_lab: "a deployed nomad laboratory: a tracked carrier on stabilizer legs, a tan canvas shelter on a frame with two side extensions slid out and a porthole, a tall telescopic observation mast with a satellite dish, two antennas",
+  t_workshop: "a deployed nomad vehicle factory: a large tracked carrier on stabilizer legs, a long tan canvas hangar tent extended on steel hoops, a lowered loading ramp at the front, crates and tools",
+  t_bastion: "a deployed nomad heavy gun bastion: a tracked carrier on stabilizer legs, a large faceted armored turret raised on a telescopic column with a long heavy cannon, sandbags and ammunition crates",
+  t_pole: "a portable electric relay mast: a tripod of three wooden poles tied together near the top, a two-stage telescopic steel mast rising from the tripod, a crossbar with white ceramic insulators, three thin cables anchored to small ground pegs, a small pennant on top, an amber lamp",
+  ark_dock: "a small portable power generator set on skids, a boxy engine with an exhaust pipe, a power socket box with a coiled cable, a short mast with an amber lantern",
+};
+
+/**
+ * Unités des Transhumants. Chaque description suit le modèle 3D (transhumants.ts, nomades/*.ts) ; un chenillard
+ * (« ch_… ») porte son module replié sur le plateau, gréement couché.
+ */
+export const TRANSH_UNITS = {
+  ark: "the Ark, a huge long armored land-train vehicle on four wide track units, a long hull with side skirts, a bow turret with a cannon, a bridge with a narrow glazed slit, a row of tan canvas tents on hoops and smoking chimneys along the deck, a folded crane, a twin-barrel anti-aircraft turret at the stern",
+  ark_car: "a flat armored trailer wagon on two short track units with a towbar and a hook, a deck of planks and steel plates with low side rails, empty",
+  ch_drill: "a folded drilling rig on a tracked carrier: a small driver cab on the left, an engine and toolboxes, a lattice drilling mast lying folded along the deck with a spiral drill bit, stabilizer legs tucked in",
+  ch_furnace: "a folded smelter on a tracked carrier: a big round crucible cradled between two pillars, a short lowered chimney, a blower box with a duct, a small driver cab at the front left",
+  ch_assembler: "a folded assembler on a tracked carrier: a jointed robotic arm folded down on a turntable, a workbench under a tan canvas awning, crates of parts, a small driver cab at the front left",
+  ch_refinery: "a folded refinery on a tracked carrier: distillation columns lying down along the deck, a horizontal tank, pipes and a short flare stack, a small driver cab at the front left",
+  ch_generator: "a folded power generator on a tracked carrier: a diesel engine block with exhaust stacks, a radiator with a fan, a lowered telescopic power pylon, cable drums, a small driver cab at the front left",
+  ch_hold: "a folded storage depot on a tracked carrier: a long rusty shipping container, a stacked container with a door, crates under a cargo net, a small folded loading crane, a small driver cab at the front left",
+  ch_lab: "a folded laboratory on a tracked carrier: a tan canvas shelter on a frame with a porthole, a lowered observation mast with a small satellite dish, two antennas, a small driver cab at the front left",
+  ch_workshop: "a folded vehicle factory on a large tracked carrier: a long telescopic tan canvas hangar tent on steel hoops, a folded loading ramp at the front, crates and tools, a small driver cab at the front left",
+  ch_bastion: "a folded heavy gun turret on a tracked carrier: a faceted armored turret lowered on its column with its long barrel pointing backwards, sandbags and ammunition crates, a small driver cab at the front left",
+  tracker: "a light scout buggy with four big tires, an open patched body, a roll cage, a canvas sunshade, an observation mast with an amber optic and a machine gun, fuel cans",
+  rider: "a fast light tank on wide tracks, a low hull with a sloped glacis, side skirts, a flat faceted turret with a medium cannon and a canvas mantlet, rolled tarps and fuel cans on the rear deck",
+  harrow: "a mobile anti-aircraft vehicle on light tracks, a turret carrying four cannons pointing up to the sky in two pods, a canvas skirt, an amber gunsight",
+  towed_gun: "a towed field gun: a small tracked tractor with a tarp-covered cab pulling a two-wheeled gun carriage with joined trails, a long raised steel barrel, a canvas gun shield",
+  ram: "a heavy armored battering vehicle on wide tracks, thick track guards, a hull of sloped rusty plates, a huge toothed chevron steel ramming prow at the front, exhaust pipes, a low cockpit with a narrow slit",
+  t_cart: "a small tracked cargo cart: two short tracks, a low chassis, a driver seat with handlebars and a windscreen under a canvas awning at the front left, an open bed with wooden side boards, a folded towbar at the back",
+  turret_gun: "a small deployable machine-gun turret on a tiny tracked mount with four outstretched support legs, a boxy armored mount with twin machine guns",
+  turret_aa: "a small deployable anti-aircraft turret on a tiny tracked mount with four outstretched support legs, twin long barrels pointing up to the sky",
+  turret_mortar: "a small deployable mortar turret on a tiny tracked mount with four outstretched support legs, a short wide mortar tube angled steeply upward",
+  mastiff: "a four-legged scrap-metal assault robot dog: a broad engine-block chest, a hunched back, a thin rear, four jointed legs, a low head shaped like an excavator bucket with a toothed jaw, sheet-metal ears, a chain tail",
+  shepherd: "a giant hunched scrap-metal command walker: a boiler chest with a glowing amber firebox, truck-cab shoulders, a long tan canvas tarp coat, a low head with hanging cables under a sensor dome, girder legs wrapped in canvas, a claw left arm, a crane-jib right arm crowned with copper electrodes",
+  t_shield_cart: "a small tracked shield projector cart: two short tracks, a low chassis, a closed cab at the front left, a generator box in the middle, an emitter mast with copper rings and a glowing cyan globe on top, capacitors lying at the back",
+};
+
 export const ART = {
   keyart: {
     size: "1536x1024",

@@ -45,7 +45,7 @@ export function researchMgr(ai: SkirmishAI, out: Cmd[]): void {
   // recherches urgentes selon les rapports de force, puis la liste de la personnalité
   const urgent: string[] = [];
   if (ai.level !== "facile") {
-    if (ai.airRatio > 0.5) urgent.push("aa_turret", "heavy_air", "superiority");
+    if (ai.airRatio > 0.5) urgent.push("aa_turret", "heavy_air", "superiority", "heavy_aa");
     if (ai.anyUnreachable()) urgent.push("electronics", "hydrocarbons", "mobile_artillery", "assault", "heavy_air");
     if (ai.landRatio > 1.5) urgent.push("heavy_turret");
   }

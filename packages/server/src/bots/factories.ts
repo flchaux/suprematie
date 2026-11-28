@@ -119,6 +119,9 @@ export function armyWeights(ai: SkirmishAI): Record<string, number> {
   w.interceptor = (w.interceptor ?? 0) + 0.6 + r * 3;
   w.asf = (w.asf ?? 0) + 0.5 + r * 3;
   if (r > 0.35) w.mobile_aa = (w.mobile_aa ?? 0) + r * 2.5;
+  if (r > 0.35) w.flak = (w.flak ?? 0) + r * 2;
+  // marine adverse : bombardiers torpilleurs
+  if (ai.navy.enemy > 60) w.torpedo_bomber = (w.torpedo_bomber ?? 0) + 1.5;
   // frappes sur l'économie adverse
   w.bomber = (w.bomber ?? 0) + 1.2;
   // un adversaire hors d'atteinte par la terre : aéroglisseurs amphibies, et l'aviation d'attaque

@@ -345,7 +345,7 @@ macro_rules! w {
     };
 }
 
-pub const WEAPONS: [WeaponDef; 118] = [
+pub const WEAPONS: [WeaponDef; 124] = [
     w!(90, 22, 20, Bullet, 40, 0, M_SURF),                              // 0 canon du commandant
     w!(220, 26, 20, Plasma, 40, 256, M_SURF),                           // 1 canon renforcé
     w!(14, 14, 20, Blaster, 35, 0, M_SURF),                             // 2 robot de ligne
@@ -473,6 +473,13 @@ pub const WEAPONS: [WeaponDef; 118] = [
     w!(1040, 50, 95, Shell, 14, 704, M_SURF, min_range: 10),            // 115 berger : mortier lourd
     w!(53, 26, 110, Fire, 0, 160, M_SURF, sustain: 60),                 // 116 berger : lance-plasma (3 s)
     w!(35, 28, 7, Bullet, 50, 200, M_AIR),                              // 117 herse (canon antiaérien)
+    // variantes des paliers supérieurs des Industriels (rôles en échelle, comme dans Supreme Commander)
+    w!(220, 26, 36, Bullet, 44, 128, M_SURF),                           // 118 char lourd : canon de 140
+    w!(40, 32, 8, Bullet, 50, 320, M_AIR),                              // 119 flak mobile : canons jumelés à fusée de proximité
+    w!(70, 18, 12, Blaster, 40, 96, M_SURF, salvo: 2),                  // 120 canonnière lourde : blasters jumelés
+    w!(300, 6, 90, Torpedo, 12, 0, M_NAVAL | M_SUB),                    // 121 bombardier torpilleur : torpille larguée
+    w!(380, 26, 70, Torpedo, 14, 0, M_NAVAL | M_SUB),                   // 122 sous-marin chasseur : torpilles lourdes
+    w!(45, 40, 10, Missile, 30, 0, M_AIR, salvo: 2),                    // 123 croiseur antiaérien : missiles surface-air
 ];
 /// Armes des améliorations des Transhumants (indices dans WEAPONS).
 pub const W_SIEGE: u8 = 85;
@@ -541,7 +548,7 @@ pub const T_CMD_CANNON: u8 = 34;
 pub const T_CMD_TELEPORT: u8 = 35;
 pub const T_LOGISTICS3: u8 = 31;
 
-pub const TECHS: [TechDef; 96] = [
+pub const TECHS: [TechDef; 97] = [
     t!("none", "Base", 0, 0, 0, [], ""),
     t!("automation", "Automatisation", 1, 10, 5, [], "Bras long, rail et gare, répartiteur ; améliorations : extracteur, générateur et dépôt"),
     t!("land_prod", "Production terrestre", 1, 15, 5, [], "Usine terrestre, drone ingénieur, robot de ligne, moto-glisseur, char léger"),
@@ -555,7 +562,7 @@ pub const TECHS: [TechDef; 96] = [
     t!("engineer3", "Ingénierie avancée", 3, 25, 10, [4], "Drone ingénieur avancé"),
     t!("naval", "Marine", 3, 30, 10, [4], "Usine navale, frégate, sous-marin"),
     t!("assault", "Assaut", 3, 35, 10, [6], "Marcheur d'assaut, char glisseur, lance-missiles mobile, Gardien, lance-roquettes à saturation"),
-    t!("heavy_air", "Aviation lourde", 3, 35, 10, [4], "Canonnière, bombardier, transport lourd"),
+    t!("heavy_air", "Aviation lourde", 3, 35, 10, [4], "Canonnière, bombardier, bombardier torpilleur, transport lourd"),
     t!("heavy_turret", "Tourelle lourde", 3, 25, 10, [3], "Tourelle lourde, tourelle mobile déployable"),
     t!("shields", "Boucliers", 4, 40, 12, [9], "Générateur de bouclier mobile et fixe"),
     t!("ions", "Canons à ions", 4, 40, 12, [12], "Canon à ions mobile"),
@@ -564,17 +571,17 @@ pub const TECHS: [TechDef; 96] = [
     t!("transfer", "Anneaux de transfert", 4, 40, 12, [9], "Plateforme de transfert"),
     t!("crystal_refining", "Raffinage du cristal", 4, 40, 12, [9], "Cristal raffiné, cellules d'énergie, lots 5 et 6"),
     t!("superiority", "Supériorité aérienne", 4, 40, 12, [13], "Chasseur de supériorité"),
-    t!("destroyer", "Destroyer", 4, 40, 12, [11], "Destroyer"),
+    t!("destroyer", "Escorte navale", 4, 40, 12, [11], "Destroyer, croiseur antiaérien"),
     t!("fixed_artillery", "Artillerie fixe", 4, 45, 12, [14], "Artillerie fixe"),
     t!("cmd_shield", "Bouclier du commandant", 4, 30, 12, [15], "Bouclier personnel du robot de commandement"),
-    t!("shock", "Robots de choc", 5, 60, 15, [18], "Robot de choc"),
+    t!("shock", "Assaut lourd", 5, 60, 15, [18], "Robot de choc, char lourd"),
     t!("heavy_artillery", "Artillerie lourde", 5, 60, 15, [6, 20], "Artillerie lourde mobile"),
     t!("gate", "Porte de transit", 5, 60, 15, [19, 20], "Porte de transit"),
     t!("area_shield", "Bouclier de zone", 5, 60, 15, [15, 20], "Bouclier de zone"),
     t!("strategic", "Missile stratégique", 5, 70, 15, [20], "Silo de missile stratégique, défense antimissile"),
     t!("crystal_reactor", "Réacteur à cristal", 5, 60, 15, [20], "Réacteur à cristal"),
     t!("logistics3", "Logistique avancée", 5, 50, 15, [8, 20], "Tapis express, assembleur avancé, drone ingénieur suprême"),
-    t!("strat_bomber", "Bombardier stratégique", 5, 60, 15, [21], "Bombardier stratégique"),
+    t!("strat_bomber", "Aviation stratégique", 5, 60, 15, [21], "Bombardier stratégique, avion espion, canonnière lourde"),
     t!("missile_cruiser", "Croiseur lance-missiles", 5, 60, 15, [22], "Croiseur lance-missiles"),
     t!("cmd_cannon", "Canon renforcé", 5, 40, 15, [24], "Canon renforcé du robot de commandement"),
     t!("cmd_teleport", "Téléportation par faisceau", 5, 50, 15, [24], "Le robot de commandement se téléporte"),
@@ -589,7 +596,7 @@ pub const TECHS: [TechDef; 96] = [
     t!("dragon", "Gros Chinois", 6, 70, 15, [36], "Gros Chinois, dragon robot volant"),
     t!("star_cruiser", "Cuirassé stellaire", 6, 90, 15, [36], "Cuirassé stellaire"),
     t!("electronic_warfare", "Guerre électronique", 4, 45, 12, [12, 13], "Commando furtif, brouilleur mobile, bombardier furtif, avion de guerre électronique"),
-    t!("heavy_navy", "Marine lourde", 5, 60, 15, [22], "Porte-avions, cuirassé à canons de rail"),
+    t!("heavy_navy", "Marine lourde", 5, 60, 15, [22], "Porte-avions, cuirassé à canons de rail, sous-marin chasseur"),
     // ----- Souche : chaque unité de recherche coûte `palier` ADN (voir souche.rs) -----
     t!("s_spitters", "Cracheurs", 1, 10, 6, [], "Cracheur : artillerie acide", race: RACE_SOUCHE),
     t!("s_shells", "Carapaces", 2, 15, 8, [48], "Carapace : char vivant", race: RACE_SOUCHE),
@@ -642,6 +649,8 @@ pub const TECHS: [TechDef; 96] = [
     t!("t_shepherd", "Le Grand Berger", 5, 40, 14, [92, 62], "Berger : marcheur géant de commandement, qui accélère les unités autour de lui", race: RACE_TRANSH),
     t!("t_shield_cart", "Projecteurs de convoi", 3, 18, 10, [83], "Chariot bouclier : une bulle qui couvre le convoi ; émetteur, accumulateurs et recharge à améliorer", race: RACE_TRANSH),
     t!("t_relief", "Arche de relève", 2, 20, 8, [60], "Atelier : une nouvelle Arche, trois au plus ; le peuple ne tombe qu'avec la dernière", race: RACE_TRANSH),
+    // ----- Industriels, suite -----
+    t!("heavy_aa", "Défense antiaérienne lourde", 4, 40, 12, [12], "Flak mobile"),
 ];
 /// Recherches qui débloquent des améliorations des Transhumants (indices dans TECHS).
 pub const T_T_ARMORY: u8 = 80;
@@ -698,6 +707,9 @@ pub const T_S_BEHEMOTH: u8 = 79;
 pub const MUTATIONS: [u8; 10] = [T_S_SCALES, T_S_QUICK_SAP, T_S_ACID, T_S_FERTILITY, T_S_DEEP_ROOTS, T_S_BIG_LEAVES, T_S_STICKY, T_S_STRANGLE, T_S_ACID_BLOOD, T_S_SPINES];
 pub const T_ELECTRONIC_WARFARE: u8 = 46;
 pub const T_HEAVY_NAVY: u8 = 47;
+pub const T_HEAVY_AA: u8 = 96;
+/// Sous-marin chasseur : sonar de 30 cases, comme les grands navires (voir combat::update_visibility).
+pub const U_HUNTER_SUB: u16 = 101;
 
 // ---------- Bâtiments ----------
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1223,7 +1235,7 @@ pub const JAM_RADIUS: i32 = 12;
 /// intercepteurs embarqués au plus par porte-avions
 pub const CARRIER_WING: u16 = 6;
 
-pub const UNITS: [UnitDef; 96] = [
+pub const UNITS: [UnitDef; 103] = [
     UnitDef { key: "commander", name: "Robot de commandement", hp: 12000, speed: 22, radius: 180, weapons: &[0], vision: 26, factory: FactoryKind::None, build_power: 20, drones: 4, supply: 30, hold: 100, tier: 0, commander: true, ..UD },
     UnitDef { key: "eng1", name: "Drone ingénieur", layer: Layer::Hover, hp: 300, speed: 40, radius: 100, cost: &[(IRON_PLATE, 6), (GEAR, 2), (CIRCUIT, 2)], build: 6, tech: 2, build_power: 10, drones: 2, supply: 25, hold: 40, altitude: 160, ..UD },
     UnitDef { key: "eng3", name: "Drone ingénieur avancé", layer: Layer::Hover, hp: 700, speed: 45, radius: 110, cost: &[(STEEL, 5), (CIRCUIT, 4), (ENGINE, 2)], build: 10, tech: 10, build_power: 25, drones: 3, supply: 35, hold: 80, tier: 3, altitude: 170, ..UD },
@@ -1339,6 +1351,14 @@ pub const UNITS: [UnitDef; 96] = [
     UnitDef { key: "shepherd", name: "Berger", layer: Layer::Hover, hp: 92000, speed: 20, radius: 600, weapons: &[W_SHEPHERD], vision: 36, cost: &[(STEEL, 385), (GEAR, 175), (ENGINE, 70), (PROCESSOR, 42)], build: 210, tech: T_T_SHEPHERD, tier: 6, race: RACE_TRANSH, ..UD },
     // ----- Transhumants : chariot bouclier, sa bulle couvre le convoi (voir bouclier.rs) -----
     UnitDef { key: "t_shield_cart", name: "Chariot bouclier", layer: Layer::Hover, hp: 1800, speed: 24, radius: 160, vision: 16, cost: &[(STEEL, 10), (CIRCUIT, 10), (COPPER_PLATE, 16)], build: 25, tech: T_T_SHIELD_CART, tier: 3, shield_r: 6, shield_hp: 3000, race: RACE_TRANSH, ..UD },
+    // ----- Industriels : variantes des paliers supérieurs (un rôle a une version par palier, comme dans Supreme Commander) -----
+    UnitDef { key: "heavy_tank", name: "Char lourd", hp: 4500, speed: 24, radius: 200, weapons: &[118], cost: &[(STEEL, 24), (COMPOSITE, 8), (ENGINE, 6), (AMMO, 8)], build: 26, tech: 25, tier: 5, ..UD },
+    UnitDef { key: "flak", name: "Flak mobile", hp: 900, speed: 26, radius: 150, weapons: &[119], cost: &[(STEEL, 8), (ENGINE, 3), (AMMO, 6), (CIRCUIT, 4)], build: 12, tech: T_HEAVY_AA, tier: 4, ..UD },
+    UnitDef { key: "spy_plane", name: "Avion espion", layer: Layer::Air, hp: 600, speed: 200, radius: 130, vision: 56, radar: 70, cost: &[(STEEL, 6), (PROCESSOR, 4), (FUEL, 8)], build: 12, tech: 32, factory: FactoryKind::Air, tier: 5, altitude: 3584, ..UD },
+    UnitDef { key: "heavy_gunship", name: "Canonnière lourde", layer: Layer::Air, hp: 5000, speed: 45, radius: 280, weapons: &[120, 52], cost: &[(STEEL, 24), (COMPOSITE, 8), (PROCESSOR, 6), (FUEL, 12)], build: 30, tech: 32, factory: FactoryKind::Air, tier: 5, altitude: 1792, ..UD },
+    UnitDef { key: "torpedo_bomber", name: "Bombardier torpilleur", layer: Layer::Air, hp: 1100, speed: 120, radius: 210, weapons: &[121], cost: &[(STEEL, 10), (ENGINE, 4), (AMMO, 8), (FUEL, 8)], build: 16, tech: 13, factory: FactoryKind::Air, tier: 3, altitude: 2048, ..UD },
+    UnitDef { key: "hunter_sub", name: "Sous-marin chasseur", layer: Layer::Sub, hp: 4000, speed: 46, radius: 300, weapons: &[122], vision: 28, cost: &[(STEEL, 40), (ENGINE, 10), (PROCESSOR, 6), (COMPOSITE, 8)], build: 40, tech: T_HEAVY_NAVY, factory: FactoryKind::Naval, tier: 5, altitude: -220, ..UD },
+    UnitDef { key: "aa_cruiser", name: "Croiseur antiaérien", layer: Layer::Naval, hp: 4500, speed: 36, radius: 380, weapons: &[123, 21], vision: 34, radar: 50, cost: &[(STEEL, 35), (ENGINE, 8), (AMMO, 10), (PROCESSOR, 4)], build: 30, tech: 22, factory: FactoryKind::Naval, tier: 4, ..UD },
 ];
 
 /// Vitesse d'une unité en sous-unités par tick.

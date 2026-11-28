@@ -15,6 +15,8 @@ import { SOUCHE_UNIT_MODELS } from "./souche.ts";
 import { SOUCHE_EGG_MODELS } from "./souche-oeufs.ts";
 import { SOUCHE_SWARM_MODELS } from "./souche-essaim.ts";
 import { TRANSH_UNIT_MODELS } from "./transhumants.ts";
+import { PALIERS_AIR } from "./paliers-air.ts";
+import { PALIERS_TERRE_MER } from "./paliers-terre-mer.ts";
 
 /**
  * Place une pièce le long d'un axe incliné (canon, rampe) : `base` = origine de l'axe, `elev` = angle
@@ -1810,6 +1812,9 @@ export const UNIT_MODELS: Record<string, Model> = {
   fortress,
   mothership,
   hyper_cruiser,
+  // variantes des paliers supérieurs (voir paliers-terre-mer.ts et paliers-air.ts)
+  ...PALIERS_TERRE_MER,
+  ...PALIERS_AIR,
   // faune : le mordeur en trois stades (voir faune.ts)
   ...BEAST_MODELS,
   ...ANCIENT_UNIT_MODELS,

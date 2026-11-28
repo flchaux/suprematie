@@ -1355,7 +1355,7 @@ pub fn update_visibility(w: &mut World) {
         if deployed_sonde {
             stamp(vis, x, y, 25, 4);
         } else if d.layer == Layer::Naval || d.layer == Layer::Sub {
-            stamp(vis, x, y, if d.radius > 400 { 30 } else { 18 }, 4);
+            stamp(vis, x, y, if d.radius > 400 || k == U_HUNTER_SUB { 30 } else { 18 }, 4);
         }
     }
     for b in 0..w.buildings.len() {

@@ -577,6 +577,8 @@ mod features_tests;
 #[cfg(test)]
 mod formation_tests;
 #[cfg(test)]
+mod paliers_tests;
+#[cfg(test)]
 mod nature_tests;
 #[cfg(test)]
 mod twin_preview_tests;

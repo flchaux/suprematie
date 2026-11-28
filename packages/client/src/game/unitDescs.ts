@@ -56,6 +56,13 @@ export const UNIT_DESCS: Record<string, string> = {
   roll_droid: "Roule très vite sans tirer ; à l'arrêt, se déplie en tourelle à bouclier.",
   replicator: "Dévore les bâtiments et s'y multiplie. Seuls armes à feu, obus, canon de rail et disrupteur le blessent.",
   disruptor: "Arme contre les réplicateurs et leurs ruches. Un cinquième des dégâts contre le reste.",
+  heavy_tank: "Char très blindé à canon lourd, contre le sol et la mer. Lent.",
+  flak: "Flak lourde à éclats, contre les avions seulement. Grande zone.",
+  spy_plane: "Le plus rapide des avions : très grande vision et radar. Sans arme.",
+  heavy_gunship: "Vol stationnaire, très résistante, contre le sol et la mer ; antiaérien léger.",
+  torpedo_bomber: "Torpilles larguées contre ce qui est sur ou sous l'eau. Ne touche pas la terre.",
+  hunter_sub: "Torpilles lourdes contre ce qui est sur ou sous l'eau. Son sonar porte à 30 cases.",
+  aa_cruiser: "Missiles antiaériens à longue portée, canon contre le sol et la mer. Radar et sonar.",
   // ----- Souche -----
   queen: "Plante les organes, apprivoise les nids et s'enracine pour nourrir son réseau. Sa mort vous élimine.",
   sower: "Plante et soigne les organes. Clic droit sur un organe qui produit : il l'aide, chaque semeur un peu moins que le précédent. Sans arme.",

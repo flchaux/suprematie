@@ -6,7 +6,7 @@
 //
 // Une image déjà générée n'est pas redemandée (sauf --force).
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
-import { STYLE, ITEM_STYLE, ITEMS, BUILDINGS, UNITS, ART, DECOR, DECOR_STYLE, SOUCHE_STYLE, SOUCHE_ITEM_STYLE, SOUCHE_ITEMS, SOUCHE_BUILDINGS, SOUCHE_UNITS } from "./manifest.mjs";
+import { STYLE, ITEM_STYLE, ITEMS, BUILDINGS, UNITS, ART, DECOR, DECOR_STYLE, SOUCHE_STYLE, SOUCHE_ITEM_STYLE, SOUCHE_ITEMS, SOUCHE_BUILDINGS, SOUCHE_UNITS, TRANSH_STYLE, TRANSH_ITEM_STYLE, TRANSH_ITEMS, TRANSH_BUILDINGS, TRANSH_UNITS } from "./manifest.mjs";
 
 const ROOT = new URL("./raw/", import.meta.url).pathname;
 const KEY = process.env.OPENAI_API_KEY;
@@ -41,6 +41,10 @@ for (const [k, s] of Object.entries(UNITS)) add("units", k, `${STYLE} Subject: $
 for (const [k, s] of Object.entries(SOUCHE_ITEMS)) add("items", k, `${SOUCHE_ITEM_STYLE} Subject: ${s}.`);
 for (const [k, s] of Object.entries(SOUCHE_BUILDINGS)) add("buildings", k, `${SOUCHE_STYLE} Subject: ${s}.`);
 for (const [k, s] of Object.entries(SOUCHE_UNITS)) add("units", k, `${SOUCHE_STYLE} Subject: ${s}.`);
+// les Transhumants : mêmes catégories, matières de récupération
+for (const [k, s] of Object.entries(TRANSH_ITEMS)) add("items", k, `${TRANSH_ITEM_STYLE} Subject: ${s}.`);
+for (const [k, s] of Object.entries(TRANSH_BUILDINGS)) add("buildings", k, `${TRANSH_STYLE} Subject: ${s}.`);
+for (const [k, s] of Object.entries(TRANSH_UNITS)) add("units", k, `${TRANSH_STYLE} Subject: ${s}.`);
 for (const [k, a] of Object.entries(ART)) add("art", k, a.prompt, a.size, a.background);
 for (const [k, s] of Object.entries(DECOR)) add("decor", k, `${DECOR_STYLE} Subject: ${s}.`);
 

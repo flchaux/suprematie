@@ -253,14 +253,16 @@ function makeYard(ai: SkirmishAI) {
 
 /** Composition voulue de la flotte : selon la menace adverse. */
 function fleetWeights(ai: SkirmishAI): Record<string, number> {
-  const w: Record<string, number> = { frigate: 3, submarine: 0.8, destroyer: 4, missile_cruiser: 2, carrier: 0.5, railgun_ship: 2 };
+  const w: Record<string, number> = { frigate: 3, submarine: 0.8, destroyer: 4, aa_cruiser: 1, missile_cruiser: 2, carrier: 0.5, railgun_ship: 2, hunter_sub: 0.5 };
   if (ai.navy.enemy > 60) {
     // marine adverse : torpilles et navires de ligne
     w.submarine += 2.5;
+    w.hunter_sub += 2;
     w.destroyer += 2;
   }
   if (ai.airRatio > 0.4) {
     w.frigate += 1;
+    w.aa_cruiser += 2;
     w.missile_cruiser += 1;
     w.carrier += 0.5;
   }

@@ -95,7 +95,7 @@ pub fn pass_mask(layer: Layer) -> u8 {
 #[inline]
 pub fn fixed_wing(kind: u16) -> bool {
     let d = udef(kind);
-    d.layer == Layer::Air && !matches!(kind, U_TRANSPORT | U_HEAVY_TRANSPORT | U_MOTHERSHIP | U_HYPER | U_DRAGON | U_STAR_CRUISER) && d.key != "gunship"
+    d.layer == Layer::Air && !matches!(kind, U_TRANSPORT | U_HEAVY_TRANSPORT | U_MOTHERSHIP | U_HYPER | U_DRAGON | U_STAR_CRUISER) && !matches!(d.key, "gunship" | "heavy_gunship")
 }
 /// Unité à pattes (robots, marcheurs) : elle change de direction en marchant, sans pivoter sur place,
 /// et le haut de son corps vise sa prochaine cible pendant la marche.
