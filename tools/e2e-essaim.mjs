@@ -68,6 +68,31 @@ const shot = async (name) => {
   console.log(`capture : ${outDir}/essaim-${name}.png`);
 };
 
+/** Le puits du menu de construction, survolé près d'un de nos forages creusés, se cale dessus et peut s'y poser. */
+const wellOnBorehole = async (bore) => {
+  await look(bore.x, bore.z, 30);
+  await page.evaluate(() => window.__game.client.startBuild(window.__game.ui.data.buildings.findIndex((b) => b.key === "well")));
+  const bp = await page.evaluate(([x, z]) => {
+    const p = { x: 0, y: 0 };
+    const { client } = window.__game;
+    let h = client.scene.target.y;
+    for (let i = 0; i < 3; i++) {
+      client.scene.project(x, h, z, p);
+      h = client.groundAt(p.x, p.y)?.y ?? h;
+    }
+    return p;
+  }, [bore.x - 0.4, bore.z + 0.5]);
+  await page.mouse.move(bp.x, bp.y);
+  await page.mouse.move(bp.x + 1, bp.y + 1);
+  const at = [bore.x - 1, bore.z - 1];
+  await page.waitForFunction(([x, y]) => window.__game.client.ghostCells.some((c) => c.x === x && c.y === y), at, { timeout: 60000 }).catch(() => {});
+  const gh = await page.evaluate(() => window.__game.client.ghostCells.map((c) => ({ x: c.x, y: c.y, ok: c.ok })));
+  check(gh.length === 1 && gh[0].x === at[0] && gh[0].y === at[1] && gh[0].ok, "puits du menu : calé sur le forage survolé, pose possible", JSON.stringify({ gh, at }));
+  await shot("puits-sur-forage");
+  await page.evaluate(() => window.__game.client.cancelMode());
+  await page.mouse.move(640, 300);
+};
+
 // tout est repéré d'abord, en vue large : la trame ne contient que la zone vue
 const [heart] = await find("seed_heart");
 await look(heart.x + 4, heart.z + 2, 90);
@@ -257,6 +282,8 @@ await select(null);
   await page.waitForFunction(() => !!window.__game.ui.buildingInfo?.souche?.well, null, { timeout: 60000 }).catch(() => {});
   const up = await page.evaluate(() => [...document.querySelectorAll(".sel .upcard button")].map((b) => b.textContent).join(" | "));
   check(/Construire un puits/.test(up), "forage : bouton « Construire un puits »", up);
+  await select(null);
+  await wellOnBorehole(bore);
   const [leaf] = await find("leaves");
   await select(leaf.ref);
   await page.waitForFunction(() => !!window.__game.ui.buildingInfo?.souche?.water, null, { timeout: 60000 }).catch(() => {});

@@ -722,7 +722,8 @@ pub fn essaim_demo() -> World {
     if let Some(b) = put(&mut w, 0, B_WELL, hx + 3, hy + 9) {
         w.buildings[b].dir = 0;
     }
-    put(&mut w, 0, B_BOREHOLE, hx - 9, hy + 6);
+    // forage creusé sur le terreau : le puits du menu de construction peut s'y poser
+    put(&mut w, 0, B_BOREHOLE, hx - 9, hy + 4);
     // terreau sec : de l'herbe mangée loin de tout poteau (ni veines ni mousse)
     for y in hy - 24..hy - 17 {
         for x in hx - 42..hx - 33 {
