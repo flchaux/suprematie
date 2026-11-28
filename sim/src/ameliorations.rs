@@ -2,9 +2,9 @@
 //!
 //! - Une amélioration (`MODS`) s'installe sur une unité ou un module précis, depuis sa fiche (ordre
 //!   `O_MOD_INSTALL`) : l'Arche a cinq emplacements (`ARK_SLOTS`), une unité de combat trois (arme, châssis,
-//!   équipement), un chenillard (et son module déployé) deux (rendement, spécialité), un chariot de convoi un. Un
-//!   emplacement ne garde qu'une amélioration : les branches s'excluent. Un palier demande le palier précédent et le
-//!   remplace. La table est dans ameliorations/table.rs.
+//!   équipement), un chenillard (et son module déployé) deux (rendement, spécialité ; le générateur a en plus ses
+//!   lignes), un chariot de convoi un. Un emplacement ne garde qu'une amélioration : les branches s'excluent. Un
+//!   palier demande le palier précédent et le remplace. La table est dans ameliorations/table.rs.
 //! - Coût payé tout de suite : composants pris dans les réserves à portée (soute de l'Arche, dépôts et soutes,
 //!   chenillards soutes repliés), relevés dans la bourse du joueur. L'ordre `O_MOD_CANCEL` annule et rembourse
 //!   tout. Une amélioration remplacée par une autre branche rend la moitié de ses composants.
@@ -479,12 +479,28 @@ pub fn tank_mult(bb: &Building) -> i32 {
     }
 }
 
-/// Poteaux relais d'un générateur nomade, au plus.
+/// Poteaux relais d'un générateur nomade avec les lignes I et II.
+pub const LINES1_POLES: usize = 6;
+pub const LINES2_POLES: usize = 12;
+
+/// Poteaux relais d'un générateur nomade, au plus (emplacement « Lignes »). Il garde ceux qu'il a en trop ; il n'en
+/// plante simplement plus.
 pub fn poles_max(bb: &Building) -> usize {
-    if spec(bb) == M_GEN_POLES {
-        16
+    match at(bb.mods, SLOT_LINES) {
+        M_GEN_LINES1 => LINES1_POLES,
+        M_GEN_LINES2 => LINES2_POLES,
+        _ => crate::transhumants::POLES_PER_GEN,
+    }
+}
+
+/// Octets de `mods` qui sont les améliorations du porteur lui-même (un par emplacement) : au-delà, ceux d'un chenillard
+/// soute portent les équipements de ses chariots rentrés (voir chariots::stow_carts).
+pub fn own_mods(host: u16, mods: u64) -> u64 {
+    let n = slots(host).len().min(8) as u32;
+    if n == 8 {
+        mods
     } else {
-        crate::transhumants::POLES_PER_GEN
+        mods & ((1u64 << (8 * n)) - 1)
     }
 }
 
@@ -891,6 +907,29 @@ pub fn convert_slots(w: &mut World) {
         let own = if m == 0 { 0 } else { (m as u64) << (8 * MODS[m as usize].slot as u32) };
         let carts = if kind == U_CH_HOLD { (mods & !0xff) << 8 } else { 0 };
         w.units.cold[s].mods = own | carts;
+    }
+}
+
+/// Sauvegardes jusqu'à la version 13 : les « Câbles longs » (indice 90) étaient une spécialité du générateur nomade
+/// (octet 1). L'indice 90 est devenu Lignes I, dans l'emplacement « Lignes » (octet 2) : un générateur (module ou
+/// chenillard) qui avait les câbles longs a désormais Lignes II. Rien ne peut plus mettre 90 dans l'octet 1 : la
+/// conversion est sans effet sur une sauvegarde récente. (Une installation des câbles longs en cours s'achève en
+/// Lignes I : `mod_job` ne dit pas de quelle époque il est.)
+pub fn convert_gen_poles(w: &mut World) {
+    let conv = |mods: &mut u64| {
+        if at(*mods, SLOT_SPEC) == M_GEN_LINES1 {
+            *mods = set(set(*mods, SLOT_SPEC, 0), SLOT_LINES, M_GEN_LINES2);
+        }
+    };
+    for s in 0..w.units.alive.len() {
+        if w.units.alive[s] && w.units.kind[s] == U_CH_GENERATOR {
+            conv(&mut w.units.cold[s].mods);
+        }
+    }
+    for bb in w.buildings.iter_mut() {
+        if bb.alive && bb.kind == B_T_GENERATOR {
+            conv(&mut bb.mods);
+        }
     }
 }
 
@@ -1485,13 +1524,14 @@ pub fn mods_json() -> String {
     let rs: Vec<String> = ARK_RADII.iter().map(|r| r.to_string()).collect();
     let tk: Vec<String> = TURRET_KINDS.iter().map(|k| k.to_string()).collect();
     format!(
-        "\"mods\":[{}],\"arkSlots\":[{}],\"unitSlots\":[{}],\"moduleSlots\":[{}],\"oneSlot\":{},\"shieldSlots\":[{}],\"turretKinds\":[{}],\"arkRadii\":[{}]",
+        "\"mods\":[{}],\"arkSlots\":[{}],\"unitSlots\":[{}],\"moduleSlots\":[{}],\"oneSlot\":{},\"shieldSlots\":[{}],\"generatorSlots\":[{}],\"turretKinds\":[{}],\"arkRadii\":[{}]",
         list.join(","),
         all(&ARK_SLOTS),
         all(&UNIT_SLOTS),
         all(&MODULE_SLOTS),
         slot(&ONE_SLOT),
         all(&SHIELD_SLOTS),
+        all(&GEN_SLOTS),
         tk.join(","),
         rs.join(",")
     )

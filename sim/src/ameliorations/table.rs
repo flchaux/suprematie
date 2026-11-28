@@ -24,6 +24,9 @@ pub const UNIT_SLOTS: [(&str, &str, &str); 3] = [("arm", "Arme", "mod_gun"), ("f
 /// Emplacements d'un module (et de son chenillard).
 pub const SLOT_SPEC: u8 = 1;
 pub const MODULE_SLOTS: [(&str, &str, &str); 2] = [("yield", "Rendement", "mod_fast"), ("spec", "Spécialité", "mod_fit")];
+/// Troisième emplacement du générateur nomade (et de son chenillard) : lignes (poteaux relais en plus).
+pub const SLOT_LINES: u8 = 2;
+pub const GEN_SLOTS: [(&str, &str, &str); 3] = [MODULE_SLOTS[0], MODULE_SLOTS[1], ("lines", "Lignes", "energy")];
 /// Emplacement unique d'un chariot de convoi.
 pub const ONE_SLOT: (&str, &str, &str) = ("fit", "Aménagement", "mod_fit");
 
@@ -38,6 +41,8 @@ pub fn slots(host: u16) -> &'static [(&'static str, &'static str, &'static str)]
         std::slice::from_ref(&ONE_SLOT)
     } else if host == U_SHIELD_CART {
         &SHIELD_SLOTS
+    } else if host == U_CH_GENERATOR {
+        &GEN_SLOTS
     } else if udef(host).deploys != NO_KIND {
         &MODULE_SLOTS
     } else {
@@ -182,7 +187,8 @@ pub const M_ASM_ARMOR: u8 = 86;
 pub const M_REF_LEAN: u8 = 87;
 pub const M_REF_ARMOR: u8 = 88;
 pub const M_GEN_TANK: u8 = 89;
-pub const M_GEN_POLES: u8 = 90;
+/// (indice des anciens « Câbles longs », de la spécialité : voir ameliorations::convert_gen_poles)
+pub const M_GEN_LINES1: u8 = 90;
 pub const M_HOLD_CRANE: u8 = 91;
 pub const M_HOLD_QUICK: u8 = 92;
 pub const M_LAB_ANTENNA: u8 = 93;
@@ -220,6 +226,8 @@ pub const M_SC_CELLS2: u8 = 122;
 pub const M_SC_CELLS3: u8 = 123;
 pub const M_SC_REGEN1: u8 = 124;
 pub const M_SC_REGEN2: u8 = 125;
+// générateur nomade : lignes, second palier
+pub const M_GEN_LINES2: u8 = 126;
 
 /// Valeurs communes à toutes les améliorations (premier palier, sans recherche).
 const MD: ModDef = ModDef {
@@ -262,7 +270,7 @@ macro_rules! md {
 
 /// Les améliorations ; l'indice est sauvegardé : toute nouvelle amélioration va à la fin.
 #[rustfmt::skip]
-pub const MODS: [ModDef; 126] = [
+pub const MODS: [ModDef; 127] = [
     MD,
     // ----- Arche : armement (remplace le canon d'origine : 120 dégâts par seconde à 24 cases) -----
     md!(U_ARK, SLOT_ARM, "ark_w_siege", "Canon lourd", "mod_gun", T_T_ARMORY, 40, 20, [(STEEL, 24), (GEAR, 12), (AMMO, 6)], "Remplace le canon : 164 dégâts/s en zone, portée 42 cases, pas à moins de 5."),
@@ -362,7 +370,7 @@ pub const MODS: [ModDef; 126] = [
     md!(U_CH_REFINERY, SLOT_SPEC, "ref_lean", "Échangeurs", "mod_lean", T_T_FITTINGS2, 25, 10, [(COPPER_PLATE, 20), (CIRCUIT, 4)], "Énergie −50 %."),
     md!(U_CH_REFINERY, SLOT_SPEC, "ref_armor", "Cuves blindées", "mod_plate", T_T_FITTINGS2, 25, 10, [(STEEL, 18)], "Dégâts subis −50 %, déployée ou repliée."; armor: 50),
     md!(U_CH_GENERATOR, SLOT_SPEC, "gen_tank", "Grands réservoirs", "mod_hold", T_T_FITTINGS2, 20, 8, [(IRON_PLATE, 24), (STEEL, 4)], "Réservoir de combustible triplé."),
-    md!(U_CH_GENERATOR, SLOT_SPEC, "gen_poles", "Câbles longs", "energy", T_T_FITTINGS2, 20, 8, [(COPPER_PLATE, 30), (CIRCUIT, 2)], "16 poteaux relais au lieu de 10."),
+    md!(U_CH_GENERATOR, SLOT_LINES, "gen_lines1", "Lignes I", "energy", T_T_FITTINGS, 20, 6, [(COPPER_PLATE, 20), (CIRCUIT, 2)], "Plante 6 poteaux relais au lieu de 3."),
     md!(U_CH_HOLD, SLOT_SPEC, "hold_crane", "Palan", "mod_fast", T_T_FITTINGS2, 25, 10, [(GEAR, 10), (STEEL, 6)], "Alimente les fabricants collés deux fois plus vite."),
     md!(U_CH_HOLD, SLOT_SPEC, "hold_quick", "Vérins rapides", "deploy", T_T_FITTINGS2, 25, 8, [(GEAR, 8), (IRON_PLATE, 10)], "Se déploie et se replie deux fois plus vite."; quick: true),
     md!(U_CH_LAB, SLOT_SPEC, "lab_antenna", "Antenne", "mod_radar", T_T_FITTINGS2, 25, 10, [(COPPER_PLATE, 20), (CIRCUIT, 6)], "Radar de 40 cases, déployé."),
@@ -401,4 +409,6 @@ pub const MODS: [ModDef; 126] = [
     md!(U_SHIELD_CART, 1, "sc_cells3", "Batterie de cellules", "mod_cells", T_T_CROWN, 50, 30, [(STEEL, 10), (ENERGY_CELL, 4)], "Bulle de 12 000 points.", 3, M_SC_CELLS2),
     md!(U_SHIELD_CART, 2, "sc_regen1", "Régénérateurs", "mod_fast", T_T_SHIELD_CART, 20, 6, [(COPPER_PLATE, 12), (GEAR, 6)], "Pleine en 18 s au lieu de 30 ; brisée, revient après 6 s au lieu de 10."),
     md!(U_SHIELD_CART, 2, "sc_regen2", "Régénérateurs rapides", "mod_fast", T_T_BUBBLE2, 35, 15, [(STEEL, 8), (PROCESSOR, 4)], "Pleine en 10 s ; brisée, revient après 3 s.", 2, M_SC_REGEN1),
+    // ----- générateur nomade : lignes (palier I : indice 90, plus haut) -----
+    md!(U_CH_GENERATOR, SLOT_LINES, "gen_lines2", "Lignes II", "energy", T_T_FITTINGS2, 30, 12, [(COPPER_PLATE, 40), (CIRCUIT, 6)], "Plante 12 poteaux relais.", 2, M_GEN_LINES1),
 ];
