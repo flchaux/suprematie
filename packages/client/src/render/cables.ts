@@ -3,7 +3,7 @@
 // le plus proche qui le couvre ; chaque poteau, à son générateur ou au poteau qui le précède dans sa file
 // (arbre de liaisons le plus court, porté de 13 cases comme pour la plantation). Le câble est posé au sol,
 // pas tendu : courbe douce en plan (flèche de 7 à 9 % de sa longueur, côté et ondulation tirés d'un hachage
-// de la paire), qui épouse le relief et remonte au bout vers une prise au pied de chaque bâtiment.
+// de la paire), fin, qui épouse le relief et passe sous le bord de chaque bâtiment (pas de prise).
 // Une seule géométrie fusionnée, refaite seulement quand les bâtiments connus changent.
 import * as THREE from "three/webgpu";
 import { attribute } from "three/tsl";
@@ -111,31 +111,26 @@ export function pairHash(a: number, b: number): number {
   return (h ^ (h >>> 15)) >>> 0;
 }
 
-/** Prise : avancée hors de l'emprise (cases), demi-largeur, hauteur, hauteur où le câble y entre. */
-export const PLUG_OUT = 0.1;
-const PLUG_HALF = 0.13;
-const PLUG_H = 0.3;
-const PLUG_IN_Y = 0.17;
+/** Le câble part de sous le bâtiment : ses bouts sont à cette distance (cases) en deçà du bord de l'emprise. */
+export const END_IN = 0.15;
 /** Rayon du câble, et marge au-dessus du sol (le sol est un maillage plus grossier que la hauteur lue). */
-const CABLE_R = 0.04;
-const CABLE_LIFT = 0.035;
-/** Distance (cases) sur laquelle le câble descend de la prise au sol. */
-const DROP = 0.55;
-/** Pas des points de la courbe (cases) ; près des prises, plus serré. */
+const CABLE_R = 0.02;
+const CABLE_LIFT = 0.03;
+/** Pas des points de la courbe (cases) ; près des bouts, plus serré (la courbe y tourne le plus vite). */
 const STEP = 0.32;
-const END_S = [0, 0.05, 0.12, 0.2, 0.3, 0.42, 0.55];
-/** Sous cet écart entre les deux prises, les bâtiments se touchent : pas de câble. */
+const END_S = [0, 0.1, 0.25, 0.45];
+/** Sous cet écart entre les deux bords, les bâtiments se touchent : pas de câble. */
 const MIN_GAP = 0.35;
 
-/** Courbe d'un câble : points en plan, hauteur au-dessus du sol (centre du câble), et ses deux prises. */
+/** Courbe d'un câble : points en plan, hauteur au-dessus du sol (centre du câble), et ses deux bouts. */
 export interface CableCurve {
   xs: number[];
   zs: number[];
   /** hauteur du centre du câble au-dessus du sol */
   ys: number[];
-  /** prises : centre au sol (x, z) et direction sortante (vers l'autre bout) */
-  plugs: [number, number, number, number][];
-  /** longueur de la corde entre les prises, flèche latérale (signée : + à gauche de la corde) */
+  /** bouts, sous le bord de chaque emprise : point au sol (x, z) et direction sortante (vers l'autre bout) */
+  ends: [number, number, number, number][];
+  /** longueur de la corde entre les bouts, flèche latérale (signée : + à gauche de la corde) */
   len: number;
   sag: number;
 }
@@ -147,14 +142,9 @@ function exitPoint(n: CableNode, ux: number, uz: number): [number, number] {
   return [cx(n) + ux * t, cz(n) + uz * t];
 }
 
-const smooth = (a: number, b: number, x: number) => {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
 /**
- * Courbe du câble de `a` vers `b` (hachage `seed`) : d'une prise au pied de `a`, sur le bord de son emprise
- * tourné vers `b`, à celle de `b`. En plan : flèche de 7 à 9 % de la corde (sin πt) plus une ondulation de
+ * Courbe du câble de `a` vers `b` (hachage `seed`) : posé au sol, il part de sous `a` (juste en deçà du bord de
+ * son emprise tourné vers `b`) et entre sous `b`. En plan : flèche de 7 à 9 % de la corde (sin πt) plus une ondulation de
  * moins de 0,8 % (sin 2πt ou sin 3πt), du côté tiré du hachage. Null si les bâtiments se touchent.
  */
 export function cableCurve(a: CableNode, b: CableNode, seed: number): CableCurve | null {
@@ -165,17 +155,17 @@ export function cableCurve(a: CableNode, b: CableNode, seed: number): CableCurve
   uz /= dl;
   const [ax, az] = exitPoint(a, ux, uz);
   const [bx, bz] = exitPoint(b, -ux, -uz);
-  // prises un peu hors de l'emprise, et le câble part de leur face avant
-  const p0x = ax + ux * (PLUG_OUT + PLUG_HALF), p0z = az + uz * (PLUG_OUT + PLUG_HALF);
-  const p1x = bx - ux * (PLUG_OUT + PLUG_HALF), p1z = bz - uz * (PLUG_OUT + PLUG_HALF);
+  if ((bx - ax) * ux + (bz - az) * uz < MIN_GAP) return null;
+  // bouts sous les châssis, un peu en deçà des bords : le câble sort de sous le bâtiment
+  const p0x = ax - ux * END_IN, p0z = az - uz * END_IN;
+  const p1x = bx + ux * END_IN, p1z = bz + uz * END_IN;
   const len = (p1x - p0x) * ux + (p1z - p0z) * uz;
-  if (len < MIN_GAP) return null;
   const side = seed & 1 ? 1 : -1;
   const a1 = len * (0.07 + (0.02 * ((seed >>> 1) & 255)) / 255);
   const a2 = len * ((0.008 * ((seed >>> 9) & 255)) / 255);
   const k2 = 2 + ((seed >>> 17) & 1);
   const nx = -uz * side, nz = ux * side;
-  // abscisses : serrées près des prises (descente vers le sol), régulières au milieu
+  // abscisses : serrées près des bouts, régulières au milieu
   const ts: number[] = [];
   if (len < 2 * END_S[END_S.length - 1] + STEP) {
     const n = Math.max(6, Math.ceil(len / 0.12));
@@ -195,12 +185,11 @@ export function cableCurve(a: CableNode, b: CableNode, seed: number): CableCurve
     if (Math.abs(off) > Math.abs(sag)) sag = off;
     xs.push(p0x + (p1x - p0x) * t + nx * off);
     zs.push(p0z + (p1z - p0z) * t + nz * off);
-    const s = Math.min(t, 1 - t) * len;
-    ys.push(CABLE_R + CABLE_LIFT + (PLUG_IN_Y - CABLE_R - CABLE_LIFT) * (1 - smooth(0, DROP, s)));
+    ys.push(CABLE_R + CABLE_LIFT);
   }
   return {
     xs, zs, ys, len, sag: sag * side,
-    plugs: [[ax + ux * PLUG_OUT, az + uz * PLUG_OUT, ux, uz], [bx - ux * PLUG_OUT, bz - uz * PLUG_OUT, -ux, -uz]],
+    ends: [[p0x, p0z, ux, uz], [p1x, p1z, -ux, -uz]],
   };
 }
 
@@ -209,13 +198,8 @@ const SIDES = 6;
 const RUBBER = new THREE.Color(0x232427);
 const RING_COS = Array.from({ length: SIDES }, (_, k) => Math.cos((k / SIDES) * Math.PI * 2));
 const RING_SIN = Array.from({ length: SIDES }, (_, k) => Math.sin((k / SIDES) * Math.PI * 2));
-const PLUG_BODY = new THREE.Color(0x34363a);
 
-/** Sommets et indices des deux prises d'un câble (2 boîtes de 5 faces chacune). */
-const PLUG_VERTS = 2 * 2 * 5 * 4;
-const PLUG_IDX = 2 * 2 * 5 * 6;
-
-/** Tampons de la géométrie fusionnée, alloués à la bonne taille, remplis par `pushCable` et `pushPlug`. */
+/** Tampons de la géométrie fusionnée, alloués à la bonne taille, remplis par `pushCable`. */
 interface Geo {
   pos: Float32Array;
   nrm: Float32Array;
@@ -276,34 +260,6 @@ function pushCable(g: Geo, c: CableCurve, map: MapData): void {
   }
 }
 
-/** Faces d'une boîte : normale (l, w, haut), puis ses quatre coins dans l'ordre du tour (l, w, haut). */
-const BOX_FACES: [number, number, number, number[][]][] = [
-  [1, 0, 0, [[1, -1, 0], [1, 1, 0], [1, 1, 1], [1, -1, 1]]],
-  [-1, 0, 0, [[-1, -1, 0], [-1, 1, 0], [-1, 1, 1], [-1, -1, 1]]],
-  [0, 1, 0, [[-1, 1, 0], [1, 1, 0], [1, 1, 1], [-1, 1, 1]]],
-  [0, -1, 0, [[-1, -1, 0], [1, -1, 0], [1, -1, 1], [-1, -1, 1]]],
-  [0, 0, 1, [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]]],
-];
-
-/** Boîte orientée selon (ux, uz), centrée en (x, z) : demi-tailles hl le long, hw en travers ; de y0 à y1, sans fond. */
-function pushBox(g: Geo, x: number, z: number, ux: number, uz: number, hl: number, hw: number, y0: number, y1: number, col: THREE.Color): void {
-  const vx = -uz, vz = ux;
-  for (const [fl, fw, fy, cs] of BOX_FACES) {
-    const base = g.nv;
-    for (const [l, w, top] of cs) vert(g, x + ux * l * hl + vx * w * hw, top ? y1 : y0, z + uz * l * hl + vz * w * hw, ux * fl + vx * fw, fy, uz * fl + vz * fw, col);
-    tri(g, base, base + 1, base + 2);
-    tri(g, base, base + 2, base + 3);
-  }
-}
-
-/** Prise au pied d'un bâtiment : boîtier sombre et chapeau à la couleur du joueur. */
-function pushPlug(g: Geo, p: [number, number, number, number], map: MapData, team: THREE.Color): void {
-  const [x, z, ux, uz] = p;
-  const y = groundHeight(map, x, z);
-  pushBox(g, x, z, ux, uz, PLUG_HALF, PLUG_HALF * 1.1, y - 0.1, y + PLUG_H, PLUG_BODY);
-  pushBox(g, x, z, ux, uz, PLUG_HALF * 0.8, PLUG_HALF * 0.9, y + PLUG_H, y + PLUG_H + 0.05, team);
-}
-
 /** Relevés des bâtiments de la trame (s) ; entre deux, seul un changement de `buildingsVersion` en déclenche un. */
 const SCAN = 0.25;
 /** Bit de vision d'une case (vu ou exploré), comme les bâtiments ennemis de la passe des bâtiments. */
@@ -333,12 +289,10 @@ export class Cables {
   private genLean: number;
   private map: MapData;
   private data: GameData;
-  private teamColors: THREE.Color[];
 
-  constructor(map: MapData, data: GameData, teamColors: THREE.Color[]) {
+  constructor(map: MapData, data: GameData) {
     this.map = map;
     this.data = data;
-    this.teamColors = teamColors;
     const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.82, metalness: 0 });
     mat.colorNode = applyFog(attribute("color", "vec3") as unknown as Parameters<typeof applyFog>[0], fogFactor());
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
@@ -413,22 +367,18 @@ export class Cables {
     const t0 = performance.now();
     this.dirty = false;
     const nodes = [...this.known.values()];
-    const cables: [CableCurve, number][] = [];
+    const cables: CableCurve[] = [];
     let nv = 0, ni = 0;
     for (const [i, j] of cablePairs(nodes)) {
       const a = nodes[i], b = nodes[j];
       const c = cableCurve(a, b, pairHash(a.ref, b.ref));
       if (!c) continue;
-      cables.push([c, a.owner]);
-      nv += c.xs.length * SIDES + PLUG_VERTS;
-      ni += (c.xs.length - 1) * SIDES * 6 + PLUG_IDX;
+      cables.push(c);
+      nv += c.xs.length * SIDES;
+      ni += (c.xs.length - 1) * SIDES * 6;
     }
     const g: Geo = { pos: new Float32Array(nv * 3), nrm: new Float32Array(nv * 3), col: new Float32Array(nv * 3), idx: new Uint32Array(ni), nv: 0, ni: 0 };
-    for (const [c, owner] of cables) {
-      pushCable(g, c, this.map);
-      const team = this.teamColors[owner % 8] ?? RUBBER;
-      for (const p of c.plugs) pushPlug(g, p, this.map, team);
-    }
+    for (const c of cables) pushCable(g, c, this.map);
     const old = this.mesh.geometry;
     const geo = new THREE.BufferGeometry();
     if (ni) {
